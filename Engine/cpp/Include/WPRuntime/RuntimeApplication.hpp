@@ -8,6 +8,7 @@
 #include <Workphone/Interface/System/IEventListener.hpp>
 #include <Workphone/Application.hpp>
 #include <WPRuntime/RuntimeProject.hpp>
+#include <chrono>
 
 namespace workphone
 {
@@ -141,6 +142,8 @@ namespace workphone
          */
         void unload( SmartPtr<ISharedObject> data ) override;
 
+        void update() override;
+
         String getProjectFilePath() const;
 
         void setProjectFilePath( const String &projectFilePath );
@@ -204,6 +207,12 @@ namespace workphone
 
         /// True once the initial scene-load coroutine has been queued.
         AtomicValue<bool> m_sceneLoadCoroutineQueued = false;
+
+    private:
+        SmartPtr<ui::IUIText> m_fpsText;
+        // Accessed by the render task while the application is running.
+        std::chrono::steady_clock::time_point m_fpsSampleStart;
+        u32 m_fpsFrameCount = 0;
     };
 }  // namespace workphone
 

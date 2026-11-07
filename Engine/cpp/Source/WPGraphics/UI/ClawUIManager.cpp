@@ -36,6 +36,7 @@
 #include <WorkphoneGraphics/workphone_graphics_renderer.h>
 #include "ClawUIFrameRetention.hpp"
 #include <limits>
+#include <mutex>
 #include <optional>
 
 namespace workphone::ui
@@ -472,6 +473,7 @@ namespace workphone::ui
         // so retain every frame member through conversion and wp_clear, even
         // after its manager/layout ownership has been removed.
         const auto frameRoot = getRoot();
+        const auto frameOverlay = getOverlay();
         const auto &frameElements = m_elements;
 
         // A widget published after the inventory snapshot can still join this
@@ -580,7 +582,8 @@ namespace workphone::ui
 
             if( frameRoot )
             {
-                if( auto guiRoot = dynamic_cast<IWorkphoneWidget *>( frameRoot.get() ) )
+                if( auto guiRoot = dynamic_cast<IWorkphoneWidget *>( frameRoot.get() );
+                    guiRoot && frameRoot.get() != frameOverlay.get() )
                 {
                     guiRoot->draw( ctx );
                 }
@@ -589,7 +592,7 @@ namespace workphone::ui
             {
                 for( auto &element : frameElements )
                 {
-                    if( element && !element->getParent() )
+                    if( element && element.get() != frameOverlay.get() && !element->getParent() )
                     {
                         if( auto guiElement = dynamic_cast<IWorkphoneWidget *>( element.get() ) )
                         {
@@ -597,6 +600,11 @@ namespace workphone::ui
                         }
                     }
                 }
+            }
+
+            if( auto overlay = dynamic_cast<IWorkphoneWidget *>( frameOverlay.get() ) )
+            {
+                overlay->draw( ctx );
             }
 
             wp_layout_space_end( ctx );
@@ -798,6 +806,7 @@ namespace workphone::ui
 
     void ClawUIManager::clear()
     {
+        setOverlay( nullptr );
         // Unload before releasing ownership to break parent/layout reference cycles.
         auto elements = getElements();
         for( auto &element : elements )
@@ -817,6 +826,13 @@ namespace workphone::ui
         if( !element )
         {
             return;
+        }
+        {
+            std::lock_guard lock( m_mutex );
+            if( m_overlay.get() == element.get() )
+            {
+                m_overlay = nullptr;
+            }
         }
         element->remove();
         element->unload( nullptr );
@@ -1030,11 +1046,18 @@ namespace workphone::ui
 
     void ClawUIManager::setOverlay( SmartPtr<ISharedObject> overlay )
     {
+        SmartPtr<ISharedObject> previous;
+        {
+            std::lock_guard lock( m_mutex );
+            previous = m_overlay;
+            m_overlay = overlay;
+        }
     }
 
     SmartPtr<ISharedObject> ClawUIManager::getOverlay() const
     {
-        return nullptr;
+        std::lock_guard lock( m_mutex );
+        return m_overlay;
     }
 
     struct wp_context *ClawUIManager::getContext() const

@@ -329,6 +329,8 @@ namespace workphone
 
             AtomicSmartPtr<IUIElement> m_root;  ///< The root element of the UI hierarchy.
 
+            SmartPtr<ISharedObject> m_overlay;
+
             SmartPtr<IUIElement> m_itemInFocus;  ///< The UI element currently in focus.
 
             SmartPtr<IEventListener> m_inputListener;  ///< Listener for handling input events.

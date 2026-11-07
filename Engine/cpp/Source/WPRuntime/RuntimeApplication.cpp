@@ -2,6 +2,7 @@
 #include <WPRuntime/RuntimeApplication.hpp>
 #include <WPRuntime/RuntimeStartup.hpp>
 #include <Workphone/Workphone.hpp>
+#include <Workphone/Interface/UI/IUIText.hpp>
 #include <filesystem>
 
 #ifdef _WP_STATIC_LIB_
@@ -179,8 +180,27 @@ namespace workphone
             applicationManager->setCachePath( cachePath + "/" );
             applicationManager->setSettingsPath( settingsPath + "/" );
 
-            setCreateFrameStatistics( true );
             Application::load( data );
+
+            if( auto renderUI = applicationManager->getRenderUI() )
+            {
+                m_fpsText = renderUI->addElementByType<ui::IUIText>();
+                if( m_fpsText )
+                {
+                    m_fpsText->setPosition( Vector2F( 0.81f, 0.055f ) );
+                    m_fpsText->setSize( Vector2F( 0.17f, 0.05f ) );
+                    m_fpsText->setHorizontalAlignment( static_cast<u8>( HorizontalAlignment::RIGHT ) );
+                    m_fpsText->setTextSize( 16.0f );
+                    m_fpsText->setColour( ColourF::White );
+                    m_fpsText->setHandleInputEvents( false );
+                    m_fpsText->setRuntimeLiteralText( true );
+                    m_fpsText->setText( "FPS: --" );
+                    m_fpsText->setVisible( true );
+                    renderUI->setOverlay( m_fpsText );
+                }
+            }
+            m_fpsSampleStart = {};
+            m_fpsFrameCount = 0;
 
             auto cameraManager = workphone::make_ptr<scene::CameraManager>();
             cameraManager->load( nullptr );
@@ -236,6 +256,10 @@ namespace workphone
             if( applicationManager )
             {
                 applicationManager->setPlaying( false );
+                auto taskManager = applicationManager->getTaskManager();
+                auto renderLock = taskManager ? taskManager->lockTask( TaskId::Render )
+                                              : TaskLock{};
+                m_fpsText = nullptr;
             }
             Application::unload( data );
 
@@ -244,6 +268,35 @@ namespace workphone
         catch( std::exception &e )
         {
             WP_LOG_EXCEPTION( e );
+        }
+    }
+
+    void RuntimeApplication::update()
+    {
+        Application::update();
+
+        if( Thread::getCurrentTask() != TaskId::Render || !m_fpsText )
+        {
+            return;
+        }
+
+        using Clock = std::chrono::steady_clock;
+        const auto now = Clock::now();
+        if( m_fpsSampleStart == Clock::time_point{} )
+        {
+            m_fpsSampleStart = now;
+            return;
+        }
+
+        ++m_fpsFrameCount;
+        const auto elapsed = now - m_fpsSampleStart;
+        if( elapsed >= std::chrono::milliseconds( 500 ) )
+        {
+            const auto seconds = std::chrono::duration<f64>( elapsed ).count();
+            const auto fps = static_cast<u32>( m_fpsFrameCount / seconds + 0.5 );
+            m_fpsText->setText( "FPS: " + StringUtil::toString( fps ) );
+            m_fpsSampleStart = now;
+            m_fpsFrameCount = 0;
         }
     }
 
