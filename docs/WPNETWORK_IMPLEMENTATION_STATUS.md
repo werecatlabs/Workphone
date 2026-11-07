@@ -10,6 +10,8 @@ Pass `Samples/cpp/Network/Config/network.gns-loopback.json` to `createWPNetworkS
 
 Use `./Scripts/Validate-WPNetwork.ps1 -IncludeGNS` to build the pinned standalone dependency and exercise the real engine adapter. The engine fixture runs two IPv6 clients, checks assigned IDs and reliable ordering, reassembles a 60,000-byte payload, and drives a real NetworkView transform update and ownership transfer. It also covers disconnect/reconnect, stale endpoints, and unloading from a packet callback. The launcher verifies a separate server and three client processes over GNS IPv4, and the scene preflight fixture verifies that reliable authoring is accepted with GNS and rejected with native UDP. These tests do not run the Editor interactively.
 
+On Windows x64 with the DLL CRT, the engine configure can reuse the local bundle installed by `./Scripts/Validate-WPNetworkTransport.ps1` without passing package paths on each CMake invocation. For a custom Protobuf install, set `Protobuf_DIR` and use its matching `protoc`. An explicit `GameNetworkingSockets_DIR` selects the operator package and fails if that package is missing.
+
 The strict C++ mode requires a certificate generated for the stopped manager's own request and a named peer identity allowlist. It checks the SDK's peer authentication and encryption state before delivering gameplay, rejects simultaneous connections for the same identity, and sets the pinned SDK's expired certificate grace period to zero. A process using a provisioned identity has one GNS manager. The loopback profile continues to select development mode. The manager leaves the release capability `AuthenticatedEncryption` unadvertised pending the production release gates.
 
 ## Operator certificate tools
