@@ -289,7 +289,7 @@ namespace workphone
 
             sceneFactoryManager->setPoolSizeByType<ClawCamera>( 8 );
             sceneFactoryManager->setPoolSizeByType<ClawLight>( 32 );
-            sceneFactoryManager->setPoolSizeByType<ClawMesh>( 128 );
+            sceneFactoryManager->setPoolSizeByType<ClawMesh>( 1024 );
             sceneFactoryManager->setPoolSizeByType<ClawSceneNode>( 1024 );
             sceneFactoryManager->setPoolSizeByType<ClawDynamicMesh>( 32 );
             sceneFactoryManager->setPoolSizeByType<ClawBillboardSet>( 32 );
@@ -634,6 +634,7 @@ namespace workphone
                         WP_LOG_ERROR( "ClawScene: failed to allocate native mesh render object." );
                     }
                 }
+
                 graphicsSystem->loadObject( mesh, true );
                 m_graphicsObjects.push_back( mesh );
                 return mesh;

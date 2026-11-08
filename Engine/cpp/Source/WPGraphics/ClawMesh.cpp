@@ -1,24 +1,5 @@
 #include "WPGraphics/WPClawHammerPCH.hpp"
 #include <WPGraphics/ClawMesh.hpp>
-#if WP_FOLIAGE_SOURCE_RESOURCES
-#    include <WPGraphics/Resources/MeshResourceCompiler.hpp>
-#    include <WPGraphics/Resources/ClawMaterialResource.hpp>
-#    include <WPGraphics/Resources/SkinnedMeshResource.hpp>
-#    include <WPGraphics/Resources/MorphResourceCompiler.hpp>
-#    include <Workphone/System/SkeletonResourceCompiler.hpp>
-#endif
-#include <WPGraphics/ClawMaterial.hpp>
-#include <WPGraphics/ClawRendererDX11.hpp>
-#include <Workphone/Workphone.hpp>
-#include "workphone_graphics_mesh.h"
-#include "workphone_graphics_mesh_reader.h"
-#include "workphone_graphics_object.h"
-#include <workphone_graphics_renderer.h>
-#include "ClawAssetBudget.hpp"
-#include <limits>
-#include <cmath>
-#include <cstring>
-#include <memory>
 #include <Workphone/Interface/Mesh/IMesh.hpp>
 #include <Workphone/Interface/Mesh/IMeshResource.hpp>
 #include <Workphone/Interface/Mesh/ISubMesh.hpp>
@@ -33,6 +14,27 @@
 #include <Workphone/Mesh/Bone.hpp>
 #include <Workphone/Interface/Mesh/IVertexBoneAssignment.hpp>
 #include <Workphone/Math/Matrix4.hpp>
+
+#if WP_FOLIAGE_SOURCE_RESOURCES
+#    include <WPGraphics/Resources/MeshResourceCompiler.hpp>
+#    include <WPGraphics/Resources/ClawMaterialResource.hpp>
+#    include <WPGraphics/Resources/SkinnedMeshResource.hpp>
+#    include <WPGraphics/Resources/MorphResourceCompiler.hpp>
+#    include <Workphone/System/SkeletonResourceCompiler.hpp>
+#endif
+
+#include <WPGraphics/ClawMaterial.hpp>
+#include <WPGraphics/ClawRendererDX11.hpp>
+#include <Workphone/Workphone.hpp>
+#include "workphone_graphics_mesh.h"
+#include "workphone_graphics_mesh_reader.h"
+#include "workphone_graphics_object.h"
+#include <workphone_graphics_renderer.h>
+#include "ClawAssetBudget.hpp"
+#include <limits>
+#include <cmath>
+#include <cstring>
+#include <memory>
 
 namespace workphone
 {
@@ -1172,11 +1174,12 @@ namespace workphone
 
         void ClawMesh::unload( SmartPtr<ISharedObject> data )
         {
+            setLoadingState( LoadingState::Unloading );
+
             NativeMeshLifecycleLock lifecycleLock;
             clearSkinningData();
             m_runtimeMorph.reset();
             m_runtimeGeometry.reset();
-            setLoadingState( LoadingState::Unloading );
 
             bindNativeRenderObject( nullptr );
             if( m_runtimeMaterials )

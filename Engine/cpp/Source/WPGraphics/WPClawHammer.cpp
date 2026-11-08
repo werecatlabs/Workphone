@@ -41,6 +41,7 @@ namespace workphone
             FactoryUtil::addFactory<ClawMaterialTexture>();
             FactoryUtil::addFactory<ClawTexture>();
             FactoryUtil::addFactory<ClawTextureManager>();
+
             setFoliageImpostorTextureResolver(
                 []( const String &id, String &error ) -> std::shared_ptr<const TextureMipLevel> {
                     auto application = core::IApplicationManager::instancePtr();
