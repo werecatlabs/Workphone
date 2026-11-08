@@ -13,7 +13,8 @@ namespace workphone::editor
 
     /** Copies supported game graphics options into the project's existing graphics director. */
     void updateProjectGraphicsSettings(
-        SmartPtr<Properties> settings, SmartPtr<scene::GraphicsSettingsDirector> director );
+        SmartPtr<Properties> settings, SmartPtr<scene::GraphicsSettingsDirector> director,
+        const Properties *changes = nullptr );
 
     /**
      * Validates supported options before applying live settings. The result contains success,

@@ -401,10 +401,35 @@ BOOST_AUTO_TEST_CASE( project_settings_actions_test )
     BOOST_CHECK_GT( capabilityCount, 0u );
     BOOST_CHECK( !project->isDirty() );
 
+    // Read shows defaults in the panel without committing them to a legacy project.
+    auto legacyProfile = workphone::make_ptr<Properties>();
+    guard.app->setPlayerSettings( legacyProfile );
+    auto noEditSave = requestFor( "saveProjectSettings" );
+    processProjectSettingsAction( noEditSave );
+    checkSuccess( noEditSave );
+    BOOST_CHECK( guard.app->getPlayerSettings() == legacyProfile );
+
+    auto metadataSave = requestFor( "saveProjectSettings" );
+    metadataSave->setProperty( "project.company", "Metadata only" );
+    processProjectSettingsAction( metadataSave );
+    checkSuccess( metadataSave );
+    Project savedMetadata;
+    savedMetadata.loadFromFile( project->getFilePath() );
+    auto savedProfile = savedMetadata.getProperties();
+    BOOST_CHECK_EQUAL( savedProfile->getProperty( "project.company" ), "Metadata only" );
+    for( const auto *key : { "editor.theme", "graphics.hdr", "graphics.resolution", "quality.preset" } )
+    {
+        BOOST_CHECK( !savedProfile->hasProperty( key ) );
+        BOOST_CHECK( !guard.app->getPlayerSettings()->hasProperty( key ) );
+    }
+
     auto apply = requestFor( "applyProjectSettings" );
     apply->setProperty( "project.name", "Applied via command" );
     apply->setProperty( "project.company", String() );
+    apply->setProperty( "editor.theme", s32( 1 ) );
     apply->setProperty( "graphics.fullscreen", false );
+    apply->setProperty( "graphics.hdr", true );
+    apply->setProperty( "graphics.resolution", s32( 5 ) );
     apply->setProperty( "graphics.renderScale", 0.75f );
     apply->setProperty( "quality.preset", s32( 0 ) );
     apply->setProperty( "graphics.postProcessing", true );
@@ -429,7 +454,11 @@ BOOST_AUTO_TEST_CASE( project_settings_actions_test )
     saved.loadFromFile( project->getFilePath() );
     BOOST_CHECK_EQUAL( saved.getLabel(), "Saved via command" );
     BOOST_CHECK_EQUAL( saved.getProperties()->getProperty( "project.company" ), "" );
+    BOOST_CHECK_EQUAL( saved.getProperties()->getPropertyAsInt( "editor.theme", -1 ), 1 );
     BOOST_CHECK( !saved.getProperties()->getPropertyAsBool( "graphics.fullscreen", true ) );
+    BOOST_CHECK( saved.getProperties()->getPropertyAsBool( "graphics.hdr" ) );
+    BOOST_CHECK_EQUAL( saved.getProperties()->getPropertyAsInt( "graphics.customWidth" ), 1920 );
+    BOOST_CHECK_EQUAL( saved.getProperties()->getPropertyAsInt( "graphics.customHeight" ), 1080 );
     BOOST_CHECK_EQUAL( saved.getProperties()->getPropertyAsInt( "sound.outputDevice", -1 ), 0 );
     BOOST_CHECK_CLOSE( saved.getProperties()->getPropertyAsFloat( "graphics.renderScale" ), 0.75f,
                        0.001f );
@@ -472,6 +501,16 @@ BOOST_AUTO_TEST_CASE( project_settings_actions_test )
     BOOST_CHECK_EQUAL( importRequest->getProperty( "build.signingProfile" ), "" );
     BOOST_CHECK_EQUAL( DataUtil::toString( project->getProperties().get(), true ), unchangedProject );
     BOOST_CHECK( !project->isDirty() );
+
+    const auto sparsePath = temporary.path / "Metadata settings.json";
+    std::ofstream( sparsePath ) << R"({"projectSettingsVersion":1,"physics.gravity":-9.8})";
+    auto sparseImport = requestFor( "importProjectSettingsJson" );
+    sparseImport->setProperty( "path", sparsePath.u8string() );
+    processProjectSettingsAction( sparseImport );
+    checkSuccess( sparseImport );
+    BOOST_CHECK( sparseImport->getPropertyAsBool( "included.physics.gravity" ) );
+    BOOST_CHECK( sparseImport->hasProperty( "editor.theme" ) );
+    BOOST_CHECK( !sparseImport->hasProperty( "included.editor.theme" ) );
 
     const auto invalidPath = temporary.path / "Invalid settings.json";
     for( const auto &document : {

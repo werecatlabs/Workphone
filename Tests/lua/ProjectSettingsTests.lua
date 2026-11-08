@@ -66,7 +66,7 @@ local function properties()
 end
 local parent=element()
 local ui={addElement=function() return element() end, removeElement=function(_, value) value.removed=true end}
-local native={calls={}, fail=false, available=true, expectedUnavailable=true}
+local native={calls={}, fail=false, available=true}
 local window={getParentWindow=function() return parent end, setHandleEvents=function() end}
 function window:handleEvent(eventType, hash, arguments, sender, request, event)
     assert(eventType==IEvent.UI and hash==12345 and sender==nil and event==nil)
@@ -93,11 +93,12 @@ function window:handleEvent(eventType, hash, arguments, sender, request, event)
         request:setPropertyAsString("project.name", "Imported project")
         request:setPropertyAsString("project.company", "")
         request:setPropertyAsBool("graphics.vsync", false)
+        request:setPropertyAsBool("graphics.hdr", true)
+        request:setPropertyAsInt("editor.theme", 1)
         request:setPropertyAsBool("services.cloudSave", false)
-        native.expectedUnavailable=false
-    else
-        assert(request.values["services.cloudSave"]==native.expectedUnavailable,
-            "Saved and imported unavailable settings must round trip through the native store")
+        for _, key in ipairs({"project.name", "graphics.vsync", "graphics.hdr", "services.cloudSave"}) do
+            request:setPropertyAsBool("included." .. key, true)
+        end
     end
     request:setPropertyAsBool("success", true)
     request:setPropertyAsString("status", action.." completed")
@@ -124,14 +125,28 @@ assert(#editor.controlBindings==132, "All project settings must be bound")
 local function event(kind, sender)
     return {at=function(_, i) if i==1 then return kind elseif i==3 then return sender end end}
 end
+local function assertNoSettings(request)
+    for key in pairs(request.values) do
+        assert(not key:find(".", 1, true), "An unedited draft must omit project key " .. key)
+    end
+end
+editor:handleEvent(event(IEvent.handleSelection, editor.saveButton))
+assertNoSettings(native.calls[#native.calls])
+editor.editorThemeControl:setSelectedOption(2)
+editor:handleEvent(event(IEvent.handleSelection, editor.editorThemeControl))
+editor.editorThemeControl:setSelectedOption(1)
+editor:handleEvent(event(IEvent.handleSelection, editor.editorThemeControl))
+editor:handleEvent(event(IEvent.handleSelection, editor.saveButton))
+assertNoSettings(native.calls[#native.calls])
+local initialCalls=#native.calls
 editor.projectNameControl:setText("Edited project")
 local senderProxy=setmetatable({}, {__index=editor.projectNameControl,
     __eq=function() error("UI userdata equality is unsupported; compare element IDs") end})
 editor:handleEvent(event(IEvent.handlePropertyChanged, senderProxy))
-assert(editor.settings.projectName=="Edited project" and #native.calls==1)
+assert(editor.settings.projectName=="Edited project" and #native.calls==initialCalls)
 editor.vsyncControl:setValue(false)
 editor:handleEvent(event(IEvent.handleSelection, editor.vsyncControl))
-assert(editor.settings.vsync==false and #native.calls==1)
+assert(editor.settings.vsync==false and #native.calls==initialCalls)
 editor.activePlatformControl:setSelectedOption(3)
 editor:handleEvent(event(IEvent.handleSelection, editor.activePlatformControl))
 assert(editor.settings.activePlatform==3 and editor.rendererSummaryText.text:find("Active: Android", 1, true))
@@ -148,35 +163,53 @@ editor:handleEvent(event(IEvent.handleSelection, editor.saveButton))
 local saved=native.calls[#native.calls]
 assert(saved.values.action=="saveProjectSettings" and saved.values["project.name"]=="Edited project")
 assert(saved.kinds["graphics.vsync"]=="Bool" and saved.kinds["physics.gravity"]=="Float")
-assert(saved.kinds["graphics.frameRateLimit"]=="Int" and saved.kinds["project.company"]=="String")
-assert(saved.values["graphics.shadowQuality"]==4,
-    "Save must preserve stored shadow quality after unrelated edits")
+assert(saved.kinds["platform.active"]=="Int" and saved.kinds["project.company"]==nil)
+assert(saved.values["graphics.shadowQuality"]==nil and saved.values["editor.theme"]==nil and
+    saved.values["graphics.hdr"]==nil and saved.values["graphics.resolution"]==nil,
+    "Save must omit unrelated stored and default display settings")
+assert(saved.values["services.cloudSave"]==nil,
+    "Save must leave unavailable settings alone unless explicitly imported")
+assert(editor.settings.shadowQuality==4, "Save must keep the displayed stored shadow quality")
 assert(editor.statusText.text=="saveProjectSettings completed")
 assert(editor.settings.cloudSave==true)
 
 editor:handleEvent(event(IEvent.handleSelection, editor.applyButton))
-assert(native.calls[#native.calls].values["graphics.shadowQuality"]==4,
-    "Apply must preserve stored shadow quality after unrelated edits")
+assertNoSettings(native.calls[#native.calls])
 
 for _, entry in ipairs({{editor.validateButton, "validateProjectSettings"}, {editor.reloadRendererButton, "reloadRenderer"},
     {editor.buildSelectedButton, "buildSelectedPlatform"}, {editor.exportJsonButton, "exportProjectSettingsJson"}}) do
     editor:handleEvent(event(IEvent.handleSelection, entry[1]))
-    assert(native.calls[#native.calls].values.action==entry[2])
+    local request=native.calls[#native.calls]
+    assert(request.values.action==entry[2])
+    if entry[2]~="buildSelectedPlatform" then
+        assert(request.values["graphics.shadowQuality"]==4 and request.values["services.cloudSave"]==true)
+    else
+        assertNoSettings(request)
+    end
 end
-assert(native.calls[#native.calls].values["services.cloudSave"]==true)
 editor:handleEvent(event(IEvent.handleSelection, editor.importJsonButton))
 assert(editor.projectNameControl:getText()=="Imported project" and editor.settings.vsync==false)
 assert(native.calls[#native.calls].values.action=="importProjectSettingsJson")
 editor:handleEvent(event(IEvent.handleSelection, editor.saveButton))
-assert(native.calls[#native.calls].values["services.cloudSave"]==false)
+local imported=native.calls[#native.calls].values
+assert(imported["project.name"]=="Imported project" and imported["graphics.vsync"]==false and
+    imported["graphics.hdr"]==true and imported["services.cloudSave"]==false,
+    "Explicit imported values must be staged even when they match the displayed defaults")
+assert(imported["editor.theme"]==nil and imported["project.company"]==nil,
+    "The merged import response must not stage values absent from the file")
 
+editor.gravityControl:setValue(-6.25)
 native.fail=true
 editor:handleEvent(event(IEvent.handleSelection, editor.saveButton))
 assert(editor.statusText.text=="Native validation rejected the selected backend.")
+assert(native.calls[#native.calls].values["physics.gravity"]==-6.25)
 native.fail=false; native.available=false
 editor:handleEvent(event(IEvent.handleSelection, editor.applyButton))
 assert(editor.statusText.text:find("action is unavailable", 1, true))
 native.available=true
+editor:handleEvent(event(IEvent.handleSelection, editor.saveButton))
+assert(native.calls[#native.calls].values["physics.gravity"]==-6.25,
+    "Failed actions must preserve unsaved control values for retry")
 
 before=#native.calls
 editor:handleEvent(event(IEvent.handleSelection, editor.applyIosProfileButton))
@@ -197,14 +230,20 @@ for _, profile in ipairs(platformProfiles) do
         "A staged platform profile must display its exact shadow quality")
     editor.companyControl:setText("Profile company")
     editor:handleEvent(event(IEvent.handlePropertyChanged, editor.companyControl))
-    for _, button in ipairs({editor.validateButton, editor.applyButton, editor.saveButton}) do
+    for _, button in ipairs({editor.validateButton, editor.applyButton}) do
         editor:handleEvent(event(IEvent.handleSelection, button))
         local values=native.calls[#native.calls].values
         assert(values["graphics.shadowQuality"]==profile.shadows,
             "Unrelated edits must preserve the profile's shadow quality")
         assert(values["assets.textureCompression."..profile.platform]==profile.compression,
             "Platform profiles must use texture formats supported by the bundled encoders")
+        if button==editor.applyButton then
+            assert(values["editor.theme"]==nil and values["graphics.hdr"]==nil,
+                "Profiles must stage only the fields they set")
+        end
     end
+    editor:handleEvent(event(IEvent.handleSelection, editor.saveButton))
+    assertNoSettings(native.calls[#native.calls])
 end
 before=#native.calls
 editor:handleEvent(event(IEvent.handleSelection, editor.resetButton))
@@ -212,6 +251,11 @@ assert(#native.calls==before and editor.settings.activePlatform==0 and editor.se
 editor.cloudSaveControl:setValue(true)
 editor:handleEvent(event(IEvent.handleValueChanged, editor.cloudSaveControl))
 assert(editor.settings.cloudSave==false and editor.cloudSaveControl:getValue()==false)
+editor:handleEvent(event(IEvent.handleSelection, editor.saveButton))
+local reset=native.calls[#native.calls].values
+assert(reset["editor.theme"]==1 and reset["graphics.hdr"]==true and reset["services.cloudSave"]==nil,
+    "Reset must explicitly stage all available defaults while preserving unavailable values")
+before=#native.calls
 
 local snapshot=properties()
 editor:getProperties({at=function() return snapshot end})

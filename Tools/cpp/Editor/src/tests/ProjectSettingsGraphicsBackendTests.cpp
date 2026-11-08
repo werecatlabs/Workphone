@@ -68,6 +68,16 @@ BOOST_AUTO_TEST_CASE(project_graphics_backend_pipeline_profile_test)
     BOOST_CHECK_EQUAL(persisted->getPropertyAsInt("graphics.customWidth"),1600);
     BOOST_CHECK_CLOSE(persisted->getPropertyAsFloat("graphics.renderScale"),.5f,.001f);
     BOOST_CHECK_EQUAL(persisted->getPropertyAsInt("graphics.tonemapping"),2);
+
+    auto changes = workphone::make_ptr<Properties>();
+    changes->setProperty( "physics.gravity", -7.5f );
+    BOOST_CHECK_EQUAL( projectGraphicsBackendProperties( settings, changes.get() )->getNumProperties(), 0u );
+    changes->setProperty( "quality.preset", 0 );
+    const auto presetPatch = projectGraphicsBackendProperties( settings, changes.get() );
+    BOOST_CHECK( !presetPatch->hasProperty( "graphics.hdr" ) );
+    BOOST_CHECK( !presetPatch->hasProperty( "graphics.customWidth" ) );
+    BOOST_CHECK_EQUAL( presetPatch->getPropertyAsInt( "Shadow map size" ), 4096 );
+    BOOST_CHECK( presetPatch->getPropertyAsBool( "Bloom" ) );
 }
 
 

@@ -117,13 +117,15 @@ namespace workphone::editor
     }
 
     void updateProjectGraphicsSettings( SmartPtr<Properties> settings,
-                                       SmartPtr<scene::GraphicsSettingsDirector> director )
+                                       SmartPtr<scene::GraphicsSettingsDirector> director,
+                                       const Properties *changes )
     {
         if( !settings || !director ) return;
         auto result = validateProjectSettingsGraphicsBackend( settings );
         if( !result->getPropertyAsBool( "success" ) )
             throw std::invalid_argument( result->getProperty( "status" ).c_str() );
-        auto properties = projectGraphicsBackendProperties( settings );
+        auto properties = projectGraphicsBackendProperties( settings, changes );
+        if( properties->getPropertiesAsArray().empty() ) return;
         director->setProperties( properties );
         director->setProperties( properties );
     }
@@ -147,20 +149,20 @@ namespace workphone::editor
         String applied, pending, requirements;
         try
         {
-            using Backend = SmartPtr<Properties> ( * )( SmartPtr<Properties> );
-            for( auto apply : { Backend( applyProjectSettingsGraphicsBackend ),
-                                Backend( applyProjectSettingsInteraction ),
-                                Backend( applyProjectSettingsProjectBackend ),
-                                Backend( applyProjectSettingsEditorBackend ) } )
-            {
-                auto reply = apply( immutable );
+            // Validate the complete profile, but only send edited graphics values to the live viewport.
+            const auto changes = replace ? nullptr : settings.get();
+            const auto collect = [&]( SmartPtr<Properties> reply ) {
                 if( !reply || !reply->getPropertyAsBool( "success" ) )
                     throw std::runtime_error( reply ? reply->getProperty( "status" ).c_str() :
                                                "The settings backend did not return an apply result." );
                 append( applied, reply->getProperty( "appliedKeys" ) );
                 append( pending, reply->getProperty( "pendingKeys" ) );
                 append( requirements, reply->getProperty( "externalRequirements" ) );
-            }
+            };
+            collect( applyProjectSettingsGraphicsBackend( immutable, changes ) );
+            collect( applyProjectSettingsInteraction( immutable ) );
+            collect( applyProjectSettingsProjectBackend( immutable ) );
+            collect( applyProjectSettingsEditorBackend( immutable ) );
             auto editor = EditorManager::getSingletonPtr();
             auto project = editor ? editor->getProject() : nullptr;
             if( graphicsReplacement )
@@ -180,18 +182,19 @@ namespace workphone::editor
                     director->setProperties( graphicsReplacement );
                 }
             }
-            else if( project ) updateProjectGraphicsSettings( immutable, project->getGraphicsSettingsDirector() );
+            else if( project ) updateProjectGraphicsSettings( immutable, project->getGraphicsSettingsDirector(), changes );
             if( app )
             {
                 auto tasks = app->getTaskManager();
-                if( tasks && immutable->hasProperty( "graphics.frameRateLimit" ) )
+                const auto &edited = changes ? *changes : *immutable;
+                if( tasks && edited.hasProperty( "graphics.frameRateLimit" ) )
                 {
                     for( auto id : { TaskId::Primary, TaskId::Application, TaskId::Render } )
                         if( auto task = tasks->getTask( id ) )
                             task->setTargetFPS( immutable->getPropertyAsInt( "graphics.frameRateLimit", 60 ) );
                     append( applied, "graphics.frameRateLimit" );
                 }
-                if( tasks && immutable->hasProperty( "physics.simulationRate" ) )
+                if( tasks && edited.hasProperty( "physics.simulationRate" ) )
                     if( auto task = tasks->getTask( TaskId::Physics ) )
                     {
                         task->setTargetFPS( immutable->getPropertyAsInt( "physics.simulationRate", 60 ) );

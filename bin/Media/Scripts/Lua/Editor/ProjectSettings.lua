@@ -561,6 +561,8 @@ function ProjectSettings:__init(window)
 	self.statusText = nil;
 	self.rendererSummaryText = nil;
 	self.settings = {};
+	self.baselineSettings = {};
+	self.stagedKeys = {};
 	self.controlBindings = {};
 	self.actionLog = {};
 	self.capabilities = {};
@@ -661,9 +663,12 @@ function ProjectSettings:readSettingsProperties(properties)
 	end
 end
 
-function ProjectSettings:writeSettingsProperties(properties)
+function ProjectSettings:writeSettingsProperties(properties, stagedOnly)
 	for key, map in pairs(ProjectSettingsStoreMap) do
-		writeProperty(properties, map.name, self.settings[key], map.type);
+		local value = self.settings[key];
+		if not stagedOnly or self.stagedKeys[key] or value ~= self.baselineSettings[key] then
+			writeProperty(properties, map.name, value, map.type);
+		end
 	end
 end
 
@@ -971,6 +976,7 @@ function ProjectSettings:load()
 
 	self:registerEventControls();
 	self:syncToControls();
+	self:rememberSettingsBaseline();
 
 	print("ProjectSettings load end");
 end
@@ -1037,6 +1043,16 @@ function ProjectSettings:syncFromControls()
 	end
 end
 
+function ProjectSettings:rememberSettingsBaseline()
+	-- Capture the values represented by the controls, including slider precision.
+	self:syncFromControls();
+	self.baselineSettings = {};
+	for key, value in pairs(self.settings) do
+		self.baselineSettings[key] = value;
+	end
+	self.stagedKeys = {};
+end
+
 function ProjectSettings:syncToControls()
 	self.syncingControls = true;
 	self:updateBroadphaseOptions();
@@ -1099,68 +1115,69 @@ end
 function ProjectSettings:applyPlatformProfile(platform)
 	-- 0=PC, 1=macOS, 2=iOS, 3=Android
 	self:syncFromControls();
-	local preserved = {};
-	for key, value in pairs(self.settings) do
-		if self.capabilities[key] == false then preserved[key] = value; end
-	end
-	self.settings.activePlatform = platform;
+	local profile = { activePlatform = platform };
 
 	-- Desktop presets use the built-in BC1/BC3 encoder. Mobile compression requires a provider.
 	if platform == 0 then
-		self.settings.rendererPC = 0; -- Auto: DirectX/Vulkan chosen by runtime
-		self.settings.renderPipeline = 1;
-		self.settings.qualityPreset = 2;
-		self.settings.renderScale = 1.0;
-		self.settings.aa = 2;
-		self.settings.shadowQuality = 3;
-		self.settings.shadowDistance = 120;
-		self.settings.maxTextureSize = 4096;
-		self.settings.textureCompressionPC = 1;
-		self.settings.frameRateLimit = 144;
-		self.settings.memoryBudgetMb = 4096;
-		self.settings.gpuMemoryBudgetMb = 2048;
+		profile.rendererPC = 0; -- Auto: DirectX/Vulkan chosen by runtime
+		profile.renderPipeline = 1;
+		profile.qualityPreset = 2;
+		profile.renderScale = 1.0;
+		profile.aa = 2;
+		profile.shadowQuality = 3;
+		profile.shadowDistance = 120;
+		profile.maxTextureSize = 4096;
+		profile.textureCompressionPC = 1;
+		profile.frameRateLimit = 144;
+		profile.memoryBudgetMb = 4096;
+		profile.gpuMemoryBudgetMb = 2048;
 	elseif platform == 1 then
-		self.settings.rendererMac = 1; -- Metal
-		self.settings.renderPipeline = 1;
-		self.settings.qualityPreset = 2;
-		self.settings.renderScale = 1.0;
-		self.settings.aa = 2;
-		self.settings.shadowQuality = 3;
-		self.settings.maxTextureSize = 4096;
-		self.settings.textureCompressionMac = 1;
-		self.settings.architectureMac = 2;
-		self.settings.memoryBudgetMb = 4096;
-		self.settings.gpuMemoryBudgetMb = 2048;
+		profile.rendererMac = 1; -- Metal
+		profile.renderPipeline = 1;
+		profile.qualityPreset = 2;
+		profile.renderScale = 1.0;
+		profile.aa = 2;
+		profile.shadowQuality = 3;
+		profile.maxTextureSize = 4096;
+		profile.textureCompressionMac = 1;
+		profile.architectureMac = 2;
+		profile.memoryBudgetMb = 4096;
+		profile.gpuMemoryBudgetMb = 2048;
 	elseif platform == 2 then
-		self.settings.rendererIOS = 1; -- Metal
-		self.settings.renderPipeline = 3;
-		self.settings.qualityPreset = 1;
-		self.settings.renderScale = 0.85;
-		self.settings.aa = 0;
-		self.settings.shadowQuality = 2;
-		self.settings.shadowDistance = 50;
-		self.settings.maxTextureSize = 2048;
-		self.settings.textureCompressionIOS = 0;
-		self.settings.frameRateLimit = 60;
-		self.settings.memoryBudgetMb = 1024;
-		self.settings.gpuMemoryBudgetMb = 512;
+		profile.rendererIOS = 1; -- Metal
+		profile.renderPipeline = 3;
+		profile.qualityPreset = 1;
+		profile.renderScale = 0.85;
+		profile.aa = 0;
+		profile.shadowQuality = 2;
+		profile.shadowDistance = 50;
+		profile.maxTextureSize = 2048;
+		profile.textureCompressionIOS = 0;
+		profile.frameRateLimit = 60;
+		profile.memoryBudgetMb = 1024;
+		profile.gpuMemoryBudgetMb = 512;
 	elseif platform == 3 then
-		self.settings.rendererAndroid = 1; -- Vulkan, with OpenGL ES fallback controlled by allowRendererFallback
-		self.settings.renderPipeline = 3;
-		self.settings.qualityPreset = 1;
-		self.settings.renderScale = 0.75;
-		self.settings.aa = 0;
-		self.settings.shadowQuality = 1;
-		self.settings.shadowDistance = 40;
-		self.settings.maxTextureSize = 2048;
-		self.settings.textureCompressionAndroid = 0;
-		self.settings.frameRateLimit = 60;
-		self.settings.memoryBudgetMb = 1024;
-		self.settings.gpuMemoryBudgetMb = 512;
-		self.settings.useAndroidAppBundle = true;
+		profile.rendererAndroid = 1; -- Vulkan, with OpenGL ES fallback controlled by allowRendererFallback
+		profile.renderPipeline = 3;
+		profile.qualityPreset = 1;
+		profile.renderScale = 0.75;
+		profile.aa = 0;
+		profile.shadowQuality = 1;
+		profile.shadowDistance = 40;
+		profile.maxTextureSize = 2048;
+		profile.textureCompressionAndroid = 0;
+		profile.frameRateLimit = 60;
+		profile.memoryBudgetMb = 1024;
+		profile.gpuMemoryBudgetMb = 512;
+		profile.useAndroidAppBundle = true;
 	end
 
-	for key, value in pairs(preserved) do self.settings[key] = value; end
+	for key, value in pairs(profile) do
+		if self.capabilities[key] ~= false then
+			self.settings[key] = value;
+			self.stagedKeys[key] = true;
+		end
+	end
 	self:syncToControls();
 	self:setStatus(safeOption(PlatformNames, platform) .. " profile staged. Apply or Save, then build with the installed target toolchain.");
 end
@@ -1171,7 +1188,10 @@ end
 
 function ProjectSettings:resetToDefaults()
 	for key, value in pairs(ProjectSettingsDefaults) do
-		if self.capabilities[key] ~= false then self.settings[key] = value; end
+		if self.capabilities[key] ~= false then
+			self.settings[key] = value;
+			self.stagedKeys[key] = true;
+		end
 	end
 
 	self:syncToControls();
@@ -1210,6 +1230,7 @@ function ProjectSettings:setProperties(parameters)
 	local properties = parameters:at(0);
 	self:readSettingsProperties(properties);
 	self:syncToControls();
+	self:rememberSettingsBaseline();
 end
 
 function ProjectSettings:show()
@@ -1228,6 +1249,8 @@ end
 
 function ProjectSettings:performAction(action, updateStatus)
 	table.insert(self.actionLog, action);
+	local stagedOnly = action == "applyProjectSettings" or action == "saveProjectSettings" or
+		action == "buildSelectedPlatform";
 	local ok, request = pcall(function()
 		local applicationManager = IApplicationManager.instance();
 		if applicationManager == nil or self.window == nil then
@@ -1244,7 +1267,7 @@ function ProjectSettings:performAction(action, updateStatus)
 		properties:setPropertyAsString("action", action);
 		if action ~= "readProjectSettings" and action ~= "importProjectSettingsJson" then
 			self:syncFromControls();
-			self:writeSettingsProperties(properties);
+			self:writeSettingsProperties(properties, stagedOnly);
 		end
 		self.window:handleEvent(IEvent.UI, StringUtil.getHash32("projectSettingsAction"),
 			Parameters(), nil, properties, nil);
@@ -1264,6 +1287,18 @@ function ProjectSettings:performAction(action, updateStatus)
 	if success then
 		self:readSettingsProperties(request);
 		self:syncToControls();
+		if stagedOnly or action == "reloadRenderer" or action == "readProjectSettings" or
+			action == "importProjectSettingsJson" then
+			self:rememberSettingsBaseline();
+		end
+		if action == "importProjectSettingsJson" then
+			for key, map in pairs(ProjectSettingsStoreMap) do
+				local included = "included." .. map.name;
+				if request:hasProperty(included) and request:getPropertyAsBool(included) then
+					self.stagedKeys[key] = true;
+				end
+			end
+		end
 	end
 	if updateStatus ~= false or not success then
 		local message = request:getPropertyAsString("status");

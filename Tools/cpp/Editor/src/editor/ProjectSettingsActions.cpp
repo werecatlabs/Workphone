@@ -114,6 +114,30 @@ namespace workphone::editor
                 throw std::invalid_argument( "Minimum Android SDK exceeds Target Android SDK" );
         }
 
+        String applySettingsPatch( SmartPtr<Project> project, const Properties &request,
+                                   const Properties &settings )
+        {
+            auto patch = make_ptr<Properties>();
+            for( const auto &definition : settingDefinitions )
+                if( request.hasProperty( definition.name ) )
+                    patch->addProperty( settings.getPropertyObject( definition.name ) );
+            if( patch->getNumProperties() == 0 ) return {};
+
+            if( patch->getPropertyAsInt( "graphics.resolution", -1 ) == 5 )
+            {
+                for( const auto *key : { "graphics.customWidth", "graphics.customHeight" } )
+                    if( !patch->hasProperty( key ) )
+                        patch->addProperty( settings.getPropertyObject( key ) );
+            }
+            auto result = applyProjectSettingsRuntime( patch );
+            if( !result->getPropertyAsBool( "success" ) )
+                throw std::runtime_error( result->getProperty( "status" ).c_str() );
+            auto properties = project->getProperties();
+            for( const auto &property : patch->getPropertiesAsArray() ) properties->addProperty( property );
+            project->setProperties( properties );
+            return result->getProperty( "status" );
+        }
+
         void fillResponse( Properties &response, const Properties &settings )
         {
             for( const auto &definition : settingDefinitions )
@@ -236,8 +260,12 @@ namespace workphone::editor
             {
                 const auto path = chooseSettingsPath( request, project, false );
                 if( path.empty() ) { request->setProperty( "status", String( "Import cancelled." ) ); return; }
-                mergeSettings( *settings, *importSettings( path ) );
+                const auto imported = importSettings( path );
+                mergeSettings( *settings, *imported );
                 fillResponse( *request, *settings );
+                for( const auto &definition : settingDefinitions )
+                    if( imported->hasProperty( definition.name ) )
+                        request->setProperty( String( "included." ) + definition.name, true );
                 request->setProperty( "status", String( "Imported settings draft. Apply or Save to commit." ) );
             }
             else
@@ -282,25 +310,22 @@ namespace workphone::editor
                 }
                 else if( action == "applyProjectSettings" || action == "saveProjectSettings" )
                 {
-                    auto result = applyProjectSettingsRuntime( settings );
-                    if( !result->getPropertyAsBool( "success" ) )
-                        throw std::runtime_error( result->getProperty( "status" ).c_str() );
-                    auto properties = project->getProperties();
-                    mergeSettings( *properties, *settings );
-                    project->setProperties( properties );
-                    if( action == "saveProjectSettings" ) project->save();
-                    auto status = result->getProperty( "status" );
-                    if( action == "saveProjectSettings" ) status = "Saved project settings. " + status;
+                    auto status = applySettingsPatch( project, *request, *settings );
+                    if( action == "saveProjectSettings" )
+                    {
+                        project->save();
+                        status = status.empty() ? String( "Saved project settings." )
+                                                : "Saved project settings. " + status;
+                    }
+                    else if( status.empty() ) status = "No project settings changed.";
                     request->setProperty( "status", status );
                 }
                 else if( action == "buildSelectedPlatform" )
                 {
-                    auto result = applyProjectSettingsRuntime( settings );
+                    auto result = validateProjectSettingsRuntime( settings );
                     if( !result->getPropertyAsBool( "success" ) )
                         throw std::runtime_error( result->getProperty( "status" ).c_str() );
-                    auto properties = project->getProperties();
-                    mergeSettings( *properties, *settings );
-                    project->setProperties( properties );
+                    applySettingsPatch( project, *request, *settings );
                     project->save();
                     auto build = buildProjectSettingsProjectBackend( settings );
                     if( !build->getPropertyAsBool( "success" ) )

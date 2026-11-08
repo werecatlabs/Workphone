@@ -102,59 +102,86 @@ namespace workphone::editor
         response->setProperty("availability.graphics.renderer.pc","DX11 and DX12 share the full scene pipeline. DX12 executes on a D3D12 queue through D3D11On12. Vulkan/OpenGL dispatch registered providers.");
     }
 
-    SmartPtr<Properties> projectGraphicsBackendProperties( SmartPtr<Properties> settings )
+    SmartPtr<Properties> projectGraphicsBackendProperties( SmartPtr<Properties> settings,
+                                                          const Properties *changes )
     {
         auto result = workphone::make_ptr<Properties>();
         if( !settings ) return result;
-        for( auto key : keys ) if( settings->hasProperty(key) ) result->addProperty(settings->getPropertyObject(key));
+        const auto includes = [&]( const char *key ) { return !changes || changes->hasProperty( key ); };
+        for( auto key : keys )
+            if( includes( key ) && settings->hasProperty( key ) )
+                result->addProperty( settings->getPropertyObject( key ) );
         s32 value;
-        if( settings->getPropertyValue("quality.preset", value) && value < 4 ) result->setProperty("Quality",value);
-        if( settings->getPropertyValue("graphics.renderer.pc",value) && (value == 0 || value == 1 || value == 2 || value == 5) )
+        const bool changesPreset = includes( "quality.preset" ) &&
+            settings->getPropertyValue( "quality.preset", value ) && value < 4;
+        if( changesPreset ) result->setProperty( "Quality", value );
+        if( includes( "graphics.renderer.pc" ) && settings->getPropertyValue("graphics.renderer.pc",value) && (value == 0 || value == 1 || value == 2 || value == 5) )
             result->setProperty("Render API", value == 5 ? 0 : value == 0 ? 1 : value);
-        if( settings->getPropertyValue("graphics.antiAliasing",value) ) result->setProperty("Temporal anti-aliasing",value == 2);
-        if( settings->getPropertyValue("graphics.shadowQuality",value) ) result->setProperty("Cascaded shadows",value > 0);
-        if( settings->getPropertyValue("graphics.shadowResolution",value) && value >= 0 && value <= 3 )
+        // Changing the preset resets friendly pipeline values. Reapply only existing overrides.
+        if( ( changesPreset || includes( "graphics.antiAliasing" ) ) &&
+            settings->getPropertyValue("graphics.antiAliasing",value) ) result->setProperty("Temporal anti-aliasing",value == 2);
+        if( ( changesPreset || includes( "graphics.shadowQuality" ) ) &&
+            settings->getPropertyValue("graphics.shadowQuality",value) ) result->setProperty("Cascaded shadows",value > 0);
+        if( ( changesPreset || includes( "graphics.shadowResolution" ) ) &&
+            settings->getPropertyValue("graphics.shadowResolution",value) && value >= 0 && value <= 3 )
         { constexpr s32 sizes[] = {512,1024,2048,4096}; result->setProperty("Shadow map size",sizes[value]); }
         bool post = true; settings->getPropertyValue("graphics.postProcessing",post);
         const char *effects[][2] = {{"graphics.bloom","Bloom"},{"graphics.motionBlur","Motion blur"},{"graphics.ambientOcclusion","Ambient occlusion"}};
-        for( const auto &effect : effects ) { bool enabled; if(settings->getPropertyValue(effect[0],enabled)) result->setProperty(effect[1],post && enabled); }
+        for( const auto &effect : effects )
+        {
+            bool enabled;
+            if( ( changesPreset || includes( effect[0] ) || includes( "graphics.postProcessing" ) ) &&
+                settings->getPropertyValue( effect[0], enabled ) )
+                result->setProperty( effect[1], post && enabled );
+        }
         return result;
     }
 
-    SmartPtr<Properties> applyProjectSettingsGraphicsBackend( SmartPtr<Properties> settings )
+    SmartPtr<Properties> applyProjectSettingsGraphicsBackend( SmartPtr<Properties> settings,
+                                                             const Properties *changes )
     {
         auto result = validateProjectSettingsGraphicsBackend(settings);
         if( !result->getPropertyAsBool("success") ) return result;
+        const auto includes = [&]( const char *key ) { return !changes || changes->hasProperty( key ); };
+        const auto handled = listKeys( changes ? *changes : *settings );
+        result->setProperty( "handledKeys", handled );
         const auto app = core::IApplicationManager::instancePtr();
         String error;
-        if(!applyProjectIrradianceSettings(settings,app ? app->getProjectPath() : String(),error))
+        if( ( includes( "graphics.gi" ) || ( includes( "project.startupScene" ) && settings->hasProperty( "graphics.gi" ) ) ) &&
+            !applyProjectIrradianceSettings(settings,app ? app->getProjectPath() : String(),error) )
         { result->setProperty("success",false);result->setProperty("status",error);return result; }
+        if( changes && handled.empty() ) return result;
         const struct { const char *key; StreamMemoryClass category; } budgets[] = {
             {"quality.streamingBudgetMb",StreamMemoryClass::WorkingCpu},
             {"performance.memoryBudgetMb",StreamMemoryClass::SourceCpu},
             {"performance.gpuMemoryBudgetMb",StreamMemoryClass::Gpu}
         };
-        for( const auto &budget : budgets ) if(settings->hasProperty(budget.key))
+        for( const auto &budget : budgets ) if(includes(budget.key) && settings->hasProperty(budget.key))
             if( !WorldStreamingScheduler::shared()->setBudget(budget.category,
                   static_cast<u64>(settings->getPropertyAsInt(budget.key)) * (1ull << 20),error) )
             { result->setProperty("success",false); result->setProperty("status",error); return result; }
         auto graphics = app ? app->getGraphicsSystem() : nullptr;
         if( graphics )
         {
-            auto properties = projectGraphicsBackendProperties(settings);
-            bool vsync = true; settings->getPropertyValue("graphics.vsync",vsync);
-            const s32 present = settings->getPropertyAsInt("graphics.presentMode");
-            if(present == 1) vsync = true;
-            if(present == 3) vsync = false;
-            properties->setProperty("vsync",vsync);
+            auto properties = projectGraphicsBackendProperties(settings, changes);
+            if( includes( "graphics.vsync" ) || includes( "graphics.presentMode" ) )
+            {
+                bool vsync = true; settings->getPropertyValue("graphics.vsync",vsync);
+                const s32 present = settings->getPropertyAsInt("graphics.presentMode");
+                if(present == 1) vsync = true;
+                if(present == 3) vsync = false;
+                properties->setProperty("vsync",vsync);
+            }
             graphics->setProperties(properties);
             if(auto pipeline = graphics->getGraphicsPipeline()) { pipeline->setProperties(properties); pipeline->setProperties(properties); }
             if(auto window = graphics->getDefaultWindow())
             {
                 bool fullscreen;
-                if(settings->getPropertyValue("graphics.fullscreen",fullscreen)) window->setFullscreen(fullscreen);
+                if( includes( "graphics.fullscreen" ) && settings->getPropertyValue("graphics.fullscreen",fullscreen) ) window->setFullscreen(fullscreen);
                 s32 resolution;
-                if(settings->getPropertyValue("graphics.resolution",resolution) && !window->isFullScreen())
+                if( settings->getPropertyValue( "graphics.resolution", resolution ) && !window->isFullScreen() &&
+                    ( includes( "graphics.resolution" ) || includes( "graphics.fullscreen" ) ||
+                      ( resolution == 5 && ( includes( "graphics.customWidth" ) || includes( "graphics.customHeight" ) ) ) ) )
                 {
                     constexpr s32 sizes[][2] = {{1920,1080},{1280,720},{2560,1440},{3840,2160}};
                     if(resolution >= 0 && resolution < 4) window->resize(sizes[resolution][0],sizes[resolution][1]);
@@ -167,7 +194,7 @@ namespace workphone::editor
         const auto outputWindow=graphics?graphics->getDefaultWindow():nullptr;
         const bool displaySize=outputWindow&&outputWindow->isFullScreen();
         const auto append=[](String &list,const char *key){if(!list.empty()) list+="; ";list+=key;};
-        for(auto key:keys) if(settings->hasProperty(key))
+        for(auto key:keys) if(includes(key) && settings->hasProperty(key))
         {
             const bool budget=String(key)=="quality.streamingBudgetMb"||String(key)=="performance.memoryBudgetMb"||String(key)=="performance.gpuMemoryBudgetMb";
             const bool windowedSize=String(key)=="graphics.resolution"||String(key)=="graphics.customWidth"||String(key)=="graphics.customHeight";
