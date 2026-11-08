@@ -156,14 +156,15 @@ namespace workphone
             }
 
             setLoadingState( LoadingState::Loading );
-            bool startupFullscreen = false;
+            bool startupFullscreen = GraphicsWindow::isFullScreen();
+            bool startupMaximized = false;
             if( getName() == "DefaultWindow" )
             {
                 if( auto app = core::IApplicationManager::instancePtr() )
                 {
                     if( auto settings = app->getPlayerSettings() )
                     {
-                        const auto resolution = settings->getPropertyAsInt( "graphics.resolution" );
+                        const auto resolution = settings->getPropertyAsInt( "graphics.resolution", -1 );
                         constexpr s32 sizes[][2] = {
                             { 1920, 1080 }, { 1280, 720 }, { 2560, 1440 }, { 3840, 2160 }
                         };
@@ -177,6 +178,7 @@ namespace workphone
                                 std::max( 1, settings->getPropertyAsInt( "graphics.customWidth" ) ),
                                 std::max( 1, settings->getPropertyAsInt( "graphics.customHeight" ) ) );
                         }
+                        startupMaximized = resolution == 4;
                         settings->getPropertyValue( "graphics.fullscreen", startupFullscreen );
                     }
                 }
@@ -222,10 +224,11 @@ namespace workphone
             }
 
             setLoadingState( LoadingState::Loaded );
-            if( startupFullscreen )
+            if( startupMaximized )
             {
-                setFullscreen( true );
+                maximize();
             }
+            setFullscreen( startupFullscreen );
             WP_LOG_INFO( "WPGraphics/Window: '" + getName() + "' initialized." );
         }
 
@@ -295,68 +298,43 @@ namespace workphone
         bool ClawWindow::isFullScreen() const
         {
 #if defined WP_PLATFORM_WIN32
-            return m_nativeFullscreen;
-#else
-            return GraphicsWindow::isFullScreen();
+            if( m_platformWindow )
+            {
+                return wp_platform_window_win32_is_fullscreen( m_platformWindow ) != 0;
+            }
 #endif
+            return GraphicsWindow::isFullScreen();
         }
 
         void ClawWindow::setFullscreen( bool fullscreen )
         {
 #if defined WP_PLATFORM_WIN32
-            void *native = nullptr;
-            getWindowHandle( &native );
-            auto handle = static_cast<HWND>( native );
-            if( !handle || fullscreen == m_nativeFullscreen )
+            if( m_platformWindow )
             {
-                return;
-            }
-            if( fullscreen )
-            {
-                RECT rectangle{};
-                GetWindowRect( handle, &rectangle );
-                m_windowedPosition = Vector2I( rectangle.left, rectangle.top );
-                m_windowedSize =
-                    Vector2I( rectangle.right - rectangle.left, rectangle.bottom - rectangle.top );
-                m_windowedStyle = GetWindowLongPtr( handle, GWL_STYLE );
-                MONITORINFO monitor{};
-                monitor.cbSize = sizeof( monitor );
-                if( !GetMonitorInfo( MonitorFromWindow( handle, MONITOR_DEFAULTTONEAREST ), &monitor ) )
+                if( !wp_platform_window_win32_set_fullscreen( m_platformWindow, fullscreen ) )
                 {
                     return;
                 }
-                SetWindowLongPtr( handle, GWL_STYLE, m_windowedStyle & ~WS_OVERLAPPEDWINDOW );
-                SetWindowPos( handle, HWND_TOP, monitor.rcMonitor.left, monitor.rcMonitor.top,
-                              monitor.rcMonitor.right - monitor.rcMonitor.left,
-                              monitor.rcMonitor.bottom - monitor.rcMonitor.top,
-                              SWP_FRAMECHANGED | SWP_NOOWNERZORDER );
+                syncNativeWindowSize();
             }
-            else
-            {
-                SetWindowLongPtr( handle, GWL_STYLE, m_windowedStyle );
-                SetWindowPos( handle, nullptr, m_windowedPosition.x, m_windowedPosition.y,
-                              m_windowedSize.x, m_windowedSize.y,
-                              SWP_FRAMECHANGED | SWP_NOZORDER | SWP_NOOWNERZORDER );
-            }
-            m_nativeFullscreen = fullscreen;
-            windowMovedOrResized();
 #endif
             GraphicsWindow::setFullscreen( fullscreen );
         }
 
         void ClawWindow::resize( u32 width, u32 height )
         {
-            if( m_window )
-            {
-                wp_graphics_window_resize( m_window, width, height );
-            }
-
 #if defined WP_PLATFORM_WIN32
             if( m_platformWindow )
             {
                 wp_platform_window_win32_resize( m_platformWindow, width, height );
+                syncNativeWindowSize();
+                return;
             }
 #endif
+            if( m_window )
+            {
+                wp_graphics_window_resize( m_window, width, height );
+            }
         }
 
         void ClawWindow::maximize()
@@ -370,6 +348,7 @@ namespace workphone
             if( m_platformWindow )
             {
                 wp_platform_window_win32_maximize( m_platformWindow );
+                syncNativeWindowSize();
             }
 #endif
         }
@@ -477,20 +456,27 @@ namespace workphone
             if( m_platformWindow )
             {
                 wp_platform_window_win32_pump_messages( m_platformWindow );
-
-                const auto width = wp_platform_window_win32_get_width( m_platformWindow );
-                const auto height = wp_platform_window_win32_get_height( m_platformWindow );
-                if( m_window && width > 0 && height > 0 &&
-                    ( width != wp_graphics_window_get_width( m_window ) ||
-                      height != wp_graphics_window_get_height( m_window ) ) )
-                {
-                    wp_graphics_window_resize( m_window, width, height );
-                }
+                syncNativeWindowSize();
             }
 #endif
 
             return !isClosed();
         }
+
+#if defined WP_PLATFORM_WIN32
+        void ClawWindow::syncNativeWindowSize()
+        {
+            const auto width = wp_platform_window_win32_get_width( m_platformWindow );
+            const auto height = wp_platform_window_win32_get_height( m_platformWindow );
+            if( m_window && width > 0 && height > 0 &&
+                ( width != wp_graphics_window_get_width( m_window ) ||
+                  height != wp_graphics_window_get_height( m_window ) ) )
+            {
+                wp_graphics_window_resize( m_window, width, height );
+                windowMovedOrResized();
+            }
+        }
+#endif
 
         SmartPtr<IViewport> ClawWindow::addViewport( hash_type id, SmartPtr<IGraphicsCamera> camera,
                                                      s32 ZOrder, f32 left, f32 top, f32 width,

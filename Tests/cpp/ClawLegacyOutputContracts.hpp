@@ -52,13 +52,14 @@ namespace claw_legacy_output_contracts
         require( !graphics.beginGraphicsPipelineFrame( renderer, false ) &&
                      !wp_renderer_dx11_is_hdr_scene_active( native ),
                  "legacy scene viewport must preserve direct display-space rendering" );
-        renderer->clear( ColourF( .25f, .5f, .75f, 1.f ) );
+        const ColourF clearColour( .25f, .5f, .75f, .5f );
+        renderer->clear( clearColour );
         std::vector<unsigned char> legacy( 32 * 32 * 4 );
         auto *output = target->getNativeRenderTexture( renderer->getNativeRenderer() );
         require( wp_renderer_dx11_copy_render_texture_rgba8( output, legacy.data(), legacy.size() ) &&
                      std::abs( int( legacy[0] ) - 64 ) <= 1 &&
                      std::abs( int( legacy[1] ) - 128 ) <= 1 &&
-                     std::abs( int( legacy[2] ) - 191 ) <= 1 && legacy[3] == 255,
+                     std::abs( int( legacy[2] ) - 191 ) <= 1 && legacy[3] == 128,
                  "legacy scene viewport must retain its original colour values" );
 
         auto hdr = pipeline->getHdrSettings();
@@ -76,6 +77,18 @@ namespace claw_legacy_output_contracts
         require( !graphics.beginGraphicsPipelineFrame( renderer, false ),
                  "backend selection alone must preserve legacy viewport colours" );
 
+        auto sampling = make_ptr<Properties>();
+        sampling->setProperty( "graphics.renderScale", .5f );
+        pipeline->setProperties( sampling );
+        require( graphics.beginGraphicsPipelineFrame( renderer, false ),
+                 "render scale must activate the scene viewport resolve" );
+        renderer->clear( clearColour );
+        graphics.endGraphicsPipelineFrame( renderer );
+        std::vector<unsigned char> scaled( legacy.size() );
+        require( wp_renderer_dx11_copy_render_texture_rgba8( output, scaled.data(), scaled.size() ) &&
+                     scaled == legacy,
+                 "render scale alone must preserve legacy viewport colour and alpha" );
+
         // An explicit project output policy must still run on scene textures,
         // even if the older friendly-name pipeline has tone mapping disabled.
         auto selected = make_ptr<Properties>();
@@ -86,13 +99,13 @@ namespace claw_legacy_output_contracts
         require( graphics.beginGraphicsPipelineFrame( renderer, false ) &&
                      wp_renderer_dx11_is_hdr_scene_active( native ),
                  "explicit project output policy must activate the scene viewport resolve" );
-        renderer->clear( ColourF( .25f, .5f, .75f, 1.f ) );
+        renderer->clear( clearColour );
         graphics.endGraphicsPipelineFrame( renderer );
         std::vector<unsigned char> selectedPixels( legacy.size() );
         require( !wp_renderer_dx11_is_hdr_scene_active( native ) &&
                      wp_renderer_dx11_copy_render_texture_rgba8(
                          output, selectedPixels.data(), selectedPixels.size() ) &&
-                     selectedPixels[0] > legacy[0] + 20 && selectedPixels[3] == 255,
+                     selectedPixels[0] > legacy[0] + 20 && selectedPixels[3] == legacy[3],
                  "explicit linear output policy must reach scene texture pixels" );
 
         // Returning to a legacy project must also discard the previous project's

@@ -1391,6 +1391,23 @@ namespace workphone
             {
                 pipeline->setFrameDeltaTime( deltaTime );
             }
+            m_framePipelineSettings = dx11 && m_graphicsPipeline ? m_graphicsPipeline->getProperties()
+                                                                : nullptr;
+            if( !m_framePipelineSettings ||
+                !m_framePipelineSettings->getPropertyAsBool( "graphics.dynamicResolution" ) )
+            {
+                m_adaptiveSceneScale = 1.0f;
+            }
+            else if( m_frameSimulationEnabled && std::isfinite( deltaTime ) && deltaTime > 0.0f )
+            {
+                const auto fps = std::max( 15, m_framePipelineSettings->getPropertyAsInt(
+                                                   "graphics.frameRateLimit", 60 ) );
+                if( deltaTime > 1.1f / fps )
+                    m_adaptiveSceneScale = std::max( 0.5f, m_adaptiveSceneScale - 0.0625f );
+                // A paced renderer can recover at its frame-rate limit.
+                else if( deltaTime <= 1.03f / fps )
+                    m_adaptiveSceneScale = std::min( 1.0f, m_adaptiveSceneScale + 0.03125f );
+            }
             const auto activeLayer = []( const IGraphicsCamera::CompositeLayer &layer ) {
                 return layer.enabled && layer.texture &&
                        std::isfinite( layer.opacity ) && layer.opacity > 0.0f;
@@ -2034,38 +2051,49 @@ namespace workphone
                 }
                 m_graphicsPipeline->setCamera( renderer->getCamera().get() );
                 m_graphicsPipeline->setScene( renderer->getCamera()->getCreator().get() );
-                const auto options = m_graphicsPipeline->getProperties();
-                // Legacy scene textures were rendered directly in display space. Only
-                // opt them into the scene resolve when an output policy was selected;
-                // loading an older project must not silently change its viewport colours.
-                const char *outputKeys[] = { "graphics.hdr",
-                                             "graphics.colorSpace",
-                                             "graphics.tonemapping",
-                                             "graphics.antiAliasing",
-                                             "graphics.renderScale",
-                                             "graphics.dynamicResolution",
-                                             "graphics.renderPipeline",
-                                             "graphics.lightingMode",
-                                             "graphics.gi",
-                                             "graphics.postProcessing",
-                                             "graphics.bloom",
-                                             "graphics.motionBlur",
-                                             "graphics.ambientOcclusion" };
-                bool explicitOutput = false;
-                for( auto key : outputKeys )
-                {
-                    explicitOutput |= options->hasProperty( key );
-                }
+                const auto properties = m_frameUpdateActive && m_framePipelineSettings
+                                            ? m_framePipelineSettings
+                                            : m_graphicsPipeline->getProperties();
+                const auto &options = *properties;
+                const bool legacyHdr = renderer->getRenderTarget() == getDefaultWindow() &&
+                                       m_graphicsPipeline->getHdrSettings().m_enableAgxToneMapping;
+                const auto preset = options.getPropertyAsInt( "quality.preset", 4 );
+                const bool hasPreset = preset >= 0 && preset < 4;
+                const bool post = options.getPropertyAsBool( "graphics.postProcessing", true );
+                const bool inheritEffects = hasPreset || options.hasProperty( "graphics.postProcessing" );
+                const auto effect = [&]( const char *key, const char *fallback ) {
+                    return post && options.getPropertyAsBool(
+                                       key, inheritEffects && options.getPropertyAsBool( fallback ) );
+                };
+                const bool bloom = effect( "graphics.bloom", "Bloom" );
+                const bool motionBlur = effect( "graphics.motionBlur", "Motion blur" );
+                const bool ao = effect( "graphics.ambientOcclusion", "Ambient occlusion" );
+                const s32 aa = options.getPropertyAsInt(
+                    "graphics.antiAliasing",
+                    hasPreset && options.getPropertyAsBool( "Temporal anti-aliasing" ) ? 2 : 0 );
+                const s32 pipeline = options.getPropertyAsInt( "graphics.renderPipeline" );
+                const bool localLights = options.hasProperty( "graphics.renderPipeline" ) ||
+                                         options.getPropertyAsInt( "graphics.lightingMode" ) == 3;
+                f32 scale = 1.0f;
+                options.getPropertyValue( "graphics.renderScale", scale );
+                scale *= m_adaptiveSceneScale;
+
+                // Scene textures used display-space output before project colour controls.
+                // Scaling, anti-aliasing and effects can use a resolve without changing that policy.
+                const s32 requestedTone = options.getPropertyAsInt( "graphics.tonemapping", -1 );
+                const bool hdr = options.getPropertyAsBool( "graphics.hdr", legacyHdr || requestedTone > 0 );
+                const s32 linear = options.getPropertyAsInt( "graphics.colorSpace", hdr || legacyHdr ? 1 : 0 );
+                const s32 tone = requestedTone >= 0 ? requestedTone : hdr ? 3 : 0;
+                const bool resolve = hdr || linear != 0 || scale != 1.0f || aa != 0 || bloom ||
+                                     motionBlur || ao || localLights;
+                auto native = wp_renderer_get_dx11( dx11Renderer->getNativeRenderer() );
                 // HDR staging clears its own colour and depth. Accumulation needs
                 // the viewport's retained colour/depth, so draw directly in that case.
-                if( preserveContents ||
-                    ( !explicitOutput && ( renderer->getRenderTarget() != getDefaultWindow() ||
-                                           !m_graphicsPipeline->getHdrSettings().m_enableAgxToneMapping ) ) )
+                if( preserveContents || !resolve )
                 {
                     // A legacy project may follow one with an explicit GPU profile.
                     // Its direct draw path must not inherit that project's light grid
                     // or pipeline state merely because it bypasses the HDR resolve.
-                    auto native = wp_renderer_get_dx11( dx11Renderer->getNativeRenderer() );
                     wp_renderer_dx11_set_scene_sampling( native, 1, 1.f );
                     wp_renderer_dx11_set_pipeline_mode( native, 0, 0 );
                     wp_renderer_dx11_set_post_options( native, 0, 0, 0, 0 );
@@ -2073,59 +2101,20 @@ namespace workphone
                         native, nullptr, 0, nullptr, nullptr, 0, 1, 1, 1, .1f, 1000.f, nullptr );
                     return false;
                 }
-                const bool hdr = !options->hasProperty( "graphics.hdr" ) ||
-                                 options->getPropertyAsBool( "graphics.hdr" );
-                const s32 linear = options->hasProperty( "graphics.colorSpace" )
-                                       ? options->getPropertyAsInt( "graphics.colorSpace" )
-                                       : 1;
-                const s32 tone = options->hasProperty( "graphics.tonemapping" )
-                                     ? options->getPropertyAsInt( "graphics.tonemapping" )
-                                     : 3;
-                const s32 aa = options->getPropertyAsInt( "graphics.antiAliasing" );
                 const s32 samples = aa == 3 ? 2 : aa == 4 ? 4 : aa == 5 ? 8 : 1;
-                f32 scale = 1.0f;
-                options->getPropertyValue( "graphics.renderScale", scale );
-                if( m_frameSimulationEnabled &&
-                    options->getPropertyAsBool( "graphics.dynamicResolution" ) )
-                {
-                    auto app = core::IApplicationManager::instancePtr();
-                    auto timer = app ? app->getTimer() : nullptr;
-                    const auto dt = timer ? timer->getDeltaTime() : 0;
-                    const s32 fps =
-                        std::max( 15, options->getPropertyAsInt( "graphics.frameRateLimit" ) );
-                    if( dt > 1.1 / fps )
-                    {
-                        m_adaptiveSceneScale = std::max( 0.5f, m_adaptiveSceneScale - 0.0625f );
-                    }
-                    else if( dt > 0 && dt < 0.8 / fps )
-                    {
-                        m_adaptiveSceneScale = std::min( 1.0f, m_adaptiveSceneScale + 0.0625f );
-                    }
-                }
-                else if( m_frameSimulationEnabled )
-                {
-                    m_adaptiveSceneScale = 1.0f;
-                }
-                wp_renderer_dx11_set_scene_sampling(
-                    wp_renderer_get_dx11( dx11Renderer->getNativeRenderer() ), samples,
-                    scale * m_adaptiveSceneScale );
-                const bool post = !options->hasProperty( "graphics.postProcessing" ) ||
-                                  options->getPropertyAsBool( "graphics.postProcessing" );
-                auto nativeDx11 = wp_renderer_get_dx11( dx11Renderer->getNativeRenderer() );
-                wp_renderer_dx11_set_pipeline_mode(
-                    nativeDx11, options->getPropertyAsInt( "graphics.renderPipeline" ),
-                    post && options->getPropertyAsBool( "graphics.ambientOcclusion" ) );
-                uploadProjectSceneLights( nativeDx11, renderer->getCamera()->getCreator(),
-                                          renderer->getCamera(), options );
+                wp_renderer_dx11_set_scene_sampling( native, samples, scale );
+                wp_renderer_dx11_set_pipeline_mode( native, pipeline, ao );
+                if( localLights || legacyHdr )
+                    uploadProjectSceneLights( native, renderer->getCamera()->getCreator(),
+                                              renderer->getCamera(), properties );
+                else
+                    wp_renderer_dx11_set_local_lights(
+                        native, nullptr, 0, nullptr, nullptr, 0, 1, 1, 1, .1f, 1000.f, nullptr );
                 wp_renderer_dx11_set_post_options(
-                    wp_renderer_get_dx11( dx11Renderer->getNativeRenderer() ), aa,
-                    post && options->getPropertyAsBool( "graphics.bloom" ),
-                    post && options->getPropertyAsBool( "graphics.motionBlur" ),
+                    native, aa, bloom, motionBlur,
                     static_cast<wp_u64>( reinterpret_cast<uintptr_t>( renderer->getCamera().get() ) ) );
-                wp_renderer_dx11_set_output_options(
-                    wp_renderer_get_dx11( dx11Renderer->getNativeRenderer() ), hdr, linear, tone );
-                return wp_renderer_dx11_begin_hdr_scene(
-                           wp_renderer_get_dx11( dx11Renderer->getNativeRenderer() ), 1.0f ) != 0;
+                wp_renderer_dx11_set_output_options( native, hdr, linear, tone );
+                return wp_renderer_dx11_begin_hdr_scene( native, 1.0f ) != 0;
             }
 
             // The CPU pipeline consumes and presents the software framebuffer.

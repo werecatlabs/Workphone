@@ -475,6 +475,19 @@ local MacRendererNames = { "Auto", "Metal", "Vulkan / MoltenVK", "OpenGL" };
 local IosRendererNames = { "Auto", "Metal", "OpenGL ES" };
 local AndroidRendererNames = { "Auto", "Vulkan", "OpenGL ES" };
 local CpuBroadphaseNames = { "Sweep And Prune", "Dynamic AABB Tree", "Automatic" };
+local GraphicsDropdownOptions = {
+	resolution = { "1920x1080", "1280x720", "2560x1440", "3840x2160", "Device Native", "Custom" },
+	presentMode = { "Auto", "FIFO / VSync", "Mailbox", "Immediate" },
+	renderPipeline = { "Forward", "Forward+", "Deferred", "Mobile Forward" },
+	aa = { "None", "FXAA", "TAA", "MSAA 2x", "MSAA 4x", "MSAA 8x" },
+	colorSpace = { "Gamma", "Linear" },
+	textureFiltering = { "Point", "Bilinear", "Trilinear" },
+	shadowQuality = { "Off", "Low", "Medium", "High", "Ultra" },
+	shadowResolution = { "512", "1024", "2048", "4096" },
+	lightingMode = { "Unlit", "Per Vertex", "Per Pixel", "Clustered" },
+	gi = { "Off", "Baked", "Realtime", "Hybrid" },
+	tonemapping = { "None", "ACES", "Reinhard", "Filmic" },
+};
 
 local function addText(ui, parent, text)
 	local textTypeInfo = IUIText.typeInfo();
@@ -559,6 +572,7 @@ function ProjectSettings:__init(window)
 	self.editorWindow = nil;
 	self.tabBar = nil;
 	self.statusText = nil;
+	self.graphicsStatusText = nil;
 	self.rendererSummaryText = nil;
 	self.settings = {};
 	self.baselineSettings = {};
@@ -567,6 +581,9 @@ function ProjectSettings:__init(window)
 	self.actionLog = {};
 	self.capabilities = {};
 	self.unavailableReasons = {};
+	self.graphicsAvailability = {};
+	self.graphicsUnavailableChoices = {};
+	self.inheritedGraphics = {};
 	self.syncingControls = false;
 	self.statusMessage = "Ready.";
 end
@@ -581,6 +598,7 @@ function ProjectSettings:_clearRefs()
 	self.editorWindow = nil;
 	self.tabBar = nil;
 	self.statusText = nil;
+	self.graphicsStatusText = nil;
 	self.rendererSummaryText = nil;
 	self.controlBindings = {};
 
@@ -641,9 +659,17 @@ function ProjectSettings:setStatus(message)
 	if self.statusText ~= nil then
 		self.statusText:setText(message);
 	end
+	if self.graphicsStatusText ~= nil then
+		self.graphicsStatusText:setText(message);
+	end
 end
 
 function ProjectSettings:readSettingsProperties(properties)
+	if properties:hasProperty("settingsSnapshot") and properties:getPropertyAsBool("settingsSnapshot") then
+		self.graphicsAvailability = {};
+		self.graphicsUnavailableChoices = {};
+		self.inheritedGraphics = {};
+	end
 	if properties:hasProperty("capability.physics.broadphase.gpu") then
 		self.gpuBroadphaseAvailable = properties:getPropertyAsBool("capability.physics.broadphase.gpu");
 	end
@@ -660,14 +686,44 @@ function ProjectSettings:readSettingsProperties(properties)
 		if properties:hasProperty("unavailable." .. map.name) then
 			self.unavailableReasons[key] = properties:getPropertyAsString("unavailable." .. map.name);
 		end
+		if map.name:sub(1, 9) == "graphics." then
+			if properties:hasProperty("availability." .. map.name) then
+				self.graphicsAvailability[key] = properties:getPropertyAsString("availability." .. map.name);
+			end
+			if properties:hasProperty("inherited." .. map.name) then
+				self.inheritedGraphics[key] = properties:getPropertyAsBool("inherited." .. map.name);
+			end
+			local options = GraphicsDropdownOptions[key];
+			if options ~= nil then
+				local choices = self.graphicsUnavailableChoices[key];
+				for index, option in ipairs(options) do
+					local name = map.name .. "." .. (index - 1);
+					if properties:hasProperty("capability." .. name) then
+						choices = choices or {};
+						local available = properties:getPropertyAsBool("capability." .. name);
+						local reason = properties:hasProperty("unavailable." .. name) and
+							properties:getPropertyAsString("unavailable." .. name) or
+							option .. " is unavailable on the current renderer.";
+						choices[index - 1] = not available and reason or nil;
+					end
+				end
+				self.graphicsUnavailableChoices[key] = choices;
+			end
+		end
 	end
 end
 
 function ProjectSettings:writeSettingsProperties(properties, stagedOnly)
+	local function isStaged(key)
+		return self.stagedKeys[key] or self.settings[key] ~= self.baselineSettings[key];
+	end
+	local inheritedCustomEdit = self.settings.resolution == 5 and self.inheritedGraphics.resolution and
+		(isStaged("customWidth") or isStaged("customHeight"));
+	local stageCustomSize = self.settings.resolution == 5 and (isStaged("resolution") or inheritedCustomEdit);
 	for key, map in pairs(ProjectSettingsStoreMap) do
-		local value = self.settings[key];
-		if not stagedOnly or self.stagedKeys[key] or value ~= self.baselineSettings[key] then
-			writeProperty(properties, map.name, value, map.type);
+		if not stagedOnly or isStaged(key) or (inheritedCustomEdit and key == "resolution") or
+			(stageCustomSize and (key == "customWidth" or key == "customHeight")) then
+			writeProperty(properties, map.name, self.settings[key], map.type);
 		end
 	end
 end
@@ -675,6 +731,9 @@ end
 function ProjectSettings:loadSettings()
 	self.capabilities = {};
 	self.unavailableReasons = {};
+	self.graphicsAvailability = {};
+	self.graphicsUnavailableChoices = {};
+	self.inheritedGraphics = {};
 	self.gpuBroadphaseAvailable = false;
 	self.gpuBroadphaseOption = nil;
 	for key, defaultValue in pairs(ProjectSettingsDefaults) do
@@ -694,6 +753,11 @@ function ProjectSettings:addHeader(ui, tab, label)
 	header:setLabel(label);
 	tab:addChild(header);
 	return header;
+end
+
+function ProjectSettings:addGraphicsDropdown(ui, parent, label, elementId, key)
+	return self:bind(addDropdown(ui, parent, label, elementId, GraphicsDropdownOptions[key],
+		self.settings[key]), key, "dropdown");
 end
 
 function ProjectSettings:load()
@@ -772,49 +836,39 @@ function ProjectSettings:load()
 	self.rendererSummaryText = addText(ui, profilesHeader, "Renderer summary will appear here.");
 
 	-- Graphics -------------------------------------------------------------
+	self.graphicsStatusText = addText(ui, graphicsTab, self.statusMessage);
 	local displayHeader = self:addHeader(ui, graphicsTab, "Display");
-	addText(ui, displayHeader, "Display and render policies apply live. Device/API changes apply on next launch.");
-	self:bind(addDropdown(ui, displayHeader, "Resolution", ProjectSettingsTypes.Resolution,
-		{ "1920x1080", "1280x720", "2560x1440", "3840x2160", "Device Native", "Custom" }, self.settings.resolution), "resolution", "dropdown");
+	addText(ui, displayHeader, "Select Custom to edit the window dimensions. Present Mode overrides VSync unless set to Auto.");
+	self:addGraphicsDropdown(ui, displayHeader, "Resolution", ProjectSettingsTypes.Resolution, "resolution");
 	self:bind(addSlider(ui, displayHeader, "Custom Width", ProjectSettingsTypes.CustomWidth, 320.0, 8192.0, self.settings.customWidth), "customWidth", "intSlider");
 	self:bind(addSlider(ui, displayHeader, "Custom Height", ProjectSettingsTypes.CustomHeight, 200.0, 8192.0, self.settings.customHeight), "customHeight", "intSlider");
 	self:bind(addToggle(ui, displayHeader, "Fullscreen", ProjectSettingsTypes.Fullscreen, self.settings.fullscreen), "fullscreen", "toggle");
 	self:bind(addToggle(ui, displayHeader, "VSync", ProjectSettingsTypes.VSync, self.settings.vsync), "vsync", "toggle");
 	self:bind(addSlider(ui, displayHeader, "Frame Rate Limit", ProjectSettingsTypes.FrameRateLimit, 15.0, 240.0, self.settings.frameRateLimit), "frameRateLimit", "intSlider");
 	self:bind(addSlider(ui, displayHeader, "Render Scale", ProjectSettingsTypes.RenderScale, 0.25, 2.0, self.settings.renderScale), "renderScale", "floatSlider");
-	self:bind(addDropdown(ui, displayHeader, "Present Mode", ProjectSettingsTypes.PresentMode,
-		{ "Auto", "FIFO / VSync", "Mailbox", "Immediate" }, self.settings.presentMode), "presentMode", "dropdown");
+	self:addGraphicsDropdown(ui, displayHeader, "Present Mode", ProjectSettingsTypes.PresentMode, "presentMode");
 
 	local renderingHeader = self:addHeader(ui, graphicsTab, "Rendering");
-	self:bind(addDropdown(ui, renderingHeader, "Render Pipeline", ProjectSettingsTypes.RenderPipeline,
-		{ "Forward", "Forward+", "Deferred", "Mobile Forward" }, self.settings.renderPipeline), "renderPipeline", "dropdown");
-	self:bind(addDropdown(ui, renderingHeader, "Anti-Aliasing", ProjectSettingsTypes.AntiAliasing,
-		{ "None", "FXAA", "TAA", "MSAA 2x", "MSAA 4x", "MSAA 8x" }, self.settings.aa), "aa", "dropdown");
+	self:addGraphicsDropdown(ui, renderingHeader, "Render Pipeline", ProjectSettingsTypes.RenderPipeline, "renderPipeline");
+	self:addGraphicsDropdown(ui, renderingHeader, "Anti-Aliasing", ProjectSettingsTypes.AntiAliasing, "aa");
 	self:bind(addToggle(ui, renderingHeader, "Dynamic Resolution", ProjectSettingsTypes.DynamicResolution, self.settings.dynamicResolution), "dynamicResolution", "toggle");
 	self:bind(addToggle(ui, renderingHeader, "HDR", ProjectSettingsTypes.HDR, self.settings.hdr), "hdr", "toggle");
-	self:bind(addDropdown(ui, renderingHeader, "Color Space", ProjectSettingsTypes.ColorSpace,
-		{ "Gamma", "Linear" }, self.settings.colorSpace), "colorSpace", "dropdown");
-	self:bind(addDropdown(ui, renderingHeader, "Texture Filtering", ProjectSettingsTypes.TextureFiltering,
-		{ "Point", "Bilinear", "Trilinear" }, self.settings.textureFiltering), "textureFiltering", "dropdown");
+	self:addGraphicsDropdown(ui, renderingHeader, "Color Space", ProjectSettingsTypes.ColorSpace, "colorSpace");
+	self:addGraphicsDropdown(ui, renderingHeader, "Texture Filtering", ProjectSettingsTypes.TextureFiltering, "textureFiltering");
 	self:bind(addSlider(ui, renderingHeader, "Anisotropy", ProjectSettingsTypes.Anisotropy, 1.0, 16.0, self.settings.anisotropy), "anisotropy", "intSlider");
 
 	local lightingHeader = self:addHeader(ui, graphicsTab, "Lighting / Shadows / Post FX");
-	self:bind(addDropdown(ui, lightingHeader, "Shadow Quality", ProjectSettingsTypes.ShadowQuality,
-		{ "Off", "Low", "Medium", "High", "Ultra" }, self.settings.shadowQuality), "shadowQuality", "dropdown");
+	self:addGraphicsDropdown(ui, lightingHeader, "Shadow Quality", ProjectSettingsTypes.ShadowQuality, "shadowQuality");
 	self:bind(addSlider(ui, lightingHeader, "Shadow Distance", ProjectSettingsTypes.ShadowDistance, 0.0, 300.0, self.settings.shadowDistance), "shadowDistance", "floatSlider");
-	self:bind(addDropdown(ui, lightingHeader, "Shadow Resolution", ProjectSettingsTypes.ShadowResolution,
-		{ "512", "1024", "2048", "4096" }, self.settings.shadowResolution), "shadowResolution", "dropdown");
-	self:bind(addDropdown(ui, lightingHeader, "Lighting Mode", ProjectSettingsTypes.LightingMode,
-		{ "Unlit", "Per Vertex", "Per Pixel", "Clustered" }, self.settings.lightingMode), "lightingMode", "dropdown");
-	self:bind(addDropdown(ui, lightingHeader, "Global Illumination", ProjectSettingsTypes.GI,
-		{ "Off", "Baked", "Realtime", "Hybrid" }, self.settings.gi), "gi", "dropdown");
+	self:addGraphicsDropdown(ui, lightingHeader, "Shadow Resolution", ProjectSettingsTypes.ShadowResolution, "shadowResolution");
+	self:addGraphicsDropdown(ui, lightingHeader, "Lighting Mode", ProjectSettingsTypes.LightingMode, "lightingMode");
+	self:addGraphicsDropdown(ui, lightingHeader, "Global Illumination", ProjectSettingsTypes.GI, "gi");
 	self:bind(addToggle(ui, lightingHeader, "Reflection Probes", ProjectSettingsTypes.ReflectionProbes, self.settings.reflectionProbes), "reflectionProbes", "toggle");
 	self:bind(addToggle(ui, lightingHeader, "Post Processing", ProjectSettingsTypes.PostProcessing, self.settings.postProcessing), "postProcessing", "toggle");
 	self:bind(addToggle(ui, lightingHeader, "Bloom", ProjectSettingsTypes.Bloom, self.settings.bloom), "bloom", "toggle");
 	self:bind(addToggle(ui, lightingHeader, "Motion Blur", ProjectSettingsTypes.MotionBlur, self.settings.motionBlur), "motionBlur", "toggle");
 	self:bind(addToggle(ui, lightingHeader, "Ambient Occlusion", ProjectSettingsTypes.AmbientOcclusion, self.settings.ambientOcclusion), "ambientOcclusion", "toggle");
-	self:bind(addDropdown(ui, lightingHeader, "Tonemapping", ProjectSettingsTypes.Tonemapping,
-		{ "None", "ACES", "Reinhard", "Filmic" }, self.settings.tonemapping), "tonemapping", "dropdown");
+	self:addGraphicsDropdown(ui, lightingHeader, "Tonemapping", ProjectSettingsTypes.Tonemapping, "tonemapping");
 
 	-- Quality / assets -----------------------------------------------------
 	local qualityHeader = self:addHeader(ui, qualityTab, "Quality Presets");
@@ -1037,8 +1091,12 @@ end
 
 function ProjectSettings:syncFromControls()
 	for _, binding in ipairs(self.controlBindings) do
-		if binding.control ~= nil and self.capabilities[binding.key] ~= false then
-			self.settings[binding.key] = self:getControlValue(binding.control, binding.kind);
+		if binding.control ~= nil and self:bindingBlockReason(binding.key) == nil then
+			local value = self:getControlValue(binding.control, binding.kind);
+			local unavailableChoices = self.graphicsUnavailableChoices[binding.key];
+			if unavailableChoices == nil or unavailableChoices[value] == nil then
+				self.settings[binding.key] = value;
+			end
 		end
 	end
 end
@@ -1051,21 +1109,58 @@ function ProjectSettings:rememberSettingsBaseline()
 		self.baselineSettings[key] = value;
 	end
 	self.stagedKeys = {};
+	for _, binding in ipairs(self.controlBindings) do
+		if self.inheritedGraphics[binding.key] then self:updateControlAvailability(binding); end
+	end
+end
+
+function ProjectSettings:bindingBlockReason(key)
+	if self.capabilities[key] == false then
+		return self.unavailableReasons[key] or "This setting is unavailable in the current Editor build.";
+	end
+	if (key == "customWidth" or key == "customHeight") and self.settings.resolution ~= 5 then
+		return "Select Custom resolution to change the window dimensions.";
+	end
+	if key == "vsync" and self.settings.presentMode ~= 0 then
+		return "Set Present Mode to Auto to change VSync independently.";
+	end
+	return nil;
+end
+
+function ProjectSettings:updateControlAvailability(binding)
+	local key = binding.key;
+	local enabled = self:bindingBlockReason(key) == nil;
+	local suffix = "";
+	if self.capabilities[key] == false then
+		suffix = " (Unavailable)";
+	elseif not enabled then
+		suffix = key == "vsync" and " (Present Mode)" or " (Custom only)";
+	elseif GraphicsDropdownOptions[key] ~= nil and self.inheritedGraphics[key] and
+		not self.stagedKeys[key] and self.settings[key] == self.baselineSettings[key] then
+		suffix = " (Inherited)";
+	end
+	binding.control:setEnabled(enabled, false);
+	binding.control:setLabel(binding.label .. suffix);
 end
 
 function ProjectSettings:syncToControls()
 	self.syncingControls = true;
 	self:updateBroadphaseOptions();
 	for _, binding in ipairs(self.controlBindings) do
-		local value = self.settings[binding.key];
-		self:setControlValue(binding.control, binding.kind, value);
-		local available = self.capabilities[binding.key] ~= false;
-		binding.control:setEnabled(available, false);
-		local suffix = "";
-		if not available then
-			suffix = " (Unavailable)";
+		local key = binding.key;
+		local options = GraphicsDropdownOptions[key];
+		local unavailableChoices = self.graphicsUnavailableChoices[key];
+		if options ~= nil and (unavailableChoices ~= nil or binding.annotatedChoices) then
+			local choices = Parameters();
+			for index, option in ipairs(options) do
+				choices:push_back(option .. (unavailableChoices and unavailableChoices[index - 1] and
+					" (Unavailable)" or ""));
+			end
+			binding.control:setOptions(choices:getAsStringArray());
+			binding.annotatedChoices = unavailableChoices ~= nil;
 		end
-		binding.control:setLabel(binding.label .. suffix);
+		self:setControlValue(binding.control, binding.kind, self.settings[key]);
+		self:updateControlAvailability(binding);
 	end
 	self.syncingControls = false;
 	self:updateRendererSummary();
@@ -1173,7 +1268,8 @@ function ProjectSettings:applyPlatformProfile(platform)
 	end
 
 	for key, value in pairs(profile) do
-		if self.capabilities[key] ~= false then
+		local unavailableChoices = self.graphicsUnavailableChoices[key];
+		if self.capabilities[key] ~= false and (unavailableChoices == nil or unavailableChoices[value] == nil) then
 			self.settings[key] = value;
 			self.stagedKeys[key] = true;
 		end
@@ -1188,7 +1284,8 @@ end
 
 function ProjectSettings:resetToDefaults()
 	for key, value in pairs(ProjectSettingsDefaults) do
-		if self.capabilities[key] ~= false then
+		local unavailableChoices = self.graphicsUnavailableChoices[key];
+		if self.capabilities[key] ~= false and (unavailableChoices == nil or unavailableChoices[value] == nil) then
 			self.settings[key] = value;
 			self.stagedKeys[key] = true;
 		end
@@ -1285,6 +1382,13 @@ function ProjectSettings:performAction(action, updateStatus)
 	end
 	local success = request:getPropertyAsBool("success");
 	if success then
+		if stagedOnly then
+			for key, map in pairs(ProjectSettingsStoreMap) do
+				if self.inheritedGraphics[key] and request:hasProperty(map.name) then
+					self.inheritedGraphics[key] = nil;
+				end
+			end
+		end
 		self:readSettingsProperties(request);
 		self:syncToControls();
 		if stagedOnly or action == "reloadRenderer" or action == "readProjectSettings" or
@@ -1297,6 +1401,9 @@ function ProjectSettings:performAction(action, updateStatus)
 				if request:hasProperty(included) and request:getPropertyAsBool(included) then
 					self.stagedKeys[key] = true;
 				end
+			end
+			for _, binding in ipairs(self.controlBindings) do
+				if self.inheritedGraphics[binding.key] then self:updateControlAvailability(binding); end
 			end
 		end
 	end
@@ -1360,15 +1467,34 @@ function ProjectSettings:handleControlChanged(sender)
 	local senderId = sender:getElementId();
 	for _, binding in ipairs(self.controlBindings) do
 		if binding.control:getElementId() == senderId then
-			if self.capabilities[binding.key] == false then
-				self:setStatus(self.unavailableReasons[binding.key] or "This setting is unavailable in the current Editor build.");
+			local key = binding.key;
+			local value = self:getControlValue(binding.control, binding.kind);
+			local unavailableChoices = self.graphicsUnavailableChoices[key];
+			local reason = self:bindingBlockReason(key) or (unavailableChoices and unavailableChoices[value]);
+			if reason ~= nil then
+				self:setStatus(reason);
 				self:syncToControls();
 				return;
+			end
+			if GraphicsDropdownOptions[key] ~= nil and self.inheritedGraphics[key] and
+				value == self.settings[key] and value == self.baselineSettings[key] then
+				-- Choosing the inherited entry explicitly overrides the renderer's fallback.
+				self.stagedKeys[key] = true;
 			end
 			self:syncFromControls();
 			self:updateBroadphaseOptions();
 			self:updateRendererSummary();
-			self:setStatus("Unsaved changes. Apply updates the current project; Save writes the project file.");
+			self:updateControlAvailability(binding);
+			if key == "resolution" or key == "presentMode" then
+				for _, entry in ipairs(self.controlBindings) do
+					if entry.key == "customWidth" or entry.key == "customHeight" or entry.key == "vsync" then
+						self:updateControlAvailability(entry);
+					end
+				end
+			end
+			local availability = self.graphicsAvailability[key];
+			self:setStatus("Unsaved changes. " .. (availability or
+				"Apply updates the current project; Save writes the project file."));
 			return;
 		end
 	end

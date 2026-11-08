@@ -334,7 +334,9 @@ namespace workphone::core
             createScene();
             if( auto profile = applicationManager->getPlayerSettings() )
             {
-                if( profile->hasProperty( "graphics.gi" ) && !applicationManager->getProjectPath().empty() )
+                // The Editor restores GI once its project scene is ready.
+                if( !applicationManager->isEditor() && profile->hasProperty( "graphics.gi" ) &&
+                    !applicationManager->getProjectPath().empty() )
                 {
                     String error;
                     if( !applyProjectIrradianceSettings( profile, applicationManager->getProjectPath(), error ) )

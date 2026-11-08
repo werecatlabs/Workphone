@@ -3807,6 +3807,19 @@ namespace workphone::editor
                  eventValue == scene::IGameManager::sceneUnloadedHash )
         {
             m_application->m_removeUnusedResources = true;
+            if( eventValue == scene::IGameManager::sceneLoadedHash )
+            {
+                const auto manager = applicationManager->getGameManager();
+                const auto currentScene = manager ? manager->getCurrentScene() : nullptr;
+                const auto profile = applicationManager->getPlayerSettings();
+                if( currentScene && currentScene.get() == sender.get() && profile &&
+                    profile->getPropertyAsInt( "graphics.gi" ) != 0 )
+                {
+                    String error;
+                    if( !applyProjectIrradianceSettings( profile, applicationManager->getProjectPath(), error ) )
+                        WP_LOG_ERROR( error );
+                }
+            }
         }
         else if( eventValue == IEvent::addActor )
         {
