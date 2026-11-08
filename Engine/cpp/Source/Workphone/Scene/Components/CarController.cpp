@@ -15,12 +15,15 @@
 #include <Workphone/Interface/Physics/IRaycastHit.hpp>
 #include <Workphone/Interface/Physics/IRigidDynamic3.hpp>
 #include <Workphone/Interface/Physics/IPhysicsScene3.hpp>
+#include <Workphone/Interface/System/ITask.hpp>
+#include <Workphone/Interface/System/ITaskManager.hpp>
 #include <Workphone/Interface/System/ITimer.hpp>
 #include <Workphone/Interface/Vehicle/IVehicle.hpp>
 #include <Workphone/Interface/Vehicle/IDriveTrain.hpp>
 #include <Workphone/Interface/Vehicle/IVehicleManager.hpp>
 #include <Workphone/Interface/Vehicle/IWheelComponent.hpp>
 #include <Workphone/Core/LogManager.hpp>
+#include <Workphone/Thread/ScopedLock.hpp>
 #include "CarControllerInput.hpp"
 
 namespace workphone::scene
@@ -32,9 +35,65 @@ namespace workphone::scene
     const String CarController::suspensionTravelStr = "suspensionTravel";
     const String CarController::dampingStr = "damping";
     const String CarController::driveTypeStr = "Drive Type";
+    const String CarController::handlingPresetStr = "Handling Preset";
 
     const Array<String> CarController::driveTypesEnumTypes = Array<String>(
         { "All Wheel Drive", "Four Wheel Drive", "Rear Wheel Drive", "Front Wheel Drive" } );
+
+    namespace
+    {
+        struct AxleTune
+        {
+            f32 springRate;
+            f32 peakFriction;
+            f32 lateralStiffness;
+            f32 brakeTorque;
+        };
+
+        struct HandlingTune
+        {
+            const char *name;
+            VehicleDriveType driveType;
+            f32 mass;
+            f32 damping;
+            f32 frontWeight;
+            f32 steeringLock;
+            f32 steeringRate;
+            f32 steeringAcceleration;
+            f32 longitudinalStiffness;
+            f32 torque;
+            f32 power;
+            f32 torqueRpm;
+            f32 powerRpm;
+            AxleTune front;
+            AxleTune rear;
+        };
+
+        // Keep indices stable for scenes. Legacy matches the untuned backend.
+        // Road cars have a small rear grip reserve; the race car carries more
+        // grip and spring rate at both axles. Use the same authored wheel geometry.
+        constexpr HandlingTune handlingTunes[] = {
+            { "Legacy", VehicleDriveType::AllWheelDrive, 1370, 1000, .50f, 50, 0, 0, 80000,
+              664, 317000, 4000, 5000, { 5000, 1.10f, 60000, 8000 }, { 5000, 1.10f, 60000, 8000 } },
+            { "FWD Hot Hatch", VehicleDriveType::FrontWheelDrive, 1200, 2600, .58f, 34, 105, 10, 75000,
+              205, 120000, 4300, 6300, { 29000, 1.00f, 75000, 1950 }, { 24000, 1.04f, 79000, 1150 } },
+            { "RWD Road Sport", VehicleDriveType::RearWheelDrive, 1370, 3200, .51f, 32, 120, 11.1f, 90000,
+              325, 205000, 4800, 6500, { 42000, 1.10f, 89000, 2300 }, { 38000, 1.13f, 93000, 1500 } },
+            { "AWD Performance", VehicleDriveType::AllWheelDrive, 1520, 3500, .55f, 32, 105, 11.2f, 100000,
+              425, 270000, 4500, 6500, { 47000, 1.13f, 92000, 2450 }, { 42000, 1.16f, 99000, 1600 } },
+            { "RWD GT Race", VehicleDriveType::RearWheelDrive, 1300, 4400, .50f, 29, 145, 13.3f, 130000,
+              520, 360000, 5500, 7200, { 86000, 1.35f, 130000, 3100 }, { 78000, 1.40f, 140000, 2100 } }
+        };
+
+        SmartPtr<ITask> handlingPhysicsTask()
+        {
+            auto app = core::IApplicationManager::instancePtr();
+            auto tasks = app ? app->getTaskManager() : nullptr;
+            return tasks && Thread::getCurrentTask() != TaskId::Physics
+                       ? tasks->getTask( TaskId::Physics )
+                       : nullptr;
+        }
+    }  // namespace
 
     CarController::CarController() = default;
 
@@ -71,6 +130,10 @@ namespace workphone::scene
                 }
                 vehicleController->setVehicleCallback( m_vehicleCallback );
                 vehicleController->setDisplayDebugData( true );
+                if( hasHandlingPreset() )
+                {
+                    applyHandlingConfiguration();
+                }
 
                 auto vehicleManager = applicationManager->getVehicleManager();
                 if( vehicleManager )
@@ -362,7 +425,7 @@ namespace workphone::scene
                     vehicle->setChannel( s32( vehicle::IVehicle::Input::THROTTLE ), throttle );
                     vehicle->setChannel( s32( vehicle::IVehicle::Input::BRAKE ), brake );
                     float steering = getSteering();
-                    if( m_playerControls.load() && m_chassis )
+                    if( !hasHandlingPreset() && m_playerControls.load() && m_chassis )
                     {
                         auto front = vehicle->getWheelController( 0 );
                         auto rear = vehicle->getWheelController( 2 );
@@ -974,6 +1037,15 @@ namespace workphone::scene
     {
         if( auto properties = VehicleController::getProperties() )
         {
+            static const auto presetNames = [] {
+                Array<String> names;
+                for( const auto &tune : handlingTunes )
+                {
+                    names.emplace_back( tune.name );
+                }
+                return names;
+            }();
+            properties->setPropertyAsEnum( handlingPresetStr, m_handlingPreset, presetNames );
             properties->setProperty( radiusStr, m_radius );
             properties->setProperty( suspensionTravelStr, m_suspensionTravel );
             properties->setProperty( dampingStr, m_damping );
@@ -990,6 +1062,26 @@ namespace workphone::scene
 
     void CarController::setProperties( SmartPtr<Properties> properties )
     {
+        if( !properties )
+        {
+            return;
+        }
+
+        auto preset = m_handlingPreset;
+        const bool hasPreset = properties->getPropertyValue( handlingPresetStr, preset );
+        const bool validPreset =
+            hasPreset && preset >= 0 && preset < static_cast<s32>( std::size( handlingTunes ) );
+        // Inspector changes seed defaults. Saved snapshots already contain the
+        // resolved settings and may include manual overrides.
+        const bool applyDefaults =
+            validPreset && properties->getPropertyObject( handlingPresetStr )
+                                   .getAttribute( "applyHandlingPreset" ) == "true";
+        const bool wasPreset = hasHandlingPreset();
+        const bool updatePhysics = wasPreset || ( validPreset && preset != 0 );
+        const auto physicsTask = updatePhysics && m_vehicleController ? handlingPhysicsTask() : nullptr;
+        ScopedLock physicsLock( physicsTask );
+        const auto previousRadius = m_radius;
+        const auto previousTravel = m_suspensionTravel;
         VehicleController::setProperties( properties );
 
         properties->getPropertyValue( radiusStr, m_radius );
@@ -998,10 +1090,133 @@ namespace workphone::scene
         properties->getPropertyValue( "Visual Steering Sign", m_visualSteeringSign );
         m_visualSteeringSign = m_visualSteeringSign < 0.f ? -1.f : 1.f;
 
-        s32 driveType = 0;
-        properties->getPropertyValue( driveTypeStr, driveType );
+        auto driveType = static_cast<s32>( m_driveType );
+        if( properties->getPropertyValue( driveTypeStr, driveType ) && driveType >= 0 &&
+            driveType < static_cast<s32>( VehicleDriveType::Count ) )
+        {
+            m_driveType = static_cast<VehicleDriveType>( driveType );
+        }
 
-        m_driveType = static_cast<VehicleDriveType>( driveType );
+        if( validPreset )
+        {
+            m_handlingPreset = preset;
+        }
+        if( applyDefaults )
+        {
+            const auto &tune = handlingTunes[m_handlingPreset];
+            setMass( tune.mass );
+            m_driveType = tune.driveType;
+            m_damping = tune.damping;
+            m_visualSteeringSign = hasHandlingPreset() ? -1.f : 1.f;
+            setTireModel( TireModel::Brush );
+        }
+        if( updatePhysics && m_vehicleController )
+        {
+            // Wheel geometry is authored separately. Only push geometry values
+            // to a live rig when their own properties were changed.
+            if( m_radius != previousRadius || m_suspensionTravel != previousTravel )
+            {
+                for( u32 i = 0; i < 4; ++i )
+                {
+                    if( auto wheel = m_vehicleController->getWheelController( i ) )
+                    {
+                        if( m_radius != previousRadius )
+                        {
+                            wheel->setRadius( m_radius );
+                        }
+                        if( m_suspensionTravel != previousTravel )
+                        {
+                            wheel->setSuspensionTravel( m_suspensionTravel );
+                        }
+                    }
+                }
+            }
+            applyHandlingConfiguration();
+        }
+    }
+
+    bool CarController::hasHandlingPreset() const
+    {
+        return m_handlingPreset != 0;
+    }
+
+    void CarController::refreshHandlingPreset()
+    {
+        if( hasHandlingPreset() && m_vehicleController )
+        {
+            const auto physicsTask = handlingPhysicsTask();
+            ScopedLock physicsLock( physicsTask );
+            applyHandlingConfiguration();
+        }
+    }
+
+    void CarController::applyHandlingConfiguration()
+    {
+        auto vehicle = m_vehicleController;
+        const auto &tune = handlingTunes[m_handlingPreset];
+        const bool assisted = hasHandlingPreset();
+        vehicle->setMass( m_mass );
+        vehicle->setDriveType( m_driveType );
+
+        auto wheelbase = m_wheelBase;
+        const auto frontWheel = vehicle->getWheelController( 0 );
+        const auto rearWheel = vehicle->getWheelController( 2 );
+        if( frontWheel && rearWheel )
+        {
+            const auto distance = MathF::Abs( float( frontWheel->getLocalTransform().getPosition().Z() -
+                                                     rearWheel->getLocalTransform().getPosition().Z() ) );
+            if( distance > 0.f )
+            {
+                wheelbase = distance;
+            }
+        }
+        auto controllerProperties = workphone::make_ptr<Properties>();
+        controllerProperties->setProperty( "Keyboard Input", !assisted );
+        controllerProperties->setProperty( "Steering Rate", tune.steeringRate );
+        controllerProperties->setProperty( "Steering Wheelbase", assisted ? wheelbase : 0.f );
+        controllerProperties->setProperty( "Steering Acceleration", tune.steeringAcceleration );
+        controllerProperties->setProperty( "Play Steering Scale", tune.steeringLock );
+        controllerProperties->setProperty( "Edit Steering Scale", assisted ? tune.steeringLock : 70.f );
+        vehicle->setProperties( controllerProperties );
+
+        if( auto drive = vehicle->getDriveTrain() )
+        {
+            drive->setMaxTorque( tune.torque );
+            drive->setMaxPower( tune.power );
+            drive->setTorqueRPM( tune.torqueRpm );
+            drive->setPowerRPM( tune.powerRpm );
+            drive->setMaxRPM( assisted ? tune.powerRpm + 600.f : 6400.f );
+        }
+
+        auto wheelProperties = workphone::make_ptr<Properties>();
+        wheelProperties->setProperty( "Stable Contacts", assisted );
+        wheelProperties->setProperty( "Traction Control", assisted );
+        wheelProperties->setProperty( "Anti Lock Brakes", assisted );
+        wheelProperties->setProperty( "Grip", 1.f );
+        wheelProperties->setProperty( "Longitudinal Stiffness", tune.longitudinalStiffness );
+        for( u32 i = 0; i < 4; ++i )
+        {
+            if( auto wheel = vehicle->getWheelController( i ) )
+            {
+                const bool front = i < 2;
+                const auto &axle = front ? tune.front : tune.rear;
+                const bool driven = m_driveType == VehicleDriveType::AllWheelDrive ||
+                                    m_driveType == VehicleDriveType::FourWheelDrive ||
+                                    m_driveType == ( front ? VehicleDriveType::FrontWheelDrive
+                                                           : VehicleDriveType::RearWheelDrive );
+                wheel->setPoweredWheel( driven );
+                wheel->setSpringRate( axle.springRate );
+                wheel->setDamping( m_damping );
+                const auto axleWeight = front ? tune.frontWeight : 1.f - tune.frontWeight;
+                wheelProperties->setProperty( "Mass Fraction", axleWeight * .5f );
+                wheelProperties->setProperty( "Static Friction Coefficient", axle.peakFriction );
+                wheelProperties->setProperty( "Sliding Friction Coefficient",
+                                              assisted ? axle.peakFriction * .93f : .90f );
+                wheelProperties->setProperty( "Lateral Stiffness", axle.lateralStiffness );
+                wheelProperties->setProperty( "Brake Friction Torque", axle.brakeTorque );
+                wheel->setProperties( wheelProperties );
+            }
+        }
     }
 
     auto CarController::getChildObjects() const -> Array<SmartPtr<ISharedObject>>

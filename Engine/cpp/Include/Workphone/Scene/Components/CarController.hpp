@@ -302,6 +302,7 @@ namespace workphone
             static const String dampingStr;
             static const String driveTypeStr;
             static const Array<String> driveTypesEnumTypes;
+            static const String handlingPresetStr;
 
             /**
              * @brief Construct a CarController with default tuning values.
@@ -429,6 +430,11 @@ namespace workphone
              */
             void setDriveType( VehicleDriveType driveType );
 
+            bool hasHandlingPreset() const;
+
+            /** Restore preset tuning after a scene generator configures the vehicle geometry. */
+            void refreshHandlingPreset();
+
             WP_CLASS_REGISTER_DECL;
 
         protected:
@@ -492,6 +498,10 @@ namespace workphone
             Array<real_Num> m_wheelSpinAngles;  ///< Accumulated visual wheel spin in radians
             Array<Quaternion<real_Num>>
                 m_wheelBaseOrientations;  ///< Authored local wheel orientations before animation
+
+        private:
+            void applyHandlingConfiguration();
+            s32 m_handlingPreset = 0;
         };
     }  // namespace scene
 }  // namespace workphone

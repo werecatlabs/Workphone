@@ -4,6 +4,7 @@
 #include <WPVehiclePhysics/WheelControllerBrush.hpp>
 #include <boost/test/unit_test.hpp>
 #include <chrono>
+#include <cmath>
 #include <thread>
 #include <functional>
 
@@ -652,7 +653,7 @@ BOOST_AUTO_TEST_CASE( physics_test_scene_vehicle_moves_under_gravity )
                        static_cast<real_Num>( 0.01 ) );
 }
 
-BOOST_AUTO_TEST_CASE( physics_loaded_vehicle_drives_and_updates_smooth_transform )
+static void checkLoadedVehicleDrive( s32 preset )
 {
     TestGuard guard( true );
     BOOST_REQUIRE( guard.isAvailable );
@@ -708,7 +709,22 @@ BOOST_AUTO_TEST_CASE( physics_loaded_vehicle_drives_and_updates_smooth_transform
     // Keep the vehicle away from the falling cube in the physics fixture.
     guard.sceneManager->edit();
     drainSceneWork( guard );
-    actor->setPosition( Vector3<real_Num>( 50.0f, 6.3f, 50.0f ) );
+    if( preset != 0 )
+    {
+        auto properties = car->getProperties();
+        auto &selection = properties->getPropertyObject( scene::CarController::handlingPresetStr );
+        selection.setValue( StringUtil::toString( preset ) );
+        selection.setAttribute( "applyHandlingPreset", "true" );
+        car->setProperties( properties );
+
+        // Leave enough clearance for the suspension to settle on the wheels.
+        auto collision = actor->getComponent<scene::CollisionBox>();
+        BOOST_REQUIRE( collision );
+        const auto extents = collision->getExtents();
+        collision->setExtents( Vector3<real_Num>( extents.X(), 0.15f, extents.Z() ) );
+        car->setControls( 0.0f, 0.0f, 0.0f );
+    }
+    actor->setPosition( Vector3<real_Num>( 50.0f, preset == 0 ? 6.3f : 0.65f, 50.0f ) );
     actor->getTransform()->update();
     rigidbody->updateTransform();
 
@@ -719,46 +735,100 @@ BOOST_AUTO_TEST_CASE( physics_loaded_vehicle_drives_and_updates_smooth_transform
     auto vehicle = car->getVehicleController();
     BOOST_REQUIRE( vehicle );
     BOOST_REQUIRE( vehicle->getState() == vehicle::IVehicle::State::PLAY );
-    car->setControls( 1.0f, 0.0f, 0.0f );
-    vehicle->setChannel( static_cast<s32>( vehicle::IVehicle::Input::THROTTLE ), 1.0f );
     const auto initialPosition = body->getTransform().getPosition();
     auto physicsScene = guard.physicsManager->getPhysicsScene();
     auto timer = workphone::dynamic_pointer_cast<TimerMT>( guard.timer );
     BOOST_REQUIRE( timer );
     timer->reset( timer->getTime() );
     guard.addCleanup( [timer]() mutable { timer->reset( timer->getTime() ); } );
-    for( u32 step = 0; step < 240; ++step )
-    {
-        Thread::setCurrentTask( TaskId::Physics );
-        timer->update( 1.0 / 60.0 );
-        physicsScene->update();
-        vehicleManager->update();
-        Thread::setCurrentTask( guard.sceneManager->getStateTask() );
-        timer->update( 1.0 / 60.0 );
-        guard.sceneManager->preUpdate();
-        guard.sceneManager->update();
-        guard.sceneManager->postUpdate();
-        if( guard.sceneManager->getSceneTask() != guard.sceneManager->getStateTask() )
+    const auto advance = [&]( u32 steps ) {
+        for( u32 step = 0; step < steps; ++step )
         {
-            Thread::setCurrentTask( guard.sceneManager->getSceneTask() );
+            Thread::setCurrentTask( TaskId::Physics );
+            timer->update( 1.0 / 60.0 );
+            physicsScene->update();
+            vehicleManager->update();
+            Thread::setCurrentTask( guard.sceneManager->getStateTask() );
+            timer->update( 1.0 / 60.0 );
+            guard.sceneManager->preUpdate();
+            guard.sceneManager->update();
+            guard.sceneManager->postUpdate();
+            if( guard.sceneManager->getSceneTask() != guard.sceneManager->getStateTask() )
+            {
+                Thread::setCurrentTask( guard.sceneManager->getSceneTask() );
+                timer->update( 1.0 / 60.0 );
+                guard.sceneManager->preUpdate();
+                guard.sceneManager->update();
+                guard.sceneManager->postUpdate();
+            }
+            Thread::setCurrentTask( TaskId::Render );
             timer->update( 1.0 / 60.0 );
             guard.sceneManager->preUpdate();
             guard.sceneManager->update();
             guard.sceneManager->postUpdate();
         }
-        Thread::setCurrentTask( TaskId::Render );
-        timer->update( 1.0 / 60.0 );
-        guard.sceneManager->preUpdate();
-        guard.sceneManager->update();
-        guard.sceneManager->postUpdate();
+        guard.setupThread();
+    };
+
+    if( preset == 0 )
+    {
+        car->setControls( 1.0f, 0.0f, 0.0f );
+        vehicle->setChannel( static_cast<s32>( vehicle::IVehicle::Input::THROTTLE ), 1.0f );
+        advance( 240 );
     }
-    guard.setupThread();
+    else
+    {
+        const auto frontWheel = dynamic_pointer_cast<WheelControllerBrush>( vehicle->getWheelController( 0 ) );
+        BOOST_REQUIRE( frontWheel );
+        const auto speed = [&body]() {
+            const auto velocity = body->getLinearVelocity();
+            return std::hypot( velocity.X(), velocity.Z() );
+        };
+
+        advance( 60 );
+        BOOST_REQUIRE( frontWheel->isGrounded() );
+        BOOST_REQUIRE_GT( frontWheel->getNormalForce(), 0 );
+        const auto settledSpeed = speed();
+
+        car->setControls( 1.0f, 0.0f, 0.0f );
+        advance( 120 );
+        BOOST_REQUIRE_GT( speed(), settledSpeed + 1.0f );
+
+        const auto straightAhead = body->getTransform().forward();
+        car->setControls( 0.4f, 0.0f, 0.25f );
+        advance( 45 );
+        BOOST_CHECK_GT( std::abs( frontWheel->getSteeringAngle() ), 1.0f );
+        const auto turnedAhead = body->getTransform().forward();
+        BOOST_CHECK_GT( std::abs( straightAhead.crossProduct( turnedAhead ).Y() ), 0.015f );
+
+        const auto speedBeforeBrake = speed();
+        car->setControls( 0.0f, 1.0f, 0.0f );
+        advance( 60 );
+        BOOST_CHECK_LT( speed(), speedBeforeBrake );
+    }
+
     const auto finalPosition = body->getTransform().getPosition();
     BOOST_TEST_MESSAGE( "Vehicle position: " << finalPosition.X() << ", " << finalPosition.Y()
                                             << ", " << finalPosition.Z() );
     BOOST_CHECK_GT( ( finalPosition - initialPosition ).length(), 0.1f );
     BOOST_CHECK_GT( Math<real_Num>::Abs( finalPosition.Z() - initialPosition.Z() ), 0.5f );
     BOOST_CHECK_LT( ( actor->getPosition() - finalPosition ).length(), 1.0f );
+}
+
+BOOST_AUTO_TEST_CASE( physics_loaded_vehicle_drives_and_updates_smooth_transform )
+{
+    checkLoadedVehicleDrive( 0 );
+}
+
+BOOST_AUTO_TEST_CASE( physics_car_handling_presets_accelerate_steer_and_brake )
+{
+    for( s32 preset = 1; preset <= 4; ++preset )
+    {
+        BOOST_TEST_CONTEXT( "Handling preset " << preset )
+        {
+            checkLoadedVehicleDrive( preset );
+        }
+    }
 }
 
 BOOST_AUTO_TEST_CASE( physics_box_adds_shape_and_actor )

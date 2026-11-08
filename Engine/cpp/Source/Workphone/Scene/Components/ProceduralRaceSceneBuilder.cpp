@@ -4131,18 +4131,21 @@ namespace workphone::scene::race
         auto vehicle = car->getVehicleController();
         auto body = actor->getComponent<scene::Rigidbody>();
         auto com = vector( config.massProperties.centreOfMass );
-        car->setMass( float( config.massProperties.massKg ) );
-        vehicle->setMass( float( config.massProperties.massKg ) );
-        body->setMass( float( config.massProperties.massKg ) );
+        const bool hasHandlingPreset = car->hasHandlingPreset();
+        if( !hasHandlingPreset )
+        {
+            car->setMass( float( config.massProperties.massKg ) );
+            vehicle->setMass( float( config.massProperties.massKg ) );
+            body->setMass( float( config.massProperties.massKg ) );
+            car->setDriveType( VehicleDriveType::RearWheelDrive );
+            // Brush tyre forces use negative steering yaw. Adapt the rendered wheels.
+            auto visualProperties = car->getProperties();
+            visualProperties->setProperty( "Visual Steering Sign", -1.f );
+            car->setProperties( visualProperties );
+        }
         car->setMOI( { float( config.massProperties.inertia.xx ),
                        float( config.massProperties.inertia.yy ),
                        float( config.massProperties.inertia.zz ) } );
-        car->setDriveType( VehicleDriveType::RearWheelDrive );
-        // Brush tyre forces use negative steering yaw. Adapt only the rendered
-        // wheels; input and vehicle dynamics retain their existing convention.
-        auto visualProperties = car->getProperties();
-        visualProperties->setProperty( "Visual Steering Sign", -1.f );
-        car->setProperties( visualProperties );
         auto controllerProperties = vehicle->getProperties();
         controllerProperties->setProperty( "Keyboard Input", false );
         controllerProperties->setProperty( "Steering Rate", 90.f );
@@ -4224,5 +4227,6 @@ namespace workphone::scene::race
             auto wheelActor = assets.wheels[i];
             wheelActor->setLocalPosition( p );
         }
+        car->refreshHandlingPreset();
     }
 }  // namespace workphone::scene::race

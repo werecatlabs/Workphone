@@ -569,7 +569,11 @@ BOOST_AUTO_TEST_CASE( components_car_input_override_has_one_channel_writer )
         app->setPlaying( previousPlaying );
         app->setPaused( previousPaused );
     } );
-    Thread::setCurrentTask( TaskId::Application );
+    Thread::setCurrentTask( fixture.sceneManager->getSceneTask() );
+    auto timer = dynamic_pointer_cast<TimerMT>( fixture.timer );
+    BOOST_REQUIRE( timer );
+    fixture.addCleanup( [timer]() mutable { timer->reset( timer->getTime() ); } );
+    timer->update( 1.0 / 60.0 );
     fixture.applicationManager->setPlaying( true );
     fixture.applicationManager->setPaused( false );
     const auto throttleChannel = s32( vehicle::IVehicle::Input::THROTTLE );
@@ -669,9 +673,7 @@ BOOST_AUTO_TEST_CASE( components_car_controller_wires_four_wheels_by_drive_type 
     BOOST_REQUIRE( controller );
     BOOST_REQUIRE( controller->getVehicleController() );
     controller->setDriveType( VehicleDriveType::RearWheelDrive );
-    Thread::setCurrentTask( fixture.sceneManager->getSceneTask() );
-    controller->update();
-    fixture.setupThread();
+    controller->refreshWheels();
 
     const std::array<Vector3<real_Num>, 4> expectedPositions = {
         Vector3<real_Num>( -0.905f, 0.0f, -1.265f ), Vector3<real_Num>( 0.905f, 0.0f, -1.265f ),
@@ -689,6 +691,110 @@ BOOST_AUTO_TEST_CASE( components_car_controller_wires_four_wheels_by_drive_type 
         checkClose( wheel->getDamping(), 1000.0f );
         checkVectorClose( wheelActors[i]->getLocalPosition(), expectedPositions[i] );
     }
+
+    fixture.sceneManager->destroyActor( actor );
+}
+
+BOOST_AUTO_TEST_CASE( components_car_controller_handling_presets_apply_and_round_trip )
+{
+    TestGuard fixture;
+    BOOST_REQUIRE( fixture.isAvailable );
+    VehicleFactoryGuard factoryGuard;
+
+    auto actor = fixture.sceneManager->createActor();
+    BOOST_REQUIRE( actor );
+    auto chassis = actor->addComponent<Rigidbody>();
+    BOOST_REQUIRE( chassis );
+
+    std::array<SmartPtr<IGameActor>, 4> wheelActors;
+    std::array<SmartPtr<WheelController>, 4> wheels;
+    for( u32 i = 0; i < wheels.size(); ++i )
+    {
+        wheelActors[i] = fixture.sceneManager->createActor();
+        BOOST_REQUIRE( wheelActors[i] );
+        actor->addChild( wheelActors[i] );
+        wheels[i] = wheelActors[i]->addComponent<WheelController>();
+        BOOST_REQUIRE( wheels[i] );
+    }
+
+    auto controller = actor->addComponent<CarController>();
+    BOOST_REQUIRE( controller );
+    auto vehicle = dynamic_pointer_cast<CCarController>( controller->getVehicleController() );
+    BOOST_REQUIRE( vehicle );
+    controller->refreshWheels();
+
+    for( u32 i = 0; i < wheels.size(); ++i )
+    {
+        BOOST_REQUIRE( wheels[i]->getWheelController() );
+    }
+    const auto authoredWheelPosition = wheelActors[0]->getLocalPosition() +
+                                       Vector3<real_Num>( -0.05f, 0.03f, 0.0f );
+    wheelActors[0]->setLocalPosition( authoredWheelPosition );
+
+    auto original = controller->getProperties();
+    checkEnumProperty( original, CarController::handlingPresetStr, 0 );
+
+    const auto selectPreset = [&]( const String &value ) {
+        auto edited = controller->getProperties();
+        auto &preset = edited->getPropertyObject( CarController::handlingPresetStr );
+        preset.setValue( value );
+        preset.setAttribute( "applyHandlingPreset", "true" );
+        controller->setProperties( edited );
+    };
+    selectPreset( "1" );
+    checkEnumProperty( controller->getProperties(), CarController::handlingPresetStr, 1 );
+    checkClose( chassis->getMass(), 1200.0f );
+    checkClose( vehicle->getMass(), 1200.0f );
+    checkClose( vehicle->getPlaySteeringScale(), 34.0f );
+    BOOST_CHECK( controller->getDriveType() == VehicleDriveType::FrontWheelDrive );
+    for( u32 i = 0; i < wheels.size(); ++i )
+    {
+        auto wheel = wheels[i]->getWheelController();
+        BOOST_CHECK_EQUAL( wheel->isPoweredWheel(), i < 2 );
+        checkClose( wheel->getSpringRate(), i < 2 ? 29000.0f : 24000.0f );
+        checkClose( wheel->getDamping(), 2600.0f );
+    }
+
+    selectPreset( "4" );
+    checkEnumProperty( controller->getProperties(), CarController::handlingPresetStr, 4 );
+    checkClose( chassis->getMass(), 1300.0f );
+    checkClose( vehicle->getMass(), 1300.0f );
+    checkClose( vehicle->getPlaySteeringScale(), 29.0f );
+    BOOST_CHECK( controller->getDriveType() == VehicleDriveType::RearWheelDrive );
+    for( u32 i = 0; i < wheels.size(); ++i )
+    {
+        auto wheel = wheels[i]->getWheelController();
+        BOOST_CHECK_EQUAL( wheel->isPoweredWheel(), i >= 2 );
+        checkClose( wheel->getSpringRate(), i < 2 ? 86000.0f : 78000.0f );
+        checkClose( wheel->getDamping(), 4400.0f );
+    }
+    checkVectorClose( wheelActors[0]->getLocalPosition(), authoredWheelPosition );
+    BOOST_CHECK( wheels[0]->getWheelController()->getProperties()->getPropertyAsBool( "Anti Lock Brakes" ) );
+
+    auto edited = controller->getProperties();
+    edited->setProperty( VehicleController::massStr, 1360.0f );
+    edited->setProperty( CarController::dampingStr, 3900.0f );
+    controller->setProperties( edited );
+    checkClose( vehicle->getMass(), 1360.0f );
+    checkClose( wheels[0]->getWheelController()->getDamping(), 3900.0f );
+
+    auto saved = static_pointer_cast<Properties>( controller->toData() );
+    saved->removeProperty( VehicleController::chassisStr );
+    auto restored = make_ptr<CarController>();
+    restored->fromData( saved );
+    auto restoredProperties = restored->getProperties();
+    checkEnumProperty( restoredProperties, CarController::handlingPresetStr, 4 );
+    checkScalarProperty( restoredProperties, VehicleController::massStr, 1360.0f );
+    checkScalarProperty( restoredProperties, CarController::dampingStr, 3900.0f );
+
+    controller->setProperties( original );
+    checkEnumProperty( controller->getProperties(), CarController::handlingPresetStr, 0 );
+    checkClose( vehicle->getMass(), 1370.0f );
+    checkClose( vehicle->getPlaySteeringScale(), 50.0f );
+    checkClose( wheels[0]->getWheelController()->getDamping(), 1000.0f );
+    BOOST_CHECK( !wheels[0]->getWheelController()->getProperties()->getPropertyAsBool( "Anti Lock Brakes" ) );
+    BOOST_CHECK( wheels[0]->getWheelController()->isPoweredWheel() );
+    BOOST_CHECK( wheels[2]->getWheelController()->isPoweredWheel() );
 
     fixture.sceneManager->destroyActor( actor );
 }
