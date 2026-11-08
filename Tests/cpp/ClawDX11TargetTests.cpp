@@ -43,6 +43,7 @@ namespace
         HWND handle = nullptr;
         workphone::Vector2I size{ 1280, 720 };
         workphone::Vector2I getSize() const override { return size; }
+        workphone::Array<workphone::SmartPtr<workphone::render::IViewport>> getViewports() const override { return {}; }
         void getWindowHandle( void *data ) override { *static_cast<HWND *>( data ) = handle; }
         void _getObject( void **data ) const override { *data = nullptr; }
     };

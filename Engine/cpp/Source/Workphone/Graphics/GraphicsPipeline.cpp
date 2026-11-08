@@ -68,6 +68,7 @@ namespace workphone::render
 
     SmartPtr<Properties> GraphicsPipeline::getProperties() const
     {
+        ScopedLock lock( m_mutex );
         auto properties = workphone::make_ptr<Properties>();
         if( m_projectSettings )
             for( const auto &property : m_projectSettings->getPropertiesAsArray() )
@@ -96,6 +97,7 @@ namespace workphone::render
         {
             return;
         }
+        ScopedLock lock( m_mutex );
         // A different project replaces its profile. Inspector/Apply requests
         // keep their existing patch semantics. This command is never persisted.
         if( properties->getPropertyAsBool( "Replace project settings", false ) )

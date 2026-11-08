@@ -79,11 +79,8 @@ namespace workphone
             wp_graphics_window *m_window = nullptr;
 
 #if defined WP_PLATFORM_WIN32
+            void syncNativeWindowSize();
             wp_platform_window_win32 *m_platformWindow = nullptr;
-            intptr_t m_windowedStyle = 0;
-            Vector2I m_windowedPosition;
-            Vector2I m_windowedSize;
-            bool m_nativeFullscreen = false;
 #endif
         };
     }  // namespace render

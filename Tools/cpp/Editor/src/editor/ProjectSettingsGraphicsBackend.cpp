@@ -36,7 +36,7 @@ namespace workphone::editor
         bool startupKey(const String &key)
         {
             return key.find("graphics.renderer.")==0 || key=="graphics.shaderModel" || key=="graphics.shaderLanguage" ||
-                key=="graphics.validationLayers" || key=="graphics.allowRendererFallback" || key=="graphics.presentMode";
+                key=="graphics.validationLayers" || key=="graphics.allowRendererFallback";
         }
 
         bool budgetFits( const Properties &settings, const char *key, StreamMemoryClass category, String &error )
@@ -90,8 +90,16 @@ namespace workphone::editor
     {
         if( !response ) return;
         for( auto key : keys ) response->setProperty( String("capability.") + key, true );
+        response->setProperty( "availability.graphics.resolution", "Device Native maximizes the window. Fullscreen uses the monitor size." );
+        response->setProperty( "availability.graphics.customWidth", "Applies to the window in Custom resolution mode." );
+        response->setProperty( "availability.graphics.customHeight", "Applies to the window in Custom resolution mode." );
         response->setProperty("availability.graphics.fullscreen", "Win32 borderless fullscreen preserves and restores the window position and style.");
-        response->setProperty("availability.graphics.tonemapping", "Native software and DX11 output resolve consume the selected tone curve.");
+        response->setProperty( "availability.graphics.vsync", "Controls synchronization in Auto present mode." );
+        response->setProperty( "availability.graphics.presentMode",
+            "DX11/DX12 apply FIFO, nonblocking Mailbox and Immediate live. Restart for swap-chain changes." );
+        response->setProperty( "availability.graphics.hdr", "Enables HDR scene lighting and tone mapping. Display output follows the active renderer." );
+        response->setProperty( "availability.graphics.tonemapping", "Tone curves apply to HDR scenes. Enable HDR if the project explicitly disables it." );
+        response->setProperty( "availability.graphics.postProcessing", "Controls the project Bloom, Motion Blur and Ambient Occlusion effects." );
         response->setProperty("availability.quality.texture", "Texture mip upload limits affect new and refreshed GPU views.");
         response->setProperty("availability.graphics.anisotropy","Trilinear filtering uses the selected anisotropy; Point and Bilinear retain their standard mip filters.");
         response->setProperty("availability.performance.memoryBudgetMb", "Admission budget for participating CPU asset storage; cannot be reduced below live allocations.");
@@ -147,9 +155,23 @@ namespace workphone::editor
         result->setProperty( "handledKeys", handled );
         const auto app = core::IApplicationManager::instancePtr();
         String error;
-        if( ( includes( "graphics.gi" ) || ( includes( "project.startupScene" ) && settings->hasProperty( "graphics.gi" ) ) ) &&
-            !applyProjectIrradianceSettings(settings,app ? app->getProjectPath() : String(),error) )
-        { result->setProperty("success",false);result->setProperty("status",error);return result; }
+        if( includes( "graphics.gi" ) ||
+            ( includes( "project.startupScene" ) && settings->hasProperty( "graphics.gi" ) ) )
+        {
+            const auto manager = app ? app->getGameManager() : nullptr;
+            const auto currentScene = manager ? manager->getCurrentScene() : nullptr;
+            const bool loading = currentScene && currentScene->getSceneLoadingState() ==
+                                                scene::IGameScene::SceneLoadingState::Loading;
+            // Clear the old scene's probes during an asynchronous load. The
+            // scene-loaded event will apply the current project policy.
+            if( !applyProjectIrradianceSettings( loading ? nullptr : settings,
+                                                app ? app->getProjectPath() : String(), error ) )
+            {
+                result->setProperty( "success", false );
+                result->setProperty( "status", error );
+                return result;
+            }
+        }
         if( changes && handled.empty() ) return result;
         const struct { const char *key; StreamMemoryClass category; } budgets[] = {
             {"quality.streamingBudgetMb",StreamMemoryClass::WorkingCpu},
@@ -164,14 +186,6 @@ namespace workphone::editor
         if( graphics )
         {
             auto properties = projectGraphicsBackendProperties(settings, changes);
-            if( includes( "graphics.vsync" ) || includes( "graphics.presentMode" ) )
-            {
-                bool vsync = true; settings->getPropertyValue("graphics.vsync",vsync);
-                const s32 present = settings->getPropertyAsInt("graphics.presentMode");
-                if(present == 1) vsync = true;
-                if(present == 3) vsync = false;
-                properties->setProperty("vsync",vsync);
-            }
             graphics->setProperties(properties);
             if(auto pipeline = graphics->getGraphicsPipeline()) { pipeline->setProperties(properties); pipeline->setProperties(properties); }
             if(auto window = graphics->getDefaultWindow())
@@ -200,8 +214,11 @@ namespace workphone::editor
             const bool windowedSize=String(key)=="graphics.resolution"||String(key)=="graphics.customWidth"||String(key)=="graphics.customHeight";
             if(startupKey(key)||(!graphics&&!budget)||(displaySize&&windowedSize)) append(pending,key);else append(applied,key);
         }
+        if( graphics && includes( "graphics.presentMode" ) &&
+            settings->getPropertyAsInt( "graphics.presentMode" ) >= 2 )
+            append( pending, "graphics.presentMode (swap chain)" );
         result->setProperty("appliedKeys",applied);result->setProperty("pendingKeys",pending);
-        String status=graphics?"Graphics settings applied; device, compiler and presentation choices take effect at the next renderer startup.":"Graphics policies stored; the renderer applies them when started.";
+        String status=graphics?"Graphics settings applied. Device, compiler and swap-chain changes take effect at renderer startup.":"Graphics policies stored; the renderer applies them when started.";
         if(displaySize) status+=" Fullscreen uses the display dimensions; the selected windowed size is retained.";
         const auto notes=result->getProperty("startupNotes");if(!notes.empty()) status+=" "+notes;
         result->setProperty("status",status);

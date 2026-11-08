@@ -35,6 +35,9 @@ struct wp_platform_window_win32
     wp_u32 width;
     wp_u32 height;
     wp_s32 closed;
+    wp_s32 fullscreen;
+    LONG_PTR windowed_style;
+    WINDOWPLACEMENT windowed_placement;
     wp_c8 title[WP_PLATFORM_WINDOW_MAX_TITLE];
     wp_platform_window_win32_event_callback event_callback;
     void *event_userdata;
@@ -256,6 +259,11 @@ wp_s32 wp_platform_window_win32_is_closed( const wp_platform_window_win32 *win )
     return win ? win->closed : 1;
 }
 
+wp_s32 wp_platform_window_win32_is_fullscreen( const wp_platform_window_win32 *win )
+{
+    return win ? win->fullscreen : 0;
+}
+
 void *wp_platform_window_win32_get_hwnd( const wp_platform_window_win32 *win )
 {
     return win ? (void *)win->hwnd : NULL;
@@ -303,11 +311,11 @@ void wp_platform_window_win32_resize( wp_platform_window_win32 *win, wp_u32 widt
     DWORD style, exstyle;
     RECT rect;
 
-    if( !win || !win->hwnd || !IsWindow( win->hwnd ) )
+    if( !win || !win->hwnd || !IsWindow( win->hwnd ) || win->fullscreen )
         return;
 
-    win->width = width;
-    win->height = height;
+    if( IsZoomed( win->hwnd ) )
+        ShowWindow( win->hwnd, SW_RESTORE );
 
     style = (DWORD)GetWindowLongW( win->hwnd, GWL_STYLE );
     exstyle = (DWORD)GetWindowLongW( win->hwnd, GWL_EXSTYLE );
@@ -319,6 +327,49 @@ void wp_platform_window_win32_resize( wp_platform_window_win32 *win, wp_u32 widt
 
     SetWindowPos( win->hwnd, NULL, 0, 0, rect.right - rect.left, rect.bottom - rect.top,
                   SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE );
+}
+
+wp_s32 wp_platform_window_win32_set_fullscreen( wp_platform_window_win32 *win, wp_s32 fullscreen )
+{
+    HWND hwnd;
+    MONITORINFO monitor;
+    if( !win || !win->hwnd || !IsWindow( win->hwnd ) )
+        return 0;
+    fullscreen = fullscreen != 0;
+    if( win->fullscreen == fullscreen )
+        return 1;
+
+    hwnd = win->hwnd;
+    if( fullscreen )
+    {
+        monitor.cbSize = sizeof( monitor );
+        win->windowed_placement.length = sizeof( win->windowed_placement );
+        if( !GetWindowPlacement( hwnd, &win->windowed_placement ) ||
+            !GetMonitorInfoW( MonitorFromWindow( hwnd, MONITOR_DEFAULTTONEAREST ), &monitor ) )
+            return 0;
+
+        win->windowed_style = GetWindowLongPtrW( hwnd, GWL_STYLE ) & ~( WS_MAXIMIZE | WS_MINIMIZE );
+        SetWindowLongPtrW( hwnd, GWL_STYLE, win->windowed_style & ~WS_OVERLAPPEDWINDOW );
+        if( !SetWindowPos( hwnd, HWND_TOP, monitor.rcMonitor.left, monitor.rcMonitor.top,
+                           monitor.rcMonitor.right - monitor.rcMonitor.left,
+                           monitor.rcMonitor.bottom - monitor.rcMonitor.top,
+                           SWP_FRAMECHANGED | SWP_NOOWNERZORDER ) )
+        {
+            SetWindowLongPtrW( hwnd, GWL_STYLE, win->windowed_style );
+            SetWindowPlacement( hwnd, &win->windowed_placement );
+            return 0;
+        }
+    }
+    else
+    {
+        SetWindowLongPtrW( hwnd, GWL_STYLE, win->windowed_style );
+        SetWindowPos( hwnd, NULL, 0, 0, 0, 0,
+                      SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER );
+        if( !SetWindowPlacement( hwnd, &win->windowed_placement ) )
+            return 0;
+    }
+    win->fullscreen = fullscreen;
+    return 1;
 }
 
 /* =========================================================================

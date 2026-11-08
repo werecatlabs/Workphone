@@ -81,6 +81,7 @@ namespace workphone
                 Array<wp_irradiance_light> lights;
                 if(auto game=app->getGameManager())for(auto actor:game->getActors())
                 {
+                    if( !actor ) continue;
                     Surface surface;
                     const auto renderers=actor->getComponentsByType<scene::Renderer>();
                     if(!renderers.empty())if(auto material=renderers.front()->getSharedMaterial())
@@ -127,8 +128,12 @@ namespace workphone
         {
             Vector3F minimum(-4,0,-4),maximum(4,0,4);bool have=false;
             auto app=core::IApplicationManager::instancePtr();auto game=app?app->getGameManager():nullptr;
-            if(game)for(auto actor:game->getActors())if(auto transform=actor->getTransform())
+            if(game)for(auto actor:game->getActors())
             {
+                // GameManager's actor table keeps vacant slots when a scene is removed.
+                if( !actor ) continue;
+                const auto transform = actor->getTransform();
+                if( !transform ) continue;
                 const auto p=transform->getWorldTransform().getPosition();
                 Vector3F point(static_cast<float>(p.X()),static_cast<float>(p.Y()),static_cast<float>(p.Z()));
                 if(!std::isfinite(point.X()) || !std::isfinite(point.Y()) || !std::isfinite(point.Z()))continue;

@@ -130,7 +130,7 @@ static const SettingDefinition settingDefinitions[] =
     { "diagnostics.gpuProfiler", "bool", "false", 0, 0, false },
     { "diagnostics.validationWarnings", "bool", "true", 0, 0, false },
     { "diagnostics.telemetry", "bool", "false", 0, 0, false },
-    { "editor.theme", "int", "1", 0, 3, true },
+    { "editor.theme", "int", "4", 0, 4, true },
     { "editor.autosave", "bool", "true", 0, 0, false },
     { "editor.autosaveInterval", "int", "10", 1.0, 60.0, true },
     { "editor.advancedWarnings", "bool", "true", 0, 0, false },

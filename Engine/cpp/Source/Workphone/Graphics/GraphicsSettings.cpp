@@ -36,6 +36,14 @@ namespace workphone::render
         m_validationLayers = profile.getPropertyAsBool( "graphics.validationLayers" );
         m_allowRendererFallback = !profile.hasProperty( "graphics.allowRendererFallback" ) ||
                                   profile.getPropertyAsBool( "graphics.allowRendererFallback" );
+        const auto preset = profile.getPropertyAsInt( "quality.preset", 4 );
+        if( preset >= 0 && preset < 4 )
+        {
+            constexpr s32 shadowQuality[] = { 0, 2, 3, 4 };
+            constexpr s32 shadowResolution[] = { 0, 1, 2, 2 };
+            m_shadowQuality = shadowQuality[preset];
+            m_shadowResolution = shadowResolution[preset];
+        }
         profile.getPropertyValue( "graphics.shadowQuality", m_shadowQuality );
         profile.getPropertyValue( "graphics.shadowResolution", m_shadowResolution );
         profile.getPropertyValue( "graphics.shadowDistance", m_shadowDistance );

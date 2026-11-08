@@ -29,13 +29,14 @@ namespace workphone
         unsigned short port() const;
         bool paused() const;
         void setPausePump( std::function<bool()> pump );
-        void setPauseObserver( std::function<void(bool)> observer );
+        void setPauseObserver( std::function<void( bool )> observer );
         void command( const std::string &command );
         std::string status() const;
         bool callbackAllowed( lua_State *state, int functionIndex ) const;
         void copySourcesFrom( const LuaDebugger &other );
+
     private:
         struct Impl;
         std::unique_ptr<Impl> m_impl;
     };
-}
+}  // namespace workphone

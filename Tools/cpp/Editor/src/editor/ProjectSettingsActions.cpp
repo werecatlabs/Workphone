@@ -5,6 +5,7 @@
 #include <editor/EditorManager.hpp>
 #include <editor/Project.hpp>
 #include <Workphone/Workphone.hpp>
+#include <algorithm>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -102,6 +103,90 @@ namespace workphone::editor
             return settings;
         }
 
+        void describeInheritedGraphics( Properties &response, SmartPtr<Project> project,
+                                        const Properties *imported = nullptr )
+        {
+            const auto projectSettings = project->getProperties();
+            const auto app = core::IApplicationManager::instancePtr();
+            const auto graphics = app ? app->getGraphicsSystem() : nullptr;
+            const auto pipeline = graphics ? graphics->getGraphicsPipeline() : nullptr;
+            const auto pipelineValues = pipeline ? pipeline->getProperties() : nullptr;
+            const auto nativeValues = graphics ? graphics->getProperties() : nullptr;
+            const auto window = graphics ? graphics->getDefaultWindow() : nullptr;
+            const auto activeGraphics = app ? app->getGraphicsSettings() : nullptr;
+            const auto size = window ? window->getSize() : Vector2I();
+            const bool windowed = window && !window->isFullScreen() && size.x > 0 && size.y > 0;
+            s32 sampleMask = 0;
+            const bool direct3D = nativeValues && nativeValues->getPropertyValue( "msaa_supported_mask", sampleMask );
+            const bool hdr = pipelineValues && pipelineValues->getPropertyAsBool(
+                "graphics.hdr", pipelineValues->getPropertyAsInt( "graphics.tonemapping" ) != 0 );
+            const bool hasPreset = pipelineValues && pipelineValues->getPropertyAsInt( "quality.preset", 4 ) < 4;
+            const bool inheritEffects = pipelineValues &&
+                ( hasPreset || pipelineValues->hasProperty( "graphics.postProcessing" ) );
+            if( direct3D )
+            {
+                for( s32 choice = 3; choice <= 5; ++choice )
+                {
+                    const auto option = String( "graphics.antiAliasing." ) + std::to_string( choice );
+                    const bool available = ( sampleMask & ( 1 << ( choice - 2 ) ) ) != 0;
+                    response.setProperty( "capability." + option, available );
+                    if( !available )
+                        response.setProperty( "unavailable." + option,
+                                              "The active device does not support this MSAA sample count." );
+                }
+            }
+
+            for( const auto &definition : settingDefinitions )
+            {
+                const String key( definition.name );
+                if( key.find( "graphics." ) != 0 || key.find( "graphics.renderer." ) == 0 ||
+                    projectSettings->hasProperty( key ) || ( imported && imported->hasProperty( key ) ) )
+                    continue;
+
+                response.setProperty( "inherited." + key, true );
+                if( window && key == "graphics.fullscreen" )
+                    response.setProperty( key, window->isFullScreen() );
+                else if( windowed && key == "graphics.resolution" )
+                    response.setProperty( key, 5 );
+                else if( windowed && key == "graphics.customWidth" )
+                    response.setProperty( key, std::clamp( size.x, 320, 8192 ) );
+                else if( windowed && key == "graphics.customHeight" )
+                    response.setProperty( key, std::clamp( size.y, 200, 8192 ) );
+                else if( nativeValues && key == "graphics.vsync" && nativeValues->hasProperty( "vsync" ) )
+                    response.setProperty( key, nativeValues->getPropertyAsBool( "vsync" ) );
+                else if( pipelineValues && pipelineValues->hasProperty( key ) )
+                {
+                    // A legacy graphics child may contain a valid namespaced value.
+                    // Keep project/schema validation independent from inherited UI values.
+                    try { setTypedValue( response, definition, pipelineValues->getProperty( key ) ); }
+                    catch( const std::invalid_argument & ) {}
+                }
+                else if( direct3D )
+                {
+                    // The legacy Editor viewport renders in display space until an
+                    // explicit colour policy opts into the scene resolve.
+                    if( key == "graphics.hdr" ) response.setProperty( key, hdr );
+                    else if( key == "graphics.colorSpace" ) response.setProperty( key, hdr ? 1 : 0 );
+                    else if( key == "graphics.tonemapping" ) response.setProperty( key, hdr ? 3 : 0 );
+                    else if( key == "graphics.renderPipeline" ) response.setProperty( key, 0 );
+                    else if( key == "graphics.antiAliasing" )
+                        response.setProperty( key, hasPreset && pipelineValues->getPropertyAsBool( "Temporal anti-aliasing" ) ? 2 : 0 );
+                    else if( key == "graphics.bloom" )
+                        response.setProperty( key, inheritEffects && pipelineValues->getPropertyAsBool( "Bloom" ) );
+                    else if( key == "graphics.ambientOcclusion" )
+                        response.setProperty( key, inheritEffects && pipelineValues->getPropertyAsBool( "Ambient occlusion" ) );
+                    else if( key == "graphics.motionBlur" )
+                        response.setProperty( key, inheritEffects && pipelineValues->getPropertyAsBool( "Motion blur" ) );
+                    else if( key == "graphics.shadowQuality" && activeGraphics )
+                        response.setProperty( key, activeGraphics->getShadowQuality() );
+                    else if( key == "graphics.shadowResolution" && activeGraphics )
+                        response.setProperty( key, activeGraphics->getShadowResolution() );
+                    else if( key == "graphics.shadowDistance" && activeGraphics )
+                        response.setProperty( key, activeGraphics->getShadowDistance() );
+                }
+            }
+        }
+
         void mergeSettings( Properties &destination, const Properties &source )
         {
             for( const auto &definition : settingDefinitions )
@@ -140,6 +225,7 @@ namespace workphone::editor
 
         void fillResponse( Properties &response, const Properties &settings )
         {
+            response.setProperty( "settingsSnapshot", true );
             for( const auto &definition : settingDefinitions )
             {
                 response.addProperty( settings.getPropertyObject( definition.name ) );
@@ -254,6 +340,7 @@ namespace workphone::editor
             if( action == "readProjectSettings" )
             {
                 fillResponse( *request, *settings );
+                describeInheritedGraphics( *request, project );
                 request->setProperty( "status", String( "Project settings loaded. Validate checks backend and toolchain requirements." ) );
             }
             else if( action == "importProjectSettingsJson" )
@@ -263,6 +350,7 @@ namespace workphone::editor
                 const auto imported = importSettings( path );
                 mergeSettings( *settings, *imported );
                 fillResponse( *request, *settings );
+                describeInheritedGraphics( *request, project, imported.get() );
                 for( const auto &definition : settingDefinitions )
                     if( imported->hasProperty( definition.name ) )
                         request->setProperty( String( "included." ) + definition.name, true );
@@ -318,6 +406,8 @@ namespace workphone::editor
                                                 : "Saved project settings. " + status;
                     }
                     else if( status.empty() ) status = "No project settings changed.";
+                    fillResponse( *request, *settings );
+                    describeInheritedGraphics( *request, project );
                     request->setProperty( "status", status );
                 }
                 else if( action == "buildSelectedPlatform" )
@@ -330,6 +420,8 @@ namespace workphone::editor
                     auto build = buildProjectSettingsProjectBackend( settings );
                     if( !build->getPropertyAsBool( "success" ) )
                         throw std::runtime_error( build->getProperty( "status" ).c_str() );
+                    fillResponse( *request, *settings );
+                    describeInheritedGraphics( *request, project );
                     request->setProperty( "status", build->getProperty( "status" ) );
                     request->setProperty( "path", build->getProperty( "path" ) );
                     request->setProperty( "pending", build->getPropertyAsBool( "pending", false ) );

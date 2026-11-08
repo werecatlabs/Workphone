@@ -63,6 +63,7 @@ void wp_platform_window_win32_set_event_callback(
  * ====================================================================== */
 
 wp_s32 wp_platform_window_win32_is_closed( const wp_platform_window_win32 *win );
+wp_s32 wp_platform_window_win32_is_fullscreen( const wp_platform_window_win32 *win );
 void *wp_platform_window_win32_get_hwnd( const wp_platform_window_win32 *win );
 wp_u32 wp_platform_window_win32_get_width( const wp_platform_window_win32 *win );
 wp_u32 wp_platform_window_win32_get_height( const wp_platform_window_win32 *win );
@@ -74,6 +75,7 @@ const wp_c8 *wp_platform_window_win32_get_title( const wp_platform_window_win32 
 
 void wp_platform_window_win32_set_title( wp_platform_window_win32 *win, const wp_c8 *title );
 void wp_platform_window_win32_resize( wp_platform_window_win32 *win, wp_u32 width, wp_u32 height );
+wp_s32 wp_platform_window_win32_set_fullscreen( wp_platform_window_win32 *win, wp_s32 fullscreen );
 void wp_platform_window_win32_show( wp_platform_window_win32 *win );
 void wp_platform_window_win32_hide( wp_platform_window_win32 *win );
 void wp_platform_window_win32_maximize( wp_platform_window_win32 *win );

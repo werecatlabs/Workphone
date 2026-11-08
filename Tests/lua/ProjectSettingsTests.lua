@@ -85,6 +85,12 @@ function window:handleEvent(eventType, hash, arguments, sender, request, event)
         request:setPropertyAsString("project.startupScene", "")
         request:setPropertyAsFloat("physics.gravity", -12.25)
         request:setPropertyAsInt("graphics.shadowQuality", 4)
+        request:setPropertyAsInt("graphics.customWidth", 1173)
+        request:setPropertyAsInt("graphics.customHeight", 641)
+        request:setPropertyAsBool("inherited.graphics.renderPipeline", true)
+        request:setPropertyAsBool("capability.graphics.antiAliasing.5", false)
+        request:setPropertyAsString("unavailable.graphics.antiAliasing.5", "This device does not support MSAA 8x.")
+        request:setPropertyAsString("availability.graphics.presentMode", "Mailbox requires a renderer restart.")
         request:setPropertyAsBool("capability.services.cloudSave", false)
         request:setPropertyAsString("unavailable.services.cloudSave", "No cloud provider configured")
         request:setPropertyAsBool("services.cloudSave", true)
@@ -94,11 +100,14 @@ function window:handleEvent(eventType, hash, arguments, sender, request, event)
         request:setPropertyAsString("project.company", "")
         request:setPropertyAsBool("graphics.vsync", false)
         request:setPropertyAsBool("graphics.hdr", true)
-        request:setPropertyAsInt("editor.theme", 1)
+        request:setPropertyAsInt("editor.theme", 4)
         request:setPropertyAsBool("services.cloudSave", false)
         for _, key in ipairs({"project.name", "graphics.vsync", "graphics.hdr", "services.cloudSave"}) do
             request:setPropertyAsBool("included." .. key, true)
         end
+    elseif native.onCommit then
+        native.onCommit(request)
+        native.onCommit=nil
     end
     request:setPropertyAsBool("success", true)
     request:setPropertyAsString("status", action.." completed")
@@ -121,6 +130,8 @@ assert(editor.settings.shadowQuality==4 and editor.shadowQualityControl:getSelec
 assert(not editor.cloudSaveControl.enabled and editor.cloudSaveControl.label:find("(Unavailable)", 1, true))
 assert(editor.settings.cloudSave==true)
 assert(#editor.controlBindings==132, "All project settings must be bound")
+assert(table.concat(editor.editorThemeControl.options, ",")=="Classic,Dark,Light,High Contrast,Default")
+assert(editor.editorThemeControl:getSelectedOption()==4, "Missing project theme displays Default")
 
 local function event(kind, sender)
     return {at=function(_, i) if i==1 then return kind elseif i==3 then return sender end end}
@@ -134,10 +145,79 @@ editor:handleEvent(event(IEvent.handleSelection, editor.saveButton))
 assertNoSettings(native.calls[#native.calls])
 editor.editorThemeControl:setSelectedOption(2)
 editor:handleEvent(event(IEvent.handleSelection, editor.editorThemeControl))
-editor.editorThemeControl:setSelectedOption(1)
+editor.editorThemeControl:setSelectedOption(4)
 editor:handleEvent(event(IEvent.handleSelection, editor.editorThemeControl))
 editor:handleEvent(event(IEvent.handleSelection, editor.saveButton))
 assertNoSettings(native.calls[#native.calls])
+editor.editorThemeControl:setSelectedOption(1)
+editor:handleEvent(event(IEvent.handleSelection, editor.editorThemeControl))
+editor:handleEvent(event(IEvent.handleSelection, editor.applyButton))
+assert(native.calls[#native.calls].values["editor.theme"]==1, "Dark retains its saved ID")
+editor.editorThemeControl:setSelectedOption(4)
+editor:handleEvent(event(IEvent.handleSelection, editor.editorThemeControl))
+editor:handleEvent(event(IEvent.handleSelection, editor.saveButton))
+assert(native.calls[#native.calls].values["editor.theme"]==4, "Default must be saved after switching from Dark")
+assert(editor.renderPipelineControl.label:find("(Inherited)", 1, true))
+editor.renderPipelineControl:setSelectedOption(0)
+editor:handleEvent(event(IEvent.handleSelection, editor.renderPipelineControl))
+editor.renderPipelineControl:setSelectedOption(1)
+editor:handleEvent(event(IEvent.handleSelection, editor.renderPipelineControl))
+editor:handleEvent(event(IEvent.handleSelection, editor.saveButton))
+assertNoSettings(native.calls[#native.calls])
+editor:handleEvent(event(IEvent.handleSelection, editor.renderPipelineControl))
+editor:handleEvent(event(IEvent.handleSelection, editor.saveButton))
+assert(native.calls[#native.calls].values["graphics.renderPipeline"]==1,
+    "Explicitly choosing an inherited Graphics entry must stage that value")
+assert(not editor.renderPipelineControl.label:find("(Inherited)", 1, true))
+
+assert(not editor.customWidthControl.enabled and not editor.customHeightControl.enabled)
+assert(editor.aaControl.options[6]=="MSAA 8x (Unavailable)")
+editor.aaControl:setSelectedOption(5)
+editor:handleEvent(event(IEvent.handleSelection, editor.aaControl))
+assert(editor.aaControl:getSelectedOption()==2 and editor.graphicsStatusText.text=="This device does not support MSAA 8x.")
+editor.resolutionControl:setSelectedOption(5)
+editor:handleEvent(event(IEvent.handleSelection, editor.resolutionControl))
+assert(editor.customWidthControl.enabled and editor.customHeightControl.enabled)
+native.onCommit=function(request)
+    assert(request.values["graphics.resolution"]==5 and request.values["graphics.customWidth"]==1173 and
+        request.values["graphics.customHeight"]==641, "Selecting Custom must stage both displayed dimensions")
+    assert(request.values["graphics.antiAliasing"]==nil, "An unavailable Graphics choice must not be committed")
+    request:setPropertyAsBool("settingsSnapshot", true)
+    request:setPropertyAsString("availability.graphics.presentMode", "Mailbox requires a renderer restart.")
+    request:setPropertyAsBool("graphics.hdr", false)
+end
+editor:handleEvent(event(IEvent.handleSelection, editor.applyButton))
+assert(editor.aaControl.options[6]=="MSAA 8x" and not editor.hdrControl:getValue(),
+    "A refreshed profile must replace the previous capabilities and effective values")
+editor:handleEvent(event(IEvent.handleSelection, editor.saveButton))
+assertNoSettings(native.calls[#native.calls])
+
+-- Legacy window readback displays Custom even when the project has no resolution override.
+native.onCommit=function(request)
+    request:setPropertyAsBool("settingsSnapshot", true)
+    request:setPropertyAsBool("inherited.graphics.resolution", true)
+    request:setPropertyAsString("availability.graphics.presentMode", "Mailbox requires a renderer restart.")
+end
+editor:handleEvent(event(IEvent.handleSelection, editor.saveButton))
+editor.customWidthControl:setValue(1234)
+editor:handleEvent(event(IEvent.handleValueChanged, editor.customWidthControl))
+editor:handleEvent(event(IEvent.handleSelection, editor.applyButton))
+local customOverride=native.calls[#native.calls].values
+assert(customOverride["graphics.resolution"]==5 and customOverride["graphics.customWidth"]==1234 and
+    customOverride["graphics.customHeight"]==641, "Editing an inherited Custom size must enable explicit window sizing")
+
+editor.presentModeControl:setSelectedOption(2)
+editor:handleEvent(event(IEvent.handleSelection, editor.presentModeControl))
+assert(not editor.vsyncControl.enabled and editor.graphicsStatusText.text:find("requires a renderer restart", 1, true))
+editor.vsyncControl:setValue(false)
+editor:handleEvent(event(IEvent.handleValueChanged, editor.vsyncControl))
+assert(editor.vsyncControl:getValue() and editor.settings.vsync)
+editor.presentModeControl:setSelectedOption(0)
+editor:handleEvent(event(IEvent.handleSelection, editor.presentModeControl))
+assert(editor.vsyncControl.enabled)
+editor:handleEvent(event(IEvent.handleSelection, editor.saveButton))
+assertNoSettings(native.calls[#native.calls])
+
 local initialCalls=#native.calls
 editor.projectNameControl:setText("Edited project")
 local senderProxy=setmetatable({}, {__index=editor.projectNameControl,
@@ -253,7 +333,7 @@ editor:handleEvent(event(IEvent.handleValueChanged, editor.cloudSaveControl))
 assert(editor.settings.cloudSave==false and editor.cloudSaveControl:getValue()==false)
 editor:handleEvent(event(IEvent.handleSelection, editor.saveButton))
 local reset=native.calls[#native.calls].values
-assert(reset["editor.theme"]==1 and reset["graphics.hdr"]==true and reset["services.cloudSave"]==nil,
+assert(reset["editor.theme"]==4 and reset["graphics.hdr"]==true and reset["services.cloudSave"]==nil,
     "Reset must explicitly stage all available defaults while preserving unavailable values")
 before=#native.calls
 

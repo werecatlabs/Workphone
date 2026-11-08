@@ -149,9 +149,15 @@ namespace workphone::ui
         auto *context = ImGui::GetCurrentContext();
         if( !context ) return;
         const auto theme = settings->getPropertyAsInt( "editor.theme" );
-        if( theme < 0 || theme > 3 || ( themeContext == context && theme == lastTheme ) ) return;
+        if( theme < 0 || theme > 4 || ( themeContext == context && theme == lastTheme ) ) return;
         themeContext = context;
         lastTheme = theme;
+
+        if( theme == 4 )
+        {
+            ImGui::GetStyle() = ImGuiStyle();
+            return;
+        }
 
         // Start every explicit theme from the same metrics so transitions out
         // of high contrast restore ordinary borders and control spacing.
