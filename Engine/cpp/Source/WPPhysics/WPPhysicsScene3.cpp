@@ -46,7 +46,17 @@ namespace workphone::physics
         try
         {
             if( auto application = core::IApplicationManager::instancePtr() )
-                setProperties( application->getPlayerSettings() );
+            {
+                auto profile = application->getPlayerSettings();
+                if( profile && profile->getPropertyAsInt( "physics.broadphase" ) == 3 &&
+                    !hasBroadphaseProvider() )
+                {
+                    profile = workphone::make_ptr<Properties>( *profile );
+                    profile->setProperty( "physics.broadphase", 1 );
+                    WP_LOG_WARNING( "Saved GPU Broadphase provider is unavailable. Using Dynamic AABB Tree." );
+                }
+                setProperties( profile );
+            }
         }
         catch( ... )
         {
@@ -144,13 +154,10 @@ namespace workphone::physics
             return;
         }
 
-        /*
-         * Limit catch-up work to two 60 Hz substeps. A larger clamp creates a
-         * feedback loop after a hitch: the longer step generates more collision
-         * work, which delays the physics task again and makes the next step just
-         * as expensive.
-         */
-        elapsedTime = std::min( elapsedTime, 1.0 / 30.0 );
+        // Give low-rate projects time for two configured ticks after a hitch.
+        // Preserve the existing catch-up window at 60 Hz and above.
+        const auto rate = wp_physics_scene_get_simulation_options( m_scene ).simulation_rate;
+        elapsedTime = std::min( elapsedTime, std::max( 1.0 / 30.0, 2.0 / rate ) );
         simulate( static_cast<real_Num>( elapsedTime ), nullptr, 0, true );
         fetchResults( true, nullptr );
     }

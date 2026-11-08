@@ -1964,15 +1964,14 @@ static wp_f32 body_smallest_collision_extent( const wp_rigidbody *body )
 
 static wp_s32 calculate_motion_substeps( const wp_physics_scene *scene, wp_f32 dt )
 {
-    wp_s32 substeps = (wp_s32)ceilf( dt * scene->simulation_options.simulation_rate );
+    wp_s32 substeps = (wp_s32)scene->simulation_options.minimum_substeps;
     wp_s32 actor_index;
 
-    if( substeps < 1 )
+    if( !scene->simulation_options.deterministic )
     {
-        substeps = 1;
+        const wp_s32 rate_substeps = (wp_s32)ceilf( dt * scene->simulation_options.simulation_rate );
+        if( rate_substeps > substeps ) substeps = rate_substeps;
     }
-    if( substeps < (wp_s32)scene->simulation_options.minimum_substeps )
-        substeps = (wp_s32)scene->simulation_options.minimum_substeps;
     if( !scene->simulation_options.continuous_collision ) return substeps;
 
     for( actor_index = 0; actor_index < scene->actor_count; ++actor_index )
@@ -2031,21 +2030,38 @@ static void integrate_range( void *context, wp_u32 begin, wp_u32 end )
             integrate_body( range->scene->actors[i], range->scene->gravity, range->dt );
 }
 
+static void simulate_step( wp_physics_scene *scene, wp_f32 dt )
+{
+    const wp_s32 substeps = calculate_motion_substeps( scene, dt );
+    const wp_f32 substep_dt = dt / (wp_f32)substeps;
+    scene->broadphase_stats.collision_substeps += (wp_u32)substeps;
+
+    for( wp_s32 step = 0; step < substeps; ++step )
+    {
+        wp_integration_range range;
+        range.scene = scene;
+        range.dt = substep_dt;
+        if( scene->executor && scene->simulation_options.workers > 1 && scene->actor_count > 1 )
+            scene->executor( scene->executor_context, (wp_u32)scene->actor_count,
+                             scene->simulation_options.workers, integrate_range, &range );
+        else integrate_range( &range, 0, (wp_u32)scene->actor_count );
+
+        for( wp_u32 iteration = 0; iteration < scene->simulation_options.solver_iterations; ++iteration )
+        {
+            solve_scene_constraints( scene, substep_dt );
+            solve_scene_contacts( scene );
+            solve_scene_constraints( scene, substep_dt );
+        }
+    }
+
+    finish_simulation_step( scene, dt );
+    scene->frame_count++;
+}
+
 void wp_physics_scene_simulate( wp_physics_scene *scene, wp_f32 dt )
 {
-    wp_s32 substeps;
-    wp_s32 step;
-    wp_f32 substep_dt;
-
-    if( !scene )
-    {
-        return;
-    }
-
-    if( !isfinite( dt ) || dt <= 0.0f )
-    {
-        return;
-    }
+    wp_u32 steps = 1;
+    if( !scene || !isfinite( dt ) || dt <= 0.0f ) return;
 
     dt = clampf_scene( dt, 0.0f, 0.25f );
     if( scene->simulation_options.deterministic )
@@ -2053,8 +2069,9 @@ void wp_physics_scene_simulate( wp_physics_scene *scene, wp_f32 dt )
         const wp_f32 fixed_dt = 1.0f / scene->simulation_options.simulation_rate;
         scene->fixed_accumulator += dt;
         if( scene->fixed_accumulator + 1.0e-7f < fixed_dt ) return;
-        dt = floorf( ( scene->fixed_accumulator + 1.0e-7f ) / fixed_dt ) * fixed_dt;
-        scene->fixed_accumulator = fmaxf( 0.0f, scene->fixed_accumulator - dt );
+        steps = (wp_u32)floorf( ( scene->fixed_accumulator + 1.0e-7f ) / fixed_dt );
+        scene->fixed_accumulator = fmaxf( 0.0f, scene->fixed_accumulator - steps * fixed_dt );
+        dt = fixed_dt;
     }
     memset( &scene->broadphase_stats, 0, sizeof( scene->broadphase_stats ) );
     wp_narrowphase_reset_stats( scene->narrowphase );
@@ -2074,31 +2091,7 @@ void wp_physics_scene_simulate( wp_physics_scene *scene, wp_f32 dt )
             ++scene->broadphase_stats.kinematic_actors;
         }
     }
-    substeps = calculate_motion_substeps( scene, dt );
-    scene->broadphase_stats.collision_substeps = (wp_u32)substeps;
-    substep_dt = dt / (wp_f32)substeps;
-
-    for( step = 0; step < substeps; ++step )
-    {
-        wp_u32 iteration;
-        wp_integration_range range;
-        range.scene = scene;
-        range.dt = substep_dt;
-        if( scene->executor && scene->simulation_options.workers > 1 && scene->actor_count > 1 )
-            scene->executor( scene->executor_context, (wp_u32)scene->actor_count,
-                             scene->simulation_options.workers, integrate_range, &range );
-        else integrate_range( &range, 0, (wp_u32)scene->actor_count );
-
-        for( iteration = 0; iteration < scene->simulation_options.solver_iterations; ++iteration )
-        {
-            solve_scene_constraints( scene, substep_dt );
-            solve_scene_contacts( scene );
-            solve_scene_constraints( scene, substep_dt );
-        }
-    }
-
-    finish_simulation_step( scene, dt );
-    scene->frame_count++;
+    for( wp_u32 step = 0; step < steps; ++step ) simulate_step( scene, dt );
 }
 
 void wp_physics_scene_set_simulation_options( wp_physics_scene *scene,
@@ -2109,13 +2102,15 @@ void wp_physics_scene_set_simulation_options( wp_physics_scene *scene,
         options->simulation_rate < 15 || options->simulation_rate > 1000 ||
         options->workers < 1 || options->workers > 64 || options->broadphase > 3 ||
         ( options->broadphase == 3 && !wp_broadphase_has_provider() ) ) return;
+    if( scene->simulation_options.simulation_rate != options->simulation_rate ||
+        ( scene->simulation_options.deterministic != 0 ) != ( options->deterministic != 0 ) )
+        scene->fixed_accumulator = 0.0f;
     scene->simulation_options = *options;
     scene->max_threads = options->workers;
     scene->min_threads = options->workers;
     wp_broadphase_set_type( scene->broadphase, options->broadphase == 0 ? WORKPHONE_BROADPHASE_SAP :
         options->broadphase == 1 ? WORKPHONE_BROADPHASE_DBVT :
         options->broadphase == 2 ? WORKPHONE_BROADPHASE_ABP : WORKPHONE_BROADPHASE_PROVIDER );
-    scene->fixed_accumulator = 0.0f;
 }
 
 wp_scene_simulation_options wp_physics_scene_get_simulation_options( const wp_physics_scene *scene )

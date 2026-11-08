@@ -444,11 +444,63 @@ static int test_project_simulation_options_have_effects( void )
     return 1;
 }
 
+static int test_deterministic_catch_up_matches_separate_ticks( void )
+{
+    const wp_f32 tick = 1.0f / 64.0f;
+    wp_physics_scene *batched = wp_physics_scene_create();
+    wp_physics_scene *separate = wp_physics_scene_create();
+    wp_rigidbody *batched_body = wp_rigidbody_create( WORKPHONE_RIGIDBODY_DYNAMIC );
+    wp_rigidbody *separate_body = wp_rigidbody_create( WORKPHONE_RIGIDBODY_DYNAMIC );
+    wp_scene_simulation_options options;
+    wp_scene_broadphase_stats stats;
+
+    CHECK( batched && separate && batched_body && separate_body );
+    CHECK( wp_physics_scene_add_actor( batched, batched_body ) );
+    CHECK( wp_physics_scene_add_actor( separate, separate_body ) );
+    options = wp_physics_scene_get_simulation_options( batched );
+    options.simulation_rate = 64;
+    options.minimum_substeps = 3;
+    options.deterministic = 1;
+    wp_physics_scene_set_simulation_options( batched, &options );
+    wp_physics_scene_set_simulation_options( separate, &options );
+    wp_rigidbody_add_force( batched_body, vector3( 0, 20, 0 ), WORKPHONE_FORCE_MODE_FORCE );
+    wp_rigidbody_add_force( separate_body, vector3( 0, 20, 0 ), WORKPHONE_FORCE_MODE_FORCE );
+
+    wp_physics_scene_simulate( batched, 2.0f * tick );
+    wp_physics_scene_simulate( separate, tick );
+    wp_physics_scene_simulate( separate, tick );
+
+    CHECK( wp_rigidbody_get_position( batched_body ).y ==
+           wp_rigidbody_get_position( separate_body ).y );
+    CHECK( wp_rigidbody_get_linear_velocity( batched_body ).y ==
+           wp_rigidbody_get_linear_velocity( separate_body ).y );
+    stats = wp_physics_scene_get_broadphase_stats( batched );
+    CHECK( stats.collision_substeps == 6 );
+    CHECK( stats.dynamic_actors == 1 );
+
+    // Applying another physics option should not discard a pending half tick.
+    wp_physics_scene_simulate( batched, 0.5f * tick );
+    options.solver_iterations = 2;
+    wp_physics_scene_set_simulation_options( batched, &options );
+    wp_physics_scene_set_simulation_options( separate, &options );
+    wp_physics_scene_simulate( batched, 0.5f * tick );
+    wp_physics_scene_simulate( separate, tick );
+    CHECK( wp_rigidbody_get_position( batched_body ).y ==
+           wp_rigidbody_get_position( separate_body ).y );
+
+    wp_physics_scene_destroy( batched );
+    wp_physics_scene_destroy( separate );
+    wp_rigidbody_destroy( batched_body );
+    wp_rigidbody_destroy( separate_body );
+    return 1;
+}
+
 int main( void )
 {
     int passed = 1;
     passed &= test_aabb_tree_radius_sphere_query();
     passed &= test_project_simulation_options_have_effects();
+    passed &= test_deterministic_catch_up_matches_separate_ticks();
     passed &= test_large_track_mesh_uses_local_candidates();
     passed &= test_2d_box_contact_stays_in_plane();
     passed &= test_track_keeps_road_and_barrier_contacts();

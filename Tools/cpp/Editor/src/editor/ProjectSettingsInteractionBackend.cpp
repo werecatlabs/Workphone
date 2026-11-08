@@ -1,6 +1,7 @@
 #include <EditorPCH.hpp>
 #include <editor/ProjectSettingsInteractionBackend.hpp>
 #include <Workphone/Workphone.hpp>
+#include <Workphone/Scene/Components/Rigidbody.hpp>
 #include <Workphone/System/InteractionBackendProviders.hpp>
 #if WP_BUILD_PHYSICS3
 #include <WPPhysics/WPPhysicsUtil.hpp>
@@ -72,7 +73,7 @@ namespace workphone::editor
             const auto audioBackend = settings.getPropertyAsInt( "sound.backend", 0 );
             if( settings.getPropertyAsInt( "physics.broadphase", 0 ) == 3 && !hasPhysicsBroadphaseProvider() )
             {
-                error = "GPU Broadphase requires a physics plugin registered with workphone::physics::registerBroadphaseProvider.";
+                error = "GPU Broadphase needs a registered physics plugin. Select Sweep And Prune, Dynamic AABB Tree or Automatic.";
                 return false;
             }
             auto app = core::IApplicationManager::instancePtr();
@@ -125,6 +126,7 @@ namespace workphone::editor
         };
         for( const auto key : physicsKeys ) describe( key,
             "Native scene simulation: iterative solver, fixed or adaptive substeps, SAP/DBVT, parallel integration and named collision masks." );
+        response->setProperty( "capability.physics.broadphase.gpu", hasPhysicsBroadphaseProvider() );
         for( const auto key : audioKeys ) describe( key,
             "Native mixer and XAudio2 endpoint; category gain, positional attenuation/pan, raycast occlusion and voice admission. Device/rate apply at audio startup; streaming/buffer settings on new voices." );
         for( const auto key : inputKeys ) describe( key,
@@ -160,13 +162,35 @@ namespace workphone::editor
         auto scene = physics ? physics->getPhysicsScene() : nullptr;
         if( scene )
         {
-            ScopedLock lock( scene.get() );
-            scene->setProperties( settings );
-            f32 gravity = 0;
-            if( settings->getPropertyValue( "physics.gravity", gravity ) )
+            Array<SmartPtr<scene::Rigidbody>> bodies;
+            if( settings->hasProperty( "physics.collisionLayers" ) )
             {
-                auto vector = scene->getGravity(); vector.Y() = gravity; scene->setGravity( vector );
+                const auto current = scene->getProperties();
+                auto game = app->getGameManager();
+                if( game && ( !current || current->getProperty( "physics.collisionLayers" ) !=
+                                           settings->getProperty( "physics.collisionLayers" ) ) )
+                {
+                    for( const auto &actor : game->getActors() )
+                    {
+                        if( !actor ) continue;
+                        for( const auto &component : actor->getComponents() )
+                            if( component && component->isDerived<scene::Rigidbody>() )
+                                bodies.push_back( workphone::static_pointer_cast<scene::Rigidbody>( component ) );
+                    }
+                }
             }
+            SmartPtr<Properties> layers;
+            {
+                ScopedLock lock( scene.get() );
+                scene->setProperties( settings );
+                if( !bodies.empty() ) layers = scene->getProperties();
+                f32 gravity = 0;
+                if( settings->getPropertyValue( "physics.gravity", gravity ) )
+                {
+                    auto vector = scene->getGravity(); vector.Y() = gravity; scene->setGravity( vector );
+                }
+            }
+            for( auto &body : bodies ) body->refreshCollisionLayer( layers.get() );
         }
         if( physics && settings->hasProperty( "physics.debugDraw" ) )
             physics->setEnableDebugDraw( settings->getPropertyAsBool( "physics.debugDraw" ) );

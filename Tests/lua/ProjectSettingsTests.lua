@@ -8,7 +8,10 @@ BaseEditor = {}
 Vector2F = function(x, y) return {x=x, y=y} end
 IEvent = {UI=1, handleSelection=11, handleValueChanged=12, handlePropertyChanged=13}
 StringUtil = {getHash32=function(value) assert(value=="projectSettingsAction"); return 12345 end}
-Parameters = function() return {} end
+Parameters = function()
+    return {push_back=function(self, value) table.insert(self, value) end,
+        getAsStringArray=function(self) return self end}
+end
 for _, name in ipairs({"IUIWindow", "IUITabBar", "IUICollapsingHeader", "IUIText",
     "IUITextEntry", "IUIButton", "IUILabelTogglePair", "IUILabelSliderPair", "IUIDropdown"}) do
     _G[name] = {typeInfo=function() return name end}
@@ -32,6 +35,7 @@ local function element()
     function result:setSelectedOption(value) self.selected=value end
     function result:getSelectedOption() return self.selected end
     function result:addOption(value) table.insert(self.options, value) end
+    function result:setOptions(value) self.options=value end
     function result:setEnabled(value, cascade)
         assert(type(value)=="boolean" and type(cascade)=="boolean")
         self.enabled=value
@@ -109,6 +113,7 @@ assert(#native.calls==1 and native.calls[1].values.action=="readProjectSettings"
 assert(editor.projectNameControl:getText()=="Stored project")
 assert(editor.companyControl:getText()=="" and editor.startupSceneControl:getText()=="")
 assert(editor.gravityControl:getValue()==-12.25)
+assert(#editor.broadphaseControl.options==3, "Stock Editor exposes the three CPU broadphases")
 assert(table.concat(editor.shadowQualityControl.options, ",")=="Off,Low,Medium,High,Ultra")
 assert(editor.settings.shadowQuality==4 and editor.shadowQualityControl:getSelectedOption()==4,
     "Reading Ultra shadows must preserve its schema value in the dropdown")
@@ -177,20 +182,28 @@ before=#native.calls
 editor:handleEvent(event(IEvent.handleSelection, editor.applyIosProfileButton))
 assert(#native.calls==before and editor.settings.activePlatform==2 and editor.settings.aa==0)
 assert(editor.settings.cloudSave==false and editor.statusText.text:find("profile staged", 1, true))
-for _, entry in ipairs({{editor.applyPcProfileButton, 3}, {editor.applyMacProfileButton, 3},
-    {editor.applyIosProfileButton, 2}, {editor.applyAndroidProfileButton, 1}}) do
+local platformProfiles = {
+    {button=editor.applyPcProfileButton, shadows=3, platform="pc", compression=1},
+    {button=editor.applyMacProfileButton, shadows=3, platform="mac", compression=1},
+    {button=editor.applyIosProfileButton, shadows=2, platform="ios", compression=0},
+    {button=editor.applyAndroidProfileButton, shadows=1, platform="android", compression=0},
+}
+for _, profile in ipairs(platformProfiles) do
     local callsBeforeProfile=#native.calls
-    editor:handleEvent(event(IEvent.handleSelection, entry[1]))
+    editor:handleEvent(event(IEvent.handleSelection, profile.button))
     assert(#native.calls==callsBeforeProfile, "Platform profiles must stage changes without applying them")
-    assert(editor.settings.shadowQuality==entry[2] and
-        editor.shadowQualityControl:getSelectedOption()==entry[2],
+    assert(editor.settings.shadowQuality==profile.shadows and
+        editor.shadowQualityControl:getSelectedOption()==profile.shadows,
         "A staged platform profile must display its exact shadow quality")
     editor.companyControl:setText("Profile company")
     editor:handleEvent(event(IEvent.handlePropertyChanged, editor.companyControl))
-    for _, button in ipairs({editor.applyButton, editor.saveButton}) do
+    for _, button in ipairs({editor.validateButton, editor.applyButton, editor.saveButton}) do
         editor:handleEvent(event(IEvent.handleSelection, button))
-        assert(native.calls[#native.calls].values["graphics.shadowQuality"]==entry[2],
-            "Unrelated edits and Apply/Save must preserve the profile's shadow quality")
+        local values=native.calls[#native.calls].values
+        assert(values["graphics.shadowQuality"]==profile.shadows,
+            "Unrelated edits must preserve the profile's shadow quality")
+        assert(values["assets.textureCompression."..profile.platform]==profile.compression,
+            "Platform profiles must use texture formats supported by the bundled encoders")
     end
 end
 before=#native.calls
@@ -207,6 +220,20 @@ assert(snapshot.kinds["physics.gravity"]=="Float" and snapshot.values["services.
 local legacy=properties(); legacy:setPropertyAsString("company", "Restored company")
 editor:setProperties({at=function() return legacy end})
 assert(editor.companyControl:getText()=="Restored company" and #native.calls==before)
+legacy:setPropertyAsInt("physics.broadphase", 3)
+editor:setProperties({at=function() return legacy end})
+assert(editor.broadphaseControl:getSelectedOption()==3 and
+    editor.broadphaseControl.options[4]=="GPU Provider (Unavailable)")
+local savedGpu=properties()
+editor:getProperties({at=function() return savedGpu end})
+assert(savedGpu.values["physics.broadphase"]==3, "An absent provider must not silently change a stored choice")
+editor.broadphaseControl:setSelectedOption(2)
+editor:handleEvent(event(IEvent.handleSelection, editor.broadphaseControl))
+assert(editor.settings.broadphase==2 and #editor.broadphaseControl.options==3)
+local plugin=properties()
+plugin:setPropertyAsBool("capability.physics.broadphase.gpu", true)
+editor:setProperties({at=function() return plugin end})
+assert(editor.broadphaseControl.options[4]=="GPU Provider")
 local ownedWindow=editor.editorWindow
 editor:unload()
 assert(ownedWindow.removed and editor.editorWindow==nil and #editor.controlBindings==0)

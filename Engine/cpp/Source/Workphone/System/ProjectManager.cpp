@@ -2,10 +2,60 @@
 #include <Workphone/System/ProjectManager.hpp>
 #include <Workphone/Interface/IApplicationManager.hpp>
 #include <Workphone/Interface/IO/IFileSystem.hpp>
-#include <Workphone/Core/Path.hpp>
+#ifdef _WIN32
+#    include <Windows.h>
+#    include <filesystem>
+#    include <vector>
+#endif
 
 namespace workphone
 {
+#ifdef _WIN32
+    namespace
+    {
+        namespace fs = std::filesystem;
+
+        bool hasWindowsEngineSdk( const fs::path &root )
+        {
+            std::error_code error;
+            if( fs::is_regular_file( root / "lib/cmake/WorkphoneCppSDK/WorkphoneCppSDKConfig.cmake",
+                                     error ) )
+            {
+                return true;
+            }
+            return fs::is_regular_file( root / "Engine/cpp/Include/Workphone/WorkphoneConfig.hpp",
+                                        error ) &&
+                   fs::is_directory( root / "libs/windows", error );
+        }
+
+        String windowsEngineRoot( const String &projectPath, const String &enginePath )
+        {
+            // Explicit roots and a usable project-local SDK take precedence over the Editor's SDK.
+            if( enginePath != "Engine" || hasWindowsEngineSdk( fs::u8path( projectPath.c_str() ) / "Engine" ) )
+            {
+                return enginePath;
+            }
+
+            std::vector<wchar_t> executable( 32768 );
+            const auto length =
+                GetModuleFileNameW( nullptr, executable.data(), static_cast<DWORD>( executable.size() ) );
+            if( length > 0 && length < executable.size() )
+            {
+                std::error_code error;
+                const auto modulePath = fs::canonical( fs::path( executable.data() ), error );
+                for( auto root = modulePath.parent_path(); root.has_relative_path(); root = root.parent_path() )
+                {
+                    if( hasWindowsEngineSdk( root ) )
+                    {
+                        return root.generic_u8string().c_str();
+                    }
+                }
+            }
+            return enginePath;
+        }
+    }
+#endif
+
     ProjectManager::ProjectManager()
     {
         m_projectName = "Plugin";
@@ -20,6 +70,7 @@ namespace workphone
 
         auto applicationManager = core::IApplicationManager::instancePtr();
         auto fileSystem = applicationManager->getFileSystemPtr();
+        const auto projectPath = applicationManager->getProjectPath();
 
         Array<String> defines;
         Array<String> includes;
@@ -62,8 +113,11 @@ namespace workphone
         defines.emplace_back( "WP_USE_TBB=1" );
 #endif
 
-        auto enginePath = getEnginePath();
-        auto proprietaryLibraryPath = Path::lexically_normal( enginePath, "../lioncat_proprietary" );
+        auto configuredEnginePath = getEnginePath();
+#ifdef _WIN32
+        configuredEnginePath = windowsEngineRoot( projectPath, configuredEnginePath );
+#endif
+        const auto enginePath = String( "${WORKPHONE_ENGINE_ROOT}" );
 
         includes.push_back( enginePath + "/Dependencies/boost" );
 
@@ -85,8 +139,6 @@ namespace workphone
         includes.insert( includes.end(), additoinalIncludes.begin(), additoinalIncludes.end() );
 
         auto additionalLibraries = getLibraries();
-
-        libs.emplace_back( "Workphone" );
 
 #if _WP_STATIC_LIB_
         libs.emplace_back( "bcrypt" );
@@ -309,6 +361,41 @@ namespace workphone
         cmakeStr += "set(WP_ROOT \"${CMAKE_SOURCE_DIR}\")";
         cmakeStr += newLineStr + newLineStr;
 
+        // A CMake bracket argument keeps the detected filesystem path literal.
+        String bracket = "=";
+        while( configuredEnginePath.find( "]" + bracket + "]" ) != String::npos )
+        {
+            bracket += "=";
+        }
+        cmakeStr += "set(WORKPHONE_ENGINE_ROOT [" + bracket + "[" + configuredEnginePath + "]" +
+                    bracket + "] CACHE PATH \"Workphone checkout or C++ SDK root\")\n\n";
+        cmakeStr += "get_filename_component(WORKPHONE_ENGINE_ROOT \"${WORKPHONE_ENGINE_ROOT}\" ABSOLUTE\n"
+                    "    BASE_DIR \"${CMAKE_CURRENT_SOURCE_DIR}\")\n\n";
+        cmakeStr += getPlatformOptions() + newLineStr + newLineStr;
+        cmakeStr += getToolsetOptions() + newLineStr + newLineStr;
+        cmakeStr += "set(WP_STATIC_LINK_CRT_TYPE \"" + crtType + "\")\n\n";
+
+        cmakeStr +=
+            "if(WIN32)\n"
+            "    if(NOT CMAKE_BUILD_TYPE)\n"
+            "        set(CMAKE_BUILD_TYPE RelWithDebInfo)\n"
+            "    endif()\n"
+            "    if(EXISTS \"${WORKPHONE_ENGINE_ROOT}/lib/cmake/WorkphoneCppSDK/WorkphoneCppSDKConfig.cmake\")\n"
+            "        if(CMAKE_CONFIGURATION_TYPES)\n"
+            "            set(CMAKE_CONFIGURATION_TYPES \"${CMAKE_BUILD_TYPE}\")\n"
+            "        endif()\n"
+            "        find_package(WorkphoneCppSDK CONFIG REQUIRED PATHS \"${WORKPHONE_ENGINE_ROOT}\" NO_DEFAULT_PATH)\n"
+            "    else()\n"
+            "        set(WP_CORE_LIBRARY \"${WORKPHONE_ENGINE_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/"
+            "${WP_STATIC_LINK_CRT_TYPE}/${CMAKE_BUILD_TYPE}/Workphone.lib\")\n"
+            "        if(NOT EXISTS \"${WORKPHONE_ENGINE_ROOT}/Engine/cpp/Include/Workphone/WorkphoneConfig.hpp\" OR\n"
+            "           NOT EXISTS \"${WP_CORE_LIBRARY}\")\n"
+            "            message(FATAL_ERROR \"Workphone C++ SDK missing for ${WP_TOOLSET} ${WP_ARCH} ${CMAKE_BUILD_TYPE}. "
+            "Set WORKPHONE_ENGINE_ROOT to a matching checkout or installed SDK. Expected import library: ${WP_CORE_LIBRARY}\")\n"
+            "        endif()\n"
+            "    endif()\n"
+            "endif()\n\n";
+
         cmakeStr +=
             "if (WIN32)\n"
             "\tset(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "
@@ -330,15 +417,6 @@ namespace workphone
             "    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${WP_ROOT}/bin/linux/${CMAKE_BUILD_TYPE})\n"
             "endif ()";
         cmakeStr += newLineStr + newLineStr;
-
-        cmakeStr += getPlatformOptions();
-        cmakeStr += newLineStr + newLineStr;
-
-        cmakeStr += getToolsetOptions();
-        cmakeStr += newLineStr + newLineStr;
-
-        cmakeStr += "set(WP_STATIC_LINK_CRT_TYPE \"" + crtType + "\")" + newLineStr;
-        cmakeStr += newLineStr;
 
         cmakeStr += compileOptions + newLineStr;
 
@@ -362,7 +440,7 @@ namespace workphone
 
         for( auto includeDir : includes )
         {
-            cmakeStr += includeDirOpen + includeDir + includeDirClose + newLineStr;
+            cmakeStr += includeDirOpen + "\"" + includeDir + "\"" + includeDirClose + newLineStr;
         }
 
         cmakeStr += newLineStr;
@@ -372,7 +450,7 @@ namespace workphone
 
         for( auto libraryPath : libraryPaths )
         {
-            linkDirectories << libraryDirOpen + projectName + " " + libraryPath + libraryDirClose +
+            linkDirectories << libraryDirOpen + "\"" + libraryPath + "\"" + libraryDirClose +
                                    newLineStr;
         }
 
@@ -438,6 +516,11 @@ namespace workphone
         cmakeStr += libraryDeclare + newLineStr;
 
         auto libraries = String( "if (WIN32)\n" );
+        libraries += "    if(TARGET WorkphoneCpp::Core)\n";
+        libraries += "        target_link_libraries(" + projectName + " WorkphoneCpp::Core)\n";
+        libraries += "    else()\n";
+        libraries += "        target_link_libraries(" + projectName + " \"${WP_CORE_LIBRARY}\")\n";
+        libraries += "    endif()\n";
         for( auto lib : libs )
         {
             libraries += tabStr + libraryOpen + projectName + " " + lib + windowsLibraryExtendsionStr +
@@ -471,7 +554,6 @@ namespace workphone
         cmakeStr += libraries;
         cmakeStr += newLineStr;
 
-        auto projectPath = applicationManager->getProjectPath();
         auto cmakeListsPath = projectPath + "/CMakeLists.txt";
 
         fileSystem->writeAllText( cmakeListsPath, cmakeStr );
@@ -614,7 +696,10 @@ namespace workphone
         return "include(CheckTypeSize)\n"
                "CHECK_TYPE_SIZE(\"void*\" WP_PTR_SIZE BUILTIN_TYPES_ONLY)\n"
                "\n"
-               "if (WP_PTR_SIZE EQUAL 8)\n"
+               "if (WIN32 AND CMAKE_CXX_COMPILER_ARCHITECTURE_ID STREQUAL \"ARM64\")\n"
+               "  set(WP_PLATFORM_X64 TRUE)\n"
+               "  set(WP_ARCH \"arm64\")\n"
+               "elseif (WP_PTR_SIZE EQUAL 8)\n"
                "  set(WP_PLATFORM_X64 TRUE)\n"
                "  set(WP_ARCH \"x64\")\n"
                "else ()\n"
@@ -625,16 +710,12 @@ namespace workphone
 
     auto ProjectManager::getToolsetOptions() const -> String
     {
-        return "if(WIN32)\n"
-               "\tif (MSVC_TOOLSET_VERSION EQUAL \"141\")\n"
-               "\t\tset(WP_TOOLSET \"v141\")\n"
-               "\telseif(MSVC_TOOLSET_VERSION EQUAL \"142\")\n"
-               "\t\tset(WP_TOOLSET \"v142\")\n"
-               "    elseif(MSVC_TOOLSET_VERSION EQUAL \"143\")\n"
-               "\t\tset(WP_TOOLSET \"v143\")\n"
-               "\tendif()\n"
-               "elseif(APPLE)\n"
-               "    set(WP_TOOLSET \"\")\n"
+        return "if(WIN32 AND MSVC_TOOLSET_VERSION)\n"
+#if WP_LUA_BACKEND_LUAJIT
+               "    set(WP_TOOLSET \"v${MSVC_TOOLSET_VERSION}-luajit\")\n"
+#else
+               "    set(WP_TOOLSET \"v${MSVC_TOOLSET_VERSION}\")\n"
+#endif
                "else()\n"
                "    set(WP_TOOLSET \"\")\n"
                "endif()";

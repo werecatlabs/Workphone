@@ -474,6 +474,7 @@ local PcRendererNames = { "Auto", "DirectX 11", "DirectX 12", "Vulkan", "OpenGL"
 local MacRendererNames = { "Auto", "Metal", "Vulkan / MoltenVK", "OpenGL" };
 local IosRendererNames = { "Auto", "Metal", "OpenGL ES" };
 local AndroidRendererNames = { "Auto", "Vulkan", "OpenGL ES" };
+local CpuBroadphaseNames = { "Sweep And Prune", "Dynamic AABB Tree", "Automatic" };
 
 local function addText(ui, parent, text)
 	local textTypeInfo = IUIText.typeInfo();
@@ -641,6 +642,9 @@ function ProjectSettings:setStatus(message)
 end
 
 function ProjectSettings:readSettingsProperties(properties)
+	if properties:hasProperty("capability.physics.broadphase.gpu") then
+		self.gpuBroadphaseAvailable = properties:getPropertyAsBool("capability.physics.broadphase.gpu");
+	end
 	for key, map in pairs(ProjectSettingsStoreMap) do
 		if properties:hasProperty(map.name) then
 			self.settings[key] = readProperty(properties, map.name, map.type);
@@ -666,6 +670,8 @@ end
 function ProjectSettings:loadSettings()
 	self.capabilities = {};
 	self.unavailableReasons = {};
+	self.gpuBroadphaseAvailable = false;
+	self.gpuBroadphaseOption = nil;
 	for key, defaultValue in pairs(ProjectSettingsDefaults) do
 		self.settings[key] = defaultValue;
 	end
@@ -841,11 +847,13 @@ function ProjectSettings:load()
 	self:bind(addSlider(ui, physicsHeader, "Substeps", ProjectSettingsTypes.PhysicsSubsteps, 1.0, 8.0, self.settings.physicsSubsteps), "physicsSubsteps", "intSlider");
 	self:bind(addSlider(ui, physicsHeader, "Physics Threads", ProjectSettingsTypes.PhysicsThreads, 1.0, 16.0, self.settings.physicsThreads), "physicsThreads", "intSlider");
 	self:bind(addDropdown(ui, physicsHeader, "Broadphase", ProjectSettingsTypes.Broadphase,
-		{ "Sweep And Prune", "Dynamic AABB Tree", "Automatic", "GPU Provider" }, self.settings.broadphase), "broadphase", "dropdown");
+		CpuBroadphaseNames, 0), "broadphase", "dropdown");
+	addText(ui, physicsHeader, "GPU Broadphase requires a registered physics plugin.");
 	self:bind(addToggle(ui, physicsHeader, "Continuous Collision", ProjectSettingsTypes.ContinuousCollision, self.settings.continuousCollision), "continuousCollision", "toggle");
 	self:bind(addToggle(ui, physicsHeader, "Deterministic Physics", ProjectSettingsTypes.DeterministicPhysics, self.settings.deterministicPhysics), "deterministicPhysics", "toggle");
 	self:bind(addToggle(ui, physicsHeader, "Physics Debug Draw", ProjectSettingsTypes.PhysicsDebugDraw, self.settings.physicsDebugDraw), "physicsDebugDraw", "toggle");
 	self:bind(addEntry(ui, physicsHeader, "Collision Layers", ProjectSettingsTypes.CollisionLayers), "collisionLayers", "text"):setText(self.settings.collisionLayers);
+	addText(ui, physicsHeader, "Enter comma-separated names, then assign a Collision Layer on each Rigidbody.");
 
 	-- Audio ----------------------------------------------------------------
 	local soundHeader = self:addHeader(ui, soundTab, "Mixer / Runtime Audio");
@@ -1031,6 +1039,7 @@ end
 
 function ProjectSettings:syncToControls()
 	self.syncingControls = true;
+	self:updateBroadphaseOptions();
 	for _, binding in ipairs(self.controlBindings) do
 		local value = self.settings[binding.key];
 		self:setControlValue(binding.control, binding.kind, value);
@@ -1044,6 +1053,23 @@ function ProjectSettings:syncToControls()
 	end
 	self.syncingControls = false;
 	self:updateRendererSummary();
+end
+
+function ProjectSettings:updateBroadphaseOptions()
+	if self.broadphaseControl == nil then return; end
+	local gpuOption = nil;
+	if self.gpuBroadphaseAvailable then
+		gpuOption = "GPU Provider";
+	elseif self.settings.broadphase == 3 then
+		-- Keep saved provider choices visible until the user chooses a CPU option.
+		gpuOption = "GPU Provider (Unavailable)";
+	end
+	if self.gpuBroadphaseOption == gpuOption then return; end
+	self.gpuBroadphaseOption = gpuOption;
+	local options = Parameters();
+	for _, option in ipairs(CpuBroadphaseNames) do options:push_back(option); end
+	if gpuOption ~= nil then options:push_back(gpuOption); end
+	self.broadphaseControl:setOptions(options:getAsStringArray());
 end
 
 function ProjectSettings:saveSettings()
@@ -1079,6 +1105,7 @@ function ProjectSettings:applyPlatformProfile(platform)
 	end
 	self.settings.activePlatform = platform;
 
+	-- Desktop presets use the built-in BC1/BC3 encoder. Mobile compression requires a provider.
 	if platform == 0 then
 		self.settings.rendererPC = 0; -- Auto: DirectX/Vulkan chosen by runtime
 		self.settings.renderPipeline = 1;
@@ -1088,7 +1115,7 @@ function ProjectSettings:applyPlatformProfile(platform)
 		self.settings.shadowQuality = 3;
 		self.settings.shadowDistance = 120;
 		self.settings.maxTextureSize = 4096;
-		self.settings.textureCompressionPC = 2;
+		self.settings.textureCompressionPC = 1;
 		self.settings.frameRateLimit = 144;
 		self.settings.memoryBudgetMb = 4096;
 		self.settings.gpuMemoryBudgetMb = 2048;
@@ -1100,7 +1127,7 @@ function ProjectSettings:applyPlatformProfile(platform)
 		self.settings.aa = 2;
 		self.settings.shadowQuality = 3;
 		self.settings.maxTextureSize = 4096;
-		self.settings.textureCompressionMac = 2;
+		self.settings.textureCompressionMac = 1;
 		self.settings.architectureMac = 2;
 		self.settings.memoryBudgetMb = 4096;
 		self.settings.gpuMemoryBudgetMb = 2048;
@@ -1113,7 +1140,7 @@ function ProjectSettings:applyPlatformProfile(platform)
 		self.settings.shadowQuality = 2;
 		self.settings.shadowDistance = 50;
 		self.settings.maxTextureSize = 2048;
-		self.settings.textureCompressionIOS = 2;
+		self.settings.textureCompressionIOS = 0;
 		self.settings.frameRateLimit = 60;
 		self.settings.memoryBudgetMb = 1024;
 		self.settings.gpuMemoryBudgetMb = 512;
@@ -1126,7 +1153,7 @@ function ProjectSettings:applyPlatformProfile(platform)
 		self.settings.shadowQuality = 1;
 		self.settings.shadowDistance = 40;
 		self.settings.maxTextureSize = 2048;
-		self.settings.textureCompressionAndroid = 2;
+		self.settings.textureCompressionAndroid = 0;
 		self.settings.frameRateLimit = 60;
 		self.settings.memoryBudgetMb = 1024;
 		self.settings.gpuMemoryBudgetMb = 512;
@@ -1304,6 +1331,7 @@ function ProjectSettings:handleControlChanged(sender)
 				return;
 			end
 			self:syncFromControls();
+			self:updateBroadphaseOptions();
 			self:updateRendererSummary();
 			self:setStatus("Unsaved changes. Apply updates the current project; Save writes the project file.");
 			return;

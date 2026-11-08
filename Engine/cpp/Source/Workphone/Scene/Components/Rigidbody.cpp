@@ -38,6 +38,7 @@ namespace workphone::scene
     const String Rigidbody::SolverVelocityIterationsStr = String( "solverVelocityIterations" );
     const String Rigidbody::ContactReportThresholdStr = String( "contactReportThreshold" );
     const String Rigidbody::GroupMaskStr = String( "groupMask" );
+    const String Rigidbody::CollisionLayerStr = String( "collisionLayer" );
     const String Rigidbody::CollisionMaskStr = String( "collisionMask" );
     const String Rigidbody::CollisionMaskOverrideStr = String( "collisionMaskOverride" );
     const String Rigidbody::LocalBoundsStr = String( "localBounds" );
@@ -165,9 +166,8 @@ namespace workphone::scene
 
         const auto &getU32PropertyDescriptors()
         {
-            static const std::array<U32PropertyDescriptor, 4> descriptors = {
-                { { Rigidbody::GroupMaskStr, &Rigidbody::getGroupMask, &Rigidbody::setGroupMask },
-                  { Rigidbody::CollisionMaskStr, &Rigidbody::getCollisionMask,
+            static const std::array<U32PropertyDescriptor, 3> descriptors = {
+                { { Rigidbody::CollisionMaskStr, &Rigidbody::getCollisionMask,
                     &Rigidbody::setCollisionMask },
                   { Rigidbody::SolverPositionIterationsStr, &Rigidbody::getSolverPositionIterations,
                     &Rigidbody::setSolverPositionIterations },
@@ -258,7 +258,10 @@ namespace workphone::scene
                 { Rigidbody::StabilizationThresholdStr, "Stabilization Threshold", "Damping & Limits",
                   "Energy threshold used to stabilize slow bodies.", "0", "", "0.001" },
                 { Rigidbody::GroupMaskStr, "Collision Group", "Collision",
-                  "Category bits identifying this body.", "0", "", "1" },
+                  "Fallback category bits when no project collision layer matches.", "0", "", "1" },
+                { Rigidbody::CollisionLayerStr, "Collision Layer", "Collision",
+                  "Name from Project Settings. Leave blank to use the numeric collision group.",
+                  "", "", "" },
                 { Rigidbody::CollisionMaskStr, "Collides With", "Collision",
                   "Category bits this body is allowed to collide with.", "0", "", "1" },
                 { Rigidbody::CollisionMaskOverrideStr, "Override Actor Mask", "Collision",
@@ -440,7 +443,7 @@ namespace workphone::scene
                                                         m_continuousCollisionDetection );
                         rigidDynamic->setKinematic( m_isKinematic );
                         rigidDynamic->setEnabled( enabled );
-                        rigidDynamic->setCollisionType( m_groupMask );
+                        rigidDynamic->setCollisionType( getGroupMask() );
                         rigidDynamic->setCollisionMask( m_collisionMask );
                     }
 
@@ -451,7 +454,7 @@ namespace workphone::scene
                         rigidStatic->setActorFlag( physics::ActorFlagEnum::eDISABLE_GRAVITY,
                                                    !m_useGravity );
                         rigidStatic->setEnabled( enabled );
-                        rigidStatic->setCollisionType( m_groupMask );
+                        rigidStatic->setCollisionType( getGroupMask() );
                         rigidStatic->setCollisionMask( m_collisionMask );
                     }
 
@@ -538,6 +541,9 @@ namespace workphone::scene
                     setRigidDynamic( nullptr );
                 }
 
+                if( !m_collisionLayer.load().empty() )
+                    refreshCollisionLayerFromScene( physicsMgr->getPhysicsScene().get() );
+
                 SmartPtr<physics::IPhysicsBody3> body;
                 auto transform = actor->getWorldTransform();
 
@@ -586,7 +592,7 @@ namespace workphone::scene
 
                 body->setMass( m_mass );
                 body->setActorFlag( physics::ActorFlagEnum::eDISABLE_GRAVITY, !m_useGravity );
-                body->setCollisionType( m_groupMask );
+                body->setCollisionType( getGroupMask() );
                 body->setCollisionMask( m_collisionMask );
             }
         }
@@ -814,7 +820,7 @@ namespace workphone::scene
 
                         if( shape && !shape->isAttached() )
                         {
-                            shape->setCollisionType( m_groupMask );
+                            shape->setCollisionType( getGroupMask() );
                             shape->setCollisionMask( m_collisionMask );
 
                             auto localTransform = transform->getWorldTransform();
@@ -1082,13 +1088,64 @@ namespace workphone::scene
 
     u32 Rigidbody::getGroupMask() const
     {
-        return m_groupMask;
+        const auto layerMask = m_collisionLayerMask.load();
+        return layerMask != 0 ? layerMask : m_groupMask.load();
     }
 
     void Rigidbody::setGroupMask( u32 groupMask )
     {
         m_groupMask = groupMask;
         applyCollisionFiltering();
+    }
+
+    void Rigidbody::refreshCollisionLayer( const Properties *layers )
+    {
+        const auto name = m_collisionLayer.load();
+        u32 mask = 0;
+        if( layers && !name.empty() )
+            layers->getPropertyValue( "layer." + name, mask );
+        if( m_collisionLayerMask.load() == mask ) return;
+
+        const auto app = core::IApplicationManager::instancePtr();
+        const auto manager = app ? app->getPhysicsManager() : nullptr;
+        const auto game = app ? app->getGameManager() : nullptr;
+        SmartPtr<physics::IPhysicsShape3> shape;
+        {
+            // Component removal locks the actor before touching physics. Snapshot its shape in that order.
+            ScopedLock gameLock( game.get() );
+            if( auto actor = getActorPtr() )
+                if( auto collision = actor->getComponent<Collision>() )
+                    shape = collision->getShape();
+        }
+
+        const auto scene = manager ? manager->getPhysicsScene() : nullptr;
+        ScopedLock physicsLock( scene.get() );
+        auto dynamic = getRigidDynamic();
+        auto stationary = getRigidStatic();
+        const auto belongsToAnotherScene = [&]( const auto &body ) {
+            const auto bodyScene = body ? body->getScene() : nullptr;
+            return bodyScene && bodyScene != scene;
+        };
+        if( belongsToAnotherScene( dynamic ) || belongsToAnotherScene( stationary ) ) return;
+
+        m_collisionLayerMask.store( mask );
+        const auto groupMask = getGroupMask();
+        if( dynamic ) dynamic->setCollisionType( groupMask );
+        if( stationary ) stationary->setCollisionType( groupMask );
+        if( shape )
+        {
+            const auto body = shape->getActor();
+            if( !body || body.get() == dynamic.get() || body.get() == stationary.get() )
+                shape->setCollisionType( groupMask );
+        }
+    }
+
+    void Rigidbody::refreshCollisionLayerFromScene( physics::IPhysicsScene3 *scene )
+    {
+        const bool named = !m_collisionLayer.load().empty();
+        if( !named && m_collisionLayerMask.load() == 0 ) return;
+        const auto layers = named && scene ? scene->getProperties() : nullptr;
+        refreshCollisionLayer( layers.get() );
     }
 
     u32 Rigidbody::getCollisionMask() const
@@ -1390,6 +1447,8 @@ namespace workphone::scene
             {
                 properties->setProperty( descriptor.name, ( this->*descriptor.getter )() );
             }
+            properties->setProperty( GroupMaskStr, m_groupMask.load() );
+            properties->setProperty( CollisionLayerStr, m_collisionLayer.load() );
 
             for( const auto &descriptor : getVector3PropertyDescriptors() )
             {
@@ -1485,18 +1544,18 @@ namespace workphone::scene
                 setCollisionMaskOverride( collisionMaskOverride );
             }
 
-            // Named project layers are translated to the existing native group
-            // mask, so scene contacts and ray queries share the same filter.
+            auto groupMask = m_groupMask.load();
+            if( properties->getPropertyValue( GroupMaskStr, groupMask ) )
+                setGroupMask( groupMask );
+
             String collisionLayer;
-            if( properties->getPropertyValue( "collisionLayer", collisionLayer ) )
+            if( properties->getPropertyValue( CollisionLayerStr, collisionLayer ) )
             {
+                m_collisionLayer = StringUtil::trim( collisionLayer );
                 auto application = core::IApplicationManager::instancePtr();
                 auto manager = application ? application->getPhysicsManager() : nullptr;
                 auto scene = manager ? manager->getPhysicsScene() : nullptr;
-                auto layers = scene ? scene->getProperties() : nullptr;
-                u32 mask = 0;
-                if( layers && layers->getPropertyValue( "layer." + collisionLayer, mask ) )
-                    setGroupMask( mask );
+                refreshCollisionLayerFromScene( scene.get() );
             }
 
             updatePhysicsState();

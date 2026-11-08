@@ -1776,6 +1776,15 @@ namespace workphone
                     active = &pass;
                     RenderPhaseProfile timing( owner->m_sceneProfile, "Scene draw" );
                     owner->render();
+                    if( viewport && viewport->getCamera() )
+                    {
+                        auto debug = dynamic_pointer_cast<ClawDebug>( owner->getDebug() );
+                        auto renderer3 = dynamic_pointer_cast<IRenderer3>( renderer );
+                        if( debug && renderer3 )
+                        {
+                            debug->renderLines( *renderer3 );
+                        }
+                    }
                     break;
                 }
                 case WP_GRAPHICS_FRAME_END_EFFECTS:

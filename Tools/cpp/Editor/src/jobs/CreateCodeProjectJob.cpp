@@ -14,19 +14,18 @@ namespace workphone::editor
     {
         try
         {
-            auto applicationManager = core::IApplicationManager::instance();
             auto editorManager = EditorManager::getSingletonPtr();
             auto projectManager = editorManager->getProjectManager();
 
+#if !defined( WP_PLATFORM_WIN32 )
+            auto applicationManager = core::IApplicationManager::instance();
             auto workingDirectory = Path::getWorkingDirectory();
             auto mediaPath = String();
 
 #if WP_FINAL
             mediaPath += applicationManager->getMediaPath() + "/Engine";
 #else
-#    if defined WP_PLATFORM_WIN32
-            mediaPath = String( "../../../../../../" );
-#    elif defined WP_PLATFORM_APPLE
+#    if defined WP_PLATFORM_APPLE
             mediaPath = String( "../../../" );
 #    else
             mediaPath = String( "../../../Engine/cpp/Include" );
@@ -52,6 +51,7 @@ namespace workphone::editor
             projectManager->addLibraryFolder( proprietaryPath + "/lioncat_proprietary/libs" );
             projectManager->addLibrary( "FBApplication" );
             projectManager->addLibrary( "FBVehicle" );
+#endif
 
             projectManager->generateProject();
         }

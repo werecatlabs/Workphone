@@ -8,6 +8,9 @@
 #include <editor/Project.hpp>
 #include <Workphone/Workphone.hpp>
 #include <Workphone/Scene/Directors/GraphicsSettingsDirector.hpp>
+#if WP_BUILD_PHYSICS3
+#include <WPPhysics/WPPhysicsUtil.hpp>
+#endif
 #include <set>
 #include <stdexcept>
 #include <cstdlib>
@@ -224,6 +227,19 @@ namespace workphone::editor
     {
         if( !settings ) return validateProjectSettingsRuntime( settings );
         auto fresh = snapshot( *settings );
+        if( fresh->getPropertyAsInt( "physics.broadphase" ) == 3 )
+        {
+#if WP_BUILD_PHYSICS3
+            const bool hasProvider = physics::hasBroadphaseProvider();
+#else
+            constexpr bool hasProvider = false;
+#endif
+            if( !hasProvider )
+            {
+                fresh->setProperty( "physics.broadphase", 1 );
+                WP_LOG_WARNING( "Saved GPU Broadphase provider is unavailable. Using Dynamic AABB Tree." );
+            }
+        }
         for( const auto &definition : settingDefinitions )
         {
             const String name( definition.name );

@@ -424,6 +424,8 @@ namespace workphone::editor
             writeProjectFile( directory / "Plugin/Plugin.cpp", getPluginSource() );
         }
         applyDefaults();
+        // A new project does not have a checked Resource Package profile yet.
+        m_properties->setProperty( "build.assetBundles", false );
         saveToFile( destination.u8string() );
         if( auto editor = EditorManager::getSingletonPtr() )
         {
@@ -941,13 +943,13 @@ namespace workphone::editor
         if( configuration != "Debug" && configuration != "RelWithDebInfo" &&
             configuration != "Release" && configuration != "MinSizeRel" )
             throw std::invalid_argument( "Unknown project build configuration" );
-        String profileKey;
+        String profileKey = configuration + '\n';
         for( const auto &argument : configureArguments ) { profileKey += argument; profileKey += '\n'; }
         const auto profileHash = StringUtil::toString( StringUtil::getHash( profileKey ) );
+        // CMake and MSBuild add several levels of intermediate files below this path.
         const auto buildDirectory = configureArguments.empty()
                                         ? directory / "Cache/project"
-                                        : directory / "Cache/project-profiles" / configuration.c_str() /
-                                              profileHash.c_str();
+                                        : directory / "Cache/build" / profileHash.c_str();
         auto app = core::IApplicationManager::instancePtr();
         if( !app )
         {

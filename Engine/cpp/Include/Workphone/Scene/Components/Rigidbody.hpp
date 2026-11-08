@@ -70,6 +70,9 @@ namespace workphone
             /** @brief Property key for the collision group bitmask. */
             static const String GroupMaskStr;
 
+            /** @brief Property key for an optional named project collision layer. */
+            static const String CollisionLayerStr;
+
             /** @brief Property key for the collision interaction mask. */
             static const String CollisionMaskStr;
 
@@ -234,6 +237,9 @@ namespace workphone
              * @param groupMask New group mask value.
              */
             void setGroupMask( u32 groupMask );
+
+            /** @brief Reapply the selected layer using the physics scene's published layer masks. */
+            void refreshCollisionLayer( const Properties *layers );
 
             /**
              * @brief Get the collision mask that determines which groups this body collides with.
@@ -602,6 +608,8 @@ namespace workphone
         protected:
             void setCollisionMaskInternal( u32 collisionMask, bool explicitOverride );
 
+            void refreshCollisionLayerFromScene( physics::IPhysicsScene3 *scene );
+
             /**
              * @brief Applies collision filtering to the body and attached collision shape.
              */
@@ -703,6 +711,10 @@ namespace workphone
              * @brief Collision group bitmask used for filtering.
              */
             atomic_u32 m_groupMask = 0;
+
+            AtomicObject<String> m_collisionLayer;
+            // Zero means the named layer is unset or missing from the active profile.
+            atomic_u32 m_collisionLayerMask = 0;
 
             /**
              * @brief Collision mask indicating which groups this body collides with.
