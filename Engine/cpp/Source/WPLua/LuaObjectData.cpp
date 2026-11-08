@@ -174,14 +174,18 @@ namespace workphone
                 for( iterator i( table ), e; i != e; ++i )
                 {
                     if( type( *i ) != LUA_TFUNCTION )
+                    {
                         continue;
+                    }
 
                     object member( *i );
                     member.push( L );
                     luabind::detail::stack_pop pop( L, 1 );
 
                     if( lua_tocfunction( L, -1 ) == &luabind::detail::property_tag )
+                    {
                         continue;
+                    }
 
                     auto key = i.key();
                     auto functionName = object_cast<std::string>( key );

@@ -23,8 +23,9 @@
 #include <limits>
 #include <vector>
 #include <exception>
+
 #ifdef WP_LUA_BACKEND_LUAJIT
-#include <lj_arch.h>
+#    include <lj_arch.h>
 #endif
 
 extern "C" {
@@ -57,111 +58,230 @@ namespace workphone
 
         struct RuntimeLuaDomain final : SourceBudgetObject
         {
-            static constexpr u64 bootstrapBytes=32ull<<20;
+            static constexpr u64 bootstrapBytes = 32ull << 20;
+
             struct Source
             {
                 // Native text and its name die before their conservative lease.
                 StreamBudget admission;
                 std::string name;
-                size_t bytes=0;
+                size_t bytes = 0;
             };
+
             StreamBudget metadata;
             StreamBudget bootstrap;
-            std::vector<Source,SourceBudgetAllocator<Source>> sources;
-            size_t bootstrapLive=0;
-            bool bootstrapping=true;
-            RuntimeLuaDomain() : metadata(WorldStreamingScheduler::reserveSharedSource(65536)),
-                bootstrap(WorldStreamingScheduler::reserveSharedSource(bootstrapBytes))
-            { if(!metadata||!bootstrap)throw std::bad_alloc(); }
-            bool retainSource(const String &name,size_t bytes) noexcept
+            std::vector<Source, SourceBudgetAllocator<Source>> sources;
+            size_t bootstrapLive = 0;
+            bool bootstrapping = true;
+
+            RuntimeLuaDomain() :
+                metadata( WorldStreamingScheduler::reserveSharedSource( 65536 ) ),
+                bootstrap( WorldStreamingScheduler::reserveSharedSource( bootstrapBytes ) )
             {
-                try {
-                    auto found=std::find_if(sources.begin(),sources.end(),[&](const Source &entry){
-                        return entry.name.size()==name.size()&&(!name.size()||!std::memcmp(entry.name.data(),name.data(),name.size()));});
-                    if(found!=sources.end()&&found->bytes>=bytes)return true;
+                if( !metadata || !bootstrap )
+                {
+                    throw std::bad_alloc();
+                }
+            }
+
+            bool retainSource( const String &name, size_t bytes ) noexcept
+            {
+                try
+                {
+                    auto found =
+                        std::find_if( sources.begin(), sources.end(), [&]( const Source &entry ) {
+                            return entry.name.size() == name.size() &&
+                                   ( !name.size() ||
+                                     !std::memcmp( entry.name.data(), name.data(), name.size() ) );
+                        } );
+                    if( found != sources.end() && found->bytes >= bytes )
+                    {
+                        return true;
+                    }
                     // The debugger retains at most 256 source texts; leave room
                     // for policy chunks and a full 256-module package closure.
-                    if(found==sources.end()&&sources.size()>=512)return false;
-                    constexpr auto maximum=std::numeric_limits<u64>::max();
-                    if(bytes>(maximum-4096)/4)return false;
-                    const auto textBytes=u64(bytes)*4+4096;
-                    if(name.size()>(maximum-textBytes)/8)return false;
+                    if( found == sources.end() && sources.size() >= 512 )
+                    {
+                        return false;
+                    }
+                    constexpr auto maximum = std::numeric_limits<u64>::max();
+                    if( bytes > ( maximum - 4096 ) / 4 )
+                    {
+                        return false;
+                    }
+                    const auto textBytes = u64( bytes ) * 4 + 4096;
+                    if( name.size() > ( maximum - textBytes ) / 8 )
+                    {
+                        return false;
+                    }
                     Source staged;
-                    staged.admission=WorldStreamingScheduler::reserveSharedSource(textBytes+u64(name.size())*8);
-                    if(!staged.admission)return false;
-                    staged.name.assign(name.data(),name.size());staged.bytes=bytes;
-                    if(found==sources.end())sources.push_back(std::move(staged));
-                    else std::swap(*found,staged);
+                    staged.admission = WorldStreamingScheduler::reserveSharedSource(
+                        textBytes + u64( name.size() ) * 8 );
+                    if( !staged.admission )
+                    {
+                        return false;
+                    }
+                    staged.name.assign( name.data(), name.size() );
+                    staged.bytes = bytes;
+                    if( found == sources.end() )
+                    {
+                        sources.push_back( std::move( staged ) );
+                    }
+                    else
+                    {
+                        std::swap( *found, staged );
+                    }
                     return true;
-                }catch(...){return false;}
+                }
+                catch( ... )
+                {
+                    return false;
+                }
             }
         };
 
-        struct alignas(std::max_align_t) RuntimeLuaBlock { size_t capacity; bool bootstrap; };
-
-        void freeRuntimeLuaBlock(RuntimeLuaDomain &domain,RuntimeLuaBlock *block) noexcept
+        struct alignas( std::max_align_t ) RuntimeLuaBlock
         {
-            if(block->bootstrap){domain.bootstrapLive-=sizeof(RuntimeLuaBlock)+block->capacity;
-                ::operator delete(block,std::align_val_t(alignof(RuntimeLuaBlock)));}
-            else freeSourceBudgetStorage(block,alignof(RuntimeLuaBlock));
+            size_t capacity;
+            bool bootstrap;
+        };
+
+        void freeRuntimeLuaBlock( RuntimeLuaDomain &domain, RuntimeLuaBlock *block ) noexcept
+        {
+            if( block->bootstrap )
+            {
+                domain.bootstrapLive -= sizeof( RuntimeLuaBlock ) + block->capacity;
+                ::operator delete( block, std::align_val_t( alignof( RuntimeLuaBlock ) ) );
+            }
+            else
+            {
+                freeSourceBudgetStorage( block, alignof( RuntimeLuaBlock ) );
+            }
         }
 
-        void *runtimeLuaAllocate(void *data,void *pointer,size_t oldBytes,size_t bytes) noexcept
+        void *runtimeLuaAllocate( void *data, void *pointer, size_t oldBytes, size_t bytes ) noexcept
         {
-            auto &domain=*static_cast<RuntimeLuaDomain*>(data);
-            const auto previous=pointer?static_cast<RuntimeLuaBlock*>(pointer)-1:nullptr;
-            if(!bytes){if(previous)freeRuntimeLuaBlock(domain,previous);return nullptr;}
+            auto &domain = *static_cast<RuntimeLuaDomain *>( data );
+            const auto previous = pointer ? static_cast<RuntimeLuaBlock *>( pointer ) - 1 : nullptr;
+            if( !bytes )
+            {
+                if( previous )
+                {
+                    freeRuntimeLuaBlock( domain, previous );
+                }
+                return nullptr;
+            }
             // Lua requires that shrinking an allocation cannot fail. Keeping its
             // physical capacity also keeps that capacity charged until free.
-            if(previous&&bytes<=previous->capacity)return pointer;
-            try {
-                if(bytes>std::numeric_limits<size_t>::max()-sizeof(RuntimeLuaBlock))return nullptr;
-                const auto total=sizeof(RuntimeLuaBlock)+bytes;
+            if( previous && bytes <= previous->capacity )
+            {
+                return pointer;
+            }
+            try
+            {
+                if( bytes > std::numeric_limits<size_t>::max() - sizeof( RuntimeLuaBlock ) )
+                {
+                    return nullptr;
+                }
+                const auto total = sizeof( RuntimeLuaBlock ) + bytes;
                 RuntimeLuaBlock *replacement;
-                if(domain.bootstrapping){
+                if( domain.bootstrapping )
+                {
                     // Pre-admission prevents normal quota pressure from causing
                     // Lua longjmp through binding libraries' C++ local owners.
-                    if(total>RuntimeLuaDomain::bootstrapBytes-domain.bootstrapLive)return nullptr;
-                    replacement=static_cast<RuntimeLuaBlock*>(::operator new(total,std::align_val_t(alignof(RuntimeLuaBlock))));
-                    domain.bootstrapLive+=total;
-                }else replacement=static_cast<RuntimeLuaBlock*>(allocateSourceBudgetStorage(total,alignof(RuntimeLuaBlock)));
-                ::new(replacement) RuntimeLuaBlock{bytes,domain.bootstrapping};
-                auto value=replacement+1;
+                    if( total > RuntimeLuaDomain::bootstrapBytes - domain.bootstrapLive )
+                    {
+                        return nullptr;
+                    }
+                    replacement = static_cast<RuntimeLuaBlock *>(
+                        ::operator new( total, std::align_val_t( alignof( RuntimeLuaBlock ) ) ) );
+                    domain.bootstrapLive += total;
+                }
+                else
+                {
+                    replacement = static_cast<RuntimeLuaBlock *>(
+                        allocateSourceBudgetStorage( total, alignof( RuntimeLuaBlock ) ) );
+                }
+                ::new( replacement ) RuntimeLuaBlock{ bytes, domain.bootstrapping };
+                auto value = replacement + 1;
 #ifdef WP_LUA_BACKEND_LUAJIT
                 // GC64 tags still reserve the upper pointer bits. Never hand a
                 // custom high-address allocation to the VM unchecked.
-                constexpr uintptr_t pointerLimit=uintptr_t(1)<<47;
-                const auto address=reinterpret_cast<uintptr_t>(value);
-                if(address>=pointerLimit||bytes>pointerLimit-address){freeRuntimeLuaBlock(domain,replacement);return nullptr;}
+                constexpr uintptr_t pointerLimit = uintptr_t( 1 ) << 47;
+                const auto address = reinterpret_cast<uintptr_t>( value );
+                if( address >= pointerLimit || bytes > pointerLimit - address )
+                {
+                    freeRuntimeLuaBlock( domain, replacement );
+                    return nullptr;
+                }
 #endif
-                if(previous){std::memcpy(value,pointer,std::min(oldBytes,bytes));freeRuntimeLuaBlock(domain,previous);}
+                if( previous )
+                {
+                    std::memcpy( value, pointer, std::min( oldBytes, bytes ) );
+                    freeRuntimeLuaBlock( domain, previous );
+                }
                 return value;
-            }catch(...){return nullptr;}
+            }
+            catch( ... )
+            {
+                return nullptr;
+            }
         }
 
-        RuntimeLuaDomain *runtimeLuaDomain(lua_State *state)
+        RuntimeLuaDomain *runtimeLuaDomain( lua_State *state )
         {
-            if(!state)return nullptr;void *data=nullptr;
-            return lua_getallocf(state,&data)==runtimeLuaAllocate?static_cast<RuntimeLuaDomain*>(data):nullptr;
+            if( !state )
+            {
+                return nullptr;
+            }
+            void *data = nullptr;
+            return lua_getallocf( state, &data ) == runtimeLuaAllocate
+                       ? static_cast<RuntimeLuaDomain *>( data )
+                       : nullptr;
         }
 
-        void closeLuaState(lua_State *state)
+        void closeLuaState( lua_State *state )
         {
-            if(!state)return;
+            if( !state )
+            {
+                return;
+            }
             // Lua invokes its allocator throughout finalization. The opaque
             // native/source owner must outlive the final lua_close callback.
-            std::unique_ptr<RuntimeLuaDomain> owner(runtimeLuaDomain(state));
-            lua_close(state);
+            std::unique_ptr<RuntimeLuaDomain> owner( runtimeLuaDomain( state ) );
+            lua_close( state );
         }
 
-        void memoryDiagnostic(String &error,const char *message) noexcept
-        {try{error=message;}catch(...){try{error="Lua memory denied";}catch(...){error.clear();}}}
+        void memoryDiagnostic( String &error, const char *message ) noexcept
+        {
+            try
+            {
+                error = message;
+            }
+            catch( ... )
+            {
+                try
+                {
+                    error = "Lua memory denied";
+                }
+                catch( ... )
+                {
+                    error.clear();
+                }
+            }
+        }
 
         String scriptSourceIdentity( const SmartPtr<IStream> &stream, const String &requested )
         {
             const auto info = stream->getFileInfo();
-            if( info.absolutePath.size() ) return info.absolutePath.str();
-            if( info.filePath.size() ) return info.filePath.str();
+            if( info.absolutePath.size() )
+            {
+                return info.absolutePath.str();
+            }
+            if( info.filePath.size() )
+            {
+                return info.filePath.str();
+            }
             // getFileName is a basename, not a source identity. In particular it
             // must not replace an absolute name passed by the caller.
             return requested;
@@ -180,16 +300,29 @@ namespace workphone
         {
             // Registry storage is shared with coroutines and works with Lua 5.1/LuaJIT.
             lua_pushlightuserdata( state, &managerRegistryKey );
-            if(manager)lua_pushlightuserdata( state, manager );
-            else lua_pushnil(state);
+            if( manager )
+            {
+                lua_pushlightuserdata( state, manager );
+            }
+            else
+            {
+                lua_pushnil( state );
+            }
             lua_rawset( state, LUA_REGISTRYINDEX );
         }
+
         int scriptTraceback( lua_State *state )
         {
             // Do not invoke an arbitrary error object's __tostring in the handler.
             const char *message = lua_tostring( state, 1 );
-            if( !message ) message = "Lua raised a non-string error";
-            if( auto manager = stateManager( state ) ) manager->debuggerException( state, message );
+            if( !message )
+            {
+                message = "Lua raised a non-string error";
+            }
+            if( auto manager = stateManager( state ) )
+            {
+                manager->debuggerException( state, message );
+            }
             luaL_traceback( state, state, message, 1 );
             return 1;
         }
@@ -229,7 +362,10 @@ namespace workphone
             for( const auto &entry : *entries )
             {
                 if( luaL_loadbufferx( state, entry.source.data(), entry.source.size(),
-                                     entry.sourceName.c_str(), "t" ) != LUA_OK ) return lua_error( state );
+                                      entry.sourceName.c_str(), "t" ) != LUA_OK )
+                {
+                    return lua_error( state );
+                }
                 lua_pushvalue( state, -1 );
                 lua_setfield( state, -3, entry.slashName.c_str() );
                 lua_setfield( state, -2, entry.dottedName.c_str() );
@@ -249,11 +385,18 @@ namespace workphone
             auto *call = static_cast<ScriptConstruction *>( lua_touserdata( state, 1 ) );
             lua_getglobal( state, call->className );
             if( lua_isnil( state, -1 ) )
+            {
                 return luaL_error( state, "Lua class '%s' was not found", call->className );
-            if( call->owner ) luabind::detail::convert_to_lua( state, *call->owner );
+            }
+            if( call->owner )
+            {
+                luabind::detail::convert_to_lua( state, *call->owner );
+            }
             lua_call( state, call->owner ? 1 : 0, 1 );
             if( lua_isnil( state, -1 ) )
+            {
                 return luaL_error( state, "Lua class '%s' returned nil", call->className );
+            }
             return 1;
         }
 
@@ -263,19 +406,36 @@ namespace workphone
             int arguments = 0;
             if( call->receiver || call->globalName )
             {
-                if( call->receiver ) call->receiver->push( state );
-                else lua_getglobal( state, call->globalName );
+                if( call->receiver )
+                {
+                    call->receiver->push( state );
+                }
+                else
+                {
+                    lua_getglobal( state, call->globalName );
+                }
                 lua_getfield( state, -1, call->functionName );
-                lua_insert( state, -2 ); // function, self
+                lua_insert( state, -2 );  // function, self
                 ++arguments;
             }
-            else lua_getglobal( state, call->functionName );
+            else
+            {
+                lua_getglobal( state, call->functionName );
+            }
 
-            if( call->optional && lua_isnil( state, -( arguments + 1 ) ) ) return 0;
+            if( call->optional && lua_isnil( state, -( arguments + 1 ) ) )
+            {
+                return 0;
+            }
             if( !lua_isfunction( state, -( arguments + 1 ) ) )
+            {
                 return luaL_error( state, "Lua function '%s' was not found", call->functionName );
-            if( auto manager = stateManager( state ); manager &&
-                !manager->debuggerCallbackAllowed( state, -( arguments + 1 ) ) ) return 0;
+            }
+            if( auto manager = stateManager( state );
+                manager && !manager->debuggerCallbackAllowed( state, -( arguments + 1 ) ) )
+            {
+                return 0;
+            }
 
             // Keep the established Parameters and mutable results-container ABI.
             if( call->parameters )
@@ -292,55 +452,123 @@ namespace workphone
             return 0;
         }
 
-        struct ManagerFunction {lua_CFunction function;char key;};
-        ManagerFunction managerFunctions[]={{scriptTraceback,0},{installPreloads,0},{invokeScript,0},{constructScript,0}};
-        void cacheRuntimeFunctions(lua_State *state)
+        struct ManagerFunction
         {
-            for(auto &entry:managerFunctions){lua_pushlightuserdata(state,&entry.key);lua_pushcfunction(state,entry.function);lua_rawset(state,LUA_REGISTRYINDEX);}
+            lua_CFunction function;
+            char key;
+        };
+
+        ManagerFunction managerFunctions[] = {
+            { scriptTraceback, 0 }, { installPreloads, 0 }, { invokeScript, 0 }, { constructScript, 0 }
+        };
+
+        void cacheRuntimeFunctions( lua_State *state )
+        {
+            for( auto &entry : managerFunctions )
+            {
+                lua_pushlightuserdata( state, &entry.key );
+                lua_pushcfunction( state, entry.function );
+                lua_rawset( state, LUA_REGISTRYINDEX );
+            }
         }
-        bool pushManagerFunction(lua_State *state,lua_CFunction function)
+
+        bool pushManagerFunction( lua_State *state, lua_CFunction function )
         {
-            if(!runtimeLuaDomain(state)){lua_pushcfunction(state,function);return true;}
+            if( !runtimeLuaDomain( state ) )
+            {
+                lua_pushcfunction( state, function );
+                return true;
+            }
             // LuaJIT allocates a C closure for pushcfunction. Bootstrap already
             // created these four closures inside the protected admission scope.
             // A raw lookup only borrows their retained VM ownership.
-            if(!lua_checkstack(state,4))return false;
-            for(auto &entry:managerFunctions)if(entry.function==function){
-                lua_pushlightuserdata(state,&entry.key);lua_rawget(state,LUA_REGISTRYINDEX);
-                if(lua_tocfunction(state,-1)==function)return true;
-                lua_pop(state,1);return false;
+            if( !lua_checkstack( state, 4 ) )
+            {
+                return false;
+            }
+            for( auto &entry : managerFunctions )
+            {
+                if( entry.function == function )
+                {
+                    lua_pushlightuserdata( state, &entry.key );
+                    lua_rawget( state, LUA_REGISTRYINDEX );
+                    if( lua_tocfunction( state, -1 ) == function )
+                    {
+                        return true;
+                    }
+                    lua_pop( state, 1 );
+                    return false;
+                }
             }
             return false;
         }
-    }
+    }  // namespace
 
     WP_CLASS_REGISTER_DERIVED( workphone, LuaManager, IScriptManager );
 
-
-    LuaManager::LuaManager() : m_debugger( std::make_unique<LuaDebugger>() ) {}
+    LuaManager::LuaManager() : m_debugger( std::make_unique<LuaDebugger>() )
+    {
+    }
 
     bool LuaManager::startDebugger( u16 port, const String &token, const String &root )
     {
-        ScopedLock lock(this);
+        ScopedLock lock( this );
         std::string error;
         const bool result = m_debugger->start( getLuaState(), port, token.c_str(), root.c_str(), error );
-        if( !result ) { m_lastDiagnostic = error.c_str(); setError( true ); }
+        if( !result )
+        {
+            m_lastDiagnostic = error.c_str();
+            setError( true );
+        }
         return result;
     }
+
     void LuaManager::stopDebugger()
     {
         m_debugger->requestStop();
-        ScopedLock lock(this);
+        ScopedLock lock( this );
         m_debugger->stop();
     }
-    u16 LuaManager::getDebuggerPort() const { return m_debugger->port(); }
-    bool LuaManager::isDebuggerPaused() const { return m_debugger->paused(); }
-    void LuaManager::setDebuggerPausePump( std::function<bool()> pump ) { m_debugger->setPausePump( std::move( pump ) ); }
-    void LuaManager::setDebuggerPauseObserver( std::function<void(bool)> observer ) { m_debugger->setPauseObserver( std::move( observer ) ); }
-    void LuaManager::debuggerCommand( const String &command ) { m_debugger->command( command.c_str() ); }
-    String LuaManager::getDebuggerStatus() const { return m_debugger->status().c_str(); }
-    void LuaManager::debuggerException( lua_State *state, const char *message ) { m_debugger->exception( state, message ); }
-    bool LuaManager::debuggerCallbackAllowed( lua_State *state, int index ) const { return m_debugger->callbackAllowed( state, index ); }
+
+    u16 LuaManager::getDebuggerPort() const
+    {
+        return m_debugger->port();
+    }
+
+    bool LuaManager::isDebuggerPaused() const
+    {
+        return m_debugger->paused();
+    }
+
+    void LuaManager::setDebuggerPausePump( std::function<bool()> pump )
+    {
+        m_debugger->setPausePump( std::move( pump ) );
+    }
+
+    void LuaManager::setDebuggerPauseObserver( std::function<void( bool )> observer )
+    {
+        m_debugger->setPauseObserver( std::move( observer ) );
+    }
+
+    void LuaManager::debuggerCommand( const String &command )
+    {
+        m_debugger->command( command.c_str() );
+    }
+
+    String LuaManager::getDebuggerStatus() const
+    {
+        return m_debugger->status().c_str();
+    }
+
+    void LuaManager::debuggerException( lua_State *state, const char *message )
+    {
+        m_debugger->exception( state, message );
+    }
+
+    bool LuaManager::debuggerCallbackAllowed( lua_State *state, int index ) const
+    {
+        return m_debugger->callbackAllowed( state, index );
+    }
 
     LuaManager::~LuaManager()
     {
@@ -350,18 +578,31 @@ namespace workphone
     void LuaManager::load( SmartPtr<ISharedObject> data )
     {
         ScopedLock lock( this );
-        if( isLoaded() ) return;
-        if( getLoadingState()==LoadingState::Loading || getLoadingState()==LoadingState::Unloading )
-        { m_lastDiagnostic="Lua lifecycle transition is already active";setError(true);return; }
-        if(m_runtimeScriptsMode && !m_runtimeScriptResources && !m_runtimeScriptResolver)
-        { m_lastDiagnostic="Remount runtime UUID resources before recreating the Lua VM";setError(true);return; }
+        if( isLoaded() )
+        {
+            return;
+        }
+        if( getLoadingState() == LoadingState::Loading || getLoadingState() == LoadingState::Unloading )
+        {
+            m_lastDiagnostic = "Lua lifecycle transition is already active";
+            setError( true );
+            return;
+        }
+        if( m_runtimeScriptsMode && !m_runtimeScriptResources && !m_runtimeScriptResolver )
+        {
+            m_lastDiagnostic = "Remount runtime UUID resources before recreating the Lua VM";
+            setError( true );
+            return;
+        }
         try
         {
             setLoadingState( LoadingState::Loading );
 
             createLuaState();
             if( m_compiledScriptsOnly && !applyCompiledModulePolicy() )
-                throw std::runtime_error(m_lastDiagnostic.c_str());
+            {
+                throw std::runtime_error( m_lastDiagnostic.c_str() );
+            }
             m_bReload = false;
 
             m_timeTaken = 0.0f;
@@ -376,10 +617,13 @@ namespace workphone
             // Binding plugins/policy installation may have attached debugger
             // hooks before initialization failed. Retire those on this executor.
             m_debugger->stop();
-            if(m_runtimeScriptsMode)m_debugger->clearSources();
+            if( m_runtimeScriptsMode )
+            {
+                m_debugger->clearSources();
+            }
             if( auto state = getLuaState() )
             {
-                bindStateManager(state,nullptr);
+                bindStateManager( state, nullptr );
                 closeLuaState( state );
             }
             m_luaState = nullptr;
@@ -396,15 +640,25 @@ namespace workphone
         // cleanup is performed after that executor unwinds and releases the lock.
         m_debugger->requestStop();
         ScopedLock lock( this );
-        if( getLoadingState()==LoadingState::Unloading ) return;
-        if( getLoadingState()==LoadingState::Loading )
-        { m_lastDiagnostic="Cannot unload Lua during reentrant initialization";setError(true);return; }
+        if( getLoadingState() == LoadingState::Unloading )
+        {
+            return;
+        }
+        if( getLoadingState() == LoadingState::Loading )
+        {
+            m_lastDiagnostic = "Cannot unload Lua during reentrant initialization";
+            setError( true );
+            return;
+        }
         if( isLoaded() )
         {
             setLoadingState( LoadingState::Unloading );
 
             m_debugger->stop();
-            if(m_runtimeScriptsMode)m_debugger->clearSources();
+            if( m_runtimeScriptsMode )
+            {
+                m_debugger->clearSources();
+            }
 
             for( auto objectData : m_objectData )
             {
@@ -450,7 +704,7 @@ namespace workphone
             setLoadingState( LoadingState::Unloaded );
         }
         m_runtimeScriptResources.reset();
-        m_runtimeScriptResolver={};
+        m_runtimeScriptResolver = {};
     }
 
     void LuaManager::setClassNames( const Array<String> &classNames )
@@ -462,7 +716,10 @@ namespace workphone
     {
         const auto text = lua_tostring( luaState, -1 );
         auto manager = stateManager( luaState );
-        if( manager ) manager->setError( true );
+        if( manager )
+        {
+            manager->setError( true );
+        }
         WP_LOG_ERROR( text ? text : "Lua raised a non-string error" );
         lua_pop( luaState, 1 );
     }
@@ -495,14 +752,20 @@ namespace workphone
     s32 handleLuaPCallError( lua_State *luaState )
     {
         auto manager = stateManager( luaState );
-        if( manager ) manager->setError( true );
+        if( manager )
+        {
+            manager->setError( true );
+        }
         return scriptTraceback( luaState );
     }
 
     void handleCastFailed( lua_State *luaState, const luabind::type_id &id )
     {
         auto manager = stateManager( luaState );
-        if( manager ) manager->setError( true );
+        if( manager )
+        {
+            manager->setError( true );
+        }
         WP_LOG_ERROR( "Lua native value conversion failed" );
     }
 
@@ -510,9 +773,19 @@ namespace workphone
     {
         ScopedLock lock( this );
         if( m_runtimeScriptsMode )
-        { m_lastDiagnostic="Runtime UUID scripts do not support loose file loading";setError(true);return; }
-        if( !isLoaded() ) return;
-        if( std::find( m_scripts.begin(), m_scripts.end(), filename ) != m_scripts.end() ) return;
+        {
+            m_lastDiagnostic = "Runtime UUID scripts do not support loose file loading";
+            setError( true );
+            return;
+        }
+        if( !isLoaded() )
+        {
+            return;
+        }
+        if( std::find( m_scripts.begin(), m_scripts.end(), filename ) != m_scripts.end() )
+        {
+            return;
+        }
         auto app = core::IApplicationManager::instancePtr();
         auto fs = app ? app->getFileSystemPtr() : nullptr;
         if( !fs )
@@ -522,7 +795,10 @@ namespace workphone
             return;
         }
         auto stream = fs->open( filename, true, false, false, false, false );
-        if( !stream ) stream = fs->open( filename, true, false, false, true, true );
+        if( !stream )
+        {
+            stream = fs->open( filename, true, false, false, true, true );
+        }
         if( !stream )
         {
             m_lastDiagnostic = "Lua source not found: " + filename;
@@ -531,7 +807,9 @@ namespace workphone
             return;
         }
         if( executeSource( stream->getAsString(), "@" + scriptSourceIdentity( stream, filename ) ) )
+        {
             m_scripts.push_back( filename );
+        }
     }
 
     void LuaManager::loadScriptFromString( const String &str )
@@ -542,7 +820,10 @@ namespace workphone
     void LuaManager::print_lua_stack()
     {
         auto L = getLuaState();
-        if( !L ) return;
+        if( !L )
+        {
+            return;
+        }
         print_lua_stack( L );
     }
 
@@ -623,7 +904,7 @@ namespace workphone
 
             lua_pop( L, 1 );
         }
-        lua_pop( L, 1 ); // global environment
+        lua_pop( L, 1 );  // global environment
     }
 
     void LuaManager::updateBindClassNames()
@@ -782,7 +1063,11 @@ namespace workphone
     {
         ScopedLock lock( this );
         if( m_runtimeScriptsMode )
-        { m_lastDiagnostic="Runtime UUID scripts do not support loose file loading";setError(true);return; }
+        {
+            m_lastDiagnostic = "Runtime UUID scripts do not support loose file loading";
+            setError( true );
+            return;
+        }
         for( auto &script : scripts )
         {
             loadScript( script );
@@ -809,130 +1094,251 @@ namespace workphone
         ScopedLock lock( this );
         if( m_runtimeScriptsMode )
         {
-            if(getLuaState() || isLoaded() || getLoadingState()==LoadingState::Loading || getLoadingState()==LoadingState::Unloading)
-            { m_lastDiagnostic="Unload the runtime UUID VM before changing script resource policy";setError(true);return; }
+            if( getLuaState() || isLoaded() || getLoadingState() == LoadingState::Loading ||
+                getLoadingState() == LoadingState::Unloading )
+            {
+                m_lastDiagnostic = "Unload the runtime UUID VM before changing script resource policy";
+                setError( true );
+                return;
+            }
             // Leaving runtime mode is an explicit unloaded-VM policy operation.
-            m_runtimeScriptResources.reset();m_runtimeScriptResolver={};m_runtimeScriptsMode=false;
+            m_runtimeScriptResources.reset();
+            m_runtimeScriptResolver = {};
+            m_runtimeScriptsMode = false;
         }
         m_scriptCatalog = catalog;
         m_scriptResources = resources;
         m_compiledScriptsOnly = compiledOnly;
-        if( compiledOnly && getLuaState() ) applyCompiledModulePolicy();
+        if( compiledOnly && getLuaState() )
+        {
+            applyCompiledModulePolicy();
+        }
     }
 
     bool LuaManager::applyCompiledModulePolicy()
     {
-        String policy="package.path=''; package.cpath=''; local loaders=package.searchers or package.loaders; "
-                      "package.searchers={loaders[1]}; package.loaders=package.searchers";
-        if(m_runtimeScriptsMode)policy+="; loadfile=nil; dofile=nil; package.loadlib=nil";
-        return executeSource(policy,"=compiled-module-policy");
+        String policy =
+            "package.path=''; package.cpath=''; local loaders=package.searchers or package.loaders; "
+            "package.searchers={loaders[1]}; package.loaders=package.searchers";
+        if( m_runtimeScriptsMode )
+        {
+            policy += "; loadfile=nil; dofile=nil; package.loadlib=nil";
+        }
+        return executeSource( policy, "=compiled-module-policy" );
     }
 
-    bool LuaManager::configureRuntimeScriptResources(const resource::RuntimeResourceConfig &config,String &error)
+    bool LuaManager::configureRuntimeScriptResources( const resource::RuntimeResourceConfig &config,
+                                                      String &error )
     {
-        ScopedLock lock(this);error.clear();
-        if(getLuaState() || isLoaded() || getLoadingState()==LoadingState::Loading ||
-           getLoadingState()==LoadingState::Unloading || !m_objectData.empty() || !m_instances.empty())
-        { error="Runtime UUID resources require an unloaded fresh Lua VM";m_lastDiagnostic=error;setError(true);return false; }
+        ScopedLock lock( this );
+        error.clear();
+        if( getLuaState() || isLoaded() || getLoadingState() == LoadingState::Loading ||
+            getLoadingState() == LoadingState::Unloading || !m_objectData.empty() ||
+            !m_instances.empty() )
+        {
+            error = "Runtime UUID resources require an unloaded fresh Lua VM";
+            m_lastDiagnostic = error;
+            setError( true );
+            return false;
+        }
         try
         {
-            auto candidate=std::make_shared<resource::ResourceSystem>(nullptr,nullptr);
-            auto bounded=config;
-            bounded.maxPayloadBytes=std::min<u64>(bounded.maxPayloadBytes,LuaScriptCompiler::maxSourceBytes);
-            bounded.maxClosurePayloadBytes=std::min<u64>(bounded.maxClosurePayloadBytes,64ull<<20);
-            bounded.maxClosureResources=std::min<u32>(bounded.maxClosureResources,256);
-            if(!candidate->initializeRuntime(bounded,error))
-            { m_lastDiagnostic=error;setError(true);return false; }
-            m_runtimeScriptResources=std::move(candidate);
-            m_runtimeScriptResolver={};
-            m_runtimeScriptsMode=true;
-            m_scriptCatalog=nullptr;m_scriptResources.reset();m_compiledScriptsOnly=true;m_loadedScriptAssets.clear();
-            m_lastDiagnostic.clear();setError(false);return true;
+            auto candidate = std::make_shared<resource::ResourceSystem>( nullptr, nullptr );
+            auto bounded = config;
+            bounded.maxPayloadBytes =
+                std::min<u64>( bounded.maxPayloadBytes, LuaScriptCompiler::maxSourceBytes );
+            bounded.maxClosurePayloadBytes =
+                std::min<u64>( bounded.maxClosurePayloadBytes, 64ull << 20 );
+            bounded.maxClosureResources = std::min<u32>( bounded.maxClosureResources, 256 );
+            if( !candidate->initializeRuntime( bounded, error ) )
+            {
+                m_lastDiagnostic = error;
+                setError( true );
+                return false;
+            }
+            m_runtimeScriptResources = std::move( candidate );
+            m_runtimeScriptResolver = {};
+            m_runtimeScriptsMode = true;
+            m_scriptCatalog = nullptr;
+            m_scriptResources.reset();
+            m_compiledScriptsOnly = true;
+            m_loadedScriptAssets.clear();
+            m_lastDiagnostic.clear();
+            setError( false );
+            return true;
         }
-        catch(const std::exception &exception)
-        { error=exception.what();m_lastDiagnostic=error;setError(true);return false; }
+        catch( const std::exception &exception )
+        {
+            error = exception.what();
+            m_lastDiagnostic = error;
+            setError( true );
+            return false;
+        }
     }
 
     bool LuaManager::configureRuntimeResourceResolver(
-        std::function<std::shared_ptr<const resource::RuntimeResource>(const String &,String &)> resolver,String &error)
-    {
-        ScopedLock lock(this);error.clear();
-        if(!resolver || getLuaState() || isLoaded() || getLoadingState()==LoadingState::Loading ||
-            getLoadingState()==LoadingState::Unloading || !m_objectData.empty() || !m_instances.empty())
-        {error="A pinned resolver requires an unloaded fresh Lua VM";m_lastDiagnostic=error;setError(true);return false;}
-        m_runtimeScriptResolver=std::move(resolver);m_runtimeScriptResources.reset();m_runtimeScriptsMode=true;
-        m_scriptCatalog=nullptr;m_scriptResources.reset();m_compiledScriptsOnly=true;m_loadedScriptAssets.clear();
-        m_lastDiagnostic.clear();setError(false);return true;
-    }
-    SmartPtr<IScriptManager> LuaManager::createRuntimeInstance(
-        std::function<std::shared_ptr<const resource::RuntimeResource>(const String &,String &)> resolver,String &error)
-    {
-        try {
-            auto candidate=make_ptr<LuaManager>();
-            if(!candidate->configureRuntimeResourceResolver(std::move(resolver),error))return nullptr;
-            candidate->load(nullptr);
-            if(!candidate->isLoaded()){error=candidate->getLastDiagnostic();return nullptr;}
-            return candidate;
-        }catch(const std::exception &failure){error=failure.what();return nullptr;}
-    }
-    bool LuaManager::loadScriptResource( std::shared_ptr<const resource::RuntimeResource> resource, const String &sourceRoot )
+        std::function<std::shared_ptr<const resource::RuntimeResource>( const String &, String & )>
+            resolver,
+        String &error )
     {
         ScopedLock lock( this );
-        if(m_runtimeScriptsMode)
-        { m_lastDiagnostic="Runtime script resources must be loaded through their pinned UUID";setError(true);return false; }
-        return loadScriptResourceInternal(std::move(resource),sourceRoot);
+        error.clear();
+        if( !resolver || getLuaState() || isLoaded() || getLoadingState() == LoadingState::Loading ||
+            getLoadingState() == LoadingState::Unloading || !m_objectData.empty() ||
+            !m_instances.empty() )
+        {
+            error = "A pinned resolver requires an unloaded fresh Lua VM";
+            m_lastDiagnostic = error;
+            setError( true );
+            return false;
+        }
+        m_runtimeScriptResolver = std::move( resolver );
+        m_runtimeScriptResources.reset();
+        m_runtimeScriptsMode = true;
+        m_scriptCatalog = nullptr;
+        m_scriptResources.reset();
+        m_compiledScriptsOnly = true;
+        m_loadedScriptAssets.clear();
+        m_lastDiagnostic.clear();
+        setError( false );
+        return true;
     }
 
-    bool LuaManager::loadScriptResourceInternal( std::shared_ptr<const resource::RuntimeResource> resource, const String &sourceRoot ) try
+    SmartPtr<IScriptManager> LuaManager::createRuntimeInstance(
+        std::function<std::shared_ptr<const resource::RuntimeResource>( const String &, String & )>
+            resolver,
+        String &error )
+    {
+        try
+        {
+            auto candidate = make_ptr<LuaManager>();
+            if( !candidate->configureRuntimeResourceResolver( std::move( resolver ), error ) )
+            {
+                return nullptr;
+            }
+            candidate->load( nullptr );
+            if( !candidate->isLoaded() )
+            {
+                error = candidate->getLastDiagnostic();
+                return nullptr;
+            }
+            return candidate;
+        }
+        catch( const std::exception &failure )
+        {
+            error = failure.what();
+            return nullptr;
+        }
+    }
+
+    bool LuaManager::loadScriptResource( std::shared_ptr<const resource::RuntimeResource> resource,
+                                         const String &sourceRoot )
+    {
+        ScopedLock lock( this );
+        if( m_runtimeScriptsMode )
+        {
+            m_lastDiagnostic = "Runtime script resources must be loaded through their pinned UUID";
+            setError( true );
+            return false;
+        }
+        return loadScriptResourceInternal( std::move( resource ), sourceRoot );
+    }
+
+    bool LuaManager::loadScriptResourceInternal(
+        std::shared_ptr<const resource::RuntimeResource> resource, const String &sourceRoot )
+    try
     {
         LuaScriptCompiler compiler;
         Array<ScriptPreload> entries;
         std::set<String> visited;
         std::set<String> moduleNames;
         size_t totalBytes = 0;
-        bool sourceAdmissionDenied=false;
+        bool sourceAdmissionDenied = false;
         std::function<bool( const resource::RuntimeResource * )> collect;
         collect = [&]( const resource::RuntimeResource *item ) {
             if( !item || !item->header.isValid() || item->header.resourceId.isSubResource() ||
                 item->header.resourceType != resource::ResourceTypeID( "lua" ) ||
-                item->header.compilerVersion != compiler.versionFor( resource::ResourceTypeID( "lua" ) ) ||
+                item->header.compilerVersion !=
+                    compiler.versionFor( resource::ResourceTypeID( "lua" ) ) ||
                 item->payload.size() > LuaScriptCompiler::maxSourceBytes ||
                 item->header.payloadSize != item->payload.size() ||
-                item->header.payloadHash != resource::hashBytes( item->payload.data(), item->payload.size() ) ) return false;
-            if( !visited.insert( item->header.resourceId.str() ).second ) return true;
+                item->header.payloadHash !=
+                    resource::hashBytes( item->payload.data(), item->payload.size() ) )
+            {
+                return false;
+            }
+            if( !visited.insert( item->header.resourceId.str() ).second )
+            {
+                return true;
+            }
             totalBytes += item->payload.size();
-            if( visited.size() > 256 || totalBytes > 64 * 1024 * 1024 ) return false;
+            if( visited.size() > 256 || totalBytes > 64 * 1024 * 1024 )
+            {
+                return false;
+            }
             for( const auto &dependency : item->dependencies )
+            {
                 if( dependency && dependency->header.resourceType == resource::ResourceTypeID( "lua" ) &&
-                    !collect( dependency.get() ) ) return false;
+                    !collect( dependency.get() ) )
+                {
+                    return false;
+                }
+            }
             ScriptPreload entry;
             entry.slashName = item->header.resourceId.sourceRelativePath();
-            entry.sourceName = "@" + ( sourceRoot.empty() ? entry.slashName : sourceRoot + "/" + entry.slashName );
-            if(auto domain=runtimeLuaDomain(getLuaState());domain&&!domain->retainSource(entry.sourceName,item->payload.size()))
-            {sourceAdmissionDenied=true;return false;}
-            entry.slashName.resize( entry.slashName.size() - 4 ); // .lua
+            entry.sourceName =
+                "@" + ( sourceRoot.empty() ? entry.slashName : sourceRoot + "/" + entry.slashName );
+            if( auto domain = runtimeLuaDomain( getLuaState() );
+                domain && !domain->retainSource( entry.sourceName, item->payload.size() ) )
+            {
+                sourceAdmissionDenied = true;
+                return false;
+            }
+            entry.slashName.resize( entry.slashName.size() - 4 );  // .lua
             entry.dottedName = entry.slashName;
             std::replace( entry.dottedName.begin(), entry.dottedName.end(), '/', '.' );
             if( !moduleNames.insert( entry.slashName ).second ||
-                ( entry.dottedName != entry.slashName && !moduleNames.insert( entry.dottedName ).second ) ) return false;
-            if( !item->payload.empty() ) entry.source.assign(
-                reinterpret_cast<const char *>( item->payload.data() ), item->payload.size() );
+                ( entry.dottedName != entry.slashName &&
+                  !moduleNames.insert( entry.dottedName ).second ) )
+            {
+                return false;
+            }
+            if( !item->payload.empty() )
+            {
+                entry.source.assign( reinterpret_cast<const char *>( item->payload.data() ),
+                                     item->payload.size() );
+            }
             entries.push_back( std::move( entry ) );
             return true;
         };
         if( !collect( resource.get() ) )
         {
-            m_lastDiagnostic = sourceAdmissionDenied?"Runtime Lua source memory budget denied":"Invalid or incompatible compiled Lua resource";
+            m_lastDiagnostic = sourceAdmissionDenied ? "Runtime Lua source memory budget denied"
+                                                     : "Invalid or incompatible compiled Lua resource";
             setError( true );
             return false;
         }
         auto state = getLuaState();
-        if( !state ) { m_lastDiagnostic = "Lua state is not loaded"; setError( true ); return false; }
+        if( !state )
+        {
+            m_lastDiagnostic = "Lua state is not loaded";
+            setError( true );
+            return false;
+        }
         for( const auto &entry : entries )
-            m_debugger->source( entry.sourceName.c_str(), std::string( entry.source.data(), entry.source.size() ) );
+        {
+            m_debugger->source( entry.sourceName.c_str(),
+                                std::string( entry.source.data(), entry.source.size() ) );
+        }
         const int top = lua_gettop( state );
-        if(!pushManagerFunction(state,scriptTraceback)||!pushManagerFunction(state,installPreloads)){
-            lua_settop(state,top);memoryDiagnostic(m_lastDiagnostic,"Runtime Lua preload entry memory denied");setError(true);return false;}
+        if( !pushManagerFunction( state, scriptTraceback ) ||
+            !pushManagerFunction( state, installPreloads ) )
+        {
+            lua_settop( state, top );
+            memoryDiagnostic( m_lastDiagnostic, "Runtime Lua preload entry memory denied" );
+            setError( true );
+            return false;
+        }
         lua_pushlightuserdata( state, &entries );
         const int status = lua_pcall( state, 1, 0, top + 1 );
         if( status != LUA_OK )
@@ -942,11 +1348,18 @@ namespace workphone
             setError( true );
         }
         lua_settop( state, top );
-        if( status != LUA_OK ) return false;
+        if( status != LUA_OK )
+        {
+            return false;
+        }
         return executeSource( entries.back().source, entries.back().sourceName );
     }
-    catch(const std::bad_alloc &)
-    {memoryDiagnostic(m_lastDiagnostic,"Runtime Lua preload memory budget denied");setError(true);return false;}
+    catch( const std::bad_alloc & )
+    {
+        memoryDiagnostic( m_lastDiagnostic, "Runtime Lua preload memory budget denied" );
+        setError( true );
+        return false;
+    }
 
     bool LuaManager::loadScriptAsset( const String &uuid )
     {
@@ -956,66 +1369,135 @@ namespace workphone
             setError( true );
             return false;
         };
-        if(m_runtimeScriptsMode)
+        if( m_runtimeScriptsMode )
         {
-            if(!isLoaded() || (!m_runtimeScriptResources&&!m_runtimeScriptResolver))return fail("Runtime script VM is not loaded or mounted");
-            String error;
-            const auto identity=StringUtil::make_lower(uuid);
-            if(m_runtimeScriptResources) {
-                resource::ResourceID id;
-                if(!m_runtimeScriptResources->resolveRuntimeUUID(identity,id,error))return fail(error);
-                if(id.type()!=resource::ResourceTypeID("lua"))return fail("Runtime script UUID has the wrong resource type");
+            if( !isLoaded() || ( !m_runtimeScriptResources && !m_runtimeScriptResolver ) )
+            {
+                return fail( "Runtime script VM is not loaded or mounted" );
             }
-            if(m_loadedScriptAssets.find(identity)!=m_loadedScriptAssets.end())
-            { m_lastDiagnostic.clear();setError(false);return true; }
+            String error;
+            const auto identity = StringUtil::make_lower( uuid );
+            if( m_runtimeScriptResources )
+            {
+                resource::ResourceID id;
+                if( !m_runtimeScriptResources->resolveRuntimeUUID( identity, id, error ) )
+                {
+                    return fail( error );
+                }
+                if( id.type() != resource::ResourceTypeID( "lua" ) )
+                {
+                    return fail( "Runtime script UUID has the wrong resource type" );
+                }
+            }
+            if( m_loadedScriptAssets.find( identity ) != m_loadedScriptAssets.end() )
+            {
+                m_lastDiagnostic.clear();
+                setError( false );
+                return true;
+            }
             std::shared_ptr<const resource::RuntimeResource> compiled;
-            try {compiled=m_runtimeScriptResolver?m_runtimeScriptResolver(identity,error):m_runtimeScriptResources->loadUUID(identity,error);}
-            catch(const std::exception &exception){return fail(exception.what());}
-            if(!compiled)return fail(error);
-            if(compiled->header.resourceType!=resource::ResourceTypeID("lua"))return fail("Runtime script UUID has the wrong resource type");
-            if(!loadScriptResourceInternal(compiled,{}))return false;
-            m_loadedScriptAssets[identity]=compiled->header.sourceHash;return true;
+            try
+            {
+                compiled = m_runtimeScriptResolver
+                               ? m_runtimeScriptResolver( identity, error )
+                               : m_runtimeScriptResources->loadUUID( identity, error );
+            }
+            catch( const std::exception &exception )
+            {
+                return fail( exception.what() );
+            }
+            if( !compiled )
+            {
+                return fail( error );
+            }
+            if( compiled->header.resourceType != resource::ResourceTypeID( "lua" ) )
+            {
+                return fail( "Runtime script UUID has the wrong resource type" );
+            }
+            if( !loadScriptResourceInternal( compiled, {} ) )
+            {
+                return false;
+            }
+            m_loadedScriptAssets[identity] = compiled->header.sourceHash;
+            return true;
         }
         auto catalog = m_scriptCatalog;
         if( !catalog )
         {
             auto app = core::IApplicationManager::instancePtr();
             auto database = app ? app->getResourceDatabase() : nullptr;
-            if( database ) catalog = dynamic_pointer_cast<AssetDatabaseManager>( database->getDatabaseManager() );
+            if( database )
+            {
+                catalog = dynamic_pointer_cast<AssetDatabaseManager>( database->getDatabaseManager() );
+            }
         }
-        if( !catalog ) return fail( "No script asset catalog is configured" );
+        if( !catalog )
+        {
+            return fail( "No script asset catalog is configured" );
+        }
         AssetDatabaseManager::EntrySnapshot entry;
-        if( !catalog->tryGetEntry( uuid, entry ) || entry.kind != AssetDatabaseManager::EntryKind::File ||
-            entry.type != "script" ) return fail( "Script asset UUID is missing or has the wrong type: " + uuid );
+        if( !catalog->tryGetEntry( uuid, entry ) ||
+            entry.kind != AssetDatabaseManager::EntryKind::File || entry.type != "script" )
+        {
+            return fail( "Script asset UUID is missing or has the wrong type: " + uuid );
+        }
         const auto loaded = m_loadedScriptAssets.find( uuid );
-        if( loaded != m_loadedScriptAssets.end() ) return true;
+        if( loaded != m_loadedScriptAssets.end() )
+        {
+            return true;
+        }
         if( m_scriptResources )
         {
             CatalogResourceAdapter adapter( catalog, m_scriptResources, catalog->getProjectRoot(),
                                             { { "script", resource::ResourceTypeID( "lua" ) } } );
             CatalogResourceAdapter::Request request;
             String error;
-            if( !adapter.resolve( uuid, request, error ) ) return fail( error );
+            if( !adapter.resolve( uuid, request, error ) )
+            {
+                return fail( error );
+            }
             if( !m_compiledScriptsOnly )
             {
                 auto report = adapter.compile( request );
-                if( !report.succeeded() ) return fail( report.messages.empty() ? "Lua compilation failed" : report.messages[0] );
+                if( !report.succeeded() )
+                {
+                    return fail( report.messages.empty() ? "Lua compilation failed"
+                                                         : report.messages[0] );
+                }
             }
             auto compiled = adapter.load( request, error );
-            if( !compiled || !adapter.isCurrent( request, error ) ) return fail( error );
-            if( !loadScriptResource( compiled, catalog->getProjectRoot() ) ) return false;
+            if( !compiled || !adapter.isCurrent( request, error ) )
+            {
+                return fail( error );
+            }
+            if( !loadScriptResource( compiled, catalog->getProjectRoot() ) )
+            {
+                return false;
+            }
             m_loadedScriptAssets[uuid] = compiled->header.sourceHash;
             return true;
         }
-        if( m_compiledScriptsOnly ) return fail( "Compiled Lua resource service is required" );
+        if( m_compiledScriptsOnly )
+        {
+            return fail( "Compiled Lua resource service is required" );
+        }
         auto app = core::IApplicationManager::instancePtr();
         auto fs = app ? app->getFileSystemPtr() : nullptr;
-        if( !fs ) return fail( "No filesystem available for script asset" );
+        if( !fs )
+        {
+            return fail( "No filesystem available for script asset" );
+        }
         const String path = catalog->getProjectRoot() + "/" + entry.path;
         auto stream = fs->open( path, true, false, false, false, false );
-        if( !stream || !catalog->isEntryCurrent( entry ) ) return fail( "Script asset source is missing or stale" );
+        if( !stream || !catalog->isEntryCurrent( entry ) )
+        {
+            return fail( "Script asset source is missing or stale" );
+        }
         auto source = stream->getAsString();
-        if( !executeSource( source, "@" + entry.path ) ) return false;
+        if( !executeSource( source, "@" + entry.path ) )
+        {
+            return false;
+        }
         m_loadedScriptAssets[uuid] = resource::hashString( source );
         return true;
     }
@@ -1032,16 +1514,28 @@ namespace workphone
             setError( true );
             return false;
         }
-        if(auto domain=runtimeLuaDomain(state);domain&&!domain->retainSource(sourceName,source.size()))
-        {memoryDiagnostic(m_lastDiagnostic,"Runtime Lua source memory budget denied");setError(true);return false;}
+        if( auto domain = runtimeLuaDomain( state );
+            domain && !domain->retainSource( sourceName, source.size() ) )
+        {
+            memoryDiagnostic( m_lastDiagnostic, "Runtime Lua source memory budget denied" );
+            setError( true );
+            return false;
+        }
         m_debugger->source( sourceName.c_str(), std::string( source.data(), source.size() ) );
         const int top = lua_gettop( state );
-        if(!pushManagerFunction(state,scriptTraceback)){
-            lua_settop(state,top);memoryDiagnostic(m_lastDiagnostic,"Runtime Lua source entry memory denied");setError(true);return false;}
+        if( !pushManagerFunction( state, scriptTraceback ) )
+        {
+            lua_settop( state, top );
+            memoryDiagnostic( m_lastDiagnostic, "Runtime Lua source entry memory denied" );
+            setError( true );
+            return false;
+        }
         const int handler = top + 1;
-        int status = luaL_loadbufferx( state, source.data(), source.size(),
-                                      sourceName.c_str(), "t" );
-        if( status == LUA_OK ) status = lua_pcall( state, 0, 0, handler );
+        int status = luaL_loadbufferx( state, source.data(), source.size(), sourceName.c_str(), "t" );
+        if( status == LUA_OK )
+        {
+            status = lua_pcall( state, 0, 0, handler );
+        }
         if( status != LUA_OK )
         {
             const auto message = lua_tostring( state, -1 );
@@ -1068,10 +1562,20 @@ namespace workphone
             return false;
         }
         const int top = lua_gettop( state );
-        ScriptInvocation call{ receiver, globalName.empty() ? nullptr : globalName.c_str(),
-                               functionName.c_str(), parameters, results, optional };
-        if(!pushManagerFunction(state,scriptTraceback)||!pushManagerFunction(state,invokeScript)){
-            lua_settop(state,top);memoryDiagnostic(m_lastDiagnostic,"Runtime Lua invocation entry memory denied");setError(true);return false;}
+        ScriptInvocation call{ receiver,
+                               globalName.empty() ? nullptr : globalName.c_str(),
+                               functionName.c_str(),
+                               parameters,
+                               results,
+                               optional };
+        if( !pushManagerFunction( state, scriptTraceback ) ||
+            !pushManagerFunction( state, invokeScript ) )
+        {
+            lua_settop( state, top );
+            memoryDiagnostic( m_lastDiagnostic, "Runtime Lua invocation entry memory denied" );
+            setError( true );
+            return false;
+        }
         lua_pushlightuserdata( state, &call );
         int status = lua_pcall( state, 1, 0, top + 1 );
         if( status != LUA_OK )
@@ -1107,13 +1611,13 @@ namespace workphone
     }
 
     s32 LuaManager::callMember( const String &className, const String &functionName,
-                               const Parameters &parameters )
+                                const Parameters &parameters )
     {
         return invokeLua( nullptr, className, functionName, &parameters, nullptr ) ? 0 : -1;
     }
 
     s32 LuaManager::callMember( const String &className, const String &functionName,
-                               const Parameters &parameters, Parameters &results )
+                                const Parameters &parameters, Parameters &results )
     {
         return invokeLua( nullptr, className, functionName, &parameters, &results ) ? 0 : -1;
     }
@@ -1124,25 +1628,33 @@ namespace workphone
     }
 
     void LuaManager::callObjectMember( SmartPtr<ISharedObject> object, const String &functionName,
-                                     const Parameters &parameters )
+                                       const Parameters &parameters )
     {
         _callObjectMember( object, functionName, parameters );
     }
 
     void LuaManager::callObjectMember( SmartPtr<ISharedObject> object, const String &functionName,
-                                     const Parameters &parameters, Parameters &results )
+                                       const Parameters &parameters, Parameters &results )
     {
         _callObjectMember( object, functionName, parameters, results );
     }
 
     void LuaManager::reloadScripts()
     {
-        ScopedLock lock(this);
-        if(m_runtimeScriptsMode)
-        { m_bReload=false;m_lastDiagnostic="Runtime UUID scripts require a new VM for reload";setError(true);return; }
+        ScopedLock lock( this );
+        if( m_runtimeScriptsMode )
+        {
+            m_bReload = false;
+            m_lastDiagnostic = "Runtime UUID scripts require a new VM for reload";
+            setError( true );
+            return;
+        }
         auto app = core::IApplicationManager::instancePtr();
         auto settings = app ? app->getPlayerSettings() : nullptr;
-        if( settings && !settings->getPropertyAsBool( "scripting.hotReload", true ) ) return;
+        if( settings && !settings->getPropertyAsBool( "scripting.hotReload", true ) )
+        {
+            return;
+        }
         m_bReload = true;
     }
 
@@ -1155,153 +1667,194 @@ namespace workphone
     {
         ScopedLock lock( this );
         auto luaState = getLuaState();
-        if( luaState ) lua_settop( luaState, 0 );
+        if( luaState )
+        {
+            lua_settop( luaState, 0 );
+        }
     }
 
     void LuaManager::createLuaState()
     {
         // create the lua state
         std::unique_ptr<RuntimeLuaDomain> domain;
-        lua_State *luaState=nullptr;
-        if(m_runtimeScriptsMode){
-#if defined(WP_LUA_BACKEND_LUAJIT) && LJ_64 && !LJ_GC64
-            throw std::runtime_error("Budgeted runtime Lua requires the GC64 LuaJIT configuration");
-#else
-            domain=std::make_unique<RuntimeLuaDomain>();
-#if LUA_VERSION_NUM >= 505
-            luaState=lua_newstate(runtimeLuaAllocate,domain.get(),luaL_makeseed(nullptr));
-#else
-            luaState=lua_newstate(runtimeLuaAllocate,domain.get());
-#endif
-#endif
-        }else luaState=luaL_newstate();
-        if( !luaState ) throw std::runtime_error( "Could not allocate Lua state" );
-        m_luaState = luaState;
-        domain.release(); // closeLuaState owns opaque runtime userdata from here.
-        auto initialize=[this,luaState]{
-        bindStateManager( luaState, this );
-        if(m_runtimeScriptsMode)cacheRuntimeFunctions(luaState);
-
-        luaL_openlibs( luaState );
-
-        // Load the Lua CJSON library
-        wpLuaRequire( luaState, "cjson", luaopen_cjson );
-        lua_pop( luaState, 1 );
-
-        luabind::open( luaState );
-
-        //bindings
-        bindParam( luaState );
-        bindParamList( luaState );
-
-        bindMath( luaState );
-
-        bindString( luaState );
-
-        bindBaseObjects( luaState );
-        bindCore( luaState );
-        bindIO( luaState );
-        bindSystem( luaState );
-        bindMesh( luaState );
-
-        bindScript( luaState );
-
-        bindAi( luaState );
-        bindFSM( luaState );
-
-        bindSceneManager( luaState );
-        bindScene( luaState );
-
-        bindInput( luaState );
-        bindVideo( luaState );
-        bindSound( luaState );
-        // Component callbacks derive from the vehicle interfaces.
-        bindVehicle( luaState );
-        bindComponent( luaState );
-        bindComponentUI( luaState );
-        bindGraphicsSystem( luaState );
-        bindUI( luaState );
-        bindPhysics( luaState );
-        bindDatabase( luaState );
-        bindProcedural( luaState );
-
-        auto applicationManager = core::IApplicationManager::instancePtr();
-        if( applicationManager )
+        lua_State *luaState = nullptr;
+        if( m_runtimeScriptsMode )
         {
-            if( auto pluginManager = applicationManager->getPluginManager() )
-            {
-                using BindLibrary = void ( * )( lua_State * );
-
-                for( const auto &pluginObject : pluginManager->getPlugins() )
-                {
-                    auto plugin = workphone::dynamic_pointer_cast<IPlugin>( pluginObject );
-                    if( plugin && plugin->getLibraryHandle() )
-                    {
-                        auto bindLibrary =
-                            reinterpret_cast<BindLibrary>( plugin->getFunction( "bindLibrary" ) );
-                        if( bindLibrary )
-                        {
-                            using QueryBackendAbi = unsigned ( * )();
-                            const auto queryAbi = reinterpret_cast<QueryBackendAbi>(
-                                plugin->getFunction( "wp_lua_backend_abi" ) );
-#ifdef WP_LUA_BACKEND_LUAJIT
-                            if( !queryAbi ) throw std::runtime_error(
-                                "LuaJIT binding plugins must export wp_lua_backend_abi; rebuild this plugin with the selected engine SDK" );
+#if defined( WP_LUA_BACKEND_LUAJIT ) && LJ_64 && !LJ_GC64
+            throw std::runtime_error( "Budgeted runtime Lua requires the GC64 LuaJIT configuration" );
+#else
+            domain = std::make_unique<RuntimeLuaDomain>();
+#    if LUA_VERSION_NUM >= 505
+            luaState = lua_newstate( runtimeLuaAllocate, domain.get(), luaL_makeseed( nullptr ) );
+#    else
+            luaState = lua_newstate( runtimeLuaAllocate, domain.get() );
+#    endif
 #endif
-                            if( queryAbi && queryAbi() != wpLuaBackendAbi ) throw std::runtime_error(
-                                "Lua binding plugin backend ABI does not match this engine" );
-                            bindLibrary( luaState );
+        }
+        else
+        {
+            luaState = luaL_newstate();
+        }
+        if( !luaState )
+        {
+            throw std::runtime_error( "Could not allocate Lua state" );
+        }
+        m_luaState = luaState;
+        domain.release();  // closeLuaState owns opaque runtime userdata from here.
+        auto initialize = [this, luaState] {
+            bindStateManager( luaState, this );
+            if( m_runtimeScriptsMode )
+            {
+                cacheRuntimeFunctions( luaState );
+            }
+
+            luaL_openlibs( luaState );
+
+            // Load the Lua CJSON library
+            wpLuaRequire( luaState, "cjson", luaopen_cjson );
+            lua_pop( luaState, 1 );
+
+            luabind::open( luaState );
+
+            //bindings
+            bindParam( luaState );
+            bindParamList( luaState );
+
+            bindMath( luaState );
+
+            bindString( luaState );
+
+            bindBaseObjects( luaState );
+            bindCore( luaState );
+            bindIO( luaState );
+            bindSystem( luaState );
+            bindMesh( luaState );
+
+            bindScript( luaState );
+
+            bindAi( luaState );
+            bindFSM( luaState );
+
+            bindSceneManager( luaState );
+            bindScene( luaState );
+
+            bindInput( luaState );
+            bindVideo( luaState );
+            bindSound( luaState );
+            // Component callbacks derive from the vehicle interfaces.
+            bindVehicle( luaState );
+            bindComponent( luaState );
+            bindComponentUI( luaState );
+            bindGraphicsSystem( luaState );
+            bindUI( luaState );
+            bindPhysics( luaState );
+            bindDatabase( luaState );
+            bindProcedural( luaState );
+
+            auto applicationManager = core::IApplicationManager::instancePtr();
+            if( applicationManager )
+            {
+                if( auto pluginManager = applicationManager->getPluginManager() )
+                {
+                    using BindLibrary = void ( * )( lua_State * );
+
+                    for( const auto &pluginObject : pluginManager->getPlugins() )
+                    {
+                        auto plugin = workphone::dynamic_pointer_cast<IPlugin>( pluginObject );
+                        if( plugin && plugin->getLibraryHandle() )
+                        {
+                            auto bindLibrary =
+                                reinterpret_cast<BindLibrary>( plugin->getFunction( "bindLibrary" ) );
+                            if( bindLibrary )
+                            {
+                                using QueryBackendAbi = unsigned ( * )();
+                                const auto queryAbi = reinterpret_cast<QueryBackendAbi>(
+                                    plugin->getFunction( "wp_lua_backend_abi" ) );
+#ifdef WP_LUA_BACKEND_LUAJIT
+                                if( !queryAbi )
+                                    throw std::runtime_error(
+                                        "LuaJIT binding plugins must export wp_lua_backend_abi; rebuild "
+                                        "this plugin with the selected engine SDK" );
+#endif
+                                if( queryAbi && queryAbi() != wpLuaBackendAbi )
+                                    throw std::runtime_error(
+                                        "Lua binding plugin backend ABI does not match this engine" );
+                                bindLibrary( luaState );
+                            }
                         }
                     }
                 }
             }
-        }
 
-        //{
-        //    using namespace luabind;
+            //{
+            //    using namespace luabind;
 
-        //    module( luaState )[class_<IScriptData, SmartPtr<IScriptData>>( "IScriptData" )];
+            //    module( luaState )[class_<IScriptData, SmartPtr<IScriptData>>( "IScriptData" )];
 
-        //    module(
-        //        luaState )[class_<LuaObjectData, IScriptData, SmartPtr<IScriptData>>( "LuaObjectData" )
-        //                       .def( "getInstance", _getLuaInstance )];
-        //}
+            //    module(
+            //        luaState )[class_<LuaObjectData, IScriptData, SmartPtr<IScriptData>>( "LuaObjectData" )
+            //                       .def( "getInstance", _getLuaInstance )];
+            //}
 
-        setLuaState( luaState );
+            setLuaState( luaState );
 
-        //lua_gc(luaState, LUA_GCSETPAUSE, 200);
-        //lua_gc(luaState, LUA_GCSETSTEPMUL, 300);
+            //lua_gc(luaState, LUA_GCSETPAUSE, 200);
+            //lua_gc(luaState, LUA_GCSETSTEPMUL, 300);
 
-        updateBindClassNames();
+            updateBindClassNames();
 
 #if defined LUABIND_NO_EXCEPTIONS
-        luabind::set_error_callback( handleLuaError );
-        luabind::set_pcall_callback( handleLuaPCallError );
-        set_cast_failed_callback( handleCastFailed );
+            luabind::set_error_callback( handleLuaError );
+            luabind::set_pcall_callback( handleLuaPCallError );
+            set_cast_failed_callback( handleCastFailed );
 #endif
         };
-        if(m_runtimeScriptsMode){
-            struct Initialization {decltype(initialize) *action;std::exception_ptr failure;};
-            Initialization call{&initialize,{}};
-            const auto bootstrap=+[](lua_State *state)->int{
-                auto call=static_cast<Initialization*>(lua_touserdata(state,1));
-                try{(*call->action)();}catch(...){call->failure=std::current_exception();}
+        if( m_runtimeScriptsMode )
+        {
+            struct Initialization
+            {
+                decltype( initialize ) *action;
+                std::exception_ptr failure;
+            };
+
+            Initialization call{ &initialize, {} };
+            const auto bootstrap = +[]( lua_State *state ) -> int {
+                auto call = static_cast<Initialization *>( lua_touserdata( state, 1 ) );
+                try
+                {
+                    ( *call->action )();
+                }
+                catch( ... )
+                {
+                    call->failure = std::current_exception();
+                }
                 return 0;
             };
 #if LUA_VERSION_NUM < 502
             // LuaJIT/5.1 pushcfunction itself allocates; cpcall protects that
             // first closure allocation as well as the binding registration.
-            const int status=lua_cpcall(luaState,bootstrap,&call);
+            const int status = lua_cpcall( luaState, bootstrap, &call );
 #else
             // Modern Lua represents a zero-upvalue C function without allocating.
-            lua_pushcfunction(luaState,bootstrap);lua_pushlightuserdata(luaState,&call);
-            const int status=lua_pcall(luaState,1,0,0);
+            lua_pushcfunction( luaState, bootstrap );
+            lua_pushlightuserdata( luaState, &call );
+            const int status = lua_pcall( luaState, 1, 0, 0 );
 #endif
-            if(call.failure)std::rethrow_exception(call.failure);
-            if(status!=LUA_OK){const auto text=lua_tostring(luaState,-1);
-                throw std::runtime_error(text?text:"Runtime Lua bootstrap allocation failed");}
-            runtimeLuaDomain(luaState)->bootstrapping=false;
-        }else initialize();
+            if( call.failure )
+            {
+                std::rethrow_exception( call.failure );
+            }
+            if( status != LUA_OK )
+            {
+                const auto text = lua_tostring( luaState, -1 );
+                throw std::runtime_error( text ? text : "Runtime Lua bootstrap allocation failed" );
+            }
+            runtimeLuaDomain( luaState )->bootstrapping = false;
+        }
+        else
+        {
+            initialize();
+        }
     }
 
     String LuaManager::getDebugInfo()
@@ -1309,38 +1862,55 @@ namespace workphone
         ScopedLock lock( this );
         String result;
         auto state = getLuaState();
-        if( !state ) return result;
+        if( !state )
+        {
+            return result;
+        }
         lua_Debug frame{};
         for( int level = 0; lua_getstack( state, level, &frame ); ++level )
         {
             lua_getinfo( state, "Sln", &frame );
             std::stringstream text;
             text << frame.short_src << ":" << frame.currentline;
-            if( frame.name ) text << " (" << frame.name << ")";
+            if( frame.name )
+            {
+                text << " (" << frame.name << ")";
+            }
             result += text.str() + "\n";
         }
         return result;
     }
 
     SmartPtr<IScriptClass> LuaManager::createObject( const String &className,
-                                                    SmartPtr<ISharedObject> object )
+                                                     SmartPtr<ISharedObject> object )
     {
         ScopedLock lock( this );
-        if( !object || !isLoaded() ) return nullptr;
+        if( !object || !isLoaded() )
+        {
+            return nullptr;
+        }
         auto existing = dynamic_pointer_cast<LuaObjectData>( object->getScriptData() );
         if( existing && existing->getLuaState() == getLuaState() &&
             existing->getClassName() == className && existing->getObject() )
+        {
             return existing->getClassData();
+        }
         try
         {
             auto data = make_ptr<LuaObjectData>();
             data->setClassName( className );
             data->setLuaState( getLuaState() );
             data->setOwner( object );
-            if( !createLuaInstance( data ) ) return nullptr;
+            if( !createLuaInstance( data ) )
+            {
+                return nullptr;
+            }
             data->load( nullptr );
             // Publish only a fully constructed and inspected instance.
-            if( existing ) destroyObject( object );
+            if( existing )
+            {
+                destroyObject( object );
+            }
             object->setScriptData( data );
             m_objectData.push_back( data );
             return data->getClassData();
@@ -1373,7 +1943,6 @@ namespace workphone
                     object->setScriptData( nullptr );
                 }
             }
-
         }
     }
 
@@ -1397,16 +1966,34 @@ namespace workphone
         auto app = core::IApplicationManager::instancePtr();
         auto settings = app ? app->getPlayerSettings() : nullptr;
         const auto reflection = settings ? settings->getPropertyAsInt( "scripting.reflection", 1 ) : 1;
-        if( reflection == 0 ) return {};
-        if( reflection == 1 || !app ) return runtime;
-        const auto source = Path::readAllText( app->getProjectPath() + "/.workphone/generated/ScriptReflection.settings" );
+        if( reflection == 0 )
+        {
+            return {};
+        }
+        if( reflection == 1 || !app )
+        {
+            return runtime;
+        }
+        const auto source = Path::readAllText( app->getProjectPath() +
+                                               "/.workphone/generated/ScriptReflection.settings" );
         auto generated = make_ptr<Properties>();
-        if( !source.empty() ) DataUtil::parse( source, generated.get() );
+        if( !source.empty() )
+        {
+            DataUtil::parse( source, generated.get() );
+        }
         Array<String> classes;
         generated->getPropertyValue( "classNames", classes );
-        if( reflection == 2 ) return classes;
+        if( reflection == 2 )
+        {
+            return classes;
+        }
         for( const auto &name : runtime )
-            if( std::find( classes.begin(), classes.end(), name ) == classes.end() ) classes.push_back( name );
+        {
+            if( std::find( classes.begin(), classes.end(), name ) == classes.end() )
+            {
+                classes.push_back( name );
+            }
+        }
         return classes;
     }
 
@@ -1417,15 +2004,21 @@ namespace workphone
     }
 
     s32 LuaManager::invokeObject( SmartPtr<ISharedObject> object, const String &functionName,
-                                 const Parameters *parameters, Parameters *results )
+                                  const Parameters *parameters, Parameters *results )
     {
         if( object && dynamic_cast<scene::Script *>( object.get() ) )
         {
-            if( !projectScriptExecutionEnabled() ) return 0;
+            if( !projectScriptExecutionEnabled() )
+            {
+                return 0;
+            }
             auto app = core::IApplicationManager::instancePtr();
             auto settings = app ? app->getPlayerSettings() : nullptr;
             if( settings && settings->getPropertyAsInt( "scripting.reflection", 1 ) == 0 &&
-                ( functionName == "getProperties" || functionName == "setProperties" ) ) return 0;
+                ( functionName == "getProperties" || functionName == "setProperties" ) )
+            {
+                return 0;
+            }
         }
         ScopedLock lock( this );
         auto data = object ? dynamic_pointer_cast<LuaObjectData>( object->getScriptData() ) : nullptr;
@@ -1446,48 +2039,76 @@ namespace workphone
     }
 
     s32 LuaManager::_callObjectMember( SmartPtr<ISharedObject> object, const String &functionName,
-                                     const Parameters &parameters )
+                                       const Parameters &parameters )
     {
         return invokeObject( object, functionName, &parameters, nullptr );
     }
 
     s32 LuaManager::_callObjectMember( SmartPtr<ISharedObject> object, const String &functionName,
-                                     const Parameters &parameters, Parameters &results )
+                                       const Parameters &parameters, Parameters &results )
     {
         return invokeObject( object, functionName, &parameters, &results );
     }
 
     void LuaManager::update()
     {
-        if( Thread::getCurrentTask() != TaskId::Application ) return;
+        if( Thread::getCurrentTask() != TaskId::Application )
+        {
+            return;
+        }
         ScopedLock lock( this );
-        if(!isLoaded())return;
+        if( !isLoaded() )
+        {
+            return;
+        }
         m_debugger->poll();
         // Drain a snapshot, so a callback that enqueues work cannot starve the frame.
         SmartPtr<ISharedObject> object;
         auto unloadCount = m_unloadQueue.size();
         while( unloadCount-- && m_unloadQueue.try_pop( object ) )
-            if( object ) object->unload( nullptr );
+        {
+            if( object )
+            {
+                object->unload( nullptr );
+            }
+        }
         auto loadCount = m_loadQueue.size();
         while( loadCount-- && m_loadQueue.try_pop( object ) )
-            if( object ) object->load( nullptr );
+        {
+            if( object )
+            {
+                object->load( nullptr );
+            }
+        }
         if( m_bReload )
         {
             _reloadScripts();
             m_bReload = false;
         }
         for( auto &data : m_creationList )
-            if( data && createLuaInstance( data ) ) data->load( nullptr );
+        {
+            if( data && createLuaInstance( data ) )
+            {
+                data->load( nullptr );
+            }
+        }
         m_creationList.clear();
         // Leave the collector running; avoid periodic full-heap pauses.
-        if( auto state = getLuaState() ) lua_gc( state, LUA_GCSTEP, 32 );
+        if( auto state = getLuaState() )
+        {
+            lua_gc( state, LUA_GCSTEP, 32 );
+        }
     }
 
     void LuaManager::_reloadScripts()
     {
         ScopedLock lock( this );
-        if(m_runtimeScriptsMode)
-        { m_lastDiagnostic="Runtime UUID scripts require a new VM for reload";setError(true);return; }
+        if( m_runtimeScriptsMode )
+        {
+            m_lastDiagnostic = "Runtime UUID scripts require a new VM for reload";
+            setError( true );
+            return;
+        }
         // Legacy raw pointers cannot be rebound without invalidating their callers.
         if( !m_instances.empty() )
         {
@@ -1528,11 +2149,16 @@ namespace workphone
         for( const auto &filename : m_scripts )
         {
             auto stream = fs->open( filename.str(), true, false, false, false, false );
-            if( !stream ) stream = fs->open( filename.str(), true, false, false, true, true );
-            if( !stream || !candidate.executeSource( stream->getAsString(), "@" +
-                    scriptSourceIdentity( stream, filename.str() ) ) )
+            if( !stream )
             {
-                m_lastDiagnostic = stream ? candidate.getLastDiagnostic() : "Reload source missing: " + filename.str();
+                stream = fs->open( filename.str(), true, false, false, true, true );
+            }
+            if( !stream ||
+                !candidate.executeSource( stream->getAsString(),
+                                          "@" + scriptSourceIdentity( stream, filename.str() ) ) )
+            {
+                m_lastDiagnostic =
+                    stream ? candidate.getLastDiagnostic() : "Reload source missing: " + filename.str();
                 setError( true );
                 return;
             }
@@ -1551,7 +2177,10 @@ namespace workphone
         }
         auto previous = getLuaState();
         auto replacement = candidate.getLuaState();
-        for( auto &data : m_objectData ) data->getObject() = luabind::object();
+        for( auto &data : m_objectData )
+        {
+            data->getObject() = luabind::object();
+        }
         setLuaState( replacement );
         bindStateManager( replacement, this );
         candidate.setLuaState( nullptr );
@@ -1563,7 +2192,7 @@ namespace workphone
             auto &data = m_objectData[i];
             data->setLuaState( replacement );
             data->setObject( instances[i] );
-            data->load( nullptr ); // Refresh callback metadata against the new class.
+            data->load( nullptr );  // Refresh callback metadata against the new class.
         }
         instances.clear();
         if( m_debugger->port() )
@@ -1571,7 +2200,10 @@ namespace workphone
             m_debugger->bind( replacement );
             m_debugger->copySourcesFrom( *candidate.m_debugger );
         }
-        if( previous ) closeLuaState( previous );
+        if( previous )
+        {
+            closeLuaState( previous );
+        }
         updateClassNames();
         m_lastDiagnostic.clear();
         setError( false );
@@ -1582,11 +2214,20 @@ namespace workphone
     {
         ScopedLock lock( this );
         auto state = getLuaState();
-        if( !state ) return false;
+        if( !state )
+        {
+            return false;
+        }
         const int top = lua_gettop( state );
         ScriptConstruction call{ className.c_str(), owner };
-        if(!pushManagerFunction(state,scriptTraceback)||!pushManagerFunction(state,constructScript)){
-            lua_settop(state,top);memoryDiagnostic(m_lastDiagnostic,"Runtime Lua construction entry memory denied");setError(true);return false;}
+        if( !pushManagerFunction( state, scriptTraceback ) ||
+            !pushManagerFunction( state, constructScript ) )
+        {
+            lua_settop( state, top );
+            memoryDiagnostic( m_lastDiagnostic, "Runtime Lua construction entry memory denied" );
+            setError( true );
+            return false;
+        }
         lua_pushlightuserdata( state, &call );
         int status = lua_pcall( state, 1, 1, top + 1 );
         if( status == LUA_OK )
@@ -1609,11 +2250,20 @@ namespace workphone
     bool LuaManager::createLuaInstance( SmartPtr<LuaObjectData> data )
     {
         ScopedLock lock( this );
-        if( !data ) return false;
+        if( !data )
+        {
+            return false;
+        }
         SmartPtr<ISharedObject> owner = data->getOwner();
-        if( !owner ) return false;
+        if( !owner )
+        {
+            return false;
+        }
         luabind::object instance;
-        if( !constructLua( data->getClassName(), &owner, instance ) ) return false;
+        if( !constructLua( data->getClassName(), &owner, instance ) )
+        {
+            return false;
+        }
         data->setLuaState( getLuaState() );
         data->setObject( instance );
         return true;
@@ -1713,7 +2363,10 @@ namespace workphone
     {
         ScopedLock lock( this );
         luabind::object value;
-        if( !constructLua( className, nullptr, value ) ) return nullptr;
+        if( !constructLua( className, nullptr, value ) )
+        {
+            return nullptr;
+        }
         auto instance = new luabind::object( value );
         m_instances.push_back( instance );
         return instance;
@@ -1725,7 +2378,9 @@ namespace workphone
 
         auto object = static_cast<luabind::object *>( instance );
         if( std::find( m_instances.begin(), m_instances.end(), object ) == m_instances.end() )
+        {
             return;
+        }
         m_instances.erase( std::remove( m_instances.begin(), m_instances.end(), object ),
                            m_instances.end() );
         WP_SAFE_DELETE( object );
@@ -1763,9 +2418,13 @@ namespace workphone
 
     void LuaManager::setLuaState( lua_State *luaState )
     {
-        ScopedLock lock(this);
-        if(m_runtimeScriptsMode && luaState!=getLuaState())
-        { m_lastDiagnostic="Runtime UUID VM state cannot be replaced directly";setError(true);return; }
+        ScopedLock lock( this );
+        if( m_runtimeScriptsMode && luaState != getLuaState() )
+        {
+            m_lastDiagnostic = "Runtime UUID VM state cannot be replaced directly";
+            setError( true );
+            return;
+        }
         m_luaState = luaState;
     }
 
