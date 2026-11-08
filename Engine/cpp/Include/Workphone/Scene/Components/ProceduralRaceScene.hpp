@@ -101,6 +101,8 @@ namespace workphone::scene::race
         bool cityRaceRouteAvailable = true;
         String cityRaceRouteError;
         u64 cityAppliedSourceRevision = 0;
+        int cityStreetDetail = 100;
+        u32 cityStreetDetailCount = 0;
         SmartPtr<render::Terrain> foliageTerrain;
         int cityBlocks = 8, cityRoute = 0;
         procedural::GeneratedVehicle vehicle;
@@ -370,6 +372,7 @@ namespace workphone::scene
         /** City size and selected street route used for generation. */
         s32 m_cityBlocks = 8;
         s32 m_cityRoute = 0;
+        s32 m_cityStreetDetail = 100;
 
         /** Last generation error message, empty when generation succeeded. */
         String m_generationError;

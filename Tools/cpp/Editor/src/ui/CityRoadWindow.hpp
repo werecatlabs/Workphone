@@ -60,14 +60,16 @@ namespace workphone::editor
         Parameter handleViewport(const Array<Parameter>&);
         WP_CLASS_REGISTER_DECL;
     private:
-        enum Widget { Bind=43001,Draw,Move,InHandle,OutHandle,Finish,Cancel,ApplyFields,RemoveRoad,Undo,Redo,Save,Width,Grade,Closed,Roundabout,OuterRadius,IslandRadius,RemoveRoundabout };
-        enum class Mode { Draw,Move,InHandle,OutHandle,Roundabout };
+        enum Widget { Bind=43001,Draw,Move,InHandle,OutHandle,Finish,Cancel,ApplyFields,RemoveRoad,Undo,Redo,Save,Width,Grade,Closed,Roundabout,OuterRadius,IslandRadius,RemoveRoundabout,SelectRoad,InsertKnot };
+        enum class Mode { Draw,Move,InHandle,OutHandle,Roundabout,SelectRoad,InsertKnot };
         void attachViewport();
         void action(Widget,bool invalidateInput=true);
         void status(const String &);
         void cancelDraft();
         bool beginDraft();
         bool beginDraw();
+        void selectRoad(const procedural::CityRoadSpline &);
+        void editRoadAt(const Vector3F &terrainHit);
         Vector3F controlPoint(Vector3F,const procedural::CityRoadSpline &) const;
         bool fields(procedural::CityRoadSpline &);
         bool commitDraft();

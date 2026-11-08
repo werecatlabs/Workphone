@@ -1,5 +1,34 @@
 # WPProcedural implementation status
 
+## Street editing and fitted pavement furniture — 8 November 2026
+
+**Window > City Roads** now selects a spline by clicking its carriageway.
+**Insert Knot** splits the clicked span at its nearest point on the selected
+spline. The split preserves its cubic shape, existing knot IDs and roundabout
+connections. The source edit uses the same Undo/Redo and Save Scene path as
+the other road tools.
+
+**City Street Detail** is a saved 0–100 control on `ProceduralRaceScene` and
+`RacingGameOpenCity`. Regeneration places benches, planters, bins and pedestrian
+lamps at fitted sidewalks. Admission checks the whole base against the published
+sidewalk triangles, with relief and clearance limits. Higher values select a
+larger deterministic subset of up to 88 fixtures at High quality. Fixtures use
+up to five visual batches. [Editor workflow](WPPROCEDURAL_CITY_AUTHORING_PLAN.md#current-practical-workflow)
+
+Matched seed-42 native boulevard captures at 0 and 100 report 0 and 88 fixtures.
+Both retain 70 roads, four roundabouts, 117 parcels and 528 route samples. The
+grid roundabout and new pavement-height **frontage** views use 22 roads, four
+roundabouts, 128 parcels and 689 route samples. The matched grid frontage runs
+also report 0 and 88 fixtures. All five captures pass native structural checks
+and exit 0. Each pair used the same 11 retained runtime binaries.
+
+Ten Debug geometry and authoring cases, two Debug Editor cases and the Lua
+open-city fixture passed. The Editor tests exercise the viewport command path
+and scene save/reopen. The WARP captures show the added fixtures and their
+pavement contact. Dark glazing, empty verges and simple surface detail are
+still visible. Recorded Editor pointer testing and commercial visual
+comparison remain open. [Capture evidence and review](../artifacts/procedural/city-street-editing-20261108/visual-review.md)
+
 ## Generated cities with editable terrain roads — 25 October 2026
 
 Final retained-binary captures 13/14/15 pass native structural validation and exit
@@ -245,12 +274,12 @@ Native sample additions:
 
 Replay header is `tick,throttle,brake,steering`. Ticks begin at zero with no gaps. Throttle/brake are in [0,1], steering in [-1,1]; values must be finite. The physics task targets 120 Hz, but existing physics uses measured/clamped deltas: input replay is not a fixed-step deterministic physics implementation or a cross-platform replay guarantee. Inputs start when the post-load physics configuration is ready. Timing, reset and camera-track recording remain future work.
 
-`Tools/CaptureProceduralRacing.ps1` runs selected views into a fresh output directory and saves source/diff/binary/media/plugin hashes, exact arguments, logs, output image hashes and runtime reports. It defaults to silent audio and accepts `-FoliageWorld`, `-ExportMaterials`, `-Replay`, `-Views`, `-Seconds`, `-Resolution` and `-Configuration`. Build separately before capture. Asset hashes are a media inventory, not a runtime dependency trace. The script rejects reused output directories and reports capture/manifest/timeout failures.
+`Tools/powershell/CaptureProceduralRacing.ps1` runs selected views into a fresh output directory and saves source/diff/binary/media/plugin hashes, exact arguments, logs, output image hashes and runtime reports. It defaults to silent audio and accepts `-FoliageWorld`, `-ExportMaterials`, `-Replay`, `-Views`, `-Seconds`, `-Resolution` and `-Configuration`. Build separately before capture. Asset hashes are a media inventory, not a runtime dependency trace. The script rejects reused output directories and reports capture/manifest/timeout failures.
 
 ```powershell
 & 'C:\Program Files\CMake\bin\cmake.exe' -S . -B project_x64 -DWP_BUILD_PROCEDURAL_SERVICE_TESTS=ON
 & 'C:\Program Files\CMake\bin\cmake.exe' --build project_x64 --config Debug --target SampleVehicleAdvanced ProceduralServiceTests VehicleReviewTests WPGraphicsCookedResourceTests
-& .\Tools\CaptureProceduralRacing.ps1 -Configuration Debug -Views car,corner -FoliageWorld -ExportMaterials
+& .\Tools\powershell\CaptureProceduralRacing.ps1 -Configuration Debug -Views car,corner -FoliageWorld -ExportMaterials
 ```
 
 ### Evidence and remaining gates

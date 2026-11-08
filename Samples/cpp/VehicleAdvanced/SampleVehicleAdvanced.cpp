@@ -5,6 +5,7 @@
 #include "TerrainGameplayPackage.h"
 #include <WPProcedural/WPProcedural.hpp>
 #include <Workphone/Workphone.hpp>
+#include <charconv>
 #include <iomanip>
 #include <iostream>
 #include <sstream>
@@ -935,6 +936,26 @@ namespace workphone
                 if(m_assets.cityTerrainRoads)
                 {
                     const auto check=checkTerrainCity(m_assets,app->getPhysicsManager()->getPhysicsScene());cityValid=cityValid && check.valid;
+                    const auto expectedDetail = m_cityStreetDetail >= 0 ? m_cityStreetDetail : 100;
+                    const bool expectStreetDetail = m_cityStreetDetail == 100 && m_seed == 42 &&
+                        m_cityBlocks == 6 && m_cityRoute == 0 && m_quality == procedural::VehicleAppearanceQuality::High;
+                    size_t streetDetailActors = 0;
+                    bool streetDetailRenderersReady = true;
+                    for( const auto &actor : m_assets.actors )
+                    {
+                        if( !actor || actor->getName().find( "Terrain city street detail" ) != 0 )
+                            continue;
+                        ++streetDetailActors;
+                        const auto renderer = actor->getComponent<scene::MeshRenderer>();
+                        streetDetailRenderersReady = streetDetailRenderersReady && renderer && renderer->getGraphicsObject();
+                    }
+                    const bool streetDetailValid = m_assets.cityStreetDetail == expectedDetail &&
+                        (expectedDetail != 0 || m_assets.cityStreetDetailCount == 0) &&
+                        (!expectStreetDetail || m_assets.cityStreetDetailCount > 0) &&
+                        ((m_assets.cityStreetDetailCount > 0) == (streetDetailActors > 0)) && streetDetailRenderersReady;
+                    cityValid = cityValid && streetDetailValid;
+                    if( !streetDetailValid )
+                        WP_LOG_ERROR( "Terrain city street detail does not match the requested setting or fixture." );
                     auto authoring=m_assets.roadAuthoring;const auto snapshot=m_assets.roadTerrain?m_assets.roadTerrain->getTerrainSnapshot():nullptr;
                     const auto &layout=m_assets.cityLayout;size_t parks=0;for(const auto &lot:layout.lots)parks+=lot.park?1:0;
                     evidence<<",\n  \"terrainCity\": {\"sourceId\":"<<advanced::jsonString(authoring?String(authoring->getSource().id.data(),authoring->getSource().id.size()):String())
@@ -954,6 +975,9 @@ namespace workphone
                         <<",\"lots\":"<<layout.lots.size()<<",\"buildingLots\":"<<layout.lots.size()-parks<<",\"parkLots\":"<<parks
                         <<",\"buildingCollisionActors\":"<<check.buildingBodies<<",\"expectedBuildingCollisionActors\":"<<check.expectedBuildingBodies
                         <<",\"buildingSupportChecks\":"<<m_assets.cityBuildingSupportChecks<<",\"culledParcels\":"<<m_assets.cityCulledParcels
+                        <<",\"cityStreetDetail\":"<<m_assets.cityStreetDetail<<",\"cityStreetDetailCount\":"<<m_assets.cityStreetDetailCount
+                        <<",\"streetDetailActors\":"<<streetDetailActors<<",\"streetDetailRenderersReady\":"<<(streetDetailRenderersReady?"true":"false")
+                        <<",\"streetDetailPlacementsRequired\":"<<(expectStreetDetail?"true":"false")<<",\"streetDetailValid\":"<<(streetDetailValid?"true":"false")
                         <<",\"buildingSupportValid\":"<<(check.support?"true":"false")<<",\"structuralValidation\":"<<(cityValid?"true":"false")<<"}";
                     if(!cityValid)WP_LOG_ERROR("Terrain city: source, fitted route, native collision, building support or uploaded road PBR bindings validation failed.");
                 }
@@ -2308,6 +2332,8 @@ namespace workphone
             properties->setProperty( "City Natural Roads", m_cityNaturalRoads );
             properties->setProperty( "Road Authoring Showcase", m_roadAuthoringShowcase );
             properties->setProperty( "City Terrain Roads", m_cityTerrainRoads );
+            if( m_cityStreetDetail >= 0 )
+                properties->setProperty( "City Street Detail", m_cityStreetDetail );
             m_raceScene->setProperties( properties );
         }
         if( !m_raceScene->regenerate() )
@@ -2391,7 +2417,36 @@ namespace workphone
                     else if(m_assets.roadAuthoring->getRuntimeSurface(p.x,p.z,height,driveable))p.y=height;
                     return p;
                 };
-                m_cityStreetCentre=cameraPoint(junction.ports.front(),false);m_cityBoulevardCentre=cameraPoint(junction.ports[junction.ports.size()/2],true);m_cityStreetForward=junction.ports.front().outward;
+                const auto &boulevard = junction.ports[junction.ports.size() / 2];
+                m_cityStreetCentre = cameraPoint( junction.ports.front(), false );
+                m_cityBoulevardCentre = cameraPoint( boulevard, true );
+                m_cityStreetForward = junction.ports.front().outward;
+
+                // Frame the outside of the approach sidewalk independently of
+                // fixture admission, so density comparisons use one camera.
+                Vector3F along( boulevard.outward.x, 0, boulevard.outward.z );
+                along.normalise();
+                const Vector3F outside( -along.z, 0, along.x );
+                const auto frontage = junction.center +
+                    along * ( junction.outerRadius + boulevard.length * .55f ) +
+                    outside * ( boulevard.width * .5f + 1.98f );
+                m_cityFrontageEye = frontage + along * 5.f - outside * 1.25f;
+                m_cityFrontageTarget = frontage - along * 4.f - outside * .7f;
+                const auto terrain = m_assets.roadAuthoring->getTerrainSnapshot();
+                const auto &placement = m_assets.roadAuthoring->getTerrainPlacement();
+                if( terrain )
+                {
+                    for( auto *point : { &m_cityFrontageEye, &m_cityFrontageTarget } )
+                    {
+                        f32 height = 0;
+                        if( render::sampleTerrainHeight( *terrain, placement, *point, height ) )
+                        {
+                            point->y = height;
+                        }
+                    }
+                }
+                m_cityFrontageEye.y += 1.87f;
+                m_cityFrontageTarget.y += .97f;
             }
         }
         else if( m_assets.cityRoadShowcase )
@@ -2569,7 +2624,12 @@ namespace workphone
                             m_cameraActor->lookAt( Vector3F( 75, 0, -30 ), Vector3F::unitZ() );
                         }
                     }
-                    else if( m_captureView == "street" || m_captureView == "boulevard" )
+                    else if( m_captureView == "frontage" && m_cityHasJunction )
+                    {
+                        m_cameraActor->setPosition( m_cityFrontageEye );
+                        m_cameraActor->lookAt( m_cityFrontageTarget, Vector3F::unitY() );
+                    }
+                    else if( m_captureView == "street" || m_captureView == "boulevard" || m_captureView == "frontage" )
                     {
                         if(m_assets.cityTerrainRoads)
                         {
@@ -2730,7 +2790,7 @@ int main( int argc, char **argv )
                    "  --track-smoke-test            Drive one full lap through the physics controller\n"
                    "  --collision-smoke-test        Verify native boxes; circuit garage impact or city road/sidewalk grades\n"
                    "  --validate-circuit           Validate 100 generated closed circuits\n"
-                   "  --capture PATH.bmp --view follow|car|track|corner|street|boulevard   Save a rendered view and "
+                   "  --capture PATH.bmp --view follow|car|track|corner|street|boulevard|frontage   Save a rendered view and "
                    "exit\n"
                    "  --no-hud --force-lod auto|0|1  Clean captures and tree LOD comparisons\n"
                    "  --force-vehicle-lod auto|0|1|2  Override the vehicle level (clamped for low)\n"
@@ -2746,7 +2806,9 @@ int main( int argc, char **argv )
                    "  --city-layout grid|lsystem     Road network layout (requires --city; default grid)\n"
                    "  --road-authoring-showcase       Terrain-fitted editable roads and roundabout (implies --city)\n"
                    "  --city-terrain-roads            Editable generated city roads fitted to terrain (implies --city)\n"
+                   "  --city-street-detail 0..100     Roadside detail density (requires --city-terrain-roads, default 100)\n"
                    "  --view street|boulevard       Opposite street-level city inspections; track is the overview\n"
+                   "  --view frontage               Close sidewalk inspection (requires --city-terrain-roads)\n"
                    "  --export-materials NEW_DIR    Bake asphalt maps and resource source descriptors\n"
                    "  --terrain-gameplay            Native representative terrain and existing vehicle\n"
                    "  --export-terrain-gameplay NEW_DIR  Export its source-free asset closure, then exit\n"
@@ -2787,6 +2849,7 @@ int main( int argc, char **argv )
     bool roadAuthoringShowcase = false;
     bool cityTerrainRoads = false;
     s32 cityBlocks = 8, cityRoute = 0;
+    s32 cityStreetDetail = -1;
     s32 forcedLOD = -1;
     s32 forcedVehicleLOD = -1;
     f64 benchmarkSeconds = 0;
@@ -2827,6 +2890,14 @@ int main( int argc, char **argv )
             { roadAuthoringShowcase = true; openCity = true; }
             else if( String( argv[i] ) == "--city-terrain-roads" )
             { cityTerrainRoads = true; openCity = true; }
+            else if( String( argv[i] ) == "--city-street-detail" && i + 1 < argc )
+            {
+                const std::string_view value = argv[++i];
+                const auto end = value.data() + value.size();
+                const auto parsed = std::from_chars( value.data(), end, cityStreetDetail );
+                if( parsed.ec != std::errc{} || parsed.ptr != end || cityStreetDetail < 0 || cityStreetDetail > 100 )
+                    throw std::runtime_error( "City street detail must be an integer from 0 to 100." );
+            }
             else if( String( argv[i] ) == "--city-blocks" && i + 1 < argc )
             {
                 const std::string value = argv[++i];
@@ -2952,12 +3023,17 @@ int main( int argc, char **argv )
             { audioEnabled = false; hud = false; }
         }
         if( captureView != "follow" && captureView != "car" && captureView != "track" &&
-            captureView != "corner" && captureView != "street" && captureView != "boulevard" )
-            throw std::runtime_error( "View must be follow, car, track, corner, street, or boulevard." );
+            captureView != "corner" && captureView != "street" && captureView != "boulevard" &&
+            captureView != "frontage" )
+            throw std::runtime_error( "View must be follow, car, track, corner, street, boulevard, or frontage." );
         if( ( cityOptionsExplicit || captureView == "street" || captureView == "boulevard" ) && !openCity )
             throw std::runtime_error( "City options and street-level views require --city." );
         if(roadAuthoringShowcase && foliageWorld)throw std::runtime_error("Road authoring showcase does not provide foliage-world generation.");
         if(roadAuthoringShowcase && cityTerrainRoads)throw std::runtime_error("Choose road-authoring-showcase or city-terrain-roads.");
+        if( cityStreetDetail >= 0 && !cityTerrainRoads )
+            throw std::runtime_error( "--city-street-detail requires --city-terrain-roads." );
+        if( captureView == "frontage" && !cityTerrainRoads )
+            throw std::runtime_error( "--view frontage requires --city-terrain-roads." );
         if(cityTerrainRoads && !materialExportDirectory.empty())throw std::runtime_error("Terrain-city source material export is unavailable.");
         if( int(smokeTest) + int(trackSmokeTest) + int(collisionSmokeTest) + int(audioSmokeTest) + int(effectsSmokeTest) > 1 ||
             ( ( !capturePath.empty() || benchmarkSeconds > 0 ) && ( smokeTest || trackSmokeTest || collisionSmokeTest || audioSmokeTest || effectsSmokeTest ) ) )
@@ -3063,6 +3139,7 @@ int main( int argc, char **argv )
         app->setCityOptions( openCity, cityBlocks, cityRoute, cityNaturalRoads );
         app->setRoadAuthoringShowcase( roadAuthoringShowcase );
         app->setCityTerrainRoads( cityTerrainRoads );
+        app->setCityStreetDetail( cityStreetDetail );
         app->setMaterialExportDirectory( materialExportDirectory );
         app->setTerrainGameplayOptions(terrainGameplay,terrainGameplayPackageDirectory,!terrainGameplayExportDirectory.empty());
         if( !pluginsConfig.empty() )

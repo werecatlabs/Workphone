@@ -30,8 +30,10 @@
 #include <cmath>
 #include <random>
 #include <chrono>
+#include <limits>
 #include <stdexcept>
 #include <map>
+#include <tuple>
 #include <cstdio>
 
 namespace workphone::scene::race
@@ -53,6 +55,8 @@ namespace workphone::scene::race
         cityRaceRouteAvailable( other.cityRaceRouteAvailable ),
         cityRaceRouteError( other.cityRaceRouteError ),
         cityAppliedSourceRevision( other.cityAppliedSourceRevision ),
+        cityStreetDetail( other.cityStreetDetail ),
+        cityStreetDetailCount( other.cityStreetDetailCount ),
         foliageTerrain( other.foliageTerrain ),
         cityBlocks( other.cityBlocks ),
         cityRoute( other.cityRoute ),
@@ -110,6 +114,8 @@ namespace workphone::scene::race
         swap( cityRaceRouteAvailable, other.cityRaceRouteAvailable );
         swap( cityRaceRouteError, other.cityRaceRouteError );
         swap( cityAppliedSourceRevision, other.cityAppliedSourceRevision );
+        swap( cityStreetDetail, other.cityStreetDetail );
+        swap( cityStreetDetailCount, other.cityStreetDetailCount );
         swap( cityBlocks, other.cityBlocks );
         swap( cityRoute, other.cityRoute );
         swap( vehicle, other.vehicle );
@@ -1830,6 +1836,365 @@ namespace workphone::scene::race
                   material( assets, { .24f, .36f, .13f, 1 }, .92f ) );
         }
 
+        struct CityStreetFixture
+        {
+            enum Kind { Bench, Planter, Bin, Lamp };
+            Vector3F position, along, outward;
+            Kind kind;
+            float halfLength, halfDepth;
+            float lowest = std::numeric_limits<float>::infinity();
+            float highest = -std::numeric_limits<float>::infinity();
+            double area = 0;
+        };
+
+        void measureStreetFixtureSupport( CityStreetFixture &site, const Vector3F &a,
+                                          const Vector3F &b, const Vector3F &c )
+        {
+            // Clip the actual fitted triangle in the fixture's horizontal frame.
+            // Y stays affine through clipping, so support is tested over the whole base.
+            std::array<Vector3F, 8> polygon{}, clipped{};
+            size_t count = 0;
+            for( const auto &p : { a, b, c } )
+            {
+                const auto offset = p - site.position;
+                polygon[count++] = { offset.dotProduct( site.along ), p.y,
+                                     offset.dotProduct( site.outward ) };
+            }
+            for( int axis = 0; axis < 2 && count >= 3; ++axis )
+            {
+                for( const float side : { -1.f, 1.f } )
+                {
+                    const float extent = axis == 0 ? site.halfLength : site.halfDepth;
+                    const auto distance = [=]( const Vector3F &v ) {
+                        return extent - side * ( axis == 0 ? v.x : v.z );
+                    };
+                    size_t next = 0;
+                    auto previous = polygon[count - 1];
+                    float from = distance( previous );
+                    for( size_t i = 0; i < count; ++i )
+                    {
+                        const auto current = polygon[i];
+                        const float to = distance( current );
+                        if( ( from < 0 && to > 0 ) || ( from > 0 && to < 0 ) )
+                        {
+                            clipped[next++] = previous + ( current - previous ) * ( from / ( from - to ) );
+                        }
+                        if( to >= 0 )
+                        {
+                            clipped[next++] = current;
+                        }
+                        previous = current;
+                        from = to;
+                    }
+                    polygon.swap( clipped );
+                    count = next;
+                    if( count < 3 )
+                    {
+                        return;
+                    }
+                }
+            }
+            double area = 0;
+            for( size_t i = 1; i + 1 < count; ++i )
+            {
+                const auto u = polygon[i] - polygon[0], v = polygon[i + 1] - polygon[0];
+                area += double( u.x ) * v.z - double( u.z ) * v.x;
+            }
+            if( std::abs( area ) <= 1e-10 )
+            {
+                return;
+            }
+            site.area += std::abs( area ) * .5;
+            for( size_t i = 0; i < count; ++i )
+            {
+                site.lowest = std::min( site.lowest, polygon[i].y );
+                site.highest = std::max( site.highest, polygon[i].y );
+            }
+        }
+
+        void buildTerrainCityStreetDressing( SceneAssets &assets, const CityRoadTerrainMesh &walks,
+                                             const SourceBudgetVector<Vector3F> &existingLamps,
+                                             VehicleAppearanceQuality quality )
+        {
+            assets.cityStreetDetailCount = 0;
+            const int detail = std::clamp( assets.cityStreetDetail, 0, 100 );
+            if( detail == 0 || walks.indices.empty() )
+            {
+                return;
+            }
+            constexpr size_t maxCandidates = 4096;
+            constexpr float halfLengths[] = { 1.05f, .89f, .28f, .25f };
+            constexpr float halfDepths[] = { .30f, .30f, .28f, .25f };
+            constexpr float maxRadius = 1.2f;
+            const auto &bake = assets.roadAuthoring->getBake();
+            const auto &source = assets.roadAuthoring->getSource();
+            const float extent = assets.cityLayout.extent + 12;
+            SourceBudgetVector<CityStreetFixture> candidates;
+            const auto addCandidate = [&]( const Vector3F &edge, const Vector3F &along,
+                                           const Vector3F &outward, CityStreetFixture::Kind kind ) {
+                // The deepest base uses only the outer 0.77 m of the 2.4 m walk.
+                const auto position = edge + outward * 1.98f;
+                if( candidates.size() >= maxCandidates || std::abs( position.x ) > extent ||
+                    std::abs( position.z ) > extent )
+                {
+                    return;
+                }
+                const float lampClearance = kind == CityStreetFixture::Lamp ? 9.f : 1.65f;
+                if( std::any_of( existingLamps.begin(), existingLamps.end(), [&]( const auto &lamp ) {
+                        const float dx = lamp.x - position.x, dz = lamp.z - position.z;
+                        return dx * dx + dz * dz < lampClearance * lampClearance;
+                    } ) )
+                {
+                    return;
+                }
+                candidates.push_back( { position, along, outward, kind,
+                                        halfLengths[kind], halfDepths[kind] } );
+            };
+            for( const auto &junction : source.roundabouts )
+            {
+                for( size_t i = 0; i < junction.ports.size(); ++i )
+                {
+                    const auto &port = junction.ports[i];
+                    Vector3F along( port.outward.x, 0, port.outward.z );
+                    along.normalise();
+                    const auto centre = junction.center + along * ( junction.outerRadius + port.length * .55f );
+                    for( const int side : { -1, 1 } )
+                    {
+                        const Vector3F outward( side * along.z, 0, -side * along.x );
+                        const auto kind = ( i % 2 == 0 ) == ( side > 0 ) ? CityStreetFixture::Planter
+                                                                         : CityStreetFixture::Bench;
+                        addCandidate( centre + outward * ( port.width * .5f ), along, outward, kind );
+                    }
+                }
+            }
+            for( size_t road = 0; road < bake.roads.size() && candidates.size() < maxCandidates; ++road )
+            {
+                const auto &points = bake.roads[road].points;
+                float next = 11.f + float( road % 4 ) * 2.f;
+                size_t station = 0;
+                for( size_t i = 1; i < points.size() && candidates.size() < maxCandidates; ++i )
+                {
+                    const auto &a = points[i - 1], &b = points[i];
+                    while( next <= b.distance && next + 4 < points.back().distance &&
+                           candidates.size() + 2 <= maxCandidates )
+                    {
+                        const float t = std::clamp( ( next - a.distance ) / ( b.distance - a.distance ),
+                                                    0.f, 1.f );
+                        next += 25.f;
+                        ++station;
+                        const auto centre = a.position + ( b.position - a.position ) * t;
+                        for( const bool left : { true, false } )
+                        {
+                            const auto edgeA = left ? a.left : a.right, edgeB = left ? b.left : b.right;
+                            auto along = edgeB - edgeA;
+                            along.y = 0;
+                            if( along.lengthSquared() < 1e-8f )
+                            {
+                                continue;
+                            }
+                            along.normalise();
+                            const auto edge = edgeA + ( edgeB - edgeA ) * t;
+                            auto outward = Vector3F( along.z, 0, -along.x );
+                            if( ( edge - centre ).dotProduct( outward ) < 0 )
+                            {
+                                outward = -outward;
+                            }
+                            const auto kind = static_cast<CityStreetFixture::Kind>(
+                                ( road + station * 3 + ( left ? 0 : 2 ) ) % 4 );
+                            addCandidate( edge, along, outward, kind );
+                        }
+                    }
+                }
+            }
+            if( candidates.empty() )
+            {
+                return;
+            }
+
+            // Index the comparatively few fixture centres and stream the already-bounded
+            // footway mesh. Skirt faces have horizontal normals and supply no support.
+            const auto cell = []( float coordinate ) { return int( std::floor( coordinate / 16 ) ); };
+            const int firstCell = cell( -extent ), lastCell = cell( extent );
+            SourceBudgetMap<std::pair<int, int>, SourceBudgetVector<size_t>> buckets;
+            for( size_t i = 0; i < candidates.size(); ++i )
+            {
+                const auto &p = candidates[i].position;
+                buckets[{ cell( p.x ), cell( p.z ) }].push_back( i );
+            }
+            for( size_t i = 0; i < walks.indices.size(); i += 3 )
+            {
+                const auto &a = walks.vertices[walks.indices[i]];
+                const auto &b = walks.vertices[walks.indices[i + 1]];
+                const auto &c = walks.vertices[walks.indices[i + 2]];
+                if( a.normal.y < .9f || b.normal.y < .9f || c.normal.y < .9f )
+                {
+                    continue;
+                }
+                const float x0 = std::min( { a.position.x, b.position.x, c.position.x } ) - maxRadius;
+                const float x1 = std::max( { a.position.x, b.position.x, c.position.x } ) + maxRadius;
+                const float z0 = std::min( { a.position.z, b.position.z, c.position.z } ) - maxRadius;
+                const float z1 = std::max( { a.position.z, b.position.z, c.position.z } ) + maxRadius;
+                const int endX = std::min( cell( x1 ), lastCell ), endZ = std::min( cell( z1 ), lastCell );
+                for( int x = std::max( cell( x0 ), firstCell ); x <= endX; ++x )
+                {
+                    for( int z = std::max( cell( z0 ), firstCell ); z <= endZ; ++z )
+                    {
+                        const auto found = buckets.find( { x, z } );
+                        if( found == buckets.end() )
+                        {
+                            continue;
+                        }
+                        for( const auto index : found->second )
+                        {
+                            auto &site = candidates[index];
+                            if( site.position.x >= x0 && site.position.x <= x1 &&
+                                site.position.z >= z0 && site.position.z <= z1 )
+                            {
+                                measureStreetFixtureSupport( site, a.position, b.position, c.position );
+                            }
+                        }
+                    }
+                }
+            }
+            std::sort( candidates.begin(), candidates.end(), []( const auto &a, const auto &b ) {
+                const auto &p = a.position, &q = b.position;
+                const auto aDistance = p.x * p.x + p.z * p.z, bDistance = q.x * q.x + q.z * q.z;
+                return std::tie( aDistance, p.x, p.z, a.kind, a.along.x, a.along.z ) <
+                       std::tie( bDistance, q.x, q.z, b.kind, b.along.x, b.along.z );
+            } );
+
+            const size_t cap = quality == VehicleAppearanceQuality::Preview ? 40 : 88;
+            const size_t limit = ( cap * detail + 99 ) / 100;
+            SourceBudgetVector<CityStreetFixture> admitted;
+            admitted.reserve( limit );
+            for( auto &site : candidates )
+            {
+                const double baseArea = 4.0 * site.halfLength * site.halfDepth;
+                if( std::abs( site.area - baseArea ) > .00005 || site.highest - site.lowest > .08f ||
+                    std::any_of( admitted.begin(), admitted.end(), [&]( const auto &placed ) {
+                        const float x = site.position.x - placed.position.x;
+                        const float z = site.position.z - placed.position.z;
+                        return x * x + z * z < 6.f * 6.f;
+                    } ) )
+                {
+                    continue;
+                }
+                site.position.y = site.lowest;
+                admitted.push_back( site );
+                if( admitted.size() == limit )
+                {
+                    break;
+                }
+            }
+
+            Geometry metal, timber, stone, planting, lenses;
+            for( const auto &site : admitted )
+            {
+                const auto point = [&]( float u, float y, float v ) {
+                    return site.position + site.along * u + Vector3F( 0, y, 0 ) + site.outward * v;
+                };
+                const auto box = [&]( Geometry &g, float u, float y, float v, float length,
+                                      float height, float depth ) {
+                    const float x0 = u - length * .5f, x1 = u + length * .5f;
+                    const float y0 = y - height * .5f, y1 = y + height * .5f;
+                    const float z0 = v - depth * .5f, z1 = v + depth * .5f;
+                    const auto a = point( x0, y0, z0 ), b = point( x1, y0, z0 );
+                    const auto c = point( x1, y0, z1 ), d = point( x0, y0, z1 );
+                    const auto up = Vector3F( 0, y1 - y0, 0 );
+                    g.quad( a + up, b + up, c + up, d + up, { 0, 1, 0 } );
+                    g.quad( a, b, c, d, { 0, -1, 0 } );
+                    g.quad( a, b, b + up, a + up, -site.outward );
+                    g.quad( c, d, d + up, c + up, site.outward );
+                    g.quad( d, a, a + up, d + up, -site.along );
+                    g.quad( b, c, c + up, b + up, site.along );
+                };
+                switch( site.kind )
+                {
+                case CityStreetFixture::Bench:
+                    for( int slat = -2; slat <= 2; ++slat )
+                    {
+                        box( timber, 0, .44f, slat * .075f, 1.94f, .045f, .064f );
+                    }
+                    for( int row = 0; row < 3; ++row )
+                    {
+                        box( timber, 0, .65f + row * .095f, .19f + row * .018f, 1.94f, .076f, .04f );
+                    }
+                    for( float side : { -.73f, .73f } )
+                    {
+                        box( metal, side, .18f, 0, .065f, .42f, .46f );
+                        metal.beam( point( side, .33f, .16f ), point( side, .87f, .236f ), .035f );
+                        metal.beam( point( side, .62f, .20f ), point( side, .62f, -.18f ), .023f );
+                    }
+                    break;
+                case CityStreetFixture::Planter:
+                    box( stone, 0, .19f, 0, 1.64f, .44f, .52f );
+                    for( float side : { -1.f, 1.f } )
+                    {
+                        box( stone, 0, .42f, side * .24f, 1.72f, .12f, .10f );
+                        box( stone, side * .81f, .42f, 0, .10f, .12f, .38f );
+                    }
+                    box( metal, 0, .404f, 0, 1.52f, .018f, .37f );
+                    for( int tuft = -1; tuft <= 1; ++tuft )
+                    {
+                        for( int blade = 0; blade < 13; ++blade )
+                        {
+                            const float angle = blade * 2.39996323f + tuft;
+                            const auto bend = site.along * std::cos( angle ) + site.outward * std::sin( angle );
+                            const auto across = Vector3F( bend.z, 0, -bend.x ) * .024f;
+                            const auto base = point( tuft * .47f, .41f, 0 ) + bend * .06f;
+                            const float height = .23f + .022f * float( ( blade * 7 ) % 13 );
+                            const auto middle = base + bend * .055f + Vector3F( 0, height * .62f, 0 );
+                            const auto tip = base + bend * .16f + Vector3F( 0, height, 0 );
+                            auto normal = across.crossProduct( middle - base );
+                            normal.normalise();
+                            const auto top = across * .55f;
+                            planting.quad( base - across, base + across, middle + top, middle - top,
+                                           normal );
+                            planting.quad( middle - top, middle + top, tip + top * .13f,
+                                           tip - top * .13f, normal );
+                        }
+                    }
+                    break;
+                case CityStreetFixture::Bin:
+                    box( metal, 0, .33f, 0, .37f, .72f, .37f );
+                    box( metal, 0, .79f, 0, .51f, .09f, .51f );
+                    box( metal, 0, .71f, .13f, .41f, .18f, .22f );
+                    for( int slat = -2; slat <= 2; ++slat )
+                    {
+                        for( float side : { -.20f, .20f } )
+                        {
+                            box( timber, slat * .077f, .33f, side, .056f, .61f, .036f );
+                            box( timber, side, .33f, slat * .077f, .036f, .61f, .056f );
+                        }
+                    }
+                    break;
+                case CityStreetFixture::Lamp:
+                    box( stone, 0, .035f, 0, .44f, .13f, .44f );
+                    metal.beam( point( 0, .07f, 0 ), point( 0, .54f, 0 ), .082f );
+                    metal.beam( point( 0, .53f, 0 ), point( 0, 3.43f, 0 ), .044f );
+                    metal.beam( point( 0, 3.43f, 0 ), point( 0, 3.66f, -.52f ), .036f );
+                    box( metal, 0, 3.67f, -.55f, .28f, .10f, .50f );
+                    box( lenses, 0, 3.61f, -.55f, .24f, .035f, .42f );
+                    break;
+                }
+            }
+
+            const auto publish = [&]( const String &label, const Geometry &geometry, ColourF colour,
+                                      float roughness, float metalness = 0 ) {
+                if( !geometry.indices.empty() )
+                {
+                    mesh( assets, "Terrain city street detail " + label, geometry,
+                          material( assets, colour, roughness, metalness ) );
+                }
+            };
+            publish( "metal frames", metal, { .13f, .17f, .16f, 1 }, .66f, .5f );
+            publish( "timber slats", timber, { .48f, .28f, .13f, 1 }, .85f );
+            publish( "stone planters and plinths", stone, { .67f, .63f, .53f, 1 }, .88f );
+            publish( "ornamental grasses", planting, { .31f, .43f, .16f, 1 }, .93f );
+            publish( "pedestrian lamp lenses", lenses, { .86f, .83f, .72f, 1 }, .38f );
+            assets.cityStreetDetailCount = static_cast<u32>( admitted.size() );
+        }
+
         void buildNaturalCityStreets( SceneAssets &assets, const OpenCityLayout &city, Geometry &asphalt,
                                       Geometry &pavement, Geometry &markings, Geometry &streetMetal,
                                       Geometry &lampGlass, VehicleAppearanceQuality quality )
@@ -2315,6 +2680,7 @@ namespace workphone::scene::race
                 cityAsphalt->setEditorFloat( "uvTriplanarScale", 1.f / 8.f );
             }
             Geometry asphalt, pavement, markings, parks, courtyards, streetMetal, lampGlass;
+            SourceBudgetVector<Vector3F> terrainStreetLamps;
 
             struct CityPatch
             {
@@ -2464,6 +2830,10 @@ namespace workphone::scene::race
                 {
                     const auto ground = lampCandidates[i], base = ground + Vector3F( 0, .15f, 0 ),
                                top = base + Vector3F( 0, 6.2f, 0 );
+                    if( assets.cityStreetDetail > 0 )
+                    {
+                        terrainStreetLamps.push_back( ground );
+                    }
                     courtyards.box( ground + Vector3F( 0, .075f, 0 ), { .4f, .15f, .4f } );
                     streetMetal.beam( base, top, .055f );
                     const Vector3F arm( .8f, -.1f, .45f );
@@ -3123,6 +3493,7 @@ namespace workphone::scene::race
                     }
                     app->getGameManager()->getCurrentScene()->registerAllUpdates( actor );
                 }
+                buildTerrainCityStreetDressing( assets, fitted, terrainStreetLamps, quality );
             }
             mesh( assets, "City street furniture", streetMetal,
                   material( assets, { .16f, .19f, .20f, 1 }, .48f, .6f ) );

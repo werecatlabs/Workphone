@@ -126,11 +126,133 @@ BOOST_AUTO_TEST_CASE(city_road_viewport_authoring_test)
     BOOST_CHECK_EQUAL(city->getSource().roundabouts[0].ports.size(),4u);
     for(const auto &port:city->getSource().roundabouts[0].ports)
         BOOST_CHECK(std::any_of(city->getSource().roads.begin(),city->getSource().roads.end(),[&](const auto &road){return road.id==port.approachId;}));
+    const auto approachId = city->getSource().roundabouts[0].ports.front().approachId;
+    const auto approach = [&]() -> const procedural::CityRoadSpline &
+    {
+        const auto &roads = city->getSource().roads;
+        const auto found = std::find_if(roads.begin(),roads.end(),[&](const auto &road){return road.id==approachId;});
+        BOOST_REQUIRE(found!=roads.end());
+        return *found;
+    };
+    const auto originalApproach = approach();
+    const auto approachMidpoint = (originalApproach.knots.front().position+originalApproach.knots.back().position)*.5f;
+    activate("Select Road");ray("begin",approachMidpoint.x,approachMidpoint.z);
+    activate("Insert Knot");ray("begin",approachMidpoint.x,approachMidpoint.z);
+    BOOST_REQUIRE_MESSAGE(approach().knots.size()==3u,diagnostic());
+    BOOST_CHECK(city->getSource().roundabouts[0].ports.front().approachId==approachId);
+    BOOST_CHECK(approach().knots.front().id==originalApproach.knots.front().id);
+    BOOST_CHECK(approach().knots.back().id==originalApproach.knots.back().id);
+    BOOST_CHECK_SMALL((approach().knots.front().outHandle.normaliseCopy()-originalApproach.knots.front().outHandle.normaliseCopy()).length(),.0001f);
+    activate("Undo");BOOST_REQUIRE_EQUAL(approach().knots.size(),2u);
     activate("Move Knot");ray("begin",32,40);ray("commit",32,40);const auto beforeGuard=city->getSourceRevision();activate("Delete Selected Road");
     BOOST_CHECK_EQUAL(city->getSourceRevision(),beforeGuard);BOOST_CHECK_EQUAL(city->getSource().roads.size(),5u);
     activate("Delete Selected Roundabout");BOOST_CHECK(city->getSource().roundabouts.empty());BOOST_REQUIRE_EQUAL(city->getSource().roads.size(),1u);
     activate("Undo");BOOST_CHECK_EQUAL(city->getSource().roundabouts.size(),1u);BOOST_CHECK_EQUAL(city->getSource().roads.size(),5u);
     activate("Undo");BOOST_CHECK(city->getSource().roundabouts.empty());BOOST_REQUIRE_EQUAL(city->getSource().roads.size(),1u);
+
+    const auto evaluate = [](const procedural::CityRoadSplineKnot &start,
+                             const procedural::CityRoadSplineKnot &end, f32 t)
+    {
+        const f32 u = 1.f - t;
+        return start.position * (u * u * u) + (start.position + start.outHandle) * (3.f * u * u * t) +
+               (end.position + end.inHandle) * (3.f * u * t * t) + end.position * (t * t * t);
+    };
+    auto straightSource = city->getSource();
+    auto &straight = straightSource.roads[0].knots;
+    straight.front().outHandle = Vector3F::zero();
+    straight.back().inHandle = Vector3F::zero();
+    BOOST_REQUIRE_MESSAGE(city->setSourceJSON(roadJSON(straightSource),city->getSourceRevision(),error),error);
+    const auto straightPick = evaluate(straight.front(),straight.back(),.25f);
+    activate("Select Road");ray("begin",straightPick.x,straightPick.z);
+    activate("Insert Knot");ray("begin",straightPick.x,straightPick.z);
+    const auto &straightSplit = city->getSource().roads[0].knots;
+    BOOST_REQUIRE_MESSAGE(straightSplit.size()==3u,diagnostic());
+    BOOST_CHECK_SMALL((straightSplit[1].position-straightPick).length(),.002f);
+    BOOST_CHECK(straightSplit.front().outHandle==Vector3F::zero());
+    BOOST_CHECK(straightSplit.back().inHandle==Vector3F::zero());
+    activate("Undo");BOOST_REQUIRE_EQUAL(city->getSource().roads[0].knots.size(),2u);
+
+    auto curvedSource = city->getSource();
+    curvedSource.roads[0].knots[0].outHandle = {15, 0, 10};
+    curvedSource.roads[0].knots[1].inHandle = {-18, 0, 12};
+    BOOST_REQUIRE_MESSAGE(city->setSourceJSON(roadJSON(curvedSource),city->getSourceRevision(),error),error);
+    const auto &original = curvedSource.roads[0].knots;
+    const auto pick = evaluate(original.front(), original.back(), .4f);
+    const auto beforeInsert = city->getSourceRevision();
+    const auto beforeInsertPublications = publications;
+    activate("Select Road");
+    const auto selectedOverlay = ray("begin",pick.x,pick.z).getArray();
+    BOOST_REQUIRE_EQUAL(selectedOverlay.size(),3u);
+    BOOST_CHECK_EQUAL(selectedOverlay[2].getArray().size(),original.size()*3u); // Centre and two handles per knot.
+    BOOST_CHECK_EQUAL(city->getSourceRevision(),beforeInsert);
+    {
+        RoadTask render(TaskId::Render);
+        activate("Insert Knot");
+        ray("begin",pick.x,pick.z);
+        ray("commit",pick.x,pick.z);
+    }
+    BOOST_CHECK_EQUAL(city->getSourceRevision(),beforeInsert);
+    flush();
+    const auto &split = city->getSource().roads[0].knots;
+    BOOST_REQUIRE_MESSAGE(split.size()==3u,diagnostic());
+    BOOST_CHECK_EQUAL(city->getSourceRevision(),beforeInsert+1);
+    BOOST_CHECK_EQUAL(publications,beforeInsertPublications+1);
+    BOOST_CHECK(city->getSource().roads[0].id==roadId);
+    BOOST_CHECK(split.front().id==original.front().id && split.back().id==original.back().id);
+    const auto insertedId = split[1].id;
+    BOOST_CHECK(insertedId!=original.front().id && insertedId!=original.back().id);
+    const f32 splitParameter = split.front().outHandle.x / original.front().outHandle.x;
+    BOOST_CHECK_SMALL(splitParameter-.4f,.001f);
+    BOOST_CHECK(split.front().inHandle==original.front().inHandle);
+    BOOST_CHECK(split.back().outHandle==original.back().outHandle);
+    for (const f32 t : {0.f,.25f,.5f,.75f,1.f})
+    {
+        BOOST_CHECK_SMALL((evaluate(split[0],split[1],t)-evaluate(original[0],original[1],splitParameter*t)).length(),.002f);
+        BOOST_CHECK_SMALL((evaluate(split[1],split[2],t)-evaluate(original[0],original[1],splitParameter+(1.f-splitParameter)*t)).length(),.002f);
+    }
+    const auto afterInsert = city->getSourceRevision();
+    ray("begin",100,100);
+    ray("begin",original.front().position.x,original.front().position.z);
+    BOOST_CHECK_EQUAL(city->getSourceRevision(),afterInsert);
+    activate("Select Road");
+    const auto missedOverlay = ray("begin",100,100).getArray();
+    BOOST_REQUIRE_EQUAL(missedOverlay.size(),3u);
+    BOOST_CHECK(missedOverlay[2].getArray().empty());
+    activate("Delete Selected Road");
+    BOOST_CHECK_EQUAL(city->getSourceRevision(),afterInsert);
+    activate("Undo");
+    BOOST_REQUIRE_EQUAL(city->getSource().roads[0].knots.size(),2u);
+    BOOST_CHECK(city->getSource().roads[0].knots[0].outHandle==original[0].outHandle);
+    BOOST_CHECK(city->getSource().roads[0].knots[1].inHandle==original[1].inHandle);
+    activate("Redo");
+    BOOST_REQUIRE_EQUAL(city->getSource().roads[0].knots.size(),3u);
+    BOOST_CHECK(city->getSource().roads[0].knots[1].id==insertedId);
+
+    const auto openSource = city->getSource();
+    auto closedSource = openSource;
+    auto &closedRoad = closedSource.roads[0];
+    closedRoad.closed = true;
+    closedRoad.width = 6;
+    closedRoad.knots[0].position = {-55,7,-40};
+    closedRoad.knots[1].position = {55,7,-40};
+    closedRoad.knots[2].position = {0,7,55};
+    for (size_t i=0;i<closedRoad.knots.size();++i)
+    {
+        const auto tangent = (closedRoad.knots[(i+1)%3].position-closedRoad.knots[(i+2)%3].position)/6.f;
+        closedRoad.knots[i].inHandle = -tangent;
+        closedRoad.knots[i].outHandle = tangent;
+    }
+    BOOST_REQUIRE_MESSAGE(city->setSourceJSON(roadJSON(closedSource),city->getSourceRevision(),error),error);
+    const auto seamPick = evaluate(closedRoad.knots.back(),closedRoad.knots.front(),.5f);
+    activate("Select Road");ray("begin",seamPick.x,seamPick.z);
+    activate("Insert Knot");ray("begin",seamPick.x,seamPick.z);
+    const auto &seam = city->getSource().roads[0].knots;
+    BOOST_REQUIRE_MESSAGE(seam.size()==4u,diagnostic());
+    BOOST_CHECK(city->getSource().roads[0].closed);
+    BOOST_CHECK(seam.front().id==closedRoad.knots.front().id && seam[2].id==closedRoad.knots.back().id);
+    BOOST_CHECK_SMALL((seam.back().position-seamPick).length(),.002f);
+    BOOST_REQUIRE_MESSAGE(city->setSourceJSON(roadJSON(openSource),city->getSourceRevision(),error),error);
+
     const auto beforeHide=city->getSourceRevision();activate("Draw Road");
     {RoadTask render(TaskId::Render);ray("begin",-40,25);ray("commit",-40,25);ray("begin",-10,25);ray("commit",-10,25);ray("finish",-10,25);}
     window->setWindowVisible(false);{RoadTask render(TaskId::Render);BOOST_CHECK(ray("begin",0,0).getArray().empty());}flush();BOOST_CHECK_EQUAL(city->getSourceRevision(),beforeHide);
@@ -139,9 +261,12 @@ BOOST_AUTO_TEST_CASE(city_road_viewport_authoring_test)
     const auto saved=temporary.path/"Assets"/"CityRoadTool.scene";scene->saveScene(saved.generic_u8string());BOOST_REQUIRE(std::filesystem::is_regular_file(saved));
     std::ifstream file(saved,std::ios::binary);const std::string serialized((std::istreambuf_iterator<char>(file)),std::istreambuf_iterator<char>());
     BOOST_CHECK(serialized.find(std::string(roadId.data(),roadId.size()))!=std::string::npos);
+    BOOST_CHECK(serialized.find(std::string(insertedId.data(),insertedId.size()))!=std::string::npos);
     auto restored=make_ptr<scene::CityRoadAuthoring>();restored->setPublishCallback([](const auto &,const auto &,auto,const auto &,String &){return true;});
     restored->setProperties(city->getProperties());BOOST_REQUIRE_EQUAL(restored->getSource().roads.size(),1u);
     BOOST_CHECK(restored->getSource().roads[0].id==roadId);BOOST_CHECK_EQUAL(restored->getTerrainBindingUUID(),city->getTerrainBindingUUID());
+    BOOST_REQUIRE_EQUAL(restored->getSource().roads[0].knots.size(),3u);
+    BOOST_CHECK(restored->getSource().roads[0].knots[1].id==insertedId);
     BOOST_CHECK(applicationOnly);commands->clearAll();selection->clearSelection();manager->destroyActor(cityActor);manager->destroyActor(terrainActor);
 }
 #endif

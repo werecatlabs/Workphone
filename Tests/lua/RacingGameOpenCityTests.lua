@@ -80,7 +80,9 @@ assert(not race.cityOptions["City Natural Roads"],"Switching back to grid must c
 -- Persist the canonical source through both a retained native component and a
 -- recreated Lua/component instance. Source payloads live independently of it.
 properties.values["City Terrain Roads"], properties.values["City Road Authoring UUID"] = false, ""
+properties.values["City Street Detail"] = 100
 function properties:getPropertyAsBool(name, default) local value=self.values[name];if value==nil then return default end;return value end
+function properties:getPropertyAsInt(name, default) local value=self.values[name];if value==nil then return default end;return value end
 function properties:getPropertyAsString(name) return self.values[name] end
 function properties:setPropertyAsString(name, value) self.values[name]=value end
 local originalRegenerate = race.regenerate
@@ -125,26 +127,35 @@ local function inspectorValues(values)
     function p:isButtonPressed(name) return name=="Generate" and self.generate end
     return p
 end
-local terrainInspector=inspectorValues({["City Terrain Roads"]=true,["City Road Authoring UUID"]=""})
+local terrainInspector=inspectorValues({["City Terrain Roads"]=true,["City Road Authoring UUID"]="",["City Street Detail"]=62})
 terrainInspector.generate=true;game:setProperties(fixture.array({terrainInspector}))
 assert(game.cityTerrainRoads and game.generatedTerrainRoads and game.cityRoadAuthoringUUID==initialId)
 assert(race.cityOptions["City Terrain Roads"] and race.liveSource==sources[initialId])
+assert(race.cityOptions["City Street Detail"]==62 and game.generatedStreetDetail==62)
 assert(game.records.path==nil and game.routeRecordsPath==nil and game:setupSummary():find("play session only",1,true))
 assert(game.records:record(game.generatedSeed,91));game:savePreferences()
 root=game.generatedRoot;local nativeScene,vehicle,camera=game.raceScene,game.vehicleActor,game.cameraActor
 -- A native Inspector selection is captured unless the script has a newer selection.
 properties.values["City Road Authoring UUID"]=editedId
+properties.values["City Street Detail"]=31
 game.quality=(game.quality+1)%4;game.seed=game.seed+1;game:startRace()
 assert(game.generatedRoot==root and game.raceScene==nativeScene and game.vehicleActor==vehicle and game.cameraActor==camera,
     "Terrain city quality/seed changes must reuse the active native scene and camera")
 assert(game.cityRoadAuthoringUUID==editedId and game.generatedRoadAuthoringUUID==editedId and race.liveSource.width==11.75)
+assert(game.generatedStreetDetail==31 and race.cityOptions["City Street Detail"]==31,
+    "Direct native street detail edits must survive script regeneration")
 assert(race.liveSource.knot==sources[editedId].knot and game.manager.totalRacers==1)
 assert(game.records.path==nil and game.records:getBest(game.generatedSeed)==0,"Changing a canonical source must discard incompatible session lap records")
 local before=generations
 terrainInspector.values["City Road Authoring UUID"]=selectedId;terrainInspector.generate=false
+terrainInspector.values["City Street Detail"]=-5
 game:setProperties(fixture.array({terrainInspector}));game:startRace()
 assert(generations==before+1 and game.generatedRoot==root and game.cityRoadAuthoringUUID==selectedId and race.liveSource.width==10.5,
     "A newer script Inspector UUID must survive regeneration and invalidate the generation cache")
+assert(game.generatedStreetDetail==0 and race.cityOptions["City Street Detail"]==0)
+before=generations;properties.values["City Street Detail"]=40;game:startRace()
+assert(generations==before+1 and game.generatedRoot==root and game.generatedStreetDetail==40 and race.liveSource==sources[selectedId],
+    "Changing only street detail must refresh the existing native city")
 game.mode="race";game.totalLaps=1;game:startRace()
 app.now=app.now+1;game:update();app.now=app.now+3;game:update()
 for _,index in ipairs({10,20,25,35,45,50,60,70,75,85,95,99,0}) do
@@ -165,6 +176,7 @@ race.getCircuitLength=routeLength
 local saved=inspectorValues();game:getProperties(fixture.array({saved}))
 assert(saved.values["City Terrain Roads"] and saved.values["City Road Authoring UUID"]==selectedId,
     "Serialized script properties must retain terrain mode and canonical source UUID")
+assert(saved.values["City Street Detail"]==40)
 game:shutdown()
 properties.values["City Terrain Roads"],properties.values["City Road Authoring UUID"]=false,""
 local restored=RacingGameOpenCity({getActor=function() return owner end});saved.generate=true
@@ -172,6 +184,7 @@ restored:setProperties(fixture.array({saved}))
 assert(restored.started and restored.raceScene==race and restored.cityTerrainRoads and restored.generatedTerrainRoads)
 assert(restored.cityRoadAuthoringUUID==selectedId and race.liveSource==sources[selectedId] and race.liveSource.knot==sources[selectedId].knot,
     "A recreated script/native component must bind the edited source instead of creating a new source")
+assert(restored.generatedStreetDetail==40 and race.cityOptions["City Street Detail"]==40)
 local restoredRoot=restored.generatedRoot
 local modeOff=inspectorValues({["City Terrain Roads"]=false});modeOff.generate=true
 local disabled,disableError=pcall(restored.setProperties,restored,fixture.array({modeOff}))

@@ -335,7 +335,14 @@ BOOST_AUTO_TEST_CASE( terrain_city_source_anchor_roundtrip_test )
 
     auto vehicleActor = manager->createActor(); BOOST_REQUIRE( vehicleActor ); vehicleActor->setName( "Terrain city persisted vehicle" );
     auto vehicle = vehicleActor->addComponent<scene::ProceduralRaceScene>(); BOOST_REQUIRE( vehicle ); originalScene->addActor( vehicleActor );
+    BOOST_CHECK_EQUAL( vehicle->getProperties()->getPropertyAsInt( "City Street Detail" ), 100 );
+    auto streetEdit = vehicle->getProperties();
+    streetEdit->setProperty( "City Street Detail", -12 ); vehicle->setProperties( streetEdit );
+    BOOST_CHECK_EQUAL( vehicle->getProperties()->getPropertyAsInt( "City Street Detail" ), 0 );
+    streetEdit->setProperty( "City Street Detail", 140 ); vehicle->setProperties( streetEdit );
+    BOOST_CHECK_EQUAL( vehicle->getProperties()->getPropertyAsInt( "City Street Detail" ), 100 );
     auto properties = vehicle->getProperties(); properties->setProperty( "City Terrain Roads", true );
+    properties->setProperty( "City Street Detail", 64 );
     properties->setProperty( "City Road Authoring UUID", sourceUuid ); properties->setProperty( "Audio Enabled", false );
     properties->setProperty( "Effects Enabled", false ); vehicle->setProperties( properties );
     vehicle->setEnabled( false ); // This gate saves/restores anchors; it does not regenerate a WPVehicle.
@@ -402,6 +409,7 @@ BOOST_AUTO_TEST_CASE( terrain_city_source_anchor_roundtrip_test )
     BOOST_REQUIRE( restoredVehicle->getProperties()->getPropertyValue( "City Terrain Roads", terrainRoads ) );
     BOOST_REQUIRE( restoredVehicle->getProperties()->getPropertyValue( "City Road Authoring UUID", vehicleSourceUuid ) );
     BOOST_CHECK( terrainRoads ); BOOST_CHECK_EQUAL( vehicleSourceUuid, restoredSource->getHandle()->getUUIDAsString() );
+    BOOST_CHECK_EQUAL( restoredVehicle->getProperties()->getPropertyAsInt( "City Street Detail" ), 64 );
     BOOST_CHECK( !restoredVehicle->isGenerated() );
 
     // Assert these identities belong to the current live manager/scene registry,

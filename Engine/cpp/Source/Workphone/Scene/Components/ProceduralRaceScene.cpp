@@ -269,6 +269,7 @@ namespace workphone::scene
             m_assets.exportSourceDirectory = m_materialExportDirectory;
             m_assets.cityBlocks = m_cityBlocks;
             m_assets.cityRoute = m_cityRoute;
+            m_assets.cityStreetDetail = m_cityStreetDetail;
 
             race::buildScene( m_assets, actor, m_seed, m_quality );
             if( m_cityTerrainRoads )
@@ -1010,6 +1011,7 @@ namespace workphone::scene
         p->setProperty( "City Natural Roads", m_cityNaturalRoads );
         p->setProperty( "Road Authoring Showcase", m_cityRoadShowcase );
         p->setProperty( "City Terrain Roads", m_cityTerrainRoads );
+        p->setProperty( "City Street Detail", m_cityStreetDetail );
         p->setProperty( "City Road Authoring UUID", m_cityRoadAuthoringUUID );
         p->setProperty( "Generation Error", m_generationError );
         p->setButtonPressed( "Regenerate", false );
@@ -1069,6 +1071,11 @@ namespace workphone::scene
         }
         m_cityBlocks = std::clamp( m_cityBlocks / 2 * 2, 6, 10 );
         m_cityRoute = std::clamp( m_cityRoute, 0, 2 );
+        s32 streetDetail = m_cityStreetDetail;
+        if( p->getPropertyValue( "City Street Detail", streetDetail ) )
+        {
+            m_cityStreetDetail = std::clamp( streetDetail, 0, 100 );
+        }
 
         if( p->isButtonPressed( "Regenerate" ) )
         {

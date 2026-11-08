@@ -7,6 +7,9 @@ local qualities = {"Preview", "Standard", "High", "Cinematic"}
 local routes = {"Downtown loop", "Crosstown circuit", "City perimeter"}
 local function item(label, callback) return {label, callback} end
 local terrainRecordNotice = "Terrain lap records last for this play session only."
+local function streetDetail(p, default)
+    return math.max(0, math.min(100, p:getPropertyAsInt("City Street Detail", default)))
+end
 
 function RacingGameOpenCity:__init(component)
     RacingGameFull.__init(self, component)
@@ -15,6 +18,7 @@ function RacingGameOpenCity:__init(component)
     self.cityBlocks, self.cityRoute, self.mode = 8, 0, "freeDrive"
     self.cityNaturalRoads = false
     self.cityTerrainRoads, self.cityRoadAuthoringUUID = false, ""
+    self.cityStreetDetail = 100
     -- Free driving still uses the shared loading/countdown/pause lifecycle, but
     -- never feeds movement into lap timing or awards records for exploration.
     local sample = self.progress.sample
@@ -36,6 +40,9 @@ function RacingGameOpenCity:captureRaceSceneOptions()
     if not p:hasProperty("City Terrain Roads") then return end
     local terrainMode = p:getPropertyAsBool("City Terrain Roads", false)
     if self.cityTerrainRoads == self.generatedTerrainRoads then self.cityTerrainRoads = terrainMode end
+    if terrainMode and p:hasProperty("City Street Detail") and self.cityStreetDetail == self.generatedStreetDetail then
+        self.cityStreetDetail = streetDetail(p, self.cityStreetDetail)
+    end
     if terrainMode and p:hasProperty("City Road Authoring UUID") and
         self.cityRoadAuthoringUUID == (self.generatedRoadAuthoringUUID or "") then
         self.cityRoadAuthoringUUID = p:getPropertyAsString("City Road Authoring UUID") or ""
@@ -89,6 +96,11 @@ function RacingGameOpenCity:configureRaceScene(scene)
     if self.cityTerrainRoads then
         assert(p:hasProperty("City Road Authoring UUID"), "Rebuild Workphone: ProceduralRaceScene has no persistent road source binding")
         p:setPropertyAsString("City Road Authoring UUID", self.cityRoadAuthoringUUID)
+        if p:hasProperty("City Street Detail") then
+            p:setPropertyAsInt("City Street Detail", self.cityStreetDetail)
+        else
+            assert(self.cityStreetDetail == 100, "Rebuild Workphone: ProceduralRaceScene has no street detail control")
+        end
     end
     scene:setProperties(p)
 end
@@ -98,6 +110,7 @@ function RacingGameOpenCity:bindGeneratedScene()
     self.generatedBlocks, self.generatedRoute = self.cityBlocks, self.cityRoute
     self.generatedNaturalRoads = self.cityNaturalRoads
     self.generatedTerrainRoads = self.cityTerrainRoads
+    self.generatedStreetDetail = self.cityStreetDetail
     if self.cityTerrainRoads then
         local p = self.raceScene:getProperties()
         self.cityRoadAuthoringUUID = p:getPropertyAsString("City Road Authoring UUID") or ""
@@ -161,7 +174,8 @@ function RacingGameOpenCity:startRace()
     self:captureRaceSceneOptions()
     if self.generatedBlocks ~= self.cityBlocks or self.generatedRoute ~= self.cityRoute or
         self.generatedNaturalRoads ~= self.cityNaturalRoads or self.generatedTerrainRoads ~= self.cityTerrainRoads or
-        self.generatedRoadAuthoringUUID ~= self.cityRoadAuthoringUUID then
+        self.generatedRoadAuthoringUUID ~= self.cityRoadAuthoringUUID or
+        (self.cityTerrainRoads and self.generatedStreetDetail ~= self.cityStreetDetail) then
         self.generatedQuality = nil
     end
     if RacingGameFull.startRace(self) == false then return false end
@@ -275,6 +289,7 @@ function RacingGameOpenCity:getProperties(parameters)
     p:setPropertyAsInt("City Route", self.cityRoute)
     p:setPropertyAsBool("City Natural Roads", self.cityNaturalRoads)
     p:setPropertyAsBool("City Terrain Roads", self.cityTerrainRoads)
+    p:setPropertyAsInt("City Street Detail", self.cityStreetDetail)
     p:setPropertyAsString("City Road Authoring UUID", self.cityRoadAuthoringUUID)
 end
 function RacingGameOpenCity:setProperties(parameters)
@@ -286,6 +301,7 @@ function RacingGameOpenCity:setProperties(parameters)
         self.cityNaturalRoads = p:getPropertyAsBool("City Natural Roads", self.cityNaturalRoads)
     end
     if p:hasProperty("City Terrain Roads") then self.cityTerrainRoads = p:getPropertyAsBool("City Terrain Roads", self.cityTerrainRoads) end
+    if p:hasProperty("City Street Detail") then self.cityStreetDetail = streetDetail(p, self.cityStreetDetail) end
     if p:hasProperty("City Road Authoring UUID") then self.cityRoadAuthoringUUID = p:getPropertyAsString("City Road Authoring UUID") or "" end
     if self.gameInitialized and self.cityTerrainRoads and
         (not previousMode or previousSource ~= self.cityRoadAuthoringUUID) then self:resetTerrainRecords() end

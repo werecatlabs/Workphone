@@ -11,18 +11,22 @@ param(
     [ValidateSet('grid', 'lsystem')][string]$CityLayout = 'grid',
     [ValidatePattern('^\d+x\d+$')][string]$Resolution = '1280x720',
     [ValidateRange(0.1, 3600)][double]$Seconds = 10,
-    [ValidateSet('follow', 'car', 'track', 'corner', 'street', 'boulevard')][string[]]$Views = @('car', 'track', 'corner', 'follow'),
+    [ValidateSet('follow', 'car', 'track', 'corner', 'street', 'boulevard', 'frontage')][string[]]$Views = @('car', 'track', 'corner', 'follow'),
     [string]$Replay,
     [switch]$NoEffects,
     [switch]$FoliageWorld,
     [switch]$RoadAuthoringShowcase,
     [switch]$CityTerrainRoads,
     [switch]$ExportMaterials,
-    [ValidateRange(30, 7200)][int]$TimeoutSeconds = 600
+    [ValidateRange(30, 7200)][int]$TimeoutSeconds = 600,
+    [ValidateRange(0, 100)][int]$CityStreetDetail = 100
 )
 $ErrorActionPreference = 'Stop'
+$streetDetailExplicit = $PSBoundParameters.ContainsKey('CityStreetDetail')
 if ($RoadAuthoringShowcase) { $Scene = 'city' }
 if ($CityTerrainRoads) { $Scene = 'city' }
+if ($streetDetailExplicit -and !$CityTerrainRoads) { throw '-CityStreetDetail requires -CityTerrainRoads.' }
+if ($Views -contains 'frontage' -and !$CityTerrainRoads) { throw '-Views frontage requires -CityTerrainRoads.' }
 if ($RoadAuthoringShowcase -and $CityTerrainRoads) { throw 'Choose -RoadAuthoringShowcase or -CityTerrainRoads.' }
 if ($CityTerrainRoads -and $ExportMaterials) { throw 'Terrain-city source material export is unavailable.' }
 if ($RoadAuthoringShowcase -and $FoliageWorld) { throw 'Road authoring showcase does not provide foliage-world generation.' }
@@ -31,7 +35,7 @@ if ($CityTerrainRoads -and !$PSBoundParameters.ContainsKey('Views')) { $Views = 
 if ($Scene -ne 'city' -and ($Views -contains 'street' -or $Views -contains 'boulevard' -or $PSBoundParameters.ContainsKey('CityBlocks') -or $PSBoundParameters.ContainsKey('CityRoute') -or $PSBoundParameters.ContainsKey('CityLayout'))) {
     throw 'Street-level views and city layout options require -Scene city.'
 }
-$repoRoot = Split-Path $PSScriptRoot -Parent
+$repoRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $sampleWorkingDirectory = Join-Path $repoRoot "bin/windows/v145/x64/MD/$Configuration"
 $binaryRoot = $sampleWorkingDirectory
 if ($BinaryDirectory) {
@@ -85,6 +89,7 @@ $manifest = [ordered]@{
     cityLayout = $(if ($RoadAuthoringShowcase) { 'authored-splines' } elseif ($Scene -eq 'city') { $CityLayout } else { $null })
     roadAuthoringShowcase = [bool]$RoadAuthoringShowcase
     cityTerrainRoads = [bool]$CityTerrainRoads
+    cityStreetDetail = $(if ($streetDetailExplicit) { $CityStreetDetail } else { $null })
     requestedResolution = $Resolution; benchmarkSeconds = $Seconds; visualAcceptance = 'unreviewed'
     diff = Get-Identity (Join-Path $output 'working-tree.patch'); sources = $sources; binaries = $binaries
     plugins = Get-Identity $plugins; assets = $assets; replay = $null; runs = @()
@@ -100,6 +105,7 @@ try {
         if ($Scene -eq 'city') { $arguments += @('--city', '--city-blocks', "$CityBlocks", '--city-route', "$CityRoute", '--city-layout', $CityLayout) }
         if ($RoadAuthoringShowcase) { $arguments += '--road-authoring-showcase' }
         if ($CityTerrainRoads) { $arguments += '--city-terrain-roads' }
+        if ($streetDetailExplicit) { $arguments += @('--city-street-detail', "$CityStreetDetail") }
         if ($Replay) { $arguments += @('--replay', (Quote-ProcessArgument $Replay)) }
         if ($NoEffects) { $arguments += '--no-effects' }
         if ($FoliageWorld) { $arguments += '--foliage-world' }
@@ -114,6 +120,11 @@ try {
         if (Test-Path -LiteralPath $evidence) {
             $run.evidence = Get-Content -LiteralPath $evidence -Raw | ConvertFrom-Json
             $run.passed = !$timedOut -and $process.ExitCode -eq 0 -and $null -ne $run.capture -and $run.evidence.validationPassed
+            if ($streetDetailExplicit) {
+                $street = $run.evidence.terrainCity
+                $run.passed = $run.passed -and $null -ne $street -and $street.streetDetailValid -eq $true -and
+                    $null -ne $street.cityStreetDetailCount -and $street.cityStreetDetail -eq $CityStreetDetail
+            }
         }
         $manifest.runs += $run
         if (!$run.passed) { $failed = $true }

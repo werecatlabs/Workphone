@@ -17,7 +17,8 @@ between free driving and races. Changes to city seed, size, route or appearance
 apply when starting the next drive. Retries reuse generated assets.
 
 Inspector options: Seed, Appearance Quality (0-3), Laps (1-10), City Blocks
-(6, 8 or 10 per side), City Route (0-2), City Natural Roads, and Generate. Grid streets are 88-104 metres
+(6, 8 or 10 per side), City Route (0-2), City Natural Roads, City Terrain Roads,
+City Street Detail (0-100), and Generate. Grid streets are 88-104 metres
 apart according to seed. Dense central buildings, quieter outer districts and
 park lots use the same deterministic CPU layout. Layout revision 2 gives parcels
 stable IDs, street frontages and coherent commercial, residential and civic
@@ -69,7 +70,7 @@ invalid values are rejected before scene startup.
 After building the Debug sample, capture fresh runtime evidence with:
 
 ```powershell
-& .\Tools\CaptureProceduralRacing.ps1 -Configuration Debug -Scene city `
+& .\Tools\powershell\CaptureProceduralRacing.ps1 -Configuration Debug -Scene city `
     -CityLayout lsystem -CityBlocks 6 -CityRoute 0 -Quality high -Views street,track `
     -FoliageWorld -NoEffects -Seconds 3
 ```
@@ -92,9 +93,18 @@ Traffic, opponents, interiors and streamed world sectors are not implemented.
 
 [The authoring plan](WPPROCEDURAL_CITY_AUTHORING_PLAN.md) documents the native
 **Window > City Roads** tool: bind a selected terrain, click/drag Bezier knots and
-handles, commit or cancel drafts, edit road fields, and undo/redo committed edits.
+handles, click to select a road, insert a knot without changing the curve, edit
+road fields, and undo/redo committed edits.
 The scene's `CityRoadAuthoring` component owns canonical source and a persistent
 terrain binding. Generated render and collision meshes are disposable caches.
+
+With terrain roads active, **City Street Detail** adjusts the density of added
+street fixtures on fitted sidewalks. The default is 100. Set it to 0 to hide these
+fixtures. Press **Generate** to preview the new setting. Native captures accept
+`--city-street-detail` or `-CityStreetDetail` with their terrain-road options.
+Use `--view frontage` or `-Views frontage` for a pavement-height look along a
+roundabout approach. The camera uses the road geometry, so density changes
+can be compared from the same spot.
 
 `CityRoadSplineSource` retains strict version-1 compatibility and the
 [hand-editable example](examples/city-road-source-v1.cityroads.json). Version 2 adds
@@ -146,7 +156,7 @@ camera beside an approach at pedestrian height; `street` retains the elevated
 junction inspection view.
 
 ```powershell
-& .\Tools\CaptureProceduralRacing.ps1 -Configuration Debug -CityTerrainRoads `
+& .\Tools\powershell\CaptureProceduralRacing.ps1 -Configuration Debug -CityTerrainRoads `
     -CityLayout lsystem -CityBlocks 6 -Quality high -Views street,track `
     -FoliageWorld -NoEffects -Seconds 3
 ```
@@ -167,7 +177,7 @@ reconstruction and atomic terrain/city replacement remain unfinished.
 The separate native authoring showcase remains useful as a small isolated fixture:
 
 ```powershell
-& .\Tools\CaptureProceduralRacing.ps1 -Configuration Debug -Scene city `
+& .\Tools\powershell\CaptureProceduralRacing.ps1 -Configuration Debug -Scene city `
     -RoadAuthoringShowcase -Quality high -Views street,track -NoEffects -Seconds 3
 ```
 

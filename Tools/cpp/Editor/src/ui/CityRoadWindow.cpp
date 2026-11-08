@@ -7,9 +7,12 @@
 #include <Workphone/Scene/Components/CityRoadAuthoring.hpp>
 #include <Workphone/Graphics/TerrainData.hpp>
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cctype>
 #include <limits>
+#include <new>
+#include <optional>
 
 namespace workphone::editor
 {
@@ -36,6 +39,102 @@ namespace workphone::editor
             a.revision=b.revision=0;a.terrainRevision=b.terrainRevision=0;SourceBudgetText left,right;
             if(!procedural::serializeCityRoadSplineSource(a,left,error) || !procedural::serializeCityRoadSplineSource(b,right,error))return false;
             if(left!=right){error="Road source changed outside this history step; undo/redo was rejected.";return false;}return true;
+        }
+
+        using CubicControls = std::array<Vector3F, 4>;
+
+        CubicControls spanControls(const procedural::CityRoadSpline &road, size_t span)
+        {
+            const auto &start = road.knots[span];
+            const auto &end = road.knots[(span + 1) % road.knots.size()];
+            return {start.position, start.position + start.outHandle,
+                    end.position + end.inHandle, end.position};
+        }
+
+        Vector3F evaluateSpan(const CubicControls &control, f32 t)
+        {
+            const f32 u = 1.f - t;
+            return control[0] * (u * u * u) + control[1] * (3.f * u * u * t) +
+                   control[2] * (3.f * u * t * t) + control[3] * (t * t * t);
+        }
+
+        f32 horizontalDistanceSquared(const Vector3F &a, const Vector3F &b)
+        {
+            const f32 x = a.x - b.x, z = a.z - b.z;
+            return x * x + z * z;
+        }
+
+        struct RoadSpanPick
+        {
+            size_t road, span;
+            f32 parameter;
+        };
+
+        std::optional<RoadSpanPick> pickRoadSpan(const procedural::CityRoadSplineSource &source,
+                                                const Vector3F &hit, const SourceBudgetText *roadId)
+        {
+            // Pick in the terrain plane. Refine the nearest sampled chord on the
+            // actual cubic before checking the hit radius or splitting it.
+            constexpr unsigned steps = 32;
+            std::optional<RoadSpanPick> pick;
+            f32 bestDistance = std::numeric_limits<f32>::infinity();
+            for (size_t r = 0; r < source.roads.size(); ++r)
+            {
+                const auto &road = source.roads[r];
+                if ((roadId && road.id != *roadId) || road.knots.size() < 2) continue;
+                const f32 radius = std::max(2.f, road.width * .5f);
+                const size_t spanCount = road.closed ? road.knots.size() : road.knots.size() - 1;
+                for (size_t span = 0; span < spanCount; ++span)
+                {
+                    const auto control = spanControls(road, span);
+                    const auto boundsX = std::minmax({control[0].x, control[1].x, control[2].x, control[3].x});
+                    const auto boundsZ = std::minmax({control[0].z, control[1].z, control[2].z, control[3].z});
+                    const f32 dx = std::max({0.f, boundsX.first - hit.x, hit.x - boundsX.second});
+                    const f32 dz = std::max({0.f, boundsZ.first - hit.z, hit.z - boundsZ.second});
+                    if (dx * dx + dz * dz > std::min(bestDistance, radius * radius)) continue;
+
+                    f32 closestChord = std::numeric_limits<f32>::infinity();
+                    f32 parameter = 0;
+                    unsigned interval = 0;
+                    auto previous = control.front();
+                    for (unsigned i = 0; i < steps; ++i)
+                    {
+                        const auto next = evaluateSpan(control, f32(i + 1) / steps);
+                        const auto chord = next - previous;
+                        const f32 lengthSquared = chord.x * chord.x + chord.z * chord.z;
+                        const f32 projection = (hit.x - previous.x) * chord.x + (hit.z - previous.z) * chord.z;
+                        const f32 fraction = lengthSquared > 0 ? std::clamp(projection / lengthSquared, 0.f, 1.f) : 0.f;
+                        const f32 distance = horizontalDistanceSquared(hit, previous + chord * fraction);
+                        if (distance < closestChord)
+                        {
+                            closestChord = distance;
+                            parameter = (f32(i) + fraction) / steps;
+                            interval = i;
+                        }
+                        previous = next;
+                    }
+                    const auto distanceAt = [&](f32 t) { return horizontalDistanceSquared(hit, evaluateSpan(control, t)); };
+                    // Include one adjacent chord on each side of the coarse hit.
+                    f32 low = f32(interval > 0 ? interval - 1 : 0) / steps;
+                    f32 high = f32(std::min(interval + 2, steps)) / steps;
+                    for (unsigned i = 0; i < 18; ++i)
+                    {
+                        const f32 left = low + (high - low) / 3.f;
+                        const f32 right = high - (high - low) / 3.f;
+                        if (distanceAt(left) <= distanceAt(right)) high = right;
+                        else low = left;
+                    }
+                    const f32 refined = (low + high) * .5f;
+                    if (distanceAt(refined) < distanceAt(parameter)) parameter = refined;
+                    const f32 distance = distanceAt(parameter);
+                    if (distance <= radius * radius && distance < bestDistance)
+                    {
+                        bestDistance = distance;
+                        pick = RoadSpanPick{r, span, parameter};
+                    }
+                }
+            }
+            return pick;
         }
     }
     CityRoadEditCommand::CityRoadEditCommand(){setPrimary(true);}
@@ -102,7 +201,8 @@ namespace workphone::editor
         const auto text=[&](const String &label){auto t=ui->addElementByType<ui::IUIText>();t->setText(label);window->addChild(t);return t;};
         text("Select terrain, then Bind. Source is saved with the scene.");button("Bind Selected Terrain",Bind);
         button("Draw Road",Draw);button("Move Knot",Move,true);button("In Handle",InHandle,true);button("Out Handle",OutHandle,true);
-        text("Click adds a knot; drag sets handles. Enter commits; Escape cancels.");
+        button("Select Road",SelectRoad);button("Insert Knot",InsertKnot,true);
+        text("Draw Road: click adds knots, drag sets handles. Enter commits, Escape cancels.");
         const auto input=[&](const String &label,Widget id,const String &value){auto p=ui->addElementByType<ui::IUILabelTextInputPair>();p->setLabel(label);p->setValue(value);p->setElementId(id);window->addChild(p);return p;};
         m_width=input("Road width (m)",Width,"12");m_grade=input("Maximum grade (rise/run)",Grade,"0.08");
         m_closed=ui->addElementByType<ui::IUILabelTogglePair>();m_closed->setLabel("Closed spline");m_closed->setValue(false);window->addChild(m_closed);
@@ -189,6 +289,87 @@ namespace workphone::editor
         if(!fields(road)){cancelDraft();return false;}m_draft.roads.push_back(std::move(road));
         m_road=m_draft.roads.size()-1;m_mode=Mode::Draw;m_enabled=true;m_selected=false;status("Draw: click terrain for knots, drag for tangent handles. Enter commits; Escape cancels.");return true;
     }
+
+    void CityRoadWindow::selectRoad(const procedural::CityRoadSpline &road)
+    {
+        m_selectedRoadId = road.id;
+        m_selectedKnotId.clear();
+        m_selected = true;
+        m_width->setValue(StringUtil::toString(road.width));
+        m_grade->setValue(StringUtil::toString(road.maxGrade));
+        m_closed->setValue(road.closed);
+    }
+
+    void CityRoadWindow::editRoadAt(const Vector3F &terrainHit)
+    {
+        auto target = current();
+        if (!target) return;
+        const auto &source = target->getSource();
+        const bool inserting = m_mode == Mode::InsertKnot;
+        if (inserting && (!m_selected || std::none_of(source.roads.begin(), source.roads.end(),
+            [&](const auto &road) { return road.id == m_selectedRoadId; })))
+        {
+            m_selected = false;
+            status("Use Select Road to choose the spline before inserting a knot.");
+            return;
+        }
+        const auto pick = pickRoadSpan(source, terrainHit, inserting ? &m_selectedRoadId : nullptr);
+        if (!pick)
+        {
+            if (!inserting) m_selected = false;
+            status(inserting ? "Click along the selected road to insert a knot." : "No road near the terrain pick.");
+            return;
+        }
+        const auto &road = source.roads[pick->road];
+        if (!inserting)
+        {
+            selectRoad(road);
+            status("Road selected. Edit its fields, insert a knot, or move its existing controls.");
+            return;
+        }
+        if (road.knots.size() >= 256)
+        {
+            status("A road supports at most 256 knots.");
+            return;
+        }
+
+        // De Casteljau yields the same cubic on two parameter intervals. The
+        // existing endpoint IDs and their opposite handles remain unchanged.
+        const auto control = spanControls(road, pick->span);
+        const auto lerp = [t = pick->parameter](const Vector3F &a, const Vector3F &b) { return a + (b - a) * t; };
+        const auto a = lerp(control[0], control[1]);
+        const auto b = lerp(control[1], control[2]);
+        const auto c = lerp(control[2], control[3]);
+        const auto left = lerp(a, b), right = lerp(b, c);
+        const auto position = lerp(left, right);
+        constexpr f32 minimumSpacingSquared = .05f * .05f;
+        if ((position - control.front()).lengthSquared() < minimumSpacingSquared ||
+            (position - control.back()).lengthSquared() < minimumSpacingSquared)
+        {
+            status("Click farther from an existing knot to insert another.");
+            return;
+        }
+
+        try
+        {
+            if (!beginDraft()) return;
+            auto &knots = m_draft.roads[pick->road].knots;
+            const size_t next = (pick->span + 1) % knots.size();
+            knots[pick->span].outHandle = a - control.front();
+            knots[next].inHandle = c - control.back();
+            // For the closing span, insert after the last knot and keep the
+            // original first knot as the closed road's seam identity.
+            knots.insert(knots.begin() + pick->span + 1,
+                         procedural::CityRoadSplineKnot{newId(), position, left - position, right - position});
+        }
+        catch (const std::bad_alloc &)
+        {
+            cancelDraft();
+            status("Not enough source memory to insert a knot.");
+            return;
+        }
+        if (!commitDraft()) cancelDraft();
+    }
     Vector3F CityRoadWindow::controlPoint(Vector3F p,const procedural::CityRoadSpline &road) const
     {
         auto target=current();if(!target)return p;p=target->localToWorld(p);
@@ -260,7 +441,7 @@ namespace workphone::editor
     void CityRoadWindow::action(Widget id,bool invalidateInput)
     {
         if(Thread::getCurrentTask()!=TaskId::Application){status("Road controls require the Application task.");return;}
-        if(invalidateInput && (id==Draw || id==Move || id==InHandle || id==OutHandle || id==Roundabout || id==Cancel || id==Bind)){RecursiveMutex::ScopedLock lock(m_toolMutex);++m_toolEpoch;}
+        if(invalidateInput && (id==Draw || id==Move || id==InHandle || id==OutHandle || id==Roundabout || id==SelectRoad || id==InsertKnot || id==Cancel || id==Bind)){RecursiveMutex::ScopedLock lock(m_toolMutex);++m_toolEpoch;}
         if(id==Bind){cancelDraft();bindSelection();return;}
         if(id==Cancel){cancelDraft();m_enabled=false;status("Road tool cancelled.");return;}
         if(id==Undo || id==Redo){history(id==Redo);return;}
@@ -283,10 +464,21 @@ namespace workphone::editor
         }
         if(id==Move || id==InHandle || id==OutHandle)
         {cancelDraft();m_mode=id==Move?Mode::Move:id==InHandle?Mode::InHandle:Mode::OutHandle;m_enabled=true;status("Drag a knot or handle on the terrain. Each completed drag is one undoable edit.");return;}
+        if(id==SelectRoad || id==InsertKnot)
+        {
+            cancelDraft();
+            if(!current()){status("Bind a terrain or select a City Road Authoring component first.");return;}
+            m_mode=id==SelectRoad?Mode::SelectRoad:Mode::InsertKnot;
+            m_enabled=true;
+            if(id==SelectRoad)status("Click along a road to select it.");
+            else if(m_selected)status("Click along the selected road to add one undoable knot.");
+            else status("Use Select Road to choose the spline before inserting a knot.");
+            return;
+        }
         if(id==Roundabout){cancelDraft();if(!current() && !bindSelection())return;m_mode=Mode::Roundabout;m_enabled=true;status("Click terrain to place a roundabout and four connected approaches. Terrain fit failures retain the current city.");return;}
         if(id==RemoveRoundabout)
         {
-            if(!m_selected || !beginDraft()){status("Select an approach road knot with Move Knot first.");return;}
+            if(!m_selected || !beginDraft()){status("Select a roundabout approach with Select Road or Move Knot first.");return;}
             const auto junction=std::find_if(m_draft.roundabouts.begin(),m_draft.roundabouts.end(),[&](const auto &item){return std::any_of(item.ports.begin(),item.ports.end(),[&](const auto &port){return port.approachId==m_selectedRoadId;});});
             if(junction==m_draft.roundabouts.end()){cancelDraft();status("The selected road is not a roundabout approach.");return;}
             SourceBudgetSet<SourceBudgetText> removed,retained;
@@ -297,7 +489,7 @@ namespace workphone::editor
         }
         if(id==ApplyFields || id==RemoveRoad)
         {
-            if(!m_selected || !beginDraft()){status("Select a road knot first with Move Knot.");return;}
+            if(!m_selected || !beginDraft()){status("Choose a spline with Select Road or Move Knot first.");return;}
             const auto found=std::find_if(m_draft.roads.begin(),m_draft.roads.end(),[&](const auto &road){return road.id==m_selectedRoadId;});
             if(found==m_draft.roads.end()){cancelDraft();status("The selected road was removed or changed. Select it again.");return;}m_road=size_t(found-m_draft.roads.begin());
             if(id==RemoveRoad)
@@ -321,18 +513,28 @@ namespace workphone::editor
             if(drape){f32 height=0;const auto snapshot=target->getTerrainSnapshot();if(!snapshot || !render::sampleTerrainHeight(*snapshot,target->getTerrainPlacement(),p,height))p.y=std::numeric_limits<float>::quiet_NaN();else p.y=height;}
             return p+Vector3F(0,.035f,0);
         };
-        for(const auto &road:source.roads)
+        const bool roadPicking = m_mode == Mode::SelectRoad || m_mode == Mode::InsertKnot;
+        const auto drawRoad = [&](const procedural::CityRoadSpline &road, bool drawControls)
         {
-            for(const auto &k:road.knots)
+            if(drawControls) for(const auto &k:road.knots)
             {if(++budget>4096)break;const auto center=controlPoint(k.position,road)+Vector3F(0,.035f,0),in=controlPoint(k.position+k.inHandle,road)+Vector3F(0,.035f,0),out=controlPoint(k.position+k.outHandle,road)+Vector3F(0,.035f,0);points.push_back(point(center));lines.push_back(point(in));lines.push_back(point(center));lines.push_back(point(center));lines.push_back(point(out));points.push_back(point(in));points.push_back(point(out));}
             const size_t spans=road.knots.size()>1?(road.closed?road.knots.size():road.knots.size()-1):0;
             for(size_t i=0;i<spans && budget<4096;++i)
             {
-                const auto &a=road.knots[i],&b=road.knots[(i+1)%road.knots.size()];auto previous=a.position;
+                const auto control=spanControls(road,i);auto previous=control.front();
                 for(unsigned j=1;j<=16 && budget<4096;++j,++budget)
-                {const float t=j/16.f,u=1-t;const auto p=a.position*(u*u*u)+(a.position+a.outHandle)*(3*u*u*t)+(b.position+b.inHandle)*(3*u*t*t)+b.position*(t*t*t);const bool drape=road.heightMode==procedural::CityRoadHeightMode::Drape;lines.push_back(point(world(previous,drape)));lines.push_back(point(world(p,drape)));previous=p;}
+                {const auto p=evaluateSpan(control,j/16.f);const bool drape=road.heightMode==procedural::CityRoadHeightMode::Drape;lines.push_back(point(world(previous,drape)));lines.push_back(point(world(p,drape)));previous=p;}
             }
+        };
+        const procedural::CityRoadSpline *selected = nullptr;
+        if(roadPicking && m_selected)
+        {
+            const auto it = std::find_if(source.roads.begin(), source.roads.end(),
+                [&](const auto &road) { return road.id == m_selectedRoadId; });
+            if(it != source.roads.end()) { selected = &*it; drawRoad(*selected, true); }
         }
+        for(const auto &road:source.roads)
+            if(&road != selected) drawRoad(road, !roadPicking);
         for(const auto &junction:source.roundabouts)
             for(const float radius:{junction.outerRadius,junction.islandRadius})
                 for(unsigned i=0;i<64 && budget<4096;++i,++budget)
@@ -354,8 +556,17 @@ namespace workphone::editor
         if(phase=="commit")
         {if(m_dragging && m_mode!=Mode::Draw)commitDraft();m_dragging=false;return preview();}
         if(phase!="begin" && phase!="update")return preview();
+        const bool roadPicking = m_mode == Mode::SelectRoad || m_mode == Mode::InsertKnot;
+        if(roadPicking && phase!="begin")return preview();
         const Ray3F ray({f32(args[1].getF64()),f32(args[2].getF64()),f32(args[3].getF64())},{f32(args[4].getF64()),f32(args[5].getF64()),f32(args[6].getF64())});
-        Vector3F hit;String error;auto target=current();if(!target->intersectTerrain(ray,hit,error)){status(error);return preview();}
+        Vector3F hit;String error;auto target=current();
+        if(!target->intersectTerrain(ray,hit,error))
+        {
+            if(m_mode==Mode::SelectRoad)m_selected=false;
+            status(error);
+            return preview();
+        }
+        if(roadPicking){editRoadAt(hit);return preview();}
         if(m_mode==Mode::Roundabout){if(phase=="begin")addRoundabout(hit);return preview();}
         if(phase=="begin")
         {
@@ -379,7 +590,7 @@ namespace workphone::editor
                 for(size_t r=0;r<m_draft.roads.size();++r)for(size_t k=0;k<m_draft.roads[r].knots.size();++k)
                 {const auto &road=m_draft.roads[r];const auto &knot=road.knots[k];const auto p=controlPoint(knot.position+(m_mode==Mode::InHandle?knot.inHandle:m_mode==Mode::OutHandle?knot.outHandle:Vector3F::zero()),road);const auto distance=(p-hit).lengthSquared();if(distance<closest){closest=distance;m_road=r;m_knot=k;found=true;}}
                 if(!found){cancelDraft();status("No knot/handle within 2 metres of the terrain pick.");return preview();}
-                m_dragging=m_selected=true;const auto &road=m_draft.roads[m_road];m_selectedRoadId=road.id;m_selectedKnotId=road.knots[m_knot].id;m_width->setValue(StringUtil::toString(road.width));m_grade->setValue(StringUtil::toString(road.maxGrade));m_closed->setValue(road.closed);
+                m_dragging=true;const auto &road=m_draft.roads[m_road];selectRoad(road);m_selectedKnotId=road.knots[m_knot].id;
             }
         }
         else if(m_dragging && m_drafting && m_road<m_draft.roads.size() && m_knot<m_draft.roads[m_road].knots.size())
