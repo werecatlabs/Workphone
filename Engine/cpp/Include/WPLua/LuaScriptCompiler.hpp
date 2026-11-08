@@ -22,8 +22,8 @@ namespace workphone
         bool getDependencies( const resource::CompileContext &context,
                               resource::DependencySet &dependencies, String &error ) const override;
         resource::CompilationStatus compile( const resource::CompileContext &context,
-                                              std::ostream &output,
-                                              Array<String> &messages ) const override;
+                                             std::ostream &output,
+                                             Array<String> &messages ) const override;
     };
-}
+}  // namespace workphone
 #endif
