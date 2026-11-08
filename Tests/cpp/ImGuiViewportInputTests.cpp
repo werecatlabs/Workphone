@@ -564,6 +564,23 @@ namespace
         ui::WPImGuiStyle::applyProjectTheme( settings.get() );
         require( nearlyEqual( style.FramePadding.x, 6 ),
                  "an explicit selection after a legacy profile must apply again" );
+
+        const ImGuiStyle defaultStyle;
+        settings->setProperty( "editor.theme", 4 );
+        ui::WPImGuiStyle::applyProjectTheme( settings.get() );
+        require( nearlyEqual( style.FramePadding.x, defaultStyle.FramePadding.x ) &&
+                     nearlyEqual( style.FramePadding.y, defaultStyle.FramePadding.y ) &&
+                     nearlyEqual( style.ScrollbarSize, defaultStyle.ScrollbarSize ) &&
+                     nearlyEqual( style.WindowBorderSize, defaultStyle.WindowBorderSize ),
+                 "Default restores the original ImGui layout metrics" );
+        for( auto i = 0; i < ImGuiCol_COUNT; ++i )
+        {
+            const auto actual = style.Colors[i];
+            const auto expected = defaultStyle.Colors[i];
+            require( nearlyEqual( actual.x, expected.x ) && nearlyEqual( actual.y, expected.y ) &&
+                         nearlyEqual( actual.z, expected.z ) && nearlyEqual( actual.w, expected.w ),
+                     "Default restores the original ImGui palette" );
+        }
     }
 
     void displayedImageGeometry( Fixture &fixture, bool textureReady, bool fractional )

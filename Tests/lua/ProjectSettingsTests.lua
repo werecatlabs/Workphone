@@ -100,7 +100,7 @@ function window:handleEvent(eventType, hash, arguments, sender, request, event)
         request:setPropertyAsString("project.company", "")
         request:setPropertyAsBool("graphics.vsync", false)
         request:setPropertyAsBool("graphics.hdr", true)
-        request:setPropertyAsInt("editor.theme", 1)
+        request:setPropertyAsInt("editor.theme", 4)
         request:setPropertyAsBool("services.cloudSave", false)
         for _, key in ipairs({"project.name", "graphics.vsync", "graphics.hdr", "services.cloudSave"}) do
             request:setPropertyAsBool("included." .. key, true)
@@ -130,6 +130,8 @@ assert(editor.settings.shadowQuality==4 and editor.shadowQualityControl:getSelec
 assert(not editor.cloudSaveControl.enabled and editor.cloudSaveControl.label:find("(Unavailable)", 1, true))
 assert(editor.settings.cloudSave==true)
 assert(#editor.controlBindings==132, "All project settings must be bound")
+assert(table.concat(editor.editorThemeControl.options, ",")=="Classic,Dark,Light,High Contrast,Default")
+assert(editor.editorThemeControl:getSelectedOption()==4, "Missing project theme displays Default")
 
 local function event(kind, sender)
     return {at=function(_, i) if i==1 then return kind elseif i==3 then return sender end end}
@@ -143,10 +145,18 @@ editor:handleEvent(event(IEvent.handleSelection, editor.saveButton))
 assertNoSettings(native.calls[#native.calls])
 editor.editorThemeControl:setSelectedOption(2)
 editor:handleEvent(event(IEvent.handleSelection, editor.editorThemeControl))
-editor.editorThemeControl:setSelectedOption(1)
+editor.editorThemeControl:setSelectedOption(4)
 editor:handleEvent(event(IEvent.handleSelection, editor.editorThemeControl))
 editor:handleEvent(event(IEvent.handleSelection, editor.saveButton))
 assertNoSettings(native.calls[#native.calls])
+editor.editorThemeControl:setSelectedOption(1)
+editor:handleEvent(event(IEvent.handleSelection, editor.editorThemeControl))
+editor:handleEvent(event(IEvent.handleSelection, editor.applyButton))
+assert(native.calls[#native.calls].values["editor.theme"]==1, "Dark retains its saved ID")
+editor.editorThemeControl:setSelectedOption(4)
+editor:handleEvent(event(IEvent.handleSelection, editor.editorThemeControl))
+editor:handleEvent(event(IEvent.handleSelection, editor.saveButton))
+assert(native.calls[#native.calls].values["editor.theme"]==4, "Default must be saved after switching from Dark")
 assert(editor.renderPipelineControl.label:find("(Inherited)", 1, true))
 editor.renderPipelineControl:setSelectedOption(0)
 editor:handleEvent(event(IEvent.handleSelection, editor.renderPipelineControl))
@@ -323,7 +333,7 @@ editor:handleEvent(event(IEvent.handleValueChanged, editor.cloudSaveControl))
 assert(editor.settings.cloudSave==false and editor.cloudSaveControl:getValue()==false)
 editor:handleEvent(event(IEvent.handleSelection, editor.saveButton))
 local reset=native.calls[#native.calls].values
-assert(reset["editor.theme"]==1 and reset["graphics.hdr"]==true and reset["services.cloudSave"]==nil,
+assert(reset["editor.theme"]==4 and reset["graphics.hdr"]==true and reset["services.cloudSave"]==nil,
     "Reset must explicitly stage all available defaults while preserving unavailable values")
 before=#native.calls
 

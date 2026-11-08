@@ -316,7 +316,7 @@ local ProjectSettingsDefaults =
 	gpuProfiler = false,
 	validationWarnings = true,
 	telemetry = false,
-	editorTheme = 1,
+	editorTheme = 4,
 	autosave = true,
 	autosaveInterval = 10,
 	showAdvancedWarnings = true,
@@ -1009,7 +1009,7 @@ function ProjectSettings:load()
 	self:bind(addToggle(ui, diagnosticsHeader, "Validation Warnings", ProjectSettingsTypes.ValidationWarnings, self.settings.validationWarnings), "validationWarnings", "toggle");
 	self:bind(addToggle(ui, diagnosticsHeader, "Telemetry", ProjectSettingsTypes.Telemetry, self.settings.telemetry), "telemetry", "toggle");
 	self:bind(addDropdown(ui, diagnosticsHeader, "Editor Theme", ProjectSettingsTypes.EditorTheme,
-		{ "Classic", "Dark", "Light", "High Contrast" }, self.settings.editorTheme), "editorTheme", "dropdown");
+		{ "Classic", "Dark", "Light", "High Contrast", "Default" }, self.settings.editorTheme), "editorTheme", "dropdown");
 	self:bind(addToggle(ui, diagnosticsHeader, "Autosave", ProjectSettingsTypes.Autosave, self.settings.autosave), "autosave", "toggle");
 	self:bind(addSlider(ui, diagnosticsHeader, "Autosave Interval Minutes", ProjectSettingsTypes.AutosaveInterval, 1.0, 60.0, self.settings.autosaveInterval), "autosaveInterval", "intSlider");
 	self:bind(addToggle(ui, diagnosticsHeader, "Show Advanced Warnings", ProjectSettingsTypes.ShowAdvancedWarnings, self.settings.showAdvancedWarnings), "showAdvancedWarnings", "toggle");
