@@ -4,6 +4,9 @@ include("MissionLibrary.lua")
 
 class 'MissionManager' (BaseComponent)
 
+-- Native Lua classes report an error when reading an unset static member.
+MissionManager._instance = false
+
 function MissionManager:__init(component)
 	BaseComponent.__init(self, component)
 	self.startingMission = nil
@@ -32,13 +35,13 @@ function MissionManager:__init(component)
 end
 
 function MissionManager:__finalize()
-	if MissionManager._instance == self then MissionManager._instance = nil end
+	if MissionManager._instance == self then MissionManager._instance = false end
 	self.listeners = {}
 	self.customHandlers = {}
 	BaseComponent.__finalize(self)
 end
 
-function MissionManager.instance() return MissionManager._instance end
+function MissionManager.instance() return MissionManager._instance or nil end
 function MissionManager:getActiveMission() return self.activeMission end
 
 function MissionManager:setApplicationController(value) self.applicationController = value end
