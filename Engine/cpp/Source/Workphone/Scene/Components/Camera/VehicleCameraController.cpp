@@ -339,132 +339,132 @@ namespace workphone::scene
 
                     if( auto transform = m_target->getTransform() )
                     {
-                        auto handle = m_target->getHandle();
-                        auto id = handle->getInstanceId();
-                        auto transformTask = transform->getTask();
-
+                        // Use the current pose when the target does not publish transform history.
                         auto smoothTransform = transform->getWorldTransform();
-                        if( gameManager->getTransformState( id, transformTime, smoothDeltaTime,
-                                                            smoothTransform, transformTask ) )
+                        if( transform->getSmoothMotion() )
                         {
-                            auto fPosition = smoothTransform.getPosition();
-                            auto fOrientation = smoothTransform.getOrientation();
+                            const auto id = m_target->getHandle()->getInstanceId();
+                            gameManager->getTransformState( id, transformTime, smoothDeltaTime,
+                                                            smoothTransform, transform->getTask() );
+                        }
 
-                            auto position = Vector3<real_dNum>( fPosition.x, fPosition.y, fPosition.z );
-                            auto orientation = Quaternion<real_dNum>( fOrientation.w, fOrientation.x,
-                                                                      fOrientation.y, fOrientation.z );
+                        auto fPosition = smoothTransform.getPosition();
+                        auto fOrientation = smoothTransform.getOrientation();
 
-                            m_targetHeight = position.y + m_height;
+                        auto position = Vector3<real_dNum>( fPosition.x, fPosition.y, fPosition.z );
+                        auto orientation = Quaternion<real_dNum>( fOrientation.w, fOrientation.x,
+                                                                  fOrientation.y, fOrientation.z );
 
-                            // Fix rotation snap time calculation
-                            auto fRotationSnapTime = Math<real_Num>::clamp(
-                                m_maxRotationSnapTime - ( m_rotationSnapTime + m_minRotationSnapTime ),
-                                m_minRotationSnapTime, m_maxRotationSnapTime );
+                        m_targetHeight = position.y + m_height;
 
-                            // Use proper smoothDampAngle with reference parameter
-                            m_currentRotationAngle = Math<real_dNum>::smoothDampAngle(
-                                m_currentRotationAngle, m_targetRotationAngle, m_cameraVelocity.Y(),
-                                fRotationSnapTime );
+                        // Fix rotation snap time calculation
+                        auto fRotationSnapTime = Math<real_Num>::clamp(
+                            m_maxRotationSnapTime - ( m_rotationSnapTime + m_minRotationSnapTime ),
+                            m_minRotationSnapTime, m_maxRotationSnapTime );
 
-                            // Smooth height interpolation with proper damping
-                            m_currentHeight = Math<real_Num>::lerp(
-                                m_currentHeight, m_targetHeight,
-                                Math<real_Num>::clamp01( m_heightDamping *
-                                                         static_cast<real_Num>( dt ) ) );
+                        // Use proper smoothDampAngle with reference parameter
+                        m_currentRotationAngle = Math<real_dNum>::smoothDampAngle(
+                            m_currentRotationAngle, m_targetRotationAngle, m_cameraVelocity.Y(),
+                            fRotationSnapTime );
 
-                            // Calculate velocity using target position consistently
-                            m_velocity =
-                                ( position - m_lastTargetPosition ) / static_cast<real_dNum>( dt );
-                            m_lastTargetPosition = position;
+                        // Smooth height interpolation with proper damping
+                        m_currentHeight = Math<real_Num>::lerp(
+                            m_currentHeight, m_targetHeight,
+                            Math<real_Num>::clamp01( m_heightDamping *
+                                                     static_cast<real_Num>( dt ) ) );
 
-                            // Fix distance snap time calculation
-                            auto fDistanceSnapTime = Math<real_dNum>::clamp(
-                                m_maxDistanceSnapTime - ( m_distanceSnapTime + m_minDistanceSnapTime ),
-                                m_minDistanceSnapTime, m_maxDistanceSnapTime );
+                        // Calculate velocity using target position consistently
+                        m_velocity =
+                            ( position - m_lastTargetPosition ) / static_cast<real_dNum>( dt );
+                        m_lastTargetPosition = position;
 
-                            // Calculate target distance with velocity-based adjustment
-                            auto velocityMagnitude = m_velocity.length();
-                            auto desiredDistance =
-                                m_distance + ( velocityMagnitude * m_distanceMultiplier );
+                        // Fix distance snap time calculation
+                        auto fDistanceSnapTime = Math<real_dNum>::clamp(
+                            m_maxDistanceSnapTime - ( m_distanceSnapTime + m_minDistanceSnapTime ),
+                            m_minDistanceSnapTime, m_maxDistanceSnapTime );
 
-                            // Use smoothDampAngle for distance with proper velocity reference
-                            auto smoothedDistance = Math<real_dNum>::smoothDampAngle(
-                                m_targetDistance, desiredDistance, m_cameraVelocity.Z(),
-                                fDistanceSnapTime );
+                        // Calculate target distance with velocity-based adjustment
+                        auto velocityMagnitude = m_velocity.length();
+                        auto desiredDistance =
+                            m_distance + ( velocityMagnitude * m_distanceMultiplier );
 
-                            // Apply smooth interpolation to target distance
-                            m_targetDistance = Math<real_dNum>::lerp(
-                                m_targetDistance, (real_dNum)smoothedDistance,
-                                Math<real_dNum>::clamp01( static_cast<real_dNum>( dt ) *
-                                                          m_distanceLerpFactor ) );
+                        // Use smoothDampAngle for distance with proper velocity reference
+                        auto smoothedDistance = Math<real_dNum>::smoothDampAngle(
+                            m_targetDistance, desiredDistance, m_cameraVelocity.Z(),
+                            fDistanceSnapTime );
 
-                            m_targetDistance =
-                                Math<real_dNum>::clamp( m_targetDistance, m_minDistance, m_maxDistance );
+                        // Apply smooth interpolation to target distance
+                        m_targetDistance = Math<real_dNum>::lerp(
+                            m_targetDistance, (real_dNum)smoothedDistance,
+                            Math<real_dNum>::clamp01( static_cast<real_dNum>( dt ) *
+                                                      m_distanceLerpFactor ) );
 
-                            // Calculate final camera position
-                            // Ogre3D/OpenGL coordinate system: Y-up, -Z forward (right-handed)
-                            // Positive distance places camera behind vehicle (+Z direction)
-                            auto cameraPosition = position;
-                            cameraPosition.y = m_currentHeight;
-                            cameraPosition +=
-                                Quaternion<real_dNum>::euler( 0, m_currentRotationAngle, 0 ) *
-                                Vector3<real_dNum>( 0, 0, m_targetDistance );
+                        m_targetDistance =
+                            Math<real_dNum>::clamp( m_targetDistance, m_minDistance, m_maxDistance );
 
-                            // Handle rotation logic
-                            auto &targetTransform = smoothTransform;
+                        // Calculate final camera position
+                        // Ogre3D/OpenGL coordinate system: Y-up, -Z forward (right-handed)
+                        // Positive distance places camera behind vehicle (+Z direction)
+                        auto cameraPosition = position;
+                        cameraPosition.y = m_currentHeight;
+                        cameraPosition +=
+                            Quaternion<real_dNum>::euler( 0, m_currentRotationAngle, 0 ) *
+                            Vector3<real_dNum>( 0, 0, m_targetDistance );
 
-                            auto fVelocity = Vector3<real_Num>(
-                                (real_Num)m_velocity.x, (real_Num)m_velocity.y, (real_Num)m_velocity.z );
-                            auto velocityDir = targetTransform.inverseTransformVector( fVelocity );
-                            auto targetOrientation = targetTransform.getOrientation();
-                            auto targetRotation = Euler<real_Num>( targetOrientation );
+                        // Handle rotation logic
+                        auto &targetTransform = smoothTransform;
 
-                            // Vehicle moving backwards
-                            // In Ogre3D/OpenGL: negative Z is forward, positive Z is backward
-                            if( velocityDir.z <= m_reverseThreshold )
-                            {
-                                // Moving backward (positive Z in local space)
-                                m_targetRotationAngle = targetRotation.yaw();
-                            }
-                            else
-                            {
-                                // Moving forward (negative Z in local space)
-                                m_targetRotationAngle = -targetRotation.yaw();
-                            }
+                        auto fVelocity = Vector3<real_Num>(
+                            (real_Num)m_velocity.x, (real_Num)m_velocity.y, (real_Num)m_velocity.z );
+                        auto velocityDir = targetTransform.inverseTransformVector( fVelocity );
+                        auto targetOrientation = targetTransform.getOrientation();
+                        auto targetRotation = Euler<real_Num>( targetOrientation );
 
-                            // Apply smooth position interpolation to reduce jitter
-                            auto fCurrentPosition = m_cameraTransform.getPosition();
-                            auto currentPosition = Vector3<real_dNum>(
-                                fCurrentPosition.x, fCurrentPosition.y, fCurrentPosition.z );
-                            auto lerpFactor = Math<real_dNum>::clamp01(
-                                static_cast<real_dNum>( dt ) * (real_dNum)m_positionLerpFactor );
+                        // Vehicle moving backwards
+                        // In Ogre3D/OpenGL: negative Z is forward, positive Z is backward
+                        if( velocityDir.z <= m_reverseThreshold )
+                        {
+                            // Moving backward (positive Z in local space)
+                            m_targetRotationAngle = targetRotation.yaw();
+                        }
+                        else
+                        {
+                            // Moving forward (negative Z in local space)
+                            m_targetRotationAngle = -targetRotation.yaw();
+                        }
 
-                            auto finalPosition =
-                                Math<real_dNum>::lerp( currentPosition, cameraPosition, lerpFactor );
+                        // Apply smooth position interpolation to reduce jitter
+                        auto fCurrentPosition = m_cameraTransform.getPosition();
+                        auto currentPosition = Vector3<real_dNum>(
+                            fCurrentPosition.x, fCurrentPosition.y, fCurrentPosition.z );
+                        auto lerpFactor = Math<real_dNum>::clamp01(
+                            static_cast<real_dNum>( dt ) * (real_dNum)m_positionLerpFactor );
 
-                            auto cameraRenderPosition =
-                                Vector3<real_Num>( (real_Num)finalPosition.x, (real_Num)finalPosition.y,
-                                                   (real_Num)finalPosition.z );
+                        auto finalPosition =
+                            Math<real_dNum>::lerp( currentPosition, cameraPosition, lerpFactor );
 
-                            auto lookAtPosition = Vector3<real_Num>(
-                                (real_Num)position.x, (real_Num)position.y + m_lookAtHeight,
-                                (real_Num)position.z );
-                            auto vec = lookAtPosition - cameraRenderPosition;
-                            auto cameraRenderOrientation =
-                                MathUtil<real_Num>::getOrientationFromDirection( vec );
-                            auto camera = actor->getComponentPtr<Camera>();
+                        auto cameraRenderPosition =
+                            Vector3<real_Num>( (real_Num)finalPosition.x, (real_Num)finalPosition.y,
+                                               (real_Num)finalPosition.z );
 
-                            m_cameraTransform =
-                                Transform3F( cameraRenderPosition, cameraRenderOrientation );
-                            // Keep LOD queries and the standalone sample camera on this render pose.
-                            auto actorTransform = actor->getTransform();
-                            actorTransform->setWorldTransform( m_cameraTransform );
-                            actorTransform->setLocalDirty( true, false );
-                            actorTransform->update();
-                            if( camera )
-                            {
-                                camera->updateTransform( m_cameraTransform );
-                            }
+                        auto lookAtPosition = Vector3<real_Num>(
+                            (real_Num)position.x, (real_Num)position.y + m_lookAtHeight,
+                            (real_Num)position.z );
+                        auto vec = lookAtPosition - cameraRenderPosition;
+                        auto cameraRenderOrientation =
+                            MathUtil<real_Num>::getOrientationFromDirection( vec );
+                        auto camera = actor->getComponentPtr<Camera>();
+
+                        m_cameraTransform =
+                            Transform3F( cameraRenderPosition, cameraRenderOrientation );
+                        // Keep LOD queries and the standalone sample camera on this render pose.
+                        auto actorTransform = actor->getTransform();
+                        actorTransform->setWorldTransform( m_cameraTransform );
+                        actorTransform->setLocalDirty( true, false );
+                        actorTransform->update();
+                        if( camera )
+                        {
+                            camera->updateTransform( m_cameraTransform );
                         }
                     }
                 }
