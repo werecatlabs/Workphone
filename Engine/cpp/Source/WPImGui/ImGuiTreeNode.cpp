@@ -127,7 +127,7 @@ namespace workphone::ui
         m_selected = selected;
     }
 
-    void ImGuiTreeNode::createTreeNode( SmartPtr<IUITreeCtrl> &tree, SmartPtr<IUITreeNode> &treeNode,
+    void ImGuiTreeNode::createTreeNode( IUITreeCtrl* tree, IUITreeNode* treeNode,
                                         s32 &numNodesDisplayed )
     {
         try
@@ -141,7 +141,7 @@ namespace workphone::ui
 
             c8 *label = nullptr;
 
-            auto pTreeNode = (ImGuiTreeNode *)treeNode.get();
+            auto pTreeNode = (ImGuiTreeNode *)treeNode;
             auto nodeChildren = pTreeNode->getChildren();
 
             for( auto &child : nodeChildren )
@@ -289,7 +289,7 @@ namespace workphone::ui
             {
                 if( ImGui::IsItemActive() && ImGui::IsMouseDragging( 0 ) )
                 {
-                    auto imguiTree = static_cast<ImGuiTreeCtrl *>( tree.get() );
+                    auto imguiTree = static_cast<ImGuiTreeCtrl *>( tree );
                     auto dragData = imguiTree->getDragPayload( treeNode, dragSource );
                     if( !StringUtil::isNullOrEmpty( dragData ) &&
                         ImGui::BeginDragDropSource( ImGuiDragDropFlags_None ) )
@@ -371,11 +371,11 @@ namespace workphone::ui
                     }
 
                     tree->setSelectedTreeNodes( selectedNodes );
-                    static_cast<ImGuiTreeCtrl *>( tree.get() )->setLastSelectedNode( treeNode );
+                    static_cast<ImGuiTreeCtrl *>( tree )->setLastSelectedNode( treeNode );
                 }
                 else if( tree->isMultiSelect() && io.KeyShift )
                 {
-                    auto imguiTree = static_cast<ImGuiTreeCtrl *>( tree.get() );
+                    auto imguiTree = static_cast<ImGuiTreeCtrl *>( tree );
                     auto anchor = imguiTree->getLastSelectedNode();
                     bool rangeSelected = false;
                     tree->selectRange( tree->getRoot(), anchor, treeNode, rangeSelected );
@@ -515,11 +515,11 @@ namespace workphone::ui
                 {
                     for( auto &child : nodeChildren )
                     {
-                        if( child->isDerived<ui::IUITreeNode>() )
+                        if( child->isExactly<ImGuiTreeNode>() )
                         {
                             auto childTreeNode =
                                 workphone::static_pointer_cast<ui::IUITreeNode>( child );
-                            createTreeNode( tree, childTreeNode, numNodesDisplayed );
+                            createTreeNode( tree, childTreeNode.get(), numNodesDisplayed );
                         }
                     }
                 }

@@ -71,7 +71,7 @@ namespace workphone
             /** @copydoc IUITreeNode::setSelected */
             void setSelected( bool selected ) override;
 
-            static void createTreeNode( SmartPtr<IUITreeCtrl> &tree, SmartPtr<IUITreeNode> &treeNode,
+            static void createTreeNode( IUITreeCtrl *tree, IUITreeNode *treeNode,
                                         s32 &numNodesDisplayed );
 
             WP_CLASS_REGISTER_DECL;

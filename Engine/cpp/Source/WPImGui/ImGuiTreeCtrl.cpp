@@ -356,7 +356,7 @@ namespace workphone::ui
     }
 
     String ImGuiTreeCtrl::getDragPayload( SmartPtr<IUIElement> element,
-                                         SmartPtr<IUIDragSource> dragSource )
+                                          SmartPtr<IUIDragSource> dragSource )
     {
         if( !element || !dragSource )
         {
@@ -487,8 +487,8 @@ namespace workphone::ui
                 ImGui::SetNextItemOpen( imguiRoot->isExpanded(), ImGuiCond_Always );
             }
 
-            auto rootOpened = ImGui::TreeNodeEx( (void *)static_cast<intptr_t>( id ), nodeFlags,
-                                                 "%s", label.c_str() );
+            auto rootOpened =
+                ImGui::TreeNodeEx( (void *)static_cast<intptr_t>( id ), nodeFlags, "%s", label.c_str() );
             root->setExpanded( rootOpened );
             if( rootOpened )
             {
@@ -500,8 +500,7 @@ namespace workphone::ui
                         if( !StringUtil::isNullOrEmpty( dataStr ) &&
                             ImGui::BeginDragDropSource( ImGuiDragDropFlags_None ) )
                         {
-                            ImGui::SetDragDropPayload( "_TREENODE", dataStr.c_str(),
-                                                       dataStr.size() );
+                            ImGui::SetDragDropPayload( "_TREENODE", dataStr.c_str(), dataStr.size() );
                             ImGui::Text( "%s", label.c_str() );
                             ImGui::EndDragDropSource();
                         }
@@ -557,9 +556,9 @@ namespace workphone::ui
 
                     args[0].object = root;
 
-                    applicationManager->triggerEvent(
-                        EventType::UI, IEvent::handleTreeSelectionRelease, args, treeCtrl, treeCtrl,
-                        nullptr, false, Thread::Application_Flag );
+                    applicationManager->triggerEvent( EventType::UI, IEvent::handleTreeSelectionRelease,
+                                                      args, treeCtrl, treeCtrl, nullptr, false,
+                                                      Thread::Application_Flag );
                 }
 
                 auto x1 = ImGui::GetCurrentWindow()->WorkRect.Min.x;
@@ -577,21 +576,16 @@ namespace workphone::ui
 
                 treeCtrl->numNodesDisplayed = 0;
 
-                auto tree = workphone::static_pointer_cast<IUITreeCtrl>( treeCtrl );
-
                 auto children = root->getChildren();
 
                 for( auto &child : children )
                 {
-                    if( child->isDerived<IUITreeNode>() )
+                    if( child->isExactly<ImGuiTreeNode>() )
                     {
-                        auto treeNode = workphone::dynamic_pointer_cast<IUITreeNode>( child );
-                        if( treeNode )
-                        {
-                            auto numNodesDisplayed = treeCtrl->numNodesDisplayed.load();
-                            ImGuiTreeNode::createTreeNode( tree, treeNode, numNodesDisplayed );
-                            treeCtrl->numNodesDisplayed = numNodesDisplayed;
-                        }
+                        auto numNodesDisplayed = treeCtrl->numNodesDisplayed.load();
+                        ImGuiTreeNode::createTreeNode( treeCtrl.get(), (IUITreeNode *)child.get(),
+                                                       numNodesDisplayed );
+                        treeCtrl->numNodesDisplayed = numNodesDisplayed;
                     }
                 }
 
@@ -717,8 +711,7 @@ namespace workphone::ui
 
         Array<SmartPtr<IUITreeNode>> visibleNodes;
         std::function<void( SmartPtr<IUITreeNode> const & )> appendVisibleNodes;
-        appendVisibleNodes = [&]( SmartPtr<IUITreeNode> const &node )
-        {
+        appendVisibleNodes = [&]( SmartPtr<IUITreeNode> const &node ) {
             if( !node )
             {
                 return;
