@@ -512,6 +512,11 @@ namespace workphone::scene
         }
     }
 
+    void Slider::updateVisibility()
+    {
+        updateElementVisibility( getUseNativeUI() );
+    }
+
     void Slider::updateElementState()
     {
         if( getUseNativeUI() && isLoaded() && !getElement() )

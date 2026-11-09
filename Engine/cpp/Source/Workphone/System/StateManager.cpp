@@ -92,7 +92,23 @@ namespace workphone
             const auto &loadingState = getLoadingState();
             if( loadingState != LoadingState::Unloaded )
             {
-                setLoadingState( LoadingState::Unloading );
+                // State changes commit before publishing optional loading events.
+                try
+                {
+                    setLoadingState( LoadingState::Unloading );
+                }
+                catch( const std::bad_alloc & )
+                {
+                }
+
+                // Dirty work can still own contexts removed from the inventory.
+                // Release those references before the plugin retires their factory.
+                auto dirtyQueues = std::move( m_dirtyQueue );
+                dirtyQueues.releaseStorage();
+                for( auto &contexts : m_dirtyArray )
+                {
+                    contexts = SourceBudgetArray<SmartPtr<IStateContext>>{};
+                }
 
                 auto stateObjects = std::move( m_stateContexts );
                 for( auto &stateContext : stateObjects )
@@ -116,7 +132,13 @@ namespace workphone
 
                 m_stateQueues.releaseStorage();
 
-                setLoadingState( LoadingState::Unloaded );
+                try
+                {
+                    setLoadingState( LoadingState::Unloaded );
+                }
+                catch( const std::bad_alloc & )
+                {
+                }
             }
         }
         catch( std::exception &e )

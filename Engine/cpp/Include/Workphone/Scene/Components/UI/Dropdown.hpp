@@ -283,6 +283,8 @@ namespace workphone
             u32 getInitialOptionCapacity() const;
             void setInitialOptionCapacity( u32 capacity );
 
+            void updateVisibility() override;
+
             WP_CLASS_REGISTER_DECL;
 
         protected:

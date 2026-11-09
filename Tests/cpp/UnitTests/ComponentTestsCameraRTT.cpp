@@ -375,6 +375,7 @@ BOOST_AUTO_TEST_CASE( camera_output_render_texture_properties_round_trip_with_re
     auto outputActor = guard.sceneManager->createActor();
     BOOST_REQUIRE( outputActor );
     outputActor->addComponentInstance( output );
+    outputActor->addComponentInstance( restored );
     guard.scene->addActor( outputActor );
 
     output->setTexture( texture );
@@ -386,10 +387,8 @@ BOOST_AUTO_TEST_CASE( camera_output_render_texture_properties_round_trip_with_re
         properties->getPropertyObject( Camera::s_outputRenderTextureStr ).getAttribute( "resourceType" ),
         "RenderTexture" );
 
-    SmartPtr<IComponent> serializedComponent;
-    BOOST_REQUIRE(
-        properties->getPropertyValue( Camera::s_outputRenderTextureStr, serializedComponent ) );
-    BOOST_CHECK( serializedComponent.get() == output.get() );
+    checkProperty( properties, Camera::s_outputRenderTextureStr,
+                   output->getHandle()->getUUIDAsString() );
 
     restored->setProperties( properties );
     BOOST_CHECK( restored->getOutputRenderTexture().get() == output.get() );

@@ -1223,6 +1223,11 @@ namespace workphone::scene
 
     void UIComponent::updateVisibility()
     {
+        updateElementVisibility( true );
+    }
+
+    void UIComponent::updateElementVisibility( bool elementActive )
+    {
         if(m_runtimeAssetsMode){
 #if WP_TYPED_ANIMATION_RESOURCE
             if(m_runtimeUI&&m_runtimeUI->instance){
@@ -1237,8 +1242,8 @@ namespace workphone::scene
         }
         if( auto actor = getActor() )
         {
-            auto enabled = isEnabled() && actor->isEnabledInScene();
-            auto visible = isVisible() && actor->isEnabledInScene();
+            auto enabled = elementActive && isEnabled() && actor->isEnabledInScene();
+            auto visible = elementActive && isVisible() && actor->isEnabledInScene();
 
             if( auto element = getElement() )
             {

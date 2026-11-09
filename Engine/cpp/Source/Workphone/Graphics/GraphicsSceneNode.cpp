@@ -18,8 +18,8 @@ namespace workphone::render
             // Scene factories and direct constructors can run on different
             // tasks. Shared state lookups require one identity per node, even
             // when the nodes were allocated by different factories.
-            static auto *mutex = new std::mutex;
-            std::lock_guard<std::mutex> lock( *mutex );
+            static std::mutex mutex;
+            std::lock_guard<std::mutex> lock( mutex );
             return counter++;
         }
     }  // namespace

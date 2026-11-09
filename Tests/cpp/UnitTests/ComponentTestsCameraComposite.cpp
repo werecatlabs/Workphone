@@ -133,8 +133,7 @@ BOOST_AUTO_TEST_CASE( camera_post_processing_and_compositing_defaults_are_determ
     BOOST_CHECK_EQUAL( Camera::s_vignetteStr, "postProcessing.vignette" );
     BOOST_CHECK_EQUAL( Camera::s_compositeLayerPrefix, "compositing.layer" );
 
-    camera->unload( nullptr );
-    camera = nullptr;
+    // This camera was never loaded and must be safe to destroy directly.
 }
 
 BOOST_AUTO_TEST_CASE( camera_post_process_settings_round_trip_and_propagate_to_render_camera )
@@ -334,6 +333,7 @@ BOOST_AUTO_TEST_CASE( camera_composite_layer_properties_round_trip_and_expose_ed
     auto renderTextureActor = guard.sceneManager->createActor();
     BOOST_REQUIRE( renderTextureActor );
     renderTextureActor->addComponentInstance( renderTexture );
+    renderTextureActor->addComponentInstance( restored );
     guard.scene->addActor( renderTextureActor );
 
     source->setCompositeRenderTexture( 2u, renderTexture, BlendMode::Multiply, 0.42f, true );
@@ -345,6 +345,8 @@ BOOST_AUTO_TEST_CASE( camera_composite_layer_properties_round_trip_and_expose_ed
     const auto opacityProperty = layerPropertyName( 2u, ".opacity" );
     const auto enabledProperty = layerPropertyName( 2u, ".enabled" );
     BOOST_CHECK( properties->hasProperty( textureProperty ) );
+    BOOST_CHECK_EQUAL( properties->getProperty( textureProperty ),
+                       renderTexture->getHandle()->getUUIDAsString() );
     BOOST_CHECK( properties->hasProperty( blendProperty ) );
     BOOST_CHECK( properties->hasProperty( opacityProperty ) );
     BOOST_CHECK( properties->hasProperty( enabledProperty ) );

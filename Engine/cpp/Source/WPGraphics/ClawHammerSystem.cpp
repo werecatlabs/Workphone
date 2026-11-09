@@ -2706,6 +2706,7 @@ namespace workphone
                 return;
             }
 
+            ScopedLock lock( this );
             wp_graphics_scene *nativeScene = nullptr;
             if( auto clawScene = dynamic_pointer_cast<ClawScene>( scene ) )
             {
@@ -2728,6 +2729,7 @@ namespace workphone
 
         void ClawHammerSystem::removeAllGraphicsScenes()
         {
+            ScopedLock lock( this );
             auto scenes = m_scenes.snapshot();
             m_scenes.clear();
             setGraphicsScene( nullptr );

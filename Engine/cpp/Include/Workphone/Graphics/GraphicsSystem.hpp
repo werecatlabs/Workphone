@@ -773,6 +773,13 @@ namespace workphone
             /** Queue of requested load operations (thread-safe). */
             struct LoadRequest
             {
+                LoadRequest() = default;
+                LoadRequest( const SmartPtr<ISharedObject> &object, u64 ticket );
+                LoadRequest( const LoadRequest & ) = default;
+                LoadRequest &operator=( const LoadRequest &other );
+
+                // Destroy the queued object reference before its allocator.
+                SmartPtr<IFactory> factory;
                 SmartPtr<ISharedObject> object;
                 u64 ticket = 0;
             };

@@ -240,6 +240,31 @@ namespace
         guard.addCleanup( [app, running, quit]() mutable { app->setRunning( running ); app->setQuit( quit ); } );
         app->setRunning( true ); app->setQuit( false );
     }
+
+    struct ScopedJobQueueShutdown
+    {
+        SmartPtr<IJobQueue> queue;
+
+        ~ScopedJobQueueShutdown()
+        {
+            stop();
+        }
+
+        void stop()
+        {
+            if( auto active = std::move( queue ) )
+            {
+                active->shutdown();
+                if( auto *threaded = dynamic_cast<JobQueueMT *>( active.get() ) )
+                {
+                    // Join and release the worker wrappers while this scope still owns the queue.
+                    threaded->setNumWorkerThreads( 0 );
+                }
+                active->unload( nullptr );
+            }
+        }
+    };
+
     void pump( SceneWorldStreamer &stream, const Vector3F &observer, u32 expectedActors )
     {
         const auto until = std::chrono::steady_clock::now() + std::chrono::seconds( 10 );
@@ -341,6 +366,19 @@ namespace
 }
 
 #include "SharedSceneInventoryBudgetTests.hpp"
+
+BOOST_AUTO_TEST_CASE( retained_transform_does_not_keep_a_destroyed_actor_backlink )
+{
+    auto actor = make_ptr<GameActor>();
+    auto transform = make_ptr<TransformLifetimeProbe>();
+    actor->setTransform( transform );
+    transform->setActor( actor );
+    BOOST_REQUIRE( transform->getActorPtr() == actor.get() );
+
+    actor = nullptr;
+
+    BOOST_CHECK( transform->getActorPtr() == nullptr );
+}
 
 BOOST_AUTO_TEST_CASE( actor_snapshots_reject_at_cap_and_retain_admitted_storage )
 {
@@ -1402,6 +1440,7 @@ BOOST_AUTO_TEST_CASE( destroying_a_streamer_finishes_retirement_across_both_prim
         auto manager = make_ptr<MeshManager>();
         SmartPtr<IJobQueue> queue = kind ? SmartPtr<IJobQueue>( make_ptr<JobQueueMT>() ) :
                                          SmartPtr<IJobQueue>( make_ptr<JobQueue>() );
+        ScopedJobQueueShutdown shutdown{ queue };
         queue->load( nullptr ); queue->setRunning( true );
         guard.applicationManager->setMeshManager( manager ); guard.applicationManager->setJobQueue( queue );
         auto scheduler = std::make_shared<WorldStreamingScheduler>();
@@ -1438,7 +1477,8 @@ BOOST_AUTO_TEST_CASE( destroying_a_streamer_finishes_retirement_across_both_prim
         BOOST_CHECK_EQUAL( unloaded(), 35u );
         BOOST_CHECK( !queue->hasJobs() );
         for( auto used : scheduler->stats().used ) BOOST_CHECK_EQUAL( used, 0u );
-        queue->unload( nullptr ); manager->unload( nullptr );
+        shutdown.stop();
+        manager->unload( nullptr );
     }
 }
 
@@ -2138,6 +2178,7 @@ BOOST_AUTO_TEST_CASE( scene_membership_refreshes_coalesce_without_reentrant_prim
         auto database = make_ptr<RefreshProbe>();
         SmartPtr<IJobQueue> queue = kind ? SmartPtr<IJobQueue>( make_ptr<JobQueueMT>() ) :
                                          SmartPtr<IJobQueue>( make_ptr<JobQueue>() );
+        ScopedJobQueueShutdown shutdown{ queue };
         queue->load( nullptr ); queue->setRunning( true );
         guard.applicationManager->setJobQueue( queue ); guard.applicationManager->setResourceDatabase( database );
         bool reentered = false;
@@ -2188,7 +2229,6 @@ BOOST_AUTO_TEST_CASE( scene_membership_refreshes_coalesce_without_reentrant_prim
 
         queue->setRunning( false ); request();
         BOOST_CHECK_EQUAL( database->calls, 7u );
-        queue->unload( nullptr );
     }
 }
 

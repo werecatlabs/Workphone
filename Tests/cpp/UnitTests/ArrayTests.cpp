@@ -449,7 +449,10 @@ BOOST_AUTO_TEST_CASE( concurrent_array_thread_safety_basic )
 BOOST_AUTO_TEST_CASE( concurrent_array_thread_safety_mixed_operations )
 {
     ConcurrentArrayBase<int> arr;
-    std::atomic<bool> should_stop{ false };
+    constexpr int iterations = 100;
+    constexpr int reader_count = 3;
+    std::promise<void> start;
+    auto ready = start.get_future().share();
 
     // Pre-populate with some data
     for( int i = 0; i < 100; ++i )
@@ -458,12 +461,11 @@ BOOST_AUTO_TEST_CASE( concurrent_array_thread_safety_mixed_operations )
     }
 
     // Writer thread
-    std::thread writer( [&arr, &should_stop]() {
-        int counter = 1000;
-        while( !should_stop.load() )
+    std::thread writer( [&arr, ready, iterations]() {
+        ready.wait();
+        for( int i = 0; i < iterations; ++i )
         {
-            arr.push_back( counter++ );
-            std::this_thread::sleep_for( std::chrono::microseconds( 1 ) );
+            arr.push_back( 1000 + i );
         }
     } );
 
@@ -471,26 +473,23 @@ BOOST_AUTO_TEST_CASE( concurrent_array_thread_safety_mixed_operations )
     Array<std::thread> readers;
     std::atomic<int> read_count{ 0 };
 
-    for( int i = 0; i < 3; ++i )
+    for( int i = 0; i < reader_count; ++i )
     {
-        readers.emplace_back( [&arr, &should_stop, &read_count]() {
-            while( !should_stop.load() )
+        readers.emplace_back( [&arr, ready, &read_count, iterations]() {
+            ready.wait();
+            for( int read = 0; read < iterations; ++read )
             {
                 auto snapshot = arr.snapshot();
-                auto size = snapshot.size();
-                if( size > 0 )
+                if( !snapshot.empty() && snapshot.back() >= 0 &&
+                    snapshot.back() < 1000 + iterations )
                 {
-                    auto value = snapshot[size - 1];  // Copy while the source is protected
                     read_count.fetch_add( 1 );
                 }
-                std::this_thread::sleep_for( std::chrono::microseconds( 1 ) );
             }
         } );
     }
 
-    // Let threads run for a short time
-    std::this_thread::sleep_for( std::chrono::milliseconds( 100 ) );
-    should_stop.store( true );
+    start.set_value();
 
     writer.join();
     for( auto &reader : readers )
@@ -499,8 +498,8 @@ BOOST_AUTO_TEST_CASE( concurrent_array_thread_safety_mixed_operations )
     }
 
     // Verify array integrity
-    BOOST_TEST( arr.size() >= 100 );
-    BOOST_TEST( read_count.load() > 0 );
+    BOOST_TEST( arr.size() == 100 + iterations );
+    BOOST_TEST( read_count.load() == reader_count * iterations );
 
     // Check that the array is still in a valid state
     auto snapshot = arr.snapshot();

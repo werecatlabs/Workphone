@@ -140,16 +140,6 @@ namespace workphone::scene
         m_node = nullptr;
 
         m_outputRenderTexture = nullptr;
-
-        WP_ASSERT( m_compositeRenderTextures.empty() );
-        WP_ASSERT( m_compositeBlendModes.empty() );
-        WP_ASSERT( m_compositeOpacities.empty() );
-        WP_ASSERT( m_compositeEnabled.empty() );
-
-        m_compositeRenderTextures.clear();
-        m_compositeBlendModes.clear();
-        m_compositeOpacities.clear();
-        m_compositeEnabled.clear();
     }
 
     void Camera::configureRuntimeAssets(std::shared_ptr<const resource::RuntimeAssetContext> context)

@@ -12,6 +12,7 @@
 #include <Workphone/Interface/Scene/IGamePrefabManager.hpp>
 #include <Workphone/Interface/Scene/IGamePrefab.hpp>
 #include <Workphone/Scene/Components/Mesh.hpp>
+#include <Workphone/Scene/Directors/MeshResourceDirector.hpp>
 #include <Workphone/Database/ResourceDatabase.hpp>
 #include <Workphone/Database/AssetDatabaseManager.hpp>
 #include <vector>
@@ -979,6 +980,10 @@ BOOST_AUTO_TEST_CASE( mesh_reimport_rebuilds_geometry_and_settings_on_every_atte
     // Keep the source resource cached, as it is after the Editor's first import.
     auto sourceResource = app->getMeshManager()->createOrRetrieve( String( "triangle.obj" ) ).first;
     BOOST_REQUIRE( sourceResource );
+    auto director = dynamic_pointer_cast<scene::MeshResourceDirector>(
+        database->loadDirectorFromResourcePath( sourceResource->getFilePath(),
+                                                scene::MeshResourceDirector::typeInfo() ) );
+    BOOST_REQUIRE( director );
 
     std::function<SmartPtr<IMesh>( SmartPtr<scene::IGameActor> )> findMesh;
     findMesh = [&]( SmartPtr<scene::IGameActor> actor ) -> SmartPtr<IMesh> {
@@ -996,11 +1001,9 @@ BOOST_AUTO_TEST_CASE( mesh_reimport_rebuilds_geometry_and_settings_on_every_atte
         std::ofstream source( directory / "triangle.obj", std::ios::trunc );
         source << "o Triangle\nv 0 0 0\nv " << attempt << " 0 0\nv 0 1 0\nf 1 2 3\n";
         source.close();
-        std::ofstream settings( directory / "SettingsCache" /
-                                ( StringUtil::toString( StringUtil::getUUID( "triangle.obj" ) ) +
-                                  ".resourcedata" ).c_str(), std::ios::trunc );
-        settings << "{\"scale\":" << attempt << "}";
-        settings.close();
+        // The Editor applies import settings through the retained director.
+        director->setScale( static_cast<f32>( attempt ) );
+        director->save();
         app->getFileSystem()->refreshPath( folder, false );
         loader->setOverwrite( true );
         auto actor = loader->loadActor( String( "triangle.obj" ) );

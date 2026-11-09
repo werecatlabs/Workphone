@@ -1,5 +1,6 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <iostream>
+#include <stdexcept>
 #include <Workphone/Graphics/MaterialPass.hpp>
 #include <Workphone/Graphics/MaterialTexture.hpp>
 #include <Workphone/Graphics/MaterialTechnique.hpp>
@@ -1533,6 +1534,10 @@ namespace workphone::render
             }
             auto textureData = unit ? workphone::static_pointer_cast<Properties>( unit->toData() )
                                     : MaterialTexture::textureToData( texture );
+            if( !textureData )
+            {
+                throw std::runtime_error( "Material texture serialization failed" );
+            }
             textureData->setName( "textures" );
             properties->addChild( textureData );
         }

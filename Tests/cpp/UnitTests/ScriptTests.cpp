@@ -344,19 +344,23 @@ BOOST_AUTO_TEST_CASE( script_component_lifecycle_and_scene_loaded_callbacks )
     component->setActor( nullptr );
 }
 
-BOOST_FIXTURE_TEST_CASE( script_component_generate_before_first_state_update, ComponentScriptFixture )
+BOOST_FIXTURE_TEST_CASE( script_component_generate_uses_initialized_instance, ComponentScriptFixture )
 {
     manager->loadScriptFromString( R"(
-        class 'VehcileSimulatorUI' (BaseComponent)
-        function VehcileSimulatorUI:generate()
+        class 'GenerateProbe' (Application)
+        function GenerateProbe:__init(component) Application.__init(self, component) end
+        function GenerateProbe:generate()
             self.generated = (self.generated or 0) + 1
         end
     )" );
-    component->setClassName( "VehcileSimulatorUI" );
-    BOOST_REQUIRE( !component->getScriptData() );
-
+    component->setClassName( "GenerateProbe" );
     component->generate();
+    BOOST_CHECK( !component->getScriptData() );
+    BOOST_CHECK( manager->createdClasses.empty() );
+
+    selectClass( "GenerateProbe" );
     BOOST_REQUIRE( component->getScriptData() );
+    component->generate();
     BOOST_CHECK_EQUAL( manager->createdClasses.size(), 1 );
     BOOST_CHECK_EQUAL( luabind::object_cast<int>( manager->instance["generated"] ), 1 );
 

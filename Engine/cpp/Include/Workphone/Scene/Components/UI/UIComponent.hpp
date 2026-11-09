@@ -430,6 +430,8 @@ namespace workphone
             WP_CLASS_REGISTER_DECL;
 
         protected:
+            void updateElementVisibility( bool elementActive );
+
             struct RuntimeUIState;
             std::shared_ptr<RuntimeUIState> m_runtimeUI;
             std::shared_ptr<const resource::RuntimeAssetContext> m_runtimeAssets;

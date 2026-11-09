@@ -24,6 +24,7 @@
 #include <array>
 #include <cstdint>
 #include <mutex>
+#include <new>
 
 namespace workphone::scene
 {
@@ -34,7 +35,9 @@ namespace workphone::scene
             // The transform must gain a strong reference before replacement can
             // release the actor's reference. Keep these gates alive for late
             // factory teardown, without adding a mutex to every actor.
-            static auto *gates = new std::array<std::mutex, 64>();
+            using Gates = std::array<std::mutex, 64>;
+            alignas( Gates ) static unsigned char storage[sizeof( Gates )];
+            static auto *gates = new( storage ) Gates();
             const auto index = ( reinterpret_cast<std::uintptr_t>( actor ) >> 4 ) % gates->size();
             return ( *gates )[index];
         }
@@ -67,6 +70,14 @@ namespace workphone::scene
 
     GameActor::~GameActor()
     {
+        // A failed scene publication can destroy the actor while its transform
+        // is still registered with the manager.
+        auto transform = m_transform.load();
+        if( auto concrete = dynamic_cast<Transform *>( transform.get() );
+            concrete && concrete->getActorPtr() == this )
+        {
+            concrete->setActor( nullptr );
+        }
         clearChildNodes();
         clearComponentNodes();
     }
@@ -1443,7 +1454,11 @@ namespace workphone::scene
 
             WP_ASSERT( sceneManager->isLoaded() );
 
+            auto previousTransform = getTransform();
             auto transform = sceneManager->createTransform();
+            // Loading again can replace a transform that is still owned by
+            // the manager. Retire it before publishing the new facade.
+            sceneManager->destroyTransform( previousTransform );
             setTransform( transform );
 
             if( transform )

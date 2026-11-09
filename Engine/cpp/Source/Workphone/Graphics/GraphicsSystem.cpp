@@ -5,6 +5,7 @@
 #include <Workphone/Graphics/GraphicsAssetCleanup.hpp>
 #include <Workphone/Graphics/MaterialManager.hpp>
 #include <Workphone/Graphics/TextureManager.hpp>
+#include <Workphone/System/Factory.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsScene.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsCamera.hpp>
 #include <Workphone/Interface/Graphics/IDebug.hpp>
@@ -282,6 +283,29 @@ namespace workphone::render
     {
         ScopedLock lifecycleLock( this );
         return releaseGraphicsAssets( *this, maximumCandidates, automatic );
+    }
+
+    GraphicsSystem::LoadRequest::LoadRequest( const SmartPtr<ISharedObject> &object, u64 ticket ) :
+        object( object ), ticket( ticket )
+    {
+        if( auto listener = dynamic_cast<Factory::Listener *>( object->getSharedObjectListener() ) )
+        {
+            // A scene can release its factory manager while a canceled request
+            // is still in the queue. Keep the allocation owner alive as well.
+            factory = listener->getFactory();
+        }
+    }
+
+    GraphicsSystem::LoadRequest &GraphicsSystem::LoadRequest::operator=( const LoadRequest &other )
+    {
+        if( this != &other )
+        {
+            object = nullptr;
+            factory = other.factory;
+            object = other.object;
+            ticket = other.ticket;
+        }
+        return *this;
     }
 
     void GraphicsSystem::updateUnloadQueue()
@@ -1128,6 +1152,7 @@ namespace workphone::render
     {
         if( scene )
         {
+            ScopedLock lifecycleLock( this );
             scene->unload( nullptr );
             m_scenes.erase( std::remove( m_scenes.begin(), m_scenes.end(), scene ), m_scenes.end() );
         }
@@ -1135,6 +1160,7 @@ namespace workphone::render
 
     void GraphicsSystem::removeAllGraphicsScenes()
     {
+        ScopedLock lifecycleLock( this );
         auto scenes = m_scenes.snapshot();
         m_scenes.clear();
         m_sceneManager = nullptr;

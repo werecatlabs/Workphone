@@ -56,13 +56,12 @@ namespace workphone::scene
     {
         try
         {
+            setActor( nullptr );
             setLoadingState( LoadingState::Unloading );
 
             auto applicationManager = core::IApplicationManager::instance();
             auto sceneManager =
                 workphone::static_pointer_cast<GameManager>( applicationManager->getGameManager() );
-
-            setActor( nullptr );
 
             auto flags = getFlags();
             if( BitUtil::getFlagValue( flags, smoothMotionFlag ) )

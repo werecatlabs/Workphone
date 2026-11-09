@@ -93,6 +93,8 @@ namespace workphone
             /** Set the dragging state. */
             void setDragging( bool dragging );
 
+            void updateVisibility() override;
+
             WP_CLASS_REGISTER_DECL;
 
         protected:

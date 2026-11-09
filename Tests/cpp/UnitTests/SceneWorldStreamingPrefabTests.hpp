@@ -337,6 +337,7 @@ BOOST_AUTO_TEST_CASE( saving_a_live_streaming_prefab_keeps_resident_cells_out_of
     auto prefabs = guard.applicationManager->getPrefabManager(); BOOST_REQUIRE( prefabs );
     const auto savedPath = output + "/saved.prefab";
     prefabs->savePrefab( savedPath, instance );
+    BOOST_REQUIRE( std::filesystem::is_regular_file( savedPath.c_str() ) );
     BOOST_CHECK( resident->getFlag( IGameActor::ActorFlagDontSave ) );
     auto saved = prefabs->loadPrefab( savedPath ); BOOST_REQUIRE( saved );
     auto document = dynamic_pointer_cast<Properties>( saved->getData() ); BOOST_REQUIRE( document );
@@ -366,7 +367,9 @@ BOOST_AUTO_TEST_CASE( saving_a_live_streaming_prefab_keeps_resident_cells_out_of
     guard.scene->removeActor( instance ); parent->addChild( instance );
     auto ordinary = guard.createBasicActor(); ordinary->setName( "Ordinary hidden child" );
     ordinary->setFlag( IGameActor::ActorFlagDontSave, true ); parent->addChild( ordinary );
-    const auto parentPath = output + "/parent.prefab"; prefabs->savePrefab( parentPath, parent );
+    const auto parentPath = output + "/parent.prefab";
+    prefabs->savePrefab( parentPath, parent );
+    BOOST_REQUIRE( std::filesystem::is_regular_file( parentPath.c_str() ) );
     BOOST_CHECK( resident->getFlag( IGameActor::ActorFlagDontSave ) );
     BOOST_CHECK( !ordinary->getFlag( IGameActor::ActorFlagDontSave ) );
     auto savedParent = prefabs->loadPrefab( parentPath ); BOOST_REQUIRE( savedParent );

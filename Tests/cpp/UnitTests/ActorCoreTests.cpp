@@ -2695,7 +2695,11 @@ BOOST_AUTO_TEST_CASE( actor_detached_unload_does_not_require_game_manager )
     BOOST_REQUIRE(manager);
     auto actor = manager->createActor();
     BOOST_REQUIRE(actor);
+    auto previousTransform = actor->getTransform();
+    BOOST_REQUIRE(previousTransform);
     actor->load(nullptr);
+    BOOST_CHECK(previousTransform->getActorPtr() == nullptr);
+    BOOST_CHECK(previousTransform->getLoadingState() == LoadingState::Unloaded);
     manager->destroyActor(actor);
     BOOST_REQUIRE(actor->getLoadingState() == LoadingState::Unloaded);
     BOOST_REQUIRE(!actor->getTransform());

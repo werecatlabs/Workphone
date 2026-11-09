@@ -213,11 +213,14 @@ BOOST_AUTO_TEST_CASE( transform_frame_time_updates_when_dirty )
 {
     auto actor = createSceneActor( *this, "FrameTimeActor" );
     BOOST_REQUIRE( actor );
+    setupPrimaryThread();
+    actor->setState( scene::IGameActor::State::Play );
     auto transform = actor->getTransform();
     BOOST_REQUIRE( transform );
 
-    transform->setFrameTime( time_interval( 0 ) );
-    transform->setFrameDeltaTime( time_interval( 0 ) );
+    transform->setDirty( false );
+    transform->setFrameTime( time_interval( -1 ) );
+    transform->setFrameDeltaTime( time_interval( -1 ) );
     transform->setDirty( true );
 
     BOOST_CHECK_GE( transform->getFrameTime(), time_interval( 0 ) );

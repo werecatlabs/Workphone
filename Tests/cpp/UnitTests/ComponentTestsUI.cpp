@@ -1416,6 +1416,7 @@ BOOST_AUTO_TEST_CASE( uiutil_scroll_input_routes_to_children )
     content->getActor()->addChild( buttonActor );
     UiUtil::loadHierarchy( window );
     window->setState( IGameActor::State::Play, true );
+    view->updateScrollBar();
     auto setBounds = []( SmartPtr<IGameActor> actor, real_Num x, real_Num y,
                          real_Num width, real_Num height ) {
         auto transform = actor->getComponent<LayoutTransform>();
@@ -1426,7 +1427,7 @@ BOOST_AUTO_TEST_CASE( uiutil_scroll_input_routes_to_children )
     setBounds( buttonActor, 110, 110, 200, 50 );
     auto bar = view->getScrollBar();
     BOOST_REQUIRE( bar );
-    bar->getActor()->setEnabled( true );
+    BOOST_REQUIRE( bar->isEnabled() );
     setBounds( bar->getActor(), 380, 100, 20, 200 );
     setBounds( bar->getBackground(), 380, 100, 20, 200 );
     auto mouse = workphone::make_ptr<MouseState>();

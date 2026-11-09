@@ -43,7 +43,13 @@ namespace workphone
             std::vector<SmartPtr<MaterialPassStateData>> pending;
         };
 
-        thread_local PublicationQueue publicationQueue;
+        PublicationQueue &publicationQueueForScope()
+        {
+            // Some native threads never publish materials. Construct their
+            // queue only when they enter a publication scope.
+            static thread_local PublicationQueue queue;
+            return queue;
+        }
 
         template <class T>
         bool sameMaterialValue( const T &a, const T &b )
@@ -592,7 +598,7 @@ namespace workphone
 
     MaterialPublicationScope::MaterialPublicationScope()
     {
-        ++publicationQueue.depth;
+        ++publicationQueueForScope().depth;
     }
 
     MaterialPublicationScope::~MaterialPublicationScope() noexcept
@@ -609,18 +615,20 @@ namespace workphone
 
     bool MaterialPublicationScope::isActive() noexcept
     {
-        return publicationQueue.depth != 0 && !publicationQueue.flushing;
+        return activePublicationQueue && activePublicationQueue->depth != 0 &&
+               !activePublicationQueue->flushing;
     }
 
     size_t MaterialPublicationScope::pendingEntryCount() noexcept
     {
-        return publicationQueue.pending.size();
+        return activePublicationQueue ? activePublicationQueue->pending.size() : 0;
     }
 
     size_t MaterialPublicationScope::retainedStorageBytes() noexcept
     {
+        const auto capacity = activePublicationQueue ? activePublicationQueue->pending.capacity() : 0;
         return sizeof( PublicationQueue ) + sizeof( activePublicationQueue ) +
-               publicationQueue.pending.capacity() * sizeof( SmartPtr<MaterialPassStateData> );
+               capacity * sizeof( SmartPtr<MaterialPassStateData> );
     }
 
     bool MaterialPublicationScope::defer( MaterialPassStateData &state ) noexcept
@@ -629,19 +637,20 @@ namespace workphone
         {
             return false;
         }
+        auto &queue = *activePublicationQueue;
         const auto address = reinterpret_cast<size_t>( &state );
         const auto slot = ( ( address >> 4 ) ^ ( address >> 12 ) ) & 255;
-        if( publicationQueue.recent[slot] == &state )
+        if( queue.recent[slot] == &state )
         {
             return true;
         }
         try
         {
-            publicationQueue.pending.push_back( state.getSharedFromThis<MaterialPassStateData>() );
+            queue.pending.push_back( state.getSharedFromThis<MaterialPassStateData>() );
             // With no hash collision every queued identity is already unique.
             // Keep the full sort/unique fallback for colliding large updates.
-            if( publicationQueue.recent[slot] ) publicationQueue.needsDeduplication = true;
-            publicationQueue.recent[slot] = &state;
+            if( queue.recent[slot] ) queue.needsDeduplication = true;
+            queue.recent[slot] = &state;
             return true;
         }
         catch( ... )
@@ -682,32 +691,34 @@ namespace workphone
             return;
         }
         m_active = false;
-        if( --publicationQueue.depth || publicationQueue.flushing || publicationQueue.pending.empty() )
+        auto &queue = *activePublicationQueue;
+        if( --queue.depth || queue.flushing || queue.pending.empty() )
         {
             return;
         }
-        auto pending = std::move( publicationQueue.pending );
-        const bool needsDeduplication = publicationQueue.needsDeduplication;
-        publicationQueue.needsDeduplication = false;
-        publicationQueue.recent.fill( nullptr );
-        publicationQueue.flushing = true;
+        auto pending = std::move( queue.pending );
+        const bool needsDeduplication = queue.needsDeduplication;
+        queue.needsDeduplication = false;
+        queue.recent.fill( nullptr );
+        queue.flushing = true;
 
         struct ReleaseQueue
         {
+            PublicationQueue &queue;
             std::vector<SmartPtr<MaterialPassStateData>> &pending;
 
             ~ReleaseQueue()
             {
-                publicationQueue.flushing = false;
+                queue.flushing = false;
                 pending
                     .clear();  // Release temporary owners outside state locks, including on exceptions.
                 // Reuse ordinary updates; discard unusually large burst capacity.
                 if( pending.capacity() <= 4096 )
                 {
-                    publicationQueue.pending.swap( pending );
+                    queue.pending.swap( pending );
                 }
             }
-        } release{ pending };
+        } release{ queue, pending };
 
         if( needsDeduplication )
         {

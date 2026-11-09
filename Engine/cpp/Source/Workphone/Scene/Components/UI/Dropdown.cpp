@@ -826,6 +826,11 @@ namespace workphone::scene
         }
     }
 
+    void Dropdown::updateVisibility()
+    {
+        updateElementVisibility( getUseNativeUI() );
+    }
+
     void Dropdown::updateElementState()
     {
         if( getUseNativeUI() && isLoaded() && !getElement() )

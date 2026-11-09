@@ -1,4 +1,5 @@
 #include "UnitTests.hpp"
+#include "TestGuard.hpp"
 #include <Workphone/Workphone.hpp>
 #include <boost/test/unit_test.hpp>
 
@@ -6,6 +7,7 @@ using namespace workphone;
 
 BOOST_AUTO_TEST_CASE( project_cache_import )
 {
+    TestGuard guard;
     try
     {
         auto applicationManager = core::IApplicationManager::instance();
@@ -27,9 +29,12 @@ BOOST_AUTO_TEST_CASE( project_cache_import )
 
         auto files = fileSystem->getSystemFiles();
         BOOST_CHECK( files.empty() == true );
-        fileSystem->addFolder( "./", true );
 
         auto resourceDatabase = applicationManager->getResourceDatabase();
+        auto previousDatabaseManager = resourceDatabase->getDatabaseManager();
+        guard.addCleanup( [resourceDatabase, previousDatabaseManager]() mutable {
+            resourceDatabase->setDatabaseManager( previousDatabaseManager );
+        } );
 
         auto assetDatabaseManager = workphone::make_ptr<AssetDatabaseManager>();
         resourceDatabase->setDatabaseManager( assetDatabaseManager );
@@ -118,7 +123,6 @@ BOOST_AUTO_TEST_CASE( project_cache )
 
         auto files = fileSystem->getSystemFiles();
         BOOST_CHECK( files.empty() == true );
-        fileSystem->addFolder( "./", true );
 
         auto resourceDatabase = workphone::make_ptr<ResourceDatabase>();
         applicationManager->setResourceDatabase( resourceDatabase );
@@ -134,8 +138,6 @@ BOOST_AUTO_TEST_CASE( project_cache )
             fileSystem->createDirectories( projectPath );
         }
         Path::setWorkingDirectory( projectPath );
-
-        fileSystem->addFolder( projectPath, true );
 
         applicationManager->setCachePath( projectPath + "/Cache/" );
 
