@@ -1,5 +1,5 @@
 #include <WPVehiclePhysics/WPVehiclePhysicsPCH.hpp>
-#include <WPVehiclePhysics/HelicopterTurbineEngine .hpp>
+#include <WPVehiclePhysics/HelicopterTurbineEngine.hpp>
 #include <Workphone/Math/MathUtil.hpp>
 
 namespace workphone::vehicle
