@@ -1,6 +1,6 @@
 #include <WPVehiclePhysics/WPVehiclePhysicsPCH.hpp>
 #include "WPVehiclePhysics/EngineClutchUnit.hpp"
-#include "WPVehiclePhysics/HeliVars.hpp"
+#include "WPVehiclePhysics/WPVehiclePhysicsTypes.hpp"
 #include "WPVehiclePhysics/HelicopterDynamics.hpp"
 #include <Workphone/Workphone.hpp>
 

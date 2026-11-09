@@ -5,7 +5,7 @@
 #include <WPVehiclePhysics/CAircraftAttachment.hpp>
 #include <WPVehiclePhysics/EngineClutchUnit.hpp>
 #include "WPVehiclePhysics/CBatteryPack.hpp"
-#include <WPVehiclePhysics/HeliVars.hpp>
+#include <WPVehiclePhysics/WPVehiclePhysicsTypes.hpp>
 #include "WPVehiclePhysics/VehiclePhysicsMath.hpp"
 #include <Workphone/Interface/Vehicle/IAerodymanicsWind.hpp>
 
