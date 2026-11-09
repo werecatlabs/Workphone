@@ -195,6 +195,16 @@ wp_s32 wp_graphics_scene_batch_prepare( wp_graphics_scene *, const wp_camera *,
 void wp_graphics_scene_batch_clear( wp_graphics_scene_batch * );
 wp_s32 wp_graphics_scene_batch_validate( const wp_graphics_scene *, const wp_graphics_scene_batch * );
 
+/* Reuses unchanged visibility without capture, transforms or culling. Validates
+ * the resolved incoming camera identity, cull policy and all captured revisions.
+ * Each output view owns independent indices, so sorting/occlusion cannot mutate
+ * the source. Keep an unfiltered source when reusing across frames. NULL camera
+ * selects active/default. Reuse work counters are zero; shared storage remains
+ * reported. Failure leaves output unchanged. Owner-thread lifetime rules above
+ * apply; source and output must be distinct. */
+wp_s32 wp_graphics_scene_batch_reuse( const wp_graphics_scene *, const wp_camera *,
+    const wp_graphics_scene_batch *source, wp_graphics_scene_batch *out );
+
 /* Visits the union of admitted objects, once each in main-then-shadow order.
  * The callback returns nonzero on success and must leave scene inputs and the
  * views intact. Scene and views must remain owned. */

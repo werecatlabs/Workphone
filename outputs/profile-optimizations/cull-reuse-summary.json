@@ -1,0 +1,156 @@
+[
+  {
+    "pair": 1,
+    "mode": "fresh_batch",
+    "frames": 190,
+    "median_lifecycle_ns": 4419800.0,
+    "median_prepare_ns": 4261650.0,
+    "p95_lifecycle_ns": 7296300.0,
+    "visible_min": 1000.0,
+    "visible_max": 1000.0,
+    "multiplies_max": 10157.0
+  },
+  {
+    "pair": 1,
+    "mode": "reuse_batch",
+    "frames": 3793,
+    "median_lifecycle_ns": 214900.0,
+    "median_prepare_ns": 214500.0,
+    "p95_lifecycle_ns": 453400.0,
+    "visible_min": 1000.0,
+    "visible_max": 1000.0,
+    "multiplies_max": 0.0
+  },
+  {
+    "pair": 2,
+    "mode": "fresh_batch",
+    "frames": 194,
+    "median_lifecycle_ns": 4466150.0,
+    "median_prepare_ns": 4266650.0,
+    "p95_lifecycle_ns": 7001300.0,
+    "visible_min": 1000.0,
+    "visible_max": 1000.0,
+    "multiplies_max": 10157.0
+  },
+  {
+    "pair": 2,
+    "mode": "reuse_batch",
+    "frames": 3035,
+    "median_lifecycle_ns": 247800.0,
+    "median_prepare_ns": 247300.0,
+    "p95_lifecycle_ns": 623700.0,
+    "visible_min": 1000.0,
+    "visible_max": 1000.0,
+    "multiplies_max": 0.0
+  },
+  {
+    "pair": 3,
+    "mode": "fresh_batch",
+    "frames": 230,
+    "median_lifecycle_ns": 4184400.0,
+    "median_prepare_ns": 4008900.0,
+    "p95_lifecycle_ns": 5678200.0,
+    "visible_min": 1000.0,
+    "visible_max": 1000.0,
+    "multiplies_max": 10157.0
+  },
+  {
+    "pair": 3,
+    "mode": "reuse_batch",
+    "frames": 3237,
+    "median_lifecycle_ns": 232700.0,
+    "median_prepare_ns": 232300.0,
+    "p95_lifecycle_ns": 580200.0,
+    "visible_min": 1000.0,
+    "visible_max": 1000.0,
+    "multiplies_max": 0.0
+  },
+  {
+    "pair": 4,
+    "mode": "fresh_batch",
+    "frames": 226,
+    "median_lifecycle_ns": 4289400.0,
+    "median_prepare_ns": 4112100.0,
+    "p95_lifecycle_ns": 6055400.0,
+    "visible_min": 1000.0,
+    "visible_max": 1000.0,
+    "multiplies_max": 10157.0
+  },
+  {
+    "pair": 4,
+    "mode": "reuse_batch",
+    "frames": 2630,
+    "median_lifecycle_ns": 279650.0,
+    "median_prepare_ns": 279200.0,
+    "p95_lifecycle_ns": 698200.0,
+    "visible_min": 1000.0,
+    "visible_max": 1000.0,
+    "multiplies_max": 0.0
+  },
+  {
+    "pair": 5,
+    "mode": "fresh_batch",
+    "frames": 226,
+    "median_lifecycle_ns": 4314100.0,
+    "median_prepare_ns": 4143550.0,
+    "p95_lifecycle_ns": 5806700.0,
+    "visible_min": 1000.0,
+    "visible_max": 1000.0,
+    "multiplies_max": 10157.0
+  },
+  {
+    "pair": 5,
+    "mode": "reuse_batch",
+    "frames": 2680,
+    "median_lifecycle_ns": 294850.0,
+    "median_prepare_ns": 294050.0,
+    "p95_lifecycle_ns": 676900.0,
+    "visible_min": 1000.0,
+    "visible_max": 1000.0,
+    "multiplies_max": 0.0
+  },
+  {
+    "pair": 6,
+    "mode": "fresh_batch",
+    "frames": 231,
+    "median_lifecycle_ns": 4207600.0,
+    "median_prepare_ns": 4003400.0,
+    "p95_lifecycle_ns": 5384900.0,
+    "visible_min": 1000.0,
+    "visible_max": 1000.0,
+    "multiplies_max": 10157.0
+  },
+  {
+    "pair": 6,
+    "mode": "reuse_batch",
+    "frames": 3581,
+    "median_lifecycle_ns": 208600.0,
+    "median_prepare_ns": 208300.0,
+    "p95_lifecycle_ns": 495300.0,
+    "visible_min": 1000.0,
+    "visible_max": 1000.0,
+    "multiplies_max": 0.0
+  },
+  {
+    "pair": 7,
+    "mode": "fresh_batch",
+    "frames": 190,
+    "median_lifecycle_ns": 4518550.0,
+    "median_prepare_ns": 4338650.0,
+    "p95_lifecycle_ns": 7657500.0,
+    "visible_min": 1000.0,
+    "visible_max": 1000.0,
+    "multiplies_max": 10157.0
+  },
+  {
+    "pair": 7,
+    "mode": "reuse_batch",
+    "frames": 2731,
+    "median_lifecycle_ns": 267000.0,
+    "median_prepare_ns": 266500.0,
+    "p95_lifecycle_ns": 710500.0,
+    "visible_min": 1000.0,
+    "visible_max": 1000.0,
+    "multiplies_max": 0.0
+  }
+]

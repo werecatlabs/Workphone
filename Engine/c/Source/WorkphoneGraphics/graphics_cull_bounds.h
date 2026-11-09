@@ -195,11 +195,16 @@ static void wp_cull_prepare_sat_frustum( wp_cull_frustum *out )
 
 /* Relative projections avoid subtracting two large interval centres. Skipped
  * near-zero axes retain candidates; uncertainty always enlarges the intervals. */
-static wp_s32 wp_cull_sat_axis( const wp_cull_box *box, const wp_cull_frustum *frustum, double axis[3],
-                                wp_u32 *tested )
+typedef struct wp_cull_sat_relative
 {
-    double low = DBL_MAX, high = -DBL_MAX, delta[3], value, support = 0, tolerance;
-    wp_s32 i, j;
+    double corners[8][3], radius_term, center_abs[3];
+} wp_cull_sat_relative;
+
+static wp_s32 wp_cull_sat_axis( const wp_cull_box *box, const wp_cull_frustum *frustum, double axis[3],
+                                const wp_cull_sat_relative *relative, wp_u32 *tested )
+{
+    double low = DBL_MAX, high = -DBL_MAX, value, support = 0, tolerance;
+    wp_s32 i;
     if( !wp_cull_unit( axis ) )
     {
         return 0;
@@ -207,11 +212,7 @@ static wp_s32 wp_cull_sat_axis( const wp_cull_box *box, const wp_cull_frustum *f
     ++*tested;
     for( i = 0; i < 8; ++i )
     {
-        for( j = 0; j < 3; ++j )
-        {
-            delta[j] = frustum->corners[i][j] - box->center[j];
-        }
-        value = wp_cull_dot( axis, delta );
+        value = wp_cull_dot( axis, relative->corners[i] );
         if( !wp_cull_finite( value ) )
         {
             return 0;
@@ -230,8 +231,8 @@ static wp_s32 wp_cull_sat_axis( const wp_cull_box *box, const wp_cull_frustum *f
         support += fabs( wp_cull_dot( axis, box->axes[i] ) );
     }
     tolerance = frustum->error +
-                1.0e-5 * ( 1 + box->radius + fabs( low ) + fabs( high ) + fabs( box->center[0] ) +
-                           fabs( box->center[1] ) + fabs( box->center[2] ) );
+                1.0e-5 * ( relative->radius_term + fabs( low ) + fabs( high ) + relative->center_abs[0] +
+                           relative->center_abs[1] + relative->center_abs[2] );
     if( !wp_cull_finite( support ) || !wp_cull_finite( tolerance ) )
     {
         return 0;
@@ -245,11 +246,23 @@ static wp_s32 wp_cull_sat_outside_mode( const wp_cull_box *box, const wp_cull_fr
                                         wp_u32 *tested, wp_s32 compact )
 {
     double edges[3][3], axis[3];
+    wp_cull_sat_relative relative;
     wp_s32 i, j, k, index;
     *tested = 0;
     if( !box->valid || !frustum->sat_valid )
     {
         return 0;
+    }
+    /* These values are identical for every candidate axis. Preserve the original
+     * subtraction and tolerance addition order, including conservative roundoff. */
+    relative.radius_term = 1 + box->radius;
+    for( j = 0; j < 3; ++j )
+    {
+        relative.center_abs[j] = fabs( box->center[j] );
+        for( i = 0; i < 8; ++i )
+        {
+            relative.corners[i][j] = frustum->corners[i][j] - box->center[j];
+        }
     }
     for( i = 0; i < ( compact ? frustum->face_count : 6 ); ++i )
     {
@@ -258,7 +271,7 @@ static wp_s32 wp_cull_sat_outside_mode( const wp_cull_box *box, const wp_cull_fr
         {
             axis[j] = frustum->planes[index][j];
         }
-        if( wp_cull_sat_axis( box, frustum, axis, tested ) )
+        if( wp_cull_sat_axis( box, frustum, axis, &relative, tested ) )
         {
             return 1;
         }
@@ -277,7 +290,7 @@ static wp_s32 wp_cull_sat_outside_mode( const wp_cull_box *box, const wp_cull_fr
     for( i = 0; i < 3; ++i )
     {
         wp_cull_cross( axis, edges[( i + 1 ) % 3], edges[( i + 2 ) % 3] );
-        if( wp_cull_sat_axis( box, frustum, axis, tested ) )
+        if( wp_cull_sat_axis( box, frustum, axis, &relative, tested ) )
         {
             return 1;
         }
@@ -285,7 +298,7 @@ static wp_s32 wp_cull_sat_outside_mode( const wp_cull_box *box, const wp_cull_fr
         {
             index = compact ? frustum->edge_indices[k] : k;
             wp_cull_cross( axis, edges[i], frustum->edges[index] );
-            if( wp_cull_sat_axis( box, frustum, axis, tested ) )
+            if( wp_cull_sat_axis( box, frustum, axis, &relative, tested ) )
             {
                 return 1;
             }

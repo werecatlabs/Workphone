@@ -1950,6 +1950,15 @@ namespace workphone::ui
 
                         renderWindow->setVisible( visible, false );
 
+                        if( applicationManager->getSceneRenderWindow() == renderWindow )
+                        {
+                            bool realtime = renderWindow->getRealtimePreview();
+                            if( ImGui::Checkbox( "Realtime preview", &realtime ) )
+                                renderWindow->setRealtimePreview( realtime );
+                            if( ImGui::IsItemHovered() )
+                                ImGui::SetTooltip( "Keep rendering while idle. Play mode and animation previews always refresh." );
+                        }
+
                         // The scene occupies the window's content region, not the full window.
                         // ImGuizmo uses this rectangle both to project the gizmo and to hit-test
                         // the mouse, so including the title bar/padding offsets interaction.
@@ -2503,6 +2512,19 @@ namespace workphone::ui
                                     m_scenePickWindow = nullptr;
                                 }
                             }
+                        }
+                        // A held brush or gizmo can change the scene without a new
+                        // native input event. Keep its manual target refreshing.
+                        const bool heldInput =
+                            ImGui::IsWindowFocused( ImGuiFocusedFlags_RootAndChildWindows ) &&
+                            ( ImGui::IsMouseDown( ImGuiMouseButton_Left ) ||
+                              ImGui::IsMouseDown( ImGuiMouseButton_Right ) ||
+                              ImGui::IsMouseDown( ImGuiMouseButton_Middle ) );
+                        if( sceneToolActive || ( sceneGizmoActive && ImGuizmo::IsUsing() ) || heldInput )
+                        {
+                            auto texture = renderWindow->getRenderTexture();
+                            if( auto target = texture ? texture->getRenderTarget() : nullptr )
+                                target->update();
                         }
                     }
 

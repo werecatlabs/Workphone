@@ -14,6 +14,7 @@
 #include <memory>
 #if defined( _WIN32 ) && WP_GRAPHICS_SYSTEM_CLAW && WP_BUILD_RENDERER_DX11
 #    include <WPGraphics/ClawHammerSystem.hpp>
+#    include <WPGraphics/ClawRendererDX11.hpp>
 #endif
 #if WP_EDITOR_AUDIO_PAUSE
 #    include <WPAudio/WPAudioManager.hpp>
@@ -1640,7 +1641,16 @@ namespace workphone::editor
 #if defined( _WIN32 ) && WP_GRAPHICS_SYSTEM_CLAW && WP_BUILD_RENDERER_DX11
                                     if( auto claw =
                                             dynamic_pointer_cast<render::ClawHammerSystem>( graphics ) )
+                                    {
+                                        // The paused pump bypasses the normal Editor update and
+                                        // its clock. Refresh the scene without advancing simulation.
+                                        auto sceneWindow = dynamic_pointer_cast<ui::IUIRenderWindow>(
+                                            app->getSceneRenderWindow() );
+                                        auto texture = sceneWindow ? sceneWindow->getRenderTexture() : nullptr;
+                                        if( auto target = texture ? texture->getRenderTarget() : nullptr )
+                                            target->update();
                                         claw->updatePausedFrame();
+                                    }
 #endif
                                 }
                             }
@@ -2250,6 +2260,7 @@ namespace workphone::editor
                                 if( graphicsSystem )
                                 {
                                     materialUpdates.commit();
+                                    updateSceneRenderTarget( t );
                                     graphicsSystem->update();
                                 }
                             }
@@ -2395,6 +2406,7 @@ namespace workphone::editor
 
     bool EditorApplication::inputEvent( SmartPtr<IInputEvent> event )
     {
+        if( event ) m_sceneRefresh.requestActivity();
         auto applicationManager = core::IApplicationManager::instance();
         WP_ASSERT( applicationManager );
 
@@ -3166,12 +3178,51 @@ namespace workphone::editor
 
             if( m_renderWindow )
             {
+                m_renderWindow->setRealtimePreview( false );
                 if( m_renderTarget )
                 {
                     m_renderWindow->setRenderTexture( m_renderTarget );
                 }
             }
         }
+    }
+
+    void EditorApplication::updateSceneRenderTarget( double now )
+    {
+#if defined( _WIN32 ) && WP_GRAPHICS_SYSTEM_CLAW && WP_BUILD_RENDERER_DX11
+        auto app = core::IApplicationManager::instancePtr();
+        auto graphics = app ? app->getGraphicsSystem() : nullptr;
+        if( !graphics || !dynamic_cast<render::ClawRendererDX11 *>( graphics->getRenderer().get() ) ||
+            !m_renderTarget ) return;
+        auto target = m_renderTarget->getRenderTarget();
+        if( !target ) return;
+        // Restrict the policy to the editor's own scene texture. Explicit requests
+        // from animation previews/tools remain pending even during idle throttling.
+        const bool realtime = app->isPlaying() || !m_renderWindow ||
+                              m_renderWindow->getRealtimePreview();
+        target->setAutoUpdated( realtime );
+        const auto viewport = target->getNumViewports() ? target->getViewport( 0 ) : nullptr;
+        const auto camera = viewport ? viewport->getCamera() : nullptr;
+        const auto size = target->getSize();
+        bool changed = m_sceneRefreshTarget != target.get() ||
+                       m_sceneRefreshCamera != camera.get() || size != m_sceneRefreshSize;
+        if( camera )
+        {
+            const auto view = camera->getViewMatrix();
+            const auto projection = camera->getProjectionMatrix();
+            for( unsigned i = 0; i < 16; ++i )
+                changed = changed || view.ptr()[i] != m_sceneRefreshView.ptr()[i] ||
+                          projection.ptr()[i] != m_sceneRefreshProjection.ptr()[i];
+            m_sceneRefreshView = view;
+            m_sceneRefreshProjection = projection;
+        }
+        m_sceneRefreshTarget = target.get();
+        m_sceneRefreshCamera = camera.get();
+        m_sceneRefreshSize = size;
+        if( m_sceneRefresh.needsFrame( now, realtime, changed ) ) target->update();
+#else
+        (void)now;
+#endif
     }
 
     void EditorApplication::createCamera()
@@ -3791,6 +3842,11 @@ namespace workphone::editor
         EventType eventType, hash_type eventValue, const Array<Parameter> &arguments,
         SmartPtr<ISharedObject> sender, SmartPtr<ISharedObject> object, SmartPtr<IEvent> event )
     {
+        if( m_application && ( eventType == EventType::UI ||
+                              eventValue == scene::IGameManager::sceneLoadedHash ||
+                              eventValue == scene::IGameManager::sceneUnloadedHash ||
+                              eventValue == IEvent::addActor ) )
+            m_application->m_sceneRefresh.requestActivity();
         auto applicationManager = core::IApplicationManager::instance();
 
         if( eventType == EventType::UI && eventValue == StringUtil::getHash( "sceneActorPicked" ) )

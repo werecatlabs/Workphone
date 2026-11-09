@@ -34,6 +34,14 @@ typedef struct wp_bench_sample
 
 static double wp_bench_frequency;
 static int wp_bench_profile_phases;
+static int wp_bench_reuse_comparison, wp_bench_reuse_mode;
+static wp_graphics_scene_batch wp_bench_baseline;
+
+static const char *wp_bench_mode_name( wp_u32 mode )
+{
+    return wp_bench_reuse_comparison ? ( mode ? "reuse_batch" : "fresh_batch" )
+                                    : ( mode ? "spatial" : "flat" );
+}
 
 static wp_u64 wp_bench_clock( void *context )
 {
@@ -70,9 +78,37 @@ static int wp_bench_number( const char *text, double minimum, double maximum, do
 static int wp_bench_parity( wp_graphics_scene *scene, wp_camera *camera, wp_u32 expected )
 {
     wp_graphics_cull_result *flat, *spatial;
+    wp_graphics_scene_batch source, reused;
     wp_mat4f a, b;
-    wp_u32 i;
-    int valid;
+    wp_u32 i, pass, count;
+    int valid, status;
+    if( wp_bench_reuse_comparison )
+    {
+        memset( &source, 0, sizeof( source ) );
+        memset( &reused, 0, sizeof( reused ) );
+        wp_graphics_scene_set_cull_flags( scene, 3 );
+        status = wp_graphics_scene_batch_prepare( scene, camera, NULL, NULL, &source );
+        valid = status == WP_GRAPHICS_CULL_OK &&
+                wp_graphics_scene_batch_reuse( scene, camera, &source, &reused ) == WP_GRAPHICS_CULL_OK;
+        for( pass = 0; valid && pass < 2; ++pass )
+        {
+            flat = pass ? source.shadow : source.main;
+            spatial = pass ? reused.shadow : reused.main;
+            count = (wp_u32)wp_graphics_cull_result_get_visible_count( flat );
+            valid = ( pass || count == expected ) &&
+                    (wp_u32)wp_graphics_cull_result_get_visible_count( spatial ) == count &&
+                    wp_graphics_cull_result_get_transform_dispatch_count( spatial ) == 0;
+            for( i = 0; valid && i < count; ++i )
+                valid = wp_graphics_cull_result_get_object( flat, (wp_s32)i ) ==
+                            wp_graphics_cull_result_get_object( spatial, (wp_s32)i ) &&
+                        wp_graphics_cull_result_get_world_matrix( flat, (wp_s32)i, &a ) &&
+                        wp_graphics_cull_result_get_world_matrix( spatial, (wp_s32)i, &b ) &&
+                        memcmp( &a, &b, sizeof( a ) ) == 0;
+        }
+        wp_graphics_scene_batch_clear( &source );
+        wp_graphics_scene_batch_clear( &reused );
+        return valid;
+    }
     wp_graphics_scene_set_cull_flags( scene, 3 );
     flat = wp_graphics_scene_prepare_cull( scene, camera, WP_GRAPHICS_CULL_PASS_MAIN );
     wp_graphics_scene_set_cull_flags( scene, 11 );
@@ -96,11 +132,23 @@ static int wp_bench_frame( wp_graphics_scene *scene, wp_camera *camera, wp_u32 e
                            wp_bench_sample *sample )
 {
     wp_graphics_cull_result *result;
+    wp_graphics_scene_batch batch;
     wp_transform_job_stats transforms;
     double begin, captured, retire, end;
+    memset( &batch, 0, sizeof( batch ) );
     begin = wp_bench_now();
-    result = wp_graphics_scene_prepare_cull_profiled( scene, camera, WP_GRAPHICS_CULL_PASS_MAIN,
-                 wp_bench_profile_phases ? wp_bench_clock : NULL, NULL );
+    if( wp_bench_reuse_comparison )
+    {
+        if( ( wp_bench_reuse_mode
+                  ? wp_graphics_scene_batch_reuse( scene, camera, &wp_bench_baseline, &batch )
+                  : wp_graphics_scene_batch_prepare( scene, camera,
+                        wp_bench_profile_phases ? wp_bench_clock : NULL, NULL, &batch ) ) != WP_GRAPHICS_CULL_OK )
+            return 0;
+        result = batch.main;
+    }
+    else
+        result = wp_graphics_scene_prepare_cull_profiled( scene, camera, WP_GRAPHICS_CULL_PASS_MAIN,
+                     wp_bench_profile_phases ? wp_bench_clock : NULL, NULL );
     captured = wp_bench_now();
     if( !result )
     {
@@ -114,13 +162,16 @@ static int wp_bench_frame( wp_graphics_scene *scene, wp_camera *camera, wp_u32 e
     sample->hash_probes = transforms.capture_hash_probes;
     sample->hash_collisions = transforms.capture_hash_collisions;
     sample->hash_fallbacks = transforms.capture_hash_fallbacks;
-    if( !wp_graphics_cull_result_get_timing_stats( result, &sample->timing ) && wp_bench_profile_phases )
+    if( !wp_graphics_cull_result_get_timing_stats( result, &sample->timing ) && wp_bench_profile_phases &&
+        !( wp_bench_reuse_comparison && wp_bench_reuse_mode ) )
     {
-        wp_graphics_cull_result_destroy( result );
+        if( wp_bench_reuse_comparison ) wp_graphics_scene_batch_clear( &batch );
+        else wp_graphics_cull_result_destroy( result );
         return 0;
     }
     retire = wp_bench_now();
-    wp_graphics_cull_result_destroy( result );
+    if( wp_bench_reuse_comparison ) wp_graphics_scene_batch_clear( &batch );
+    else wp_graphics_cull_result_destroy( result );
     end = wp_bench_now();
     sample->prepare_ns = ( captured - begin ) * 1.0e9;
     sample->retire_ns = ( end - retire ) * 1.0e9;
@@ -144,8 +195,9 @@ int wp_graphics_cull_benchmark_main( int argc, char **argv )
     wp_u32 objects, pairs, seed, workers, pair, order, mode, i, count, cluster, expected;
     int result = 1;
     setlocale( LC_NUMERIC, "C" );
-    if( ( argc != 9 && argc != 10 ) ||
-        ( argc == 10 && strcmp( argv[9], "0" ) && strcmp( argv[9], "1" ) ) ||
+    if( ( argc != 9 && argc != 10 && argc != 11 ) ||
+        ( argc >= 10 && strcmp( argv[9], "0" ) && strcmp( argv[9], "1" ) ) ||
+        ( argc == 11 && strcmp( argv[10], "reuse" ) ) ||
         !wp_bench_number( argv[3], 64, 50000, &values[0] ) ||
         !wp_bench_number( argv[4], 0, 60, &values[1] ) ||
         !wp_bench_number( argv[5], .01, 120, &values[2] ) ||
@@ -155,7 +207,7 @@ int wp_graphics_cull_benchmark_main( int argc, char **argv )
     {
         fprintf( stderr,
                  "Usage: --cull-benchmark csv objects[64..50000] warmup-s measurement-s pairs seed "
-                 "workers [profile-phases=0|1]\n" );
+                  "workers [profile-phases=0|1] [reuse]\n" );
         return 2;
     }
     objects = (wp_u32)values[0];
@@ -167,7 +219,8 @@ int wp_graphics_cull_benchmark_main( int argc, char **argv )
         return 2;
     }
     warmup = values[1];
-    wp_bench_profile_phases = argc == 10 && !strcmp( argv[9], "1" );
+    wp_bench_profile_phases = argc >= 10 && !strcmp( argv[9], "1" );
+    wp_bench_reuse_comparison = argc == 11;
     seconds = values[2];
     expected = ( objects + 9u ) / 10u;
     if( !QueryPerformanceFrequency( &frequency ) || frequency.QuadPart <= 0 )
@@ -245,7 +298,11 @@ int wp_graphics_cull_benchmark_main( int argc, char **argv )
         for( order = 0; order < 2; ++order )
         {
             mode = ( pair + order ) % 2u;
-            wp_graphics_scene_set_cull_flags( scene, mode ? 11u : 3u );
+            wp_bench_reuse_mode = mode != 0;
+            wp_graphics_scene_set_cull_flags( scene, mode && !wp_bench_reuse_comparison ? 11u : 3u );
+            if( wp_bench_reuse_comparison &&
+                wp_graphics_scene_batch_prepare( scene, camera, NULL, NULL, &wp_bench_baseline ) !=
+                    WP_GRAPHICS_CULL_OK ) goto cleanup;
             begin = wp_bench_now();
             do
             {
@@ -276,7 +333,7 @@ int wp_graphics_cull_benchmark_main( int argc, char **argv )
                 fprintf( file,
                          "%lu,%lu,%s,%lu,%.0f,%.0f,%.0f,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%.0f,%.0f,%."
                          "0f,%.0f,%d,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%lu,%.0f,%.0f,%lu,%lu\n",
-                         (unsigned long)( pair + 1u ), (unsigned long)order, mode ? "spatial" : "flat",
+                         (unsigned long)( pair + 1u ), (unsigned long)order, wp_bench_mode_name( mode ),
                          (unsigned long)i, s->prepare_ns, s->retire_ns, s->prepare_ns + s->retire_ns,
                          (unsigned long)objects, (unsigned long)s->visible, (unsigned long)s->multiplies,
                          (unsigned long)s->bounds.sphere_tests, (unsigned long)s->bounds.box_tests,
@@ -284,7 +341,8 @@ int wp_graphics_cull_benchmark_main( int argc, char **argv )
                          (unsigned long)s->bounds.group_rejections,
                          (unsigned long)s->bounds.group_inside, (double)s->storage.publication_bytes,
                          (double)s->storage.view_array_peak_bytes, (double)s->storage.map_bytes,
-                         (double)s->storage.classification_scratch_bytes, wp_bench_profile_phases,
+                         (double)s->storage.classification_scratch_bytes,
+                         wp_bench_profile_phases && !( wp_bench_reuse_comparison && mode ),
                          (double)s->timing.capture_ns, (double)s->timing.transform_ns,
                          (double)s->timing.bounds_ns, (double)s->timing.groups_ns,
                          (double)s->timing.view_ns, (double)s->timing.visibility_ns,
@@ -304,7 +362,7 @@ int wp_graphics_cull_benchmark_main( int argc, char **argv )
             }
             fprintf( stderr,
                      "pair %lu order %lu %s: %lu frames; parity verified outside timed interval.\n",
-                     (unsigned long)( pair + 1u ), (unsigned long)order, mode ? "spatial" : "flat",
+                     (unsigned long)( pair + 1u ), (unsigned long)order, wp_bench_mode_name( mode ),
                      (unsigned long)count );
             if( !wp_bench_parity( scene, camera, expected ) )
             {
@@ -318,6 +376,7 @@ cleanup:
     {
         result = 1;
     }
+    wp_graphics_scene_batch_clear( &wp_bench_baseline );
     wp_graphics_scene_destroy( scene );
     wp_threadpool_destroy( pool );
     wp_graphics_mesh_destroy( mesh );

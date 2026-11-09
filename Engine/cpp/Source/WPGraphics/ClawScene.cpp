@@ -245,6 +245,7 @@ namespace workphone
         {
             m_occlusionHistory.reset();
             discardRenderJobs();
+            m_cachedCullJobs.reset();
             m_materialRecordWorkspace.reset();
             clearFoliageBatches();
             clearFoliageWorlds();
@@ -333,6 +334,7 @@ namespace workphone
             // Release them before the base scene retires its object factories.
             m_occlusionHistory.reset();
             discardRenderJobs();
+            m_cachedCullJobs.reset();
             m_materialRecordWorkspace.reset();
             clearFoliageBatches();
             clearFoliageWorlds();
@@ -374,6 +376,7 @@ namespace workphone
             m_foliageSimulationSeconds = 0;
             m_occlusionHistory.reset();
             discardRenderJobs();
+            m_cachedCullJobs.reset();
             m_materialRecordWorkspace.reset();
             clearFoliageBatches();
             clearFoliageWorlds();
@@ -389,6 +392,7 @@ namespace workphone
             m_foliageSimulationSeconds = 0;
             m_occlusionHistory.reset();
             discardRenderJobs();
+            m_cachedCullJobs.reset();
             m_materialRecordWorkspace.reset();
             clearFoliageBatches();
             clearFoliageWorlds();
@@ -1326,8 +1330,45 @@ namespace workphone
             jobs->camera = camera;
             jobs->sortStrategy = m_drawSortStrategy;
             jobs->sortBucketSize = m_drawSortBucketSize;
-            const auto status = wp_graphics_scene_batch_prepare( m_scene, nullptr,
-                profile ? cullProfileClock : nullptr, nullptr, &jobs->batch );
+            const auto cullStart = profile ? Clock::now() : Clock::time_point{};
+            auto status = m_cachedCullJobs
+                              ? wp_graphics_scene_batch_reuse( m_scene, nullptr,
+                                    &m_cachedCullJobs->batch, &jobs->batch )
+                              : WP_GRAPHICS_CULL_ERROR_STALE;
+            if( status == WP_GRAPHICS_CULL_OK )
+            {
+                if( profile )
+                {
+                    jobs->batch.main_prepare_ns = static_cast<u64>(
+                        std::chrono::duration_cast<std::chrono::nanoseconds>( Clock::now() - cullStart )
+                            .count() );
+                }
+            }
+            else
+            {
+                m_cachedCullJobs.reset();
+                status = wp_graphics_scene_batch_prepare( m_scene, nullptr,
+                    profile ? cullProfileClock : nullptr, nullptr, &jobs->batch );
+                if( status == WP_GRAPHICS_CULL_OK )
+                {
+                    // Retain the baseline before material sorting or occlusion can
+                    // modify this frame's indices. Cache allocation is optional.
+                    try
+                    {
+                        auto cached = std::make_shared<NativeRenderJobs>();
+                        cached->camera = camera;
+                        if( wp_graphics_scene_batch_reuse( m_scene, nullptr, &jobs->batch,
+                                &cached->batch ) == WP_GRAPHICS_CULL_OK )
+                        {
+                            m_cachedCullJobs = std::move( cached );
+                        }
+                    }
+                    catch( const std::bad_alloc & )
+                    {
+                        // The fresh frame remains valid without a retained cache.
+                    }
+                }
+            }
             const auto shadowEnd = profile ? Clock::now() : Clock::time_point{};
             if( status != WP_GRAPHICS_CULL_OK )
             {

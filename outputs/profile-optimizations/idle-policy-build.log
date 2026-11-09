@@ -1,0 +1,5 @@
+MSBuild version 18.11.0-1.26475.11+3cde5c8ec for .NET Framework
+
+  Building Custom Rule C:/dev/Workphone/Tests/cpp/CMakeLists.txt
+  EditorSceneRefreshTests.cpp
+  EditorSceneRefreshTests.vcxproj -> C:\dev\Workphone\bin\windows\v145\x64\MD\RelWithDebInfo\EditorSceneRefreshTests.exe

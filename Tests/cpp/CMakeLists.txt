@@ -7,6 +7,13 @@ include(cpp_defines)
 include(cpp_compiler_options)
 
 if(WP_BUILD_TESTS)
+    add_executable(EditorSceneRefreshTests EditorSceneRefreshTests.cpp)
+    target_compile_features(EditorSceneRefreshTests PRIVATE cxx_std_17)
+    target_include_directories(EditorSceneRefreshTests PRIVATE ${WP_ROOT}/Tools/cpp/Editor/src)
+    set_target_properties(EditorSceneRefreshTests PROPERTIES FOLDER Tests/Cpp)
+    add_test(NAME WPEditor.scene_refresh COMMAND EditorSceneRefreshTests)
+    set_tests_properties(WPEditor.scene_refresh PROPERTIES LABELS "editor;graphics;headless" TIMEOUT 30)
+
     add_executable(EditorDeferredScriptEventsTests EditorDeferredScriptEventsTests.cpp)
     target_compile_features(EditorDeferredScriptEventsTests PRIVATE cxx_std_17)
     target_include_directories(EditorDeferredScriptEventsTests PRIVATE ${WP_ROOT}/Tools/cpp/Editor/src)

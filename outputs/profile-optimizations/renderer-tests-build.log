@@ -1,0 +1,385 @@
+MSBuild version 18.11.0-1.26475.11+3cde5c8ec for .NET Framework
+
+  ClawRendererContractTests.cpp
+LINK : warning LNK4075: ignoring '/INCREMENTAL' due to '/LTCG' specification [C:\dev\Workphone\project_x64\Tests\cpp\WPGraphicsClawRendererTests.vcxproj]
+     Creating library C:/dev/Workphone/libs/windows/v145/x64/MD/RelWithDebInfo/WPGraphicsClawRendererTests.lib and object C:/dev/Workphone/libs/windows/v145/x64/MD/RelWithDebInfo/WPGraphicsClawRendererTests.exp
+  LINK : /LTCG specified but no code generation required; remove /LTCG from the link command line to improve linker performance
+  WPGraphicsClawRendererTests.vcxproj -> C:\dev\Workphone\bin\windows\v145\x64\MD\RelWithDebInfo\WPGraphicsClawRendererTests.exe
+MSBuild version 18.11.0-1.26475.11+3cde5c8ec for .NET Framework
+
+  ClawImguiManager.cpp
+  ClawDX11TargetTests.cpp
+LINK : warning LNK4075: ignoring '/INCREMENTAL' due to '/LTCG' specification [C:\dev\Workphone\project_x64\Tests\cpp\WPGraphicsClawDX11TargetTests.vcxproj]
+     Creating library C:/dev/Workphone/libs/windows/v145/x64/MD/RelWithDebInfo/WPGraphicsClawDX11TargetTests.lib and object C:/dev/Workphone/libs/windows/v145/x64/MD/RelWithDebInfo/WPGraphicsClawDX11TargetTests.exp
+  LINK : /LTCG specified but no code generation required; remove /LTCG from the link command line to improve linker performance
+  WPGraphicsClawDX11TargetTests.vcxproj -> C:\dev\Workphone\bin\windows\v145\x64\MD\RelWithDebInfo\WPGraphicsClawDX11TargetTests.exe
+MSBuild version 18.11.0-1.26475.11+3cde5c8ec for .NET Framework
+
+  ClawProductionTests.cpp
+LINK : warning LNK4075: ignoring '/INCREMENTAL' due to '/LTCG' specification [C:\dev\Workphone\project_x64\Tests\cpp\WPGraphicsClawProductionTests.vcxproj]
+     Creating library C:/dev/Workphone/libs/windows/v145/x64/MD/RelWithDebInfo/WPGraphicsClawProductionTests.lib and object C:/dev/Workphone/libs/windows/v145/x64/MD/RelWithDebInfo/WPGraphicsClawProductionTests.exp
+  LINK : /LTCG specified but no code generation required; remove /LTCG from the link command line to improve linker performance
+  WPGraphicsClawProductionTests.vcxproj -> C:\dev\Workphone\bin\windows\v145\x64\MD\RelWithDebInfo\WPGraphicsClawProductionTests.exe
+MSBuild version 18.11.0-1.26475.11+3cde5c8ec for .NET Framework
+
+  ImGuiViewportInputTests.cpp
+C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,20): error C2663: 'workphone::Properties::setProperty': no overloaded function has valid conversion for 'this' pointer [C:\dev\Workphone\project_x64\Tests\cpp\ImGuiViewportInputTests.vcxproj]
+      C:\dev\Workphone\Engine\cpp\Include\Workphone\Core\Properties.hpp(742,14):
+      could be 'void workphone::Properties::setProperty(const workphone::String &,workphone::ArrayBase<workphone::SmartPtr<workphone::scene::IComponent>,workphone::AllocatorBase<_Ty>>,bool)'
+          with
+          [
+              _Ty=workphone::SmartPtr<workphone::scene::IComponent>
+          ]
+          C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,20):
+          'void workphone::Properties::setProperty(const workphone::String &,workphone::ArrayBase<workphone::SmartPtr<workphone::scene::IComponent>,workphone::AllocatorBase<_Ty>>,bool)': cannot convert 'this' pointer from 'const T' to 'workphone::Properties &'
+          with
+          [
+              _Ty=workphone::SmartPtr<workphone::scene::IComponent>
+          ]
+          and
+          [
+              T=workphone::Properties
+          ]
+              C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,13):
+              Conversion loses qualifiers
+      C:\dev\Workphone\Engine\cpp\Include\Workphone\Core\Properties.hpp(733,14):
+      or       'void workphone::Properties::setProperty(const workphone::String &,workphone::SmartPtr<workphone::ISound>,bool)'
+          C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,20):
+          'void workphone::Properties::setProperty(const workphone::String &,workphone::SmartPtr<workphone::ISound>,bool)': cannot convert 'this' pointer from 'const T' to 'workphone::Properties &'
+          with
+          [
+              T=workphone::Properties
+          ]
+              C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,13):
+              Conversion loses qualifiers
+      C:\dev\Workphone\Engine\cpp\Include\Workphone\Core\Properties.hpp(724,14):
+      or       'void workphone::Properties::setProperty(const workphone::String &,workphone::SmartPtr<workphone::IMeshResource>,bool)'
+          C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,20):
+          'void workphone::Properties::setProperty(const workphone::String &,workphone::SmartPtr<workphone::IMeshResource>,bool)': cannot convert 'this' pointer from 'const T' to 'workphone::Properties &'
+          with
+          [
+              T=workphone::Properties
+          ]
+              C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,13):
+              Conversion loses qualifiers
+      C:\dev\Workphone\Engine\cpp\Include\Workphone\Core\Properties.hpp(715,14):
+      or       'void workphone::Properties::setProperty(const workphone::String &,workphone::SmartPtr<workphone::scene::IComponent>,bool)'
+          C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,20):
+          'void workphone::Properties::setProperty(const workphone::String &,workphone::SmartPtr<workphone::scene::IComponent>,bool)': cannot convert 'this' pointer from 'const T' to 'workphone::Properties &'
+          with
+          [
+              T=workphone::Properties
+          ]
+              C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,13):
+              Conversion loses qualifiers
+      C:\dev\Workphone\Engine\cpp\Include\Workphone\Core\Properties.hpp(706,14):
+      or       'void workphone::Properties::setProperty(const workphone::String &,workphone::SmartPtr<workphone::scene::IGameActor>,bool)'
+          C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,20):
+          'void workphone::Properties::setProperty(const workphone::String &,workphone::SmartPtr<workphone::scene::IGameActor>,bool)': cannot convert 'this' pointer from 'const T' to 'workphone::Properties &'
+          with
+          [
+              T=workphone::Properties
+          ]
+              C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,13):
+              Conversion loses qualifiers
+      C:\dev\Workphone\Engine\cpp\Include\Workphone\Core\Properties.hpp(697,14):
+      or       'void workphone::Properties::setProperty(const workphone::String &,workphone::SmartPtr<workphone::render::ITexture>,bool)'
+          C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,20):
+          'void workphone::Properties::setProperty(const workphone::String &,workphone::SmartPtr<workphone::render::ITexture>,bool)': cannot convert 'this' pointer from 'const T' to 'workphone::Properties &'
+          with
+          [
+              T=workphone::Properties
+          ]
+              C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,13):
+              Conversion loses qualifiers
+      C:\dev\Workphone\Engine\cpp\Include\Workphone\Core\Properties.hpp(688,14):
+      or       'void workphone::Properties::setProperty(const workphone::String &,workphone::SmartPtr<workphone::render::IMaterial>,bool)'
+          C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,20):
+          'void workphone::Properties::setProperty(const workphone::String &,workphone::SmartPtr<workphone::render::IMaterial>,bool)': cannot convert 'this' pointer from 'const T' to 'workphone::Properties &'
+          with
+          [
+              T=workphone::Properties
+          ]
+              C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,13):
+              Conversion loses qualifiers
+      C:\dev\Workphone\Engine\cpp\Include\Workphone\Core\Properties.hpp(679,14):
+      or       'void workphone::Properties::setProperty(const workphone::String &,workphone::SmartPtr<workphone::ISharedObject>,bool)'
+          C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,20):
+          'void workphone::Properties::setProperty(const workphone::String &,workphone::SmartPtr<workphone::ISharedObject>,bool)': cannot convert 'this' pointer from 'const T' to 'workphone::Properties &'
+          with
+          [
+              T=workphone::Properties
+          ]
+              C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,13):
+              Conversion loses qualifiers
+      C:\dev\Workphone\Engine\cpp\Include\Workphone\Core\Properties.hpp(617,14):
+      or       'void workphone::Properties::setProperty(const workphone::String &,const workphone::ColourF &,bool)'
+          C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,20):
+          'void workphone::Properties::setProperty(const workphone::String &,const workphone::ColourF &,bool)': cannot convert 'this' pointer from 'const T' to 'workphone::Properties &'
+          with
+          [
+              T=workphone::Properties
+          ]
+              C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,13):
+              Conversion loses qualifiers
+      C:\dev\Workphone\Engine\cpp\Include\Workphone\Core\Properties.hpp(608,14):
+      or       'void workphone::Properties::setProperty(const workphone::String &,const workphone::ColourI &,bool)'
+          C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,20):
+          'void workphone::Properties::setProperty(const workphone::String &,const workphone::ColourI &,bool)': cannot convert 'this' pointer from 'const T' to 'workphone::Properties &'
+          with
+          [
+              T=workphone::Properties
+          ]
+              C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,13):
+              Conversion loses qualifiers
+      C:\dev\Workphone\Engine\cpp\Include\Workphone\Core\Properties.hpp(599,14):
+      or       'void workphone::Properties::setProperty(const workphone::String &,const workphone::AABB3D &,bool)'
+          C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,20):
+          'void workphone::Properties::setProperty(const workphone::String &,const workphone::AABB3D &,bool)': cannot convert 'this' pointer from 'const T' to 'workphone::Properties &'
+          with
+          [
+              T=workphone::Properties
+          ]
+              C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,13):
+              Conversion loses qualifiers
+      C:\dev\Workphone\Engine\cpp\Include\Workphone\Core\Properties.hpp(590,14):
+      or       'void workphone::Properties::setProperty(const workphone::String &,const workphone::AABB3F &,bool)'
+          C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,20):
+          'void workphone::Properties::setProperty(const workphone::String &,const workphone::AABB3F &,bool)': cannot convert 'this' pointer from 'const T' to 'workphone::Properties &'
+          with
+          [
+              T=workphone::Properties
+          ]
+              C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,13):
+              Conversion loses qualifiers
+      C:\dev\Workphone\Engine\cpp\Include\Workphone\Core\Properties.hpp(581,14):
+      or       'void workphone::Properties::setProperty(const workphone::String &,const workphone::Transform3D &,bool)'
+          C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,20):
+          'void workphone::Properties::setProperty(const workphone::String &,const workphone::Transform3D &,bool)': cannot convert 'this' pointer from 'const T' to 'workphone::Properties &'
+          with
+          [
+              T=workphone::Properties
+          ]
+              C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,13):
+              Conversion loses qualifiers
+      C:\dev\Workphone\Engine\cpp\Include\Workphone\Core\Properties.hpp(572,14):
+      or       'void workphone::Properties::setProperty(const workphone::String &,const workphone::Transform3F &,bool)'
+          C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,20):
+          'void workphone::Properties::setProperty(const workphone::String &,const workphone::Transform3F &,bool)': cannot convert 'this' pointer from 'const T' to 'workphone::Properties &'
+          with
+          [
+              T=workphone::Properties
+          ]
+              C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,13):
+              Conversion loses qualifiers
+      C:\dev\Workphone\Engine\cpp\Include\Workphone\Core\Properties.hpp(563,14):
+      or       'void workphone::Properties::setProperty(const workphone::String &,const workphone::QuaternionD &,bool)'
+          C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,20):
+          'void workphone::Properties::setProperty(const workphone::String &,const workphone::QuaternionD &,bool)': cannot convert 'this' pointer from 'const T' to 'workphone::Properties &'
+          with
+          [
+              T=workphone::Properties
+          ]
+              C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,13):
+              Conversion loses qualifiers
+      C:\dev\Workphone\Engine\cpp\Include\Workphone\Core\Properties.hpp(554,14):
+      or       'void workphone::Properties::setProperty(const workphone::String &,const workphone::QuaternionF &,bool)'
+          C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,20):
+          'void workphone::Properties::setProperty(const workphone::String &,const workphone::QuaternionF &,bool)': cannot convert 'this' pointer from 'const T' to 'workphone::Properties &'
+          with
+          [
+              T=workphone::Properties
+          ]
+              C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,13):
+              Conversion loses qualifiers
+      C:\dev\Workphone\Engine\cpp\Include\Workphone\Core\Properties.hpp(545,14):
+      or       'void workphone::Properties::setProperty(const workphone::String &,const workphone::Vector3D &,bool)'
+          C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,20):
+          'void workphone::Properties::setProperty(const workphone::String &,const workphone::Vector3D &,bool)': cannot convert 'this' pointer from 'const T' to 'workphone::Properties &'
+          with
+          [
+              T=workphone::Properties
+          ]
+              C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,13):
+              Conversion loses qualifiers
+      C:\dev\Workphone\Engine\cpp\Include\Workphone\Core\Properties.hpp(536,14):
+      or       'void workphone::Properties::setProperty(const workphone::String &,const workphone::Vector3F &,bool)'
+          C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,20):
+          'void workphone::Properties::setProperty(const workphone::String &,const workphone::Vector3F &,bool)': cannot convert 'this' pointer from 'const T' to 'workphone::Properties &'
+          with
+          [
+              T=workphone::Properties
+          ]
+              C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,13):
+              Conversion loses qualifiers
+      C:\dev\Workphone\Engine\cpp\Include\Workphone\Core\Properties.hpp(527,14):
+      or       'void workphone::Properties::setProperty(const workphone::String &,const workphone::Vector3I &,bool)'
+          C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,20):
+          'void workphone::Properties::setProperty(const workphone::String &,const workphone::Vector3I &,bool)': cannot convert 'this' pointer from 'const T' to 'workphone::Properties &'
+          with
+          [
+              T=workphone::Properties
+          ]
+              C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,13):
+              Conversion loses qualifiers
+      C:\dev\Workphone\Engine\cpp\Include\Workphone\Core\Properties.hpp(518,14):
+      or       'void workphone::Properties::setProperty(const workphone::String &,const workphone::Vector2D &,bool)'
+          C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,20):
+          'void workphone::Properties::setProperty(const workphone::String &,const workphone::Vector2D &,bool)': cannot convert 'this' pointer from 'const T' to 'workphone::Properties &'
+          with
+          [
+              T=workphone::Properties
+          ]
+              C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,13):
+              Conversion loses qualifiers
+      C:\dev\Workphone\Engine\cpp\Include\Workphone\Core\Properties.hpp(509,14):
+      or       'void workphone::Properties::setProperty(const workphone::String &,const workphone::Vector2F &,bool)'
+          C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,20):
+          'void workphone::Properties::setProperty(const workphone::String &,const workphone::Vector2F &,bool)': cannot convert 'this' pointer from 'const T' to 'workphone::Properties &'
+          with
+          [
+              T=workphone::Properties
+          ]
+              C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,13):
+              Conversion loses qualifiers
+      C:\dev\Workphone\Engine\cpp\Include\Workphone\Core\Properties.hpp(500,14):
+      or       'void workphone::Properties::setProperty(const workphone::String &,const workphone::Vector2I &,bool)'
+          C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,20):
+          'void workphone::Properties::setProperty(const workphone::String &,const workphone::Vector2I &,bool)': cannot convert 'this' pointer from 'const T' to 'workphone::Properties &'
+          with
+          [
+              T=workphone::Properties
+          ]
+              C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,13):
+              Conversion loses qualifiers
+      C:\dev\Workphone\Engine\cpp\Include\Workphone\Core\Properties.hpp(491,14):
+      or       'void workphone::Properties::setProperty(const workphone::String &,const workphone::f64 &,bool)'
+          C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,20):
+          'void workphone::Properties::setProperty(const workphone::String &,const workphone::f64 &,bool)': cannot convert 'this' pointer from 'const T' to 'workphone::Properties &'
+          with
+          [
+              T=workphone::Properties
+          ]
+              C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,13):
+              Conversion loses qualifiers
+      C:\dev\Workphone\Engine\cpp\Include\Workphone\Core\Properties.hpp(482,14):
+      or       'void workphone::Properties::setProperty(const workphone::String &,const workphone::f32 &,bool)'
+          C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,20):
+          'void workphone::Properties::setProperty(const workphone::String &,const workphone::f32 &,bool)': cannot convert 'this' pointer from 'const T' to 'workphone::Properties &'
+          with
+          [
+              T=workphone::Properties
+          ]
+              C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,13):
+              Conversion loses qualifiers
+      C:\dev\Workphone\Engine\cpp\Include\Workphone\Core\Properties.hpp(445,14):
+      or       'void workphone::Properties::setProperty(const workphone::String &,const unsigned __int64 &,bool)'
+          C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,20):
+          'void workphone::Properties::setProperty(const workphone::String &,const unsigned __int64 &,bool)': cannot convert 'this' pointer from 'const T' to 'workphone::Properties &'
+          with
+          [
+              T=workphone::Properties
+          ]
+              C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,13):
+              Conversion loses qualifiers
+      C:\dev\Workphone\Engine\cpp\Include\Workphone\Core\Properties.hpp(436,14):
+      or       'void workphone::Properties::setProperty(const workphone::String &,const unsigned long &,bool)'
+          C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,20):
+          'void workphone::Properties::setProperty(const workphone::String &,const unsigned long &,bool)': cannot convert 'this' pointer from 'const T' to 'workphone::Properties &'
+          with
+          [
+              T=workphone::Properties
+          ]
+              C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,13):
+              Conversion loses qualifiers
+      C:\dev\Workphone\Engine\cpp\Include\Workphone\Core\Properties.hpp(426,14):
+      or       'void workphone::Properties::setProperty(const workphone::String &,const workphone::u32 &,bool)'
+          C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,20):
+          'void workphone::Properties::setProperty(const workphone::String &,const workphone::u32 &,bool)': cannot convert 'this' pointer from 'const T' to 'workphone::Properties &'
+          with
+          [
+              T=workphone::Properties
+          ]
+              C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,13):
+              Conversion loses qualifiers
+      C:\dev\Workphone\Engine\cpp\Include\Workphone\Core\Properties.hpp(417,14):
+      or       'void workphone::Properties::setProperty(const workphone::String &,const workphone::s32 &,bool)'
+          C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,20):
+          'void workphone::Properties::setProperty(const workphone::String &,const workphone::s32 &,bool)': cannot convert 'this' pointer from 'const T' to 'workphone::Properties &'
+          with
+          [
+              T=workphone::Properties
+          ]
+              C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,13):
+              Conversion loses qualifiers
+      C:\dev\Workphone\Engine\cpp\Include\Workphone\Core\Properties.hpp(408,14):
+      or       'void workphone::Properties::setProperty(const workphone::String &,const bool &,bool)'
+          C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,20):
+          'void workphone::Properties::setProperty(const workphone::String &,const bool &,bool)': cannot convert 'this' pointer from 'const T' to 'workphone::Properties &'
+          with
+          [
+              T=workphone::Properties
+          ]
+              C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,13):
+              Conversion loses qualifiers
+      C:\dev\Workphone\Engine\cpp\Include\Workphone\Core\Properties.hpp(399,14):
+      or       'void workphone::Properties::setProperty(const workphone::String &,const char *const &,bool)'
+          C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,20):
+          'void workphone::Properties::setProperty(const workphone::String &,const char *const &,bool)': cannot convert 'this' pointer from 'const T' to 'workphone::Properties &'
+          with
+          [
+              T=workphone::Properties
+          ]
+              C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,13):
+              Conversion loses qualifiers
+      C:\dev\Workphone\Engine\cpp\Include\Workphone\Core\Properties.hpp(390,14):
+      or       'void workphone::Properties::setProperty(const workphone::String &,const workphone::ArrayBase<workphone::String,workphone::AllocatorBase<_Ty>> &,bool)'
+          with
+          [
+              _Ty=workphone::String
+          ]
+          C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,20):
+          'void workphone::Properties::setProperty(const workphone::String &,const workphone::ArrayBase<workphone::String,workphone::AllocatorBase<_Ty>> &,bool)': cannot convert 'this' pointer from 'const T' to 'workphone::Properties &'
+          with
+          [
+              _Ty=workphone::String
+          ]
+          and
+          [
+              T=workphone::Properties
+          ]
+              C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,13):
+              Conversion loses qualifiers
+      C:\dev\Workphone\Engine\cpp\Include\Workphone\Core\Properties.hpp(381,14):
+      or       'void workphone::Properties::setProperty(const workphone::String &,const workphone::String &,bool)'
+          C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,20):
+          'void workphone::Properties::setProperty(const workphone::String &,const workphone::String &,bool)': cannot convert 'this' pointer from 'const T' to 'workphone::Properties &'
+          with
+          [
+              T=workphone::Properties
+          ]
+              C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,13):
+              Conversion loses qualifiers
+      C:\dev\Workphone\Engine\cpp\Include\Workphone\Core\Properties.hpp(759,14):
+      or       'void workphone::Properties::setProperty(const workphone::String &,const workphone::ArrayBase<workphone::SmartPtr<T>,workphone::AllocatorBase<_Ty>> &,bool)'
+          with
+          [
+              _Ty=workphone::SmartPtr<T>
+          ]
+          C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,20):
+          'void workphone::Properties::setProperty(const workphone::String &,const workphone::ArrayBase<workphone::SmartPtr<T>,workphone::AllocatorBase<_Ty>> &,bool)': could not deduce template argument for 'const workphone::ArrayBase<workphone::SmartPtr<T>,workphone::AllocatorBase<_Ty>> &' from 'workphone::String'
+          with
+          [
+              _Ty=workphone::SmartPtr<T>
+          ]
+      C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(253,20):
+      while trying to match the argument list '(const char *, workphone::String)'
+  
+C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(254,46): error C2662: 'void workphone::Property::setAttribute(const workphone::String &,const workphone::String &)': cannot convert 'this' pointer from 'const workphone::Property' to 'workphone::Property &' [C:\dev\Workphone\project_x64\Tests\cpp\ImGuiViewportInputTests.vcxproj]
+      C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(254,20):
+      Conversion loses qualifiers
+      C:\dev\Workphone\Engine\cpp\Include\Workphone\Core\Property.hpp(258,14):
+      see declaration of 'workphone::Property::setAttribute'
+      C:\dev\Workphone\Tests\cpp\ImGuiViewportInputTests.cpp(254,46):
+      while trying to match the argument list '(const char [9], const char *)'
+  

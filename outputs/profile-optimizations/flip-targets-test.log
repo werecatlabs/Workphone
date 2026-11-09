@@ -1,0 +1,11 @@
+Test project C:/dev/Workphone/project_x64
+    Start 43: WPGraphics.claw_dx11_targets
+1/1 Test #43: WPGraphics.claw_dx11_targets .....   Passed    8.51 sec
+
+100% tests passed out of 1
+
+Label Time Summary:
+gpu         =   8.51 sec*proc (1 test)
+graphics    =   8.51 sec*proc (1 test)
+
+Total Test time (real) =   8.74 sec

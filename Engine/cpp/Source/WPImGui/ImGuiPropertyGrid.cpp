@@ -45,9 +45,18 @@ namespace workphone::ui
             return;
         }
 
-        auto categories = Array<String>();
-        auto hasUncategorizedProperties = false;
-        for( const auto &property : properties->getPropertiesAsArray() )
+        struct CategoryRows
+        {
+            String name;
+            Array<Property *> rows;
+        };
+
+        // Keep one owned snapshot alive through every table in this group. UI
+        // edits still target Properties; the next frame observes those changes.
+        auto snapshot = properties->getPropertiesAsArray();
+        auto categories = Array<CategoryRows>();
+        auto uncategorizedRows = Array<Property *>();
+        for( auto &property : snapshot )
         {
             if( !matchesFilter( property ) )
             {
@@ -57,26 +66,33 @@ namespace workphone::ui
             auto category = property.getAttribute( "category" );
             if( StringUtil::isNullOrEmpty( category ) )
             {
-                hasUncategorizedProperties = true;
+                uncategorizedRows.push_back( &property );
             }
-            else if( std::find( categories.begin(), categories.end(), category ) == categories.end() )
+            else
             {
-                categories.push_back( category );
+                auto found = std::find_if( categories.begin(), categories.end(),
+                    [&]( const CategoryRows &rows ) { return rows.name == category; } );
+                if( found == categories.end() )
+                {
+                    categories.push_back( CategoryRows{ category, {} } );
+                    found = categories.end() - 1;
+                }
+                found->rows.push_back( &property );
             }
         }
 
         ImGui::PushID( properties.get() );
 
-        if( hasUncategorizedProperties )
+        if( !uncategorizedRows.empty() )
         {
-            drawPropertyTable( properties, parent, String(), true );
+            drawPropertyTable( properties, parent, String(), true, uncategorizedRows );
         }
 
         for( const auto &category : categories )
         {
-            if( ImGui::CollapsingHeader( category.c_str(), ImGuiTreeNodeFlags_DefaultOpen ) )
+            if( ImGui::CollapsingHeader( category.name.c_str(), ImGuiTreeNodeFlags_DefaultOpen ) )
             {
-                drawPropertyTable( properties, parent, category, false );
+                drawPropertyTable( properties, parent, category.name, false, category.rows );
             }
         }
 
@@ -182,7 +198,7 @@ namespace workphone::ui
 
     void ImGuiPropertyGrid::drawPropertyTable( SmartPtr<Properties> properties,
                                                SmartPtr<Properties> parent, const String &category,
-                                               bool uncategorized )
+                                               bool uncategorized, const Array<Property *> &rows )
     {
         ImGui::PushID( uncategorized ? "Uncategorized" : category.c_str() );
 
@@ -201,20 +217,9 @@ namespace workphone::ui
                 ImGui::EndTooltip();
             };
 
-            for( auto &property : properties->getPropertiesAsArray() )
+            for( auto *row : rows )
             {
-                if( !matchesFilter( property ) )
-                {
-                    continue;
-                }
-
-                auto propertyCategory = property.getAttribute( "category" );
-                if( uncategorized != StringUtil::isNullOrEmpty( propertyCategory ) ||
-                    ( !uncategorized && propertyCategory != category ) )
-                {
-                    continue;
-                }
-
+                auto &property = *row;
                 auto name = property.getName();
                 auto value = property.getValue();
                 auto label = property.getAttribute( "label" );

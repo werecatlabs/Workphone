@@ -1,0 +1,7 @@
+MSBuild version 18.11.0-1.26475.11+3cde5c8ec for .NET Framework
+
+  ClawDX11TargetTests.cpp
+LINK : warning LNK4075: ignoring '/INCREMENTAL' due to '/LTCG' specification [C:\dev\Workphone\project_x64\Tests\cpp\WPGraphicsClawDX11TargetTests.vcxproj]
+     Creating library C:/dev/Workphone/libs/windows/v145/x64/MD/RelWithDebInfo/WPGraphicsClawDX11TargetTests.lib and object C:/dev/Workphone/libs/windows/v145/x64/MD/RelWithDebInfo/WPGraphicsClawDX11TargetTests.exp
+  LINK : /LTCG specified but no code generation required; remove /LTCG from the link command line to improve linker performance
+  WPGraphicsClawDX11TargetTests.vcxproj -> C:\dev\Workphone\bin\windows\v145\x64\MD\RelWithDebInfo\WPGraphicsClawDX11TargetTests.exe

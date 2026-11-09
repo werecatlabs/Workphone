@@ -111,6 +111,13 @@ namespace
     class ProfileGraphics : public claw_rtt_contracts::Graphics
     {
     public:
+        void render() override
+        {
+            // This fixture keeps one camera and its native candidates unchanged
+            // across both viewports and subsequent telemetry-only updates.
+            expectReusedCull = nativeScene && draws != 0;
+            claw_rtt_contracts::Graphics::render();
+        }
         void markLoaded() { setLoadingState( LoadingState::Loaded ); }
         void startPublication() { beginSceneProfileFrame(); }
         void finishPublication() { publishSceneProfileFrame(); }
@@ -241,11 +248,13 @@ namespace
         graphics.setSceneProfilingEnabled( true );
         ok &= check( !graphics.readSceneProfile( snapshot ), "enabling telemetry does not publish old frames" );
         graphics.update();
+        // Only the two active RTT views are registered; this fixture has no
+        // default window pass to skip. The warm views share unchanged culling.
         ok &= check( graphics.readSceneProfile( snapshot ) && snapshot.serial && snapshot.registeredScenes == 1 &&
                      snapshot.scenePreparations == 2 && snapshot.mainViews == 2 && snapshot.shadowViews == 2 &&
-                     snapshot.candidates == 2 && snapshot.mainVisible == 2 && snapshot.transformDispatches == 2 &&
-                     snapshot.completedPasses == 2 && snapshot.skippedPasses == 1 && !snapshot.failedPasses,
-                     "typed telemetry aggregates actual scene/view pairs and completed native passes once" );
+                     snapshot.candidates == 2 && snapshot.mainVisible == 2 && snapshot.transformDispatches == 0 &&
+                     snapshot.completedPasses == 2 && snapshot.skippedPasses == 0 && !snapshot.failedPasses,
+                     "typed telemetry counts both warmed views and passes without inventing transform work" );
         ok &= check( snapshot.dx11Available && snapshot.dx11DrawsLifetime && snapshot.materialRecords == 2 &&
                      snapshot.materialBindings == 2 && snapshot.materialMeshes == 2 &&
                      snapshot.materialStorageReusedViews == 2 && !snapshot.materialStorageAllocations &&
@@ -1038,6 +1047,8 @@ namespace
             current->setVisibilityFlags( ~u32( 0 ) );
         }
         ok &= check( scene->prepareRenderJobs( nullptr, true, &renderer ), "scene material publication must prepare" );
+        ok &= check( scene->getPreparedTransformDispatchCount() == 1,
+                     "first scene publication captures native transforms" );
         ClawScene::MaterialPreparationStatistics materialStats;
         ClawScene::PreparationTiming timing;
         ok &= check( scene->getPreparedMaterialStatistics( materialStats ) && materialStats.records == 1 &&
@@ -1063,8 +1074,9 @@ namespace
         }
         auto inFlight = scene->retainJobs();
         ok &= check( scene->prepareRenderJobs( nullptr, false, &renderer ) && !retired.expired() &&
+                     scene->getPreparedTransformDispatchCount() == 0 &&
                      scene->getPreparedMaterialStatistics( materialStats ) && !materialStats.reused_storage,
-                     "a retained consumer prevents storage reuse and preserves old material owners" );
+                     "unchanged culling reuses its snapshot while retained consumers preserve old material owners" );
         inFlight.reset();
         ok &= check( retired.expired(), "releasing the final old consumer retires its material version" );
         renderer.clear( ColourF::Black ); scene->render( static_cast<IRenderer *>( &renderer ) );
@@ -1073,6 +1085,7 @@ namespace
         ok &= check( currentPixels[offset + 1] > 200 && currentPixels[offset] < 10,
                      "the next scene publication displays the edited green material" );
         ok &= check( scene->prepareRenderJobs( nullptr, false, &renderer ) &&
+                     scene->getPreparedTransformDispatchCount() == 0 &&
                      scene->getPreparedMaterialStatistics( materialStats ) && materialStats.reused_storage &&
                      materialStats.storage_allocations == 0 && materialStats.retained_storage_bytes > 0,
                      "the next exclusive publication reuses storage without upstream allocations" );
@@ -1081,6 +1094,10 @@ namespace
                      scene->retainedBytes() > 0,
                      "retired scene jobs report no retained material publication" );
         const auto warmStorageAllocations = scene->retainedAllocations();
+        ok &= check( scene->prepareRenderJobs( nullptr, false, &renderer ) &&
+                     scene->getPreparedTransformDispatchCount() == 0,
+                     "frame retirement retains only the unchanged culling baseline" );
+        scene->discardRenderJobs();
         renderer.clear( ColourF::Black ); scene->render( static_cast<IRenderer *>( &renderer ) );
         ok &= check( !scene->getPreparedMaterialStatistics( materialStats ) &&
                      scene->retainedAllocations() == warmStorageAllocations,

@@ -1449,6 +1449,64 @@ wp_s32 wp_graphics_scene_batch_validate( const wp_graphics_scene *scene,
     return wp_graphics_cull_result_validate( batch->main, scene, batch->main->scene_generation );
 }
 
+static wp_graphics_cull_result *cull_reuse_view( const wp_graphics_cull_result *source )
+{
+    wp_graphics_cull_result *copy;
+    wp_s32 *indices;
+    size_t bytes = (size_t)source->visible_count * sizeof( *indices );
+    if( !source->snapshot || source->snapshot->references == (wp_u32)-1 ) return NULL;
+    copy = (wp_graphics_cull_result *)malloc( sizeof( *copy ) );
+    if( !copy ) return NULL;
+    indices = bytes ? (wp_s32 *)malloc( bytes ) : NULL;
+    if( bytes && !indices ) { free( copy ); return NULL; }
+    if( bytes ) memcpy( indices, source->indices, bytes );
+    *copy = *source;
+    copy->indices = indices;
+    ++copy->snapshot->references;
+    copy->transform_dispatches = 0;
+    memset( &copy->transform_stats, 0, sizeof( copy->transform_stats ) );
+    memset( &copy->bounds_stats, 0, sizeof( copy->bounds_stats ) );
+    memset( &copy->sort_stats, 0, sizeof( copy->sort_stats ) );
+    memset( &copy->timing, 0, sizeof( copy->timing ) );
+    copy->timing_valid = 0;
+    copy->storage.view_index_bytes = bytes;
+    copy->storage.view_array_peak_bytes = bytes;
+    copy->storage.classification_scratch_bytes = 0;
+    return copy;
+}
+
+wp_s32 wp_graphics_scene_batch_reuse( const wp_graphics_scene *scene, const wp_camera *camera,
+    const wp_graphics_scene_batch *source, wp_graphics_scene_batch *out )
+{
+    wp_graphics_scene_batch candidate;
+    const wp_graphics_cull_result *main;
+    wp_u32 flags;
+    wp_s32 status;
+    if( !scene || !out || source == out || !cull_batch_views_match( source ) )
+        return WP_GRAPHICS_CULL_ERROR_INVALID_ARGUMENT;
+    if( !camera ) camera = scene->active_camera ? scene->active_camera : scene->default_camera;
+    main = source->main;
+    flags = wp_graphics_scene_get_cull_flags( scene );
+    if( main->camera != camera || main->sphere_test != !!( flags & WP_GRAPHICS_CULL_SPHERE_TEST ) ||
+        main->sat_test != !!( flags & WP_GRAPHICS_CULL_SAT_TEST ) ||
+        main->group_test != !!( flags & WP_GRAPHICS_CULL_GROUP_TEST ) ||
+        main->spatial_test != !!( flags & WP_GRAPHICS_CULL_SPATIAL_TEST ) )
+        return WP_GRAPHICS_CULL_ERROR_STALE;
+    status = wp_graphics_scene_batch_validate( scene, source );
+    if( status != WP_GRAPHICS_CULL_OK ) return status;
+    memset( &candidate, 0, sizeof( candidate ) );
+    candidate.main = cull_reuse_view( main );
+    if( candidate.main ) candidate.shadow = cull_reuse_view( source->shadow );
+    if( !candidate.main || !candidate.shadow )
+    {
+        wp_graphics_scene_batch_clear( &candidate );
+        return WP_GRAPHICS_CULL_ERROR_OUT_OF_MEMORY;
+    }
+    wp_graphics_scene_batch_clear( out );
+    *out = candidate;
+    return WP_GRAPHICS_CULL_OK;
+}
+
 wp_s32 wp_graphics_scene_batch_visit( const wp_graphics_scene *scene, const wp_graphics_scene_batch *batch,
     wp_graphics_scene_batch_visit_func visit, void *data )
 {

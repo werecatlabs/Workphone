@@ -47,7 +47,8 @@ namespace workphone
             bool matchesFilter( const Property &property ) const;
             bool hasMatchingProperties( SmartPtr<Properties> properties ) const;
             void drawPropertyTable( SmartPtr<Properties> properties, SmartPtr<Properties> parent,
-                                    const String &category, bool uncategorized );
+                                    const String &category, bool uncategorized,
+                                    const Array<Property *> &rows );
 
             AtomicSmartPtr<Properties> m_properties;
             String m_filter;

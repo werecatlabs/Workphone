@@ -1,0 +1,21 @@
+CMake Warning (deprecated) at CMakeLists.txt:1 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+This warning is for project developers.  Use -Wno-author or -Wno-deprecated
+to suppress it.
+
+-- Selecting Windows SDK version 10.0.26100.0 to target Windows 10.0.26300.
+--   Path: C:/dev/lioncat_proprietary
+-- Boost: static libraries, shared runtime, MPI OFF, Python OFF, testing OFF
+-- Boost: libraries included: chrono;context;date_time;filesystem;json;system;thread;timer;test
+-- Boost.Context: architecture x86_64, binary format pe, ABI ms, assembler masm, suffix .asm, implementation fcontext
+-- Boost.Thread: threading API is win32
+-- Use procesors : 8
+-- C# compiler not found. Skipping C# tools.
+-- Configuring done (9.4s)
+-- Generating done (28.3s)
+-- Build files have been written to: C:/dev/Workphone/project_x64

@@ -30,6 +30,8 @@
 #include <memory>
 #include <limits>
 #include <stdexcept>
+#include <atomic>
+#include <thread>
 
 namespace
 {
@@ -429,6 +431,114 @@ namespace
         }
         return ok;
     }
+
+    bool testPipelineRenderSettings()
+    {
+        using namespace workphone;
+        using namespace workphone::render;
+        GraphicsPipeline pipeline;
+        bool ok = true;
+        const auto legacy = pipeline.getRenderSettings();
+        ok &= check( legacy == pipeline.getRenderSettings() && !legacy->bloom &&
+                         !legacy->ambientOcclusion && legacy->antiAliasing == 0 &&
+                         !legacy->localLights && legacy->tiledLights,
+                     "unchanged legacy pipelines must reuse an immutable snapshot without project effects" );
+        ok &= check( !legacy->output[0].hdr && legacy->output[0].colorSpace == 0 &&
+                         legacy->output[0].tonemapping == 0 && legacy->output[1].hdr &&
+                         legacy->output[1].colorSpace == 1 && legacy->output[1].tonemapping == 3,
+                     "legacy scene textures and the main window must retain their distinct output defaults" );
+
+        auto project = make_ptr<Properties>();
+        project->setProperty( "quality.preset", 2 );
+        project->setProperty( "graphics.dynamicResolution", true );
+        project->setProperty( "graphics.frameRateLimit", 0 );
+        project->setProperty( "graphics.renderScale", 0.75f );
+        project->setProperty( "graphics.lightingMode", 3 );
+        pipeline.setProperties( project );
+        const auto inherited = pipeline.getRenderSettings();
+        ok &= check( inherited != legacy && inherited->bloom && inherited->ambientOcclusion &&
+                         inherited->antiAliasing == 2 && inherited->dynamicResolution &&
+                         inherited->frameRateLimit == 15 && inherited->renderScale == 0.75f &&
+                         inherited->localLights && inherited->clusteredLights && inherited->tiledLights &&
+                         !legacy->bloom && !legacy->dynamicResolution,
+                     "project presets must resolve inherited effects and preserve snapshots held by older frames" );
+        pipeline.enableBloom( true );
+        ok &= check( inherited == pipeline.getRenderSettings(),
+                     "reapplying an unchanged toggle must not rebuild native render settings" );
+        pipeline.enableBloom( false );
+        pipeline.enableGTAO( false );
+        pipeline.enableTAA( false );
+        pipeline.enableMotionBlur( true );
+        const auto custom = pipeline.getRenderSettings();
+        ok &= check( !custom->bloom && !custom->ambientOcclusion && custom->antiAliasing == 0 &&
+                         custom->motionBlur && inherited->bloom,
+                     "direct effect changes must invalidate inherited options without mutating prior frames" );
+
+        auto overrides = make_ptr<Properties>();
+        overrides->setProperty( "graphics.bloom", true );
+        overrides->setProperty( "graphics.postProcessing", false );
+        overrides->setProperty( "graphics.antiAliasing", 4 );
+        overrides->setProperty( "graphics.hdr", false );
+        overrides->setProperty( "graphics.tonemapping", 2 );
+        pipeline.setProperties( overrides );
+        const auto disabled = pipeline.getRenderSettings();
+        ok &= check( !disabled->bloom && !disabled->motionBlur && !disabled->ambientOcclusion &&
+                         disabled->antiAliasing == 4 && !disabled->output[0].hdr &&
+                         !disabled->output[1].hdr && disabled->output[0].colorSpace == 0 &&
+                         disabled->output[1].colorSpace == 1 && disabled->output[0].tonemapping == 2,
+                     "post-processing gates effects, explicit AA survives, and legacy color fallback survives explicit HDR off" );
+
+        auto replacement = make_ptr<Properties>();
+        replacement->setProperty( "Replace project settings", true );
+        replacement->setProperty( "graphics.postProcessing", true );
+        replacement->setProperty( "Quality", 0 );
+        pipeline.setProperties( replacement );
+        const auto low = pipeline.getRenderSettings();
+        ok &= check( !low->dynamicResolution && low->frameRateLimit == 60 && low->renderScale == 1.f &&
+                         !low->localLights && !low->bloom && !low->motionBlur &&
+                         !low->ambientOcclusion && low->antiAliasing == 0,
+                     "replacing a project must discard old GPU overrides and apply its preset before capture" );
+        pipeline.setQualityLevel( QualityLevel::High );
+        const auto high = pipeline.getRenderSettings();
+        ok &= check( high->bloom && high->ambientOcclusion && high->antiAliasing == 0,
+                     "direct quality changes update inherited effects without inventing an AA project preset" );
+        auto hdr = pipeline.getHdrSettings();
+        hdr.m_enableAgxToneMapping = false;
+        pipeline.setHdrSettings( hdr );
+        ok &= check( !pipeline.getRenderSettings()->legacyToneMapping && high->legacyToneMapping,
+                     "legacy main-window tone mapping changes must invalidate the snapshot" );
+
+        GraphicsPipeline concurrentPipeline;
+        auto first = make_ptr<Properties>();
+        first->setProperty( "graphics.renderScale", 0.5f );
+        first->setProperty( "graphics.antiAliasing", 2 );
+        first->setProperty( "graphics.bloom", false );
+        auto second = make_ptr<Properties>();
+        second->setProperty( "graphics.renderScale", 1.0f );
+        second->setProperty( "graphics.antiAliasing", 4 );
+        second->setProperty( "graphics.bloom", true );
+        concurrentPipeline.setProperties( first );
+        std::atomic<bool> start{ false };
+        std::thread writer( [&] {
+            while( !start.load( std::memory_order_acquire ) ) std::this_thread::yield();
+            for( int i = 0; i != 256; ++i )
+                concurrentPipeline.setProperties( i % 2 == 0 ? second : first );
+        } );
+        start.store( true, std::memory_order_release );
+        bool coherent = true;
+        for( int i = 0; i != 512; ++i )
+        {
+            const auto current = concurrentPipeline.getRenderSettings();
+            coherent = coherent &&
+                       ( ( current->renderScale == 0.5f && current->antiAliasing == 2 && !current->bloom ) ||
+                         ( current->renderScale == 1.0f && current->antiAliasing == 4 && current->bloom ) );
+            std::this_thread::yield();
+        }
+        writer.join();
+        ok &= check( coherent,
+                     "concurrent project edits must publish complete render settings without mixing revisions" );
+        return ok;
+    }
 }  // namespace
 
 int main()
@@ -442,6 +552,7 @@ int main()
     ok &= testDefaultShaderCompiler();
     ok &= testUiInput();
     ok &= testToggleSwitch();
+    ok &= testPipelineRenderSettings();
 
     {
         using namespace workphone;

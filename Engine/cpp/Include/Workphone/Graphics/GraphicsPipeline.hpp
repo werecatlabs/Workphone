@@ -41,6 +41,7 @@ namespace workphone
             virtual ~GraphicsPipeline() override;
             SmartPtr<Properties> getProperties() const override;
             void setProperties( SmartPtr<Properties> properties ) override;
+            std::shared_ptr<const GraphicsPipelineRenderSettings> getRenderSettings() const override;
 
             WP_CLASS_REGISTER_DECL;
 
@@ -446,6 +447,7 @@ namespace workphone
 
             mutable RecursiveMutex m_mutex;  ///< Thread safety mutex.
             SmartPtr<Properties> m_projectSettings;
+            mutable std::shared_ptr<const GraphicsPipelineRenderSettings> m_renderSettings;
 
             // Initialization state
             bool m_initialized = false;  ///< True if pipeline is initialized.

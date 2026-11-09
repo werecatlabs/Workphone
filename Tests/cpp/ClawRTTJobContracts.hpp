@@ -328,6 +328,7 @@ public:
     ~Graphics() override { removeScenes(); }
     bool fail = false;
     bool retireSceneAfterDraw = false;
+    bool expectReusedCull = false;
     SmartPtr<ClawScene> nativeScene;
     SmartPtr<ClawMesh> nativeMesh;
     std::vector<SmartPtr<ClawMesh>> extraMeshes;
@@ -351,12 +352,13 @@ public:
         auto renderer = dynamic_pointer_cast<ClawRendererDX11>(getRenderer());
         if(nativeScene) {
             require(nativeScene->validateRenderJobs(), "frame must publish transform/cull dependency before draw");
-            require(nativeScene->getPreparedTransformDispatchCount()==1,
-                "active colour/shadow pass must share one transform dispatch");
+            require(nativeScene->getPreparedTransformDispatchCount()==(expectReusedCull ? 0u : 1u),
+                "active colour/shadow pass captures once or reuses unchanged culling without transforms");
             wp_transform_job_stats transforms{}; wp_graphics_cull_bounds_stats bounds{};
             wp_u32 candidates=0,visible=0;
             require(nativeScene->getPreparedJobStatistics(&transforms,&bounds,&candidates,&visible) &&
-                    candidates==expectedCandidates && visible==expectedVisible && transforms.output_count==expectedCandidates,
+                    candidates==expectedCandidates && visible==expectedVisible &&
+                    transforms.output_count==(expectReusedCull ? 0u : expectedCandidates),
                     "active preparation exposes one shared candidate publication");
             wp_graphics_cull_storage_stats storage{};
             require(nativeScene->getPreparedStorageStatistics(&storage) && storage.publication_bytes>0 &&
@@ -372,7 +374,8 @@ public:
             if(nativeScene->getPreparedTiming(timing)) {
                 ++profiledPreparations;
                 wp_graphics_cull_timing_stats phases{};
-                require(nativeScene->getPreparedPhaseTiming(&phases) &&
+                const bool hasPhases=nativeScene->getPreparedPhaseTiming(&phases);
+                require(hasPhases==!expectReusedCull &&
                         phases.capture_ns+phases.transform_ns+phases.bounds_ns+phases.groups_ns+
                         phases.view_ns+phases.visibility_ns+phases.sort_ns+phases.publish_ns<=timing.main_prepare_ns,
                         "native main phases fit inside the profiled owner main interval");
@@ -739,8 +742,12 @@ inline bool integration(SmartPtr<IGraphicsWindow> window, bool withNativeScene =
     require(pixels(output)==flatPixels,"flat long-bound geometry preserves reference pixels");
     auto previousBackground=viewport->getBackgroundColour();
     viewport->setBackgroundColour(ColourF(.8f,.1f,.3f,1));
+    graphics.expectReusedCull=true;
+    const auto sentinelDraws=graphics.draws;
     graphics.frame();
-    require(pixels(output)!=flatPixels,"sentinel clear must publish before the spatial comparison");
+    require(graphics.draws==sentinelDraws+1 && pixels(output)!=flatPixels,
+            "background-only sentinel frame reuses culling and publishes its changed clear");
+    graphics.expectReusedCull=false;
     viewport->setBackgroundColour(previousBackground);
     require(wp_graphics_scene_set_cull_flags(nativeScene->getNativeScene(),11)!=0,"long-bound spatial A/B");
     graphics.setProperties(request); graphics.frame();
@@ -759,6 +766,7 @@ inline bool integration(SmartPtr<IGraphicsWindow> window, bool withNativeScene =
     good=flatPixels;
     std::puts("Active coarse RTT: 64 real meshes, full pixel A/B, block acceptance/rejection, moved nodes and member visibility passed.");
     graphics.retireSceneAfterDraw = true;
+    graphics.expectReusedCull=true;
     viewport->setBackgroundColour(ColourF(1,0,1,1));
     graphics.frame();
     require(pixels(output) == good && renderer->getRenderTarget() == window,
