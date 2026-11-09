@@ -1,7 +1,0 @@
-MSBuild version 18.11.0-1.26475.11+3cde5c8ec for .NET Framework
-
-  EditorApplication.cpp
-LINK : warning LNK4075: ignoring '/INCREMENTAL' due to '/LTCG' specification [C:\dev\Workphone\project_x64\Tools\cpp\Editor\Editor.vcxproj]
-     Creating library C:/dev/Workphone/libs/windows/v145/x64/MD/RelWithDebInfo/Editor.lib and object C:/dev/Workphone/libs/windows/v145/x64/MD/RelWithDebInfo/Editor.exp
-  LINK : /LTCG specified but no code generation required; remove /LTCG from the link command line to improve linker performance
-  Editor.vcxproj -> C:\dev\Workphone\bin\windows\v145\x64\MD\RelWithDebInfo\Editor.exe
