@@ -8,6 +8,7 @@
 #include <Workphone/Core/Properties.hpp>
 #include <Workphone/Math/AABB3.hpp>
 #include <Workphone/Math/Ray3.hpp>
+#include <memory>
 
 namespace workphone
 {
@@ -129,6 +130,32 @@ namespace workphone
             f32 m_velocityScale = 1.0f;
         };
 
+        /** Immutable, resolved options shared by all native passes in one frame. */
+        struct GraphicsPipelineRenderSettings
+        {
+            struct Output
+            {
+                bool hdr = false;
+                s32 colorSpace = 0;
+                s32 tonemapping = 0;
+            };
+
+            bool dynamicResolution = false;
+            s32 frameRateLimit = 60;
+            bool bloom = false;
+            bool motionBlur = false;
+            bool ambientOcclusion = false;
+            s32 antiAliasing = 0;
+            s32 renderPipeline = 0;
+            bool localLights = false;
+            bool clusteredLights = false;
+            bool tiledLights = true;
+            f32 renderScale = 1.0f;
+            bool legacyToneMapping = true;
+            // Index by whether this target uses legacy main-window tone mapping.
+            Output output[2];
+        };
+
         // ============================================================================
         // BASE GRAPHICS PIPELINE
         // Abstract base class for all graphics pipelines
@@ -158,6 +185,8 @@ namespace workphone
             IGraphicsPipeline();
 
             ~IGraphicsPipeline();
+
+            virtual std::shared_ptr<const GraphicsPipelineRenderSettings> getRenderSettings() const = 0;
 
             // ========================================================================
             // LIFECYCLE

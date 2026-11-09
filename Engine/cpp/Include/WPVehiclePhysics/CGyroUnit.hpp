@@ -2,7 +2,7 @@
 #define GyroUnit1H
 
 #include <WPVehiclePhysics/WPVehiclePhysicsPrerequisites.hpp>
-#include "WPVehiclePhysics/HeliVars.hpp"
+#include "WPVehiclePhysics/WPVehiclePhysicsTypes.hpp"
 
 namespace workphone::vehicle
 {

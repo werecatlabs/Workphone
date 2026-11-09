@@ -2,7 +2,7 @@
 #define Flybarless1H
 
 #include "VehiclePhysicsMath.hpp"
-#include "HeliVars.hpp"
+#include "WPVehiclePhysicsTypes.hpp"
 #include "WPVehiclePhysics/FrameOfRef.hpp"
 
 /*

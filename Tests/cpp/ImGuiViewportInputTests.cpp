@@ -1,6 +1,7 @@
 #include <WPImGui/ImGuiApplication.hpp>
 #include <WPImGui/ImGuiButton.hpp>
 #include <WPImGui/ImGuiManager.hpp>
+#include <WPImGui/ImGuiPropertyGrid.hpp>
 #include <WPImGui/ImGuiRenderWindow.hpp>
 #include <WPImGui/ImGuiText.hpp>
 #include <WPImGui/ImGuiWindow.hpp>
@@ -236,6 +237,77 @@ namespace
         state->setEventType( type );
         event->setMouseState( state );
         manager.OnEvent( event );
+    }
+
+    void categorizedPropertyGrid()
+    {
+        class FilteredGrid : public ui::ImGuiPropertyGrid
+        {
+        public:
+            void setFilter( const String &filter ) { m_filter = filter; }
+        };
+        auto grid = make_ptr<FilteredGrid>();
+        auto properties = make_ptr<Properties>();
+        const auto add = []( SmartPtr<Properties> group, const char *name,
+                             const char *category ) {
+            group->setProperty( name, String( "original" ) );
+            group->getPropertyObject( name ).setAttribute( "category", category );
+        };
+        add( properties, "Uncategorized row", "" );
+        add( properties, "First optics row", "Optics" );
+        add( properties, "Exposure row", "Exposure" );
+        add( properties, "Second optics row", "Optics" );
+        auto child = make_ptr<Properties>();
+        child->setName( "Nested group" );
+        add( child, "Nested matching row", "Nested category" );
+        properties->addChild( child );
+
+        const auto draw = [&] {
+            ImGui::NewFrame();
+            ImGui::SetNextWindowSize( ImVec2( 900, 1200 ), ImGuiCond_Always );
+            ImGui::Begin( "Categorized property grid", nullptr, ImGuiWindowFlags_NoSavedSettings );
+            ImGui::LogToBuffer();
+            grid->createElement( properties, nullptr );
+            const std::string text = ImGui::GetCurrentContext()->LogBuffer.c_str();
+            ImGui::LogFinish();
+            ImGui::End();
+            ImGui::EndFrame();
+            return text;
+        };
+        const auto once = []( const std::string &text, const char *label ) {
+            const auto position = text.find( label );
+            return position != std::string::npos &&
+                   text.find( label, position + std::strlen( label ) ) == std::string::npos;
+        };
+        auto text = draw();
+        require( once( text, "Uncategorized row" ) && once( text, "First optics row" ) &&
+                     once( text, "Second optics row" ) && once( text, "Exposure row" ) &&
+                     once( text, "Nested matching row" ),
+                 "property categories and nested groups must render each row exactly once" );
+        require( text.find( "Uncategorized row" ) < text.find( "First optics row" ) &&
+                     text.find( "First optics row" ) < text.find( "Second optics row" ) &&
+                     text.find( "Second optics row" ) < text.find( "Exposure row" ),
+                 "category grouping must preserve first-seen category and property order" );
+
+        grid->setFilter( "OPTICS" );
+        text = draw();
+        require( once( text, "First optics row" ) && once( text, "Second optics row" ) &&
+                     text.find( "Uncategorized row" ) == std::string::npos &&
+                     text.find( "Exposure row" ) == std::string::npos &&
+                     text.find( "Nested group" ) == std::string::npos,
+                 "case-insensitive filtering must retain matching category rows only" );
+
+        grid->setFilter( "Nested matching" );
+        text = draw();
+        require( once( text, "Nested matching row" ) && once( text, "Nested group" ) &&
+                     text.find( "First optics row" ) == std::string::npos,
+                 "filtering must retain the parent header of a matching nested property" );
+
+        grid->setFilter( "" );
+        properties->getPropertyObject( "First optics row" ).setAttribute( "label", "Updated optics label" );
+        text = draw();
+        require( once( text, "Updated optics label" ) && text.find( "First optics row" ) == std::string::npos,
+                 "the next property-grid frame must observe changed property metadata" );
     }
 
     void windowInitialPlacement()
@@ -661,6 +733,7 @@ int main()
         Fixture fixture;
         projectThemeSelection();
         textReplacement();
+        categorizedPropertyGrid();
         windowInitialPlacement();
         buttonKeyboardAccelerators( fixture );
 #if defined WP_PLATFORM_WIN32
@@ -668,7 +741,7 @@ int main()
 #endif
         displayedImageGeometry( fixture, true, false );
         displayedImageGeometry( fixture, false, true );
-        std::printf( "ImGui theme/text/window-placement/button/native-message/viewport input: %u assertions passed\n", assertions );
+        std::printf( "ImGui theme/text/property-grid/window-placement/button/native-message/viewport input: %u assertions passed\n", assertions );
         return 0;
     }
     catch( const std::exception &error )

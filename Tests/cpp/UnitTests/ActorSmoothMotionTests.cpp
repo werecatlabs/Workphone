@@ -2,6 +2,8 @@
 #include "TestGuard.hpp"
 #include <Workphone/Workphone.hpp>
 #include <Workphone/Graphics/GraphicsSceneNode.hpp>
+#include <Workphone/Scene/Components/Camera/VehicleCameraController.hpp>
+#include <Workphone/System/Timer.hpp>
 #include <boost/test/unit_test.hpp>
 #include <array>
 #include <functional>
@@ -108,6 +110,12 @@ namespace
     {
     public:
         State getState() const override { return State::Play; }
+    };
+
+    class ChaseCameraTimer : public Timer
+    {
+    public:
+        f64 getDeltaTime() const override { return 0.01; }
     };
 
     struct ActorSmoothMotionFixture : TestGuard
@@ -587,6 +595,45 @@ BOOST_AUTO_TEST_CASE( render_tick_reuses_hits_and_misses_then_samples_fresh_hist
         BOOST_REQUIRE( capture->sampled );
         checkTransformClose( capture->pose, i % 2 == 0 ? firstSample : revised );
     }
+}
+
+BOOST_AUTO_TEST_CASE( smooth_chase_camera_follows_target_without_history )
+{
+    auto target = createSceneActor( *this, "UnsmoothedVehicle" );
+    auto cameraActor = createSceneActor( *this, "ChaseCamera" );
+    BOOST_REQUIRE( target && cameraActor );
+    BOOST_REQUIRE( !target->isSmoothMotion() );
+    cameraActor->setSmoothMotion( true );
+    auto camera = cameraActor->addComponent<scene::VehicleCameraController>();
+    BOOST_REQUIRE( camera );
+    camera->setTarget( target );
+    camera->setHeight( 4 );
+    camera->setMinDistance( 5 );
+    camera->setHeightDamping( 200 );
+    camera->setPositionLerpFactor( 200 );
+
+    const auto previousTask = Thread::getCurrentTask();
+    auto previousTimer = applicationManager->getTimer();
+    applicationManager->setTimer( make_ptr<ChaseCameraTimer>() );
+    addCleanup( [app = applicationManager, previousTimer, previousTask]() mutable {
+        app->setTimer( previousTimer );
+        Thread::setCurrentTask( previousTask );
+    } );
+
+    const auto followAtHeight = [&]( real_Num height ) {
+        target->setPosition( Vector3<real_Num>( 0, height, 0 ) );
+        target->updateTransform();
+        Thread::setCurrentTask( TaskId::Render );
+        camera->update();
+        Thread::setCurrentTask( previousTask );
+        return cameraActor->getWorldTransform().getPosition().Y();
+    };
+
+    const auto initialHeight = followAtHeight( 2 );
+    const auto liftedHeight = followAtHeight( 40 );
+    applicationManager->setTimer( previousTimer );
+    BOOST_CHECK_CLOSE( initialHeight, 6, 0.01 );
+    BOOST_CHECK_CLOSE( liftedHeight, 44, 0.01 );
 }
 
 BOOST_AUTO_TEST_CASE( single_executor_hierarchy_update_preserves_sampled_render_pose )

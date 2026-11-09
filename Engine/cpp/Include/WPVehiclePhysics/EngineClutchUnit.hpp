@@ -3,7 +3,7 @@
 
 #include <WPVehiclePhysics/WPVehiclePhysicsPrerequisites.hpp>
 #include <Workphone/Core/FixedArray.hpp>
-#include "HeliVars.hpp"
+#include "WPVehiclePhysicsTypes.hpp"
 
 namespace workphone::vehicle
 {

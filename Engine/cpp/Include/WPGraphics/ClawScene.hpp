@@ -261,6 +261,10 @@ namespace workphone
 
             std::shared_ptr<NativeRenderJobs> m_nativeRenderJobs;
 
+            // Unsorted, unoccluded visibility only. Material records are captured
+            // anew for every prepared frame; mutable draw indices are never shared.
+            std::shared_ptr<NativeRenderJobs> m_cachedCullJobs;
+
             std::unique_ptr<FoliageWorldState> m_foliageWorlds;
 
             std::unique_ptr<OcclusionHistory> m_occlusionHistory;

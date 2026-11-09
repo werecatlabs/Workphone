@@ -2,6 +2,7 @@
 #define __IUIRenderWindow_h__
 
 #include <Workphone/Interface/UI/IUIWindow.hpp>
+#include <atomic>
 
 namespace workphone
 {
@@ -49,7 +50,14 @@ namespace workphone
              */
             virtual void setRenderTexture( SmartPtr<render::ITexture> renderTexture ) = 0;
 
+            /** Keep scene previews updating at the normal render rate while idle. */
+            bool getRealtimePreview() const;
+            void setRealtimePreview( bool enabled );
+
             WP_CLASS_REGISTER_DECL;
+
+        private:
+            std::atomic<bool> m_realtimePreview{ true };
         };
 
     }  // end namespace ui

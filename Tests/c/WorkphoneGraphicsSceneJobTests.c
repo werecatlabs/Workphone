@@ -2842,6 +2842,158 @@ done:
     wp_graphics_mesh_destroy( mesh );
 }
 
+static wp_s32 reuse_occlude_all( const wp_aabb3f *bounds, const wp_mat4f *world, void *context )
+{
+    (void)bounds; (void)world; (void)context;
+    return 1;
+}
+
+static void scene_batch_reuse_contract( void )
+{
+    static const wp_graphics_mesh_vertex_p vertices[] = {
+        { { -.2f, -.2f, -2.0f } }, { { .2f, -.2f, -2.0f } }, { { 0, .2f, -2.0f } }
+    };
+    wp_graphics_scene *scene = wp_graphics_scene_create();
+    wp_camera *camera = wp_camera_create(), *other = wp_camera_create();
+    wp_graphics_mesh *mesh = wp_graphics_mesh_create();
+    wp_graphics_object *object, *hidden;
+    wp_scenenode *node, *parent;
+    wp_graphics_scene_batch baseline, reused;
+    wp_graphics_cull_result *previous;
+    wp_graphics_cull_bounds_stats bounds;
+    wp_mat4f before, after;
+    wp_vec3f position = { .1f, 0, 0 };
+    wp_s32 visible;
+    memset( &baseline, 0, sizeof( baseline ) );
+    memset( &reused, 0, sizeof( reused ) );
+    CHECK( scene && camera && other && mesh );
+    if( !scene || !camera || !other || !mesh ) goto done;
+    CHECK( wp_graphics_mesh_set_vertices( mesh, WORKPHONE_VERTEX_FORMAT_P, vertices, 3 ) );
+    wp_graphics_mesh_compute_aabb( mesh );
+    object = wp_graphics_scene_create_object( scene );
+    hidden = wp_graphics_scene_create_object( scene );
+    node = wp_graphics_scene_create_node( scene );
+    parent = wp_graphics_scene_create_node( scene );
+    CHECK( object && hidden && node && parent );
+    if( !object || !hidden || !node || !parent ) goto done;
+    wp_graphics_object_set_mesh( object, mesh );
+    wp_graphics_object_set_render_func( object, record );
+    wp_graphics_object_set_render_func( hidden, record );
+    wp_graphics_object_set_visible( hidden, 0 );
+    wp_scenenode_attach_object( node, object );
+    wp_scenenode_add_child( parent, node );
+    wp_graphics_scene_set_active_camera( scene, camera );
+    CHECK( wp_graphics_scene_batch_prepare( scene, NULL, NULL, NULL, &baseline ) == WP_GRAPHICS_CULL_OK );
+    CHECK( wp_graphics_scene_batch_reuse( scene, NULL, &baseline, &reused ) == WP_GRAPHICS_CULL_OK );
+    visible = wp_graphics_cull_result_get_visible_count( baseline.main );
+    CHECK( visible == 1 && wp_graphics_cull_result_get_visible_count( reused.main ) == visible );
+    CHECK( wp_graphics_cull_result_get_transform_dispatch_count( reused.main ) == 0 &&
+           wp_graphics_cull_result_get_transform_dispatch_count( reused.shadow ) == 0 );
+    wp_graphics_cull_result_get_bounds_stats( reused.main, &bounds );
+    CHECK( !bounds.sat_tests && !bounds.sphere_tests && !bounds.box_tests );
+    CHECK( wp_graphics_cull_result_get_world_matrix( baseline.main, 0, &before ) &&
+           wp_graphics_cull_result_get_world_matrix( reused.main, 0, &after ) &&
+           memcmp( &before, &after, sizeof( before ) ) == 0 );
+    CHECK( wp_graphics_cull_result_apply_occlusion( reused.main, reuse_occlude_all, NULL ) == 1 );
+    CHECK( wp_graphics_cull_result_get_visible_count( baseline.main ) == visible );
+    CHECK( wp_graphics_scene_batch_reuse( scene, camera, &baseline, &reused ) == WP_GRAPHICS_CULL_OK &&
+           wp_graphics_cull_result_get_visible_count( reused.main ) == visible );
+    previous = reused.main;
+    CHECK( wp_graphics_scene_batch_reuse( scene, other, &baseline, &reused ) == WP_GRAPHICS_CULL_ERROR_STALE &&
+           reused.main == previous );
+    wp_graphics_scene_set_active_camera( scene, other );
+    CHECK( wp_graphics_scene_batch_reuse( scene, NULL, &baseline, &reused ) == WP_GRAPHICS_CULL_ERROR_STALE );
+    wp_graphics_scene_set_active_camera( scene, camera );
+    CHECK( wp_graphics_scene_batch_prepare( scene, camera, NULL, NULL, &baseline ) == WP_GRAPHICS_CULL_OK );
+    wp_camera_set_position( camera, position );
+    CHECK( wp_graphics_scene_batch_reuse( scene, camera, &baseline, &reused ) == WP_GRAPHICS_CULL_ERROR_STALE );
+    CHECK( wp_graphics_scene_batch_prepare( scene, camera, NULL, NULL, &baseline ) == WP_GRAPHICS_CULL_OK );
+    wp_camera_set_visibility_mask( camera, 1 );
+    CHECK( wp_graphics_scene_batch_reuse( scene, camera, &baseline, &reused ) == WP_GRAPHICS_CULL_ERROR_STALE );
+    CHECK( wp_graphics_scene_batch_prepare( scene, camera, NULL, NULL, &baseline ) == WP_GRAPHICS_CULL_OK );
+    wp_scenenode_set_position( parent, position );
+    CHECK( wp_graphics_scene_batch_reuse( scene, camera, &baseline, &reused ) == WP_GRAPHICS_CULL_ERROR_STALE );
+    CHECK( wp_graphics_scene_batch_prepare( scene, camera, NULL, NULL, &baseline ) == WP_GRAPHICS_CULL_OK );
+    wp_graphics_object_set_visible( hidden, 1 );
+    CHECK( wp_graphics_scene_batch_reuse( scene, camera, &baseline, &reused ) == WP_GRAPHICS_CULL_ERROR_STALE );
+    CHECK( wp_graphics_scene_batch_prepare( scene, camera, NULL, NULL, &baseline ) == WP_GRAPHICS_CULL_OK );
+    wp_graphics_object_set_render_queue_group( object, 5 );
+    CHECK( wp_graphics_scene_batch_reuse( scene, camera, &baseline, &reused ) == WP_GRAPHICS_CULL_ERROR_STALE );
+    CHECK( wp_graphics_scene_batch_prepare( scene, camera, NULL, NULL, &baseline ) == WP_GRAPHICS_CULL_OK );
+    CHECK( wp_graphics_mesh_set_vertices( mesh, WORKPHONE_VERTEX_FORMAT_P, vertices, 3 ) );
+    CHECK( wp_graphics_scene_batch_reuse( scene, camera, &baseline, &reused ) == WP_GRAPHICS_CULL_ERROR_STALE );
+    CHECK( wp_graphics_scene_batch_prepare( scene, camera, NULL, NULL, &baseline ) == WP_GRAPHICS_CULL_OK );
+    CHECK( wp_graphics_scene_set_cull_flags( scene, 0 ) );
+    CHECK( wp_graphics_scene_batch_reuse( scene, camera, &baseline, &reused ) == WP_GRAPHICS_CULL_ERROR_STALE );
+    CHECK( wp_graphics_scene_batch_prepare( scene, camera, NULL, NULL, &baseline ) == WP_GRAPHICS_CULL_OK );
+    CHECK( wp_graphics_scene_batch_reuse( scene, camera, &baseline, &reused ) == WP_GRAPHICS_CULL_OK );
+    wp_graphics_scene_batch_clear( &baseline );
+    CHECK( wp_graphics_scene_batch_validate( scene, &reused ) == WP_GRAPHICS_CULL_OK );
+    CHECK( wp_graphics_scene_create_object( scene ) != NULL );
+    CHECK( wp_graphics_scene_batch_validate( scene, &reused ) == WP_GRAPHICS_CULL_ERROR_STALE );
+done:
+    wp_graphics_scene_batch_clear( &baseline );
+    wp_graphics_scene_batch_clear( &reused );
+    wp_graphics_scene_destroy( scene );
+    wp_camera_destroy( camera );
+    wp_camera_destroy( other );
+    wp_graphics_mesh_destroy( mesh );
+}
+
+/* Original per-axis arithmetic, deliberately kept independent of the prepared
+ * relative-coordinate path to catch reordered rounding/tolerance regressions. */
+static wp_s32 reference_sat_axis( const wp_cull_box *box, const wp_cull_frustum *frustum,
+                                  double axis[3] )
+{
+    double low = DBL_MAX, high = -DBL_MAX, delta[3], value, support = 0, tolerance;
+    wp_s32 i, j;
+    if( !wp_cull_unit( axis ) ) return 0;
+    for( i = 0; i < 8; ++i )
+    {
+        for( j = 0; j < 3; ++j ) delta[j] = frustum->corners[i][j] - box->center[j];
+        value = wp_cull_dot( axis, delta );
+        if( !wp_cull_finite( value ) ) return 0;
+        if( value < low ) low = value;
+        if( value > high ) high = value;
+    }
+    for( i = 0; i < 3; ++i ) support += fabs( wp_cull_dot( axis, box->axes[i] ) );
+    tolerance = frustum->error +
+                1.0e-5 * ( 1 + box->radius + fabs( low ) + fabs( high ) + fabs( box->center[0] ) +
+                           fabs( box->center[1] ) + fabs( box->center[2] ) );
+    if( !wp_cull_finite( support ) || !wp_cull_finite( tolerance ) ) return 0;
+    return low > support + tolerance || high < -support - tolerance;
+}
+
+static void sat_relative_parity( const wp_cull_box *box, const wp_cull_frustum *frustum )
+{
+    wp_cull_sat_relative relative;
+    double axis[3], reference[3];
+    wp_u32 tested;
+    wp_s32 i, j, k;
+    relative.radius_term = 1 + box->radius;
+    for( j = 0; j < 3; ++j )
+    {
+        relative.center_abs[j] = fabs( box->center[j] );
+        for( i = 0; i < 8; ++i )
+            relative.corners[i][j] = frustum->corners[i][j] - box->center[j];
+    }
+    for( i = 0; i < 6; ++i )
+    {
+        for( j = 0; j < 3; ++j ) axis[j] = reference[j] = frustum->planes[i][j];
+        tested = 0;
+        CHECK( wp_cull_sat_axis( box, frustum, axis, &relative, &tested ) ==
+               reference_sat_axis( box, frustum, reference ) );
+        for( k = 0; k < 3; ++k )
+        {
+            wp_cull_cross( axis, box->axes[k], frustum->edges[i] );
+            memcpy( reference, axis, sizeof( axis ) );
+            tested = 0;
+            CHECK( wp_cull_sat_axis( box, frustum, axis, &relative, &tested ) ==
+                   reference_sat_axis( box, frustum, reference ) );
+        }
+    }
+}
+
 static void compact_sat_axes( void )
 {
     wp_camera *camera = wp_camera_create();
@@ -2900,6 +3052,7 @@ static void compact_sat_axes( void )
             world.m[2][3] = position.z - 2 + (wp_f32)( ( sample * 11 ) % 31 - 15 ) * 0.1f;
             wp_cull_prepare_box( &box, &bounds, NULL, &world );
             CHECK( box.valid );
+            sat_relative_parity( &box, &frustum );
             a = wp_cull_sat_outside_mode( &box, &frustum, &full, 0 );
             b = wp_cull_sat_outside( &box, &frustum, &compact );
             CHECK( a == b && compact <= full );
@@ -3427,6 +3580,7 @@ int main( int argc, char **argv )
     compact_sat_axes();
     retirement();
     scene_batch_contract();
+    scene_batch_reuse_contract();
     coarse_groups();
     spatial_groups();
     spatial_multiple_axes();

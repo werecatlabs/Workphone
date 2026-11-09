@@ -17,4 +17,14 @@ namespace workphone::ui
 
     IUIRenderWindow::~IUIRenderWindow() = default;
 
+    bool IUIRenderWindow::getRealtimePreview() const
+    {
+        return m_realtimePreview.load( std::memory_order_relaxed );
+    }
+
+    void IUIRenderWindow::setRealtimePreview( bool enabled )
+    {
+        m_realtimePreview.store( enabled, std::memory_order_relaxed );
+    }
+
 }  // namespace workphone::ui

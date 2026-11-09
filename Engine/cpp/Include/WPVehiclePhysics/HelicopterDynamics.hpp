@@ -191,7 +191,7 @@ transformation to aircraft frame is probably a bit more of a fiddle but may be e
 #include <WPVehiclePhysics/WPVehiclePhysicsPrerequisites.hpp>
 #include <WPVehiclePhysics/CAerodymanicsWind.hpp>
 #include <WPVehiclePhysics/VehiclePhysicsMath.hpp>
-#include <WPVehiclePhysics/HeliVars.hpp>
+#include <WPVehiclePhysics/WPVehiclePhysicsTypes.hpp>
 #include <WPVehiclePhysics/EngineClutchUnit.hpp>
 #include <WPVehiclePhysics/CFlybarlessUnit.hpp>
 #include <WPVehiclePhysics/CGyroUnit.hpp>

@@ -8,6 +8,8 @@
 #include <Workphone/Interface/System/IStateListener.hpp>
 #include <Workphone/System/FSMListener.hpp>
 #include <memory>
+#include <core/EditorSceneRefreshPolicy.hpp>
+#include <Workphone/Math/Matrix4.hpp>
 
 namespace workphone
 {
@@ -252,6 +254,7 @@ namespace workphone
             bool createGraphicsSystem() override;
 
             void createRenderWindow() override;
+            void updateSceneRenderTarget( double now );
             void createCamera() override;
             void createViewports() override;
             void createRenderInitJob();
@@ -274,6 +277,11 @@ namespace workphone
             SmartPtr<render::IViewport> m_mainViewport;  ///< Main viewport
 
             SmartPtr<render::ITexture> m_renderTarget;
+            EditorSceneRefreshPolicy m_sceneRefresh;
+            const void *m_sceneRefreshTarget = nullptr;
+            const void *m_sceneRefreshCamera = nullptr;
+            Vector2I m_sceneRefreshSize;
+            Matrix4<real_Num> m_sceneRefreshView, m_sceneRefreshProjection;
 
             SmartPtr<scene::CameraController> m_fpsCamera;
             SmartPtr<scene::SphericalCameraController> m_sphericalCamera;

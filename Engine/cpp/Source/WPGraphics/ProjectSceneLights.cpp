@@ -3,7 +3,7 @@
 #include <Workphone/Interface/Graphics/IGraphicsScene.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsCamera.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsLight.hpp>
-#include <Workphone/Core/Properties.hpp>
+#include <Workphone/Interface/Graphics/IGraphicsPipeline.hpp>
 #include <Workphone/Math/Matrix4.hpp>
 #include <WorkphoneGraphics/workphone_graphics_light_grid.h>
 #include <WorkphonePlatformWin32/workphone_graphics_renderer_dx11.h>
@@ -15,7 +15,8 @@
 namespace workphone::render
 {
     bool uploadProjectSceneLights( void *nativeRenderer, SmartPtr<IGraphicsScene> scene,
-                                   SmartPtr<IGraphicsCamera> camera, SmartPtr<Properties> settings )
+                                   SmartPtr<IGraphicsCamera> camera,
+                                   const GraphicsPipelineRenderSettings &settings )
     {
 #if !defined( WP_PLATFORM_WIN32 ) || !WP_BUILD_RENDERER_DX11
         (void)nativeRenderer;
@@ -86,9 +87,8 @@ namespace workphone::render
         }
         view.z_near = std::max( .0001f, camera->getNearClipDistance() );
         view.z_far = camera->getFarClipDistance();
-        const bool clustered = settings && settings->getPropertyAsInt( "graphics.lightingMode", 1 ) == 3;
-        const bool tiled =
-            clustered || ( settings && settings->getPropertyAsInt( "graphics.renderPipeline", 1 ) == 1 );
+        const bool clustered = settings.clusteredLights;
+        const bool tiled = settings.tiledLights;
         const u32 gx = tiled ? 16 : 1, gy = tiled ? 9 : 1, gz = clustered ? 16 : 1, cells = gx * gy * gz;
         std::vector<u32> ranges( cells * 2 ), indices( cells * WP_LIGHT_GRID_CELL_LIGHTS );
         u32 indexCount = 0, discarded = 0;

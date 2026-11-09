@@ -1391,17 +1391,16 @@ namespace workphone
             {
                 pipeline->setFrameDeltaTime( deltaTime );
             }
-            m_framePipelineSettings = dx11 && m_graphicsPipeline ? m_graphicsPipeline->getProperties()
+            m_framePipelineSettings = dx11 && m_graphicsPipeline ? m_graphicsPipeline->getRenderSettings()
                                                                 : nullptr;
             if( !m_framePipelineSettings ||
-                !m_framePipelineSettings->getPropertyAsBool( "graphics.dynamicResolution" ) )
+                !m_framePipelineSettings->dynamicResolution )
             {
                 m_adaptiveSceneScale = 1.0f;
             }
             else if( m_frameSimulationEnabled && std::isfinite( deltaTime ) && deltaTime > 0.0f )
             {
-                const auto fps = std::max( 15, m_framePipelineSettings->getPropertyAsInt(
-                                                   "graphics.frameRateLimit", 60 ) );
+                const auto fps = m_framePipelineSettings->frameRateLimit;
                 if( deltaTime > 1.1f / fps )
                     m_adaptiveSceneScale = std::max( 0.5f, m_adaptiveSceneScale - 0.0625f );
                 // A paced renderer can recover at its frame-rate limit.
@@ -2051,39 +2050,26 @@ namespace workphone
                 }
                 m_graphicsPipeline->setCamera( renderer->getCamera().get() );
                 m_graphicsPipeline->setScene( renderer->getCamera()->getCreator().get() );
-                const auto properties = m_frameUpdateActive && m_framePipelineSettings
+                const auto settings = m_frameUpdateActive && m_framePipelineSettings
                                             ? m_framePipelineSettings
-                                            : m_graphicsPipeline->getProperties();
-                const auto &options = *properties;
+                                            : m_graphicsPipeline->getRenderSettings();
+                const auto &options = *settings;
                 const bool legacyHdr = renderer->getRenderTarget() == getDefaultWindow() &&
-                                       m_graphicsPipeline->getHdrSettings().m_enableAgxToneMapping;
-                const auto preset = options.getPropertyAsInt( "quality.preset", 4 );
-                const bool hasPreset = preset >= 0 && preset < 4;
-                const bool post = options.getPropertyAsBool( "graphics.postProcessing", true );
-                const bool inheritEffects = hasPreset || options.hasProperty( "graphics.postProcessing" );
-                const auto effect = [&]( const char *key, const char *fallback ) {
-                    return post && options.getPropertyAsBool(
-                                       key, inheritEffects && options.getPropertyAsBool( fallback ) );
-                };
-                const bool bloom = effect( "graphics.bloom", "Bloom" );
-                const bool motionBlur = effect( "graphics.motionBlur", "Motion blur" );
-                const bool ao = effect( "graphics.ambientOcclusion", "Ambient occlusion" );
-                const s32 aa = options.getPropertyAsInt(
-                    "graphics.antiAliasing",
-                    hasPreset && options.getPropertyAsBool( "Temporal anti-aliasing" ) ? 2 : 0 );
-                const s32 pipeline = options.getPropertyAsInt( "graphics.renderPipeline" );
-                const bool localLights = options.hasProperty( "graphics.renderPipeline" ) ||
-                                         options.getPropertyAsInt( "graphics.lightingMode" ) == 3;
-                f32 scale = 1.0f;
-                options.getPropertyValue( "graphics.renderScale", scale );
-                scale *= m_adaptiveSceneScale;
+                                       options.legacyToneMapping;
+                const bool bloom = options.bloom;
+                const bool motionBlur = options.motionBlur;
+                const bool ao = options.ambientOcclusion;
+                const s32 aa = options.antiAliasing;
+                const s32 pipeline = options.renderPipeline;
+                const bool localLights = options.localLights;
+                const f32 scale = options.renderScale * m_adaptiveSceneScale;
 
                 // Scene textures used display-space output before project colour controls.
                 // Scaling, anti-aliasing and effects can use a resolve without changing that policy.
-                const s32 requestedTone = options.getPropertyAsInt( "graphics.tonemapping", -1 );
-                const bool hdr = options.getPropertyAsBool( "graphics.hdr", legacyHdr || requestedTone > 0 );
-                const s32 linear = options.getPropertyAsInt( "graphics.colorSpace", hdr || legacyHdr ? 1 : 0 );
-                const s32 tone = requestedTone >= 0 ? requestedTone : hdr ? 3 : 0;
+                const auto &output = options.output[legacyHdr ? 1 : 0];
+                const bool hdr = output.hdr;
+                const s32 linear = output.colorSpace;
+                const s32 tone = output.tonemapping;
                 const bool resolve = hdr || linear != 0 || scale != 1.0f || aa != 0 || bloom ||
                                      motionBlur || ao || localLights;
                 auto native = wp_renderer_get_dx11( dx11Renderer->getNativeRenderer() );
@@ -2106,7 +2092,7 @@ namespace workphone
                 wp_renderer_dx11_set_pipeline_mode( native, pipeline, ao );
                 if( localLights || legacyHdr )
                     uploadProjectSceneLights( native, renderer->getCamera()->getCreator(),
-                                              renderer->getCamera(), properties );
+                                              renderer->getCamera(), options );
                 else
                     wp_renderer_dx11_set_local_lights(
                         native, nullptr, 0, nullptr, nullptr, 0, 1, 1, 1, .1f, 1000.f, nullptr );

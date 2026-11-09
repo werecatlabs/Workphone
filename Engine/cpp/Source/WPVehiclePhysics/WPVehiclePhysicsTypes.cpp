@@ -1,5 +1,5 @@
 #include <WPVehiclePhysics/WPVehiclePhysicsPCH.hpp>
-#include "WPVehiclePhysics/HeliVars.hpp"
+#include "WPVehiclePhysics/WPVehiclePhysicsTypes.hpp"
 #include <Workphone/Workphone.hpp>
 
 namespace workphone::vehicle
@@ -42,10 +42,6 @@ namespace workphone::vehicle
     const int AUX2_CHANNEL = 7;
     const int CB_MODEL = 0;
     const int CB_ROTOR_HEAD = 1;
-
-    void InitHeliVars()
-    {
-    }
 
     const double RPMToOmega = Math<double>::pi() / 30.0;
     const double OmegaToRPM = 30.0 / Math<double>::pi();
