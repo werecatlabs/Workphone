@@ -1,4 +1,5 @@
 #include <WPImGui/WPImGuiPCH.hpp>
+#include <WPImGui/ImGuiUtil.hpp>
 #include <WPImGui/ImGuiProfileWindow.hpp>
 #include <Workphone/Workphone.hpp>
 #include <imgui.h>
@@ -363,7 +364,8 @@ namespace workphone::ui
                     ImGui::SameLine();
                     ImGui::Checkbox( "Pause this profile", &state.localPaused );
 
-                    ImGui::SliderFloat( "Graph height", &state.graphHeight, 40.0f, 240.0f, "%.0f" );
+                    ImGuiUtil::SliderFloatWithInput( "Graph height", &state.graphHeight, 40.0f,
+                                                     240.0f, "%.0f" );
                     ImGui::InputText( "Note", state.note, sizeof( state.note ) );
 
                     ImGui::TreePop();

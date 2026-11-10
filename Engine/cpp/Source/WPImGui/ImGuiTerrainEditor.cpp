@@ -1,4 +1,5 @@
 #include <WPImGui/WPImGuiPCH.hpp>
+#include <WPImGui/ImGuiUtil.hpp>
 #include <WPImGui/ImGuiTerrainEditor.hpp>
 #include <Workphone/Workphone.hpp>
 #include <imgui.h>
@@ -131,9 +132,9 @@ namespace workphone::ui
         ImGui::Separator();
 
         ImGui::PushItemWidth( -1 );
-        ImGui::SliderFloat( "Brush Size", &m_brushSize, 1.0f, 50.0f, "%.1f" );
-        ImGui::SliderFloat( "Brush Strength", &m_brushStrength, 0.0f, 1.0f, "%.2f" );
-        ImGui::SliderFloat( "Smooth Factor", &m_smoothFactor, 0.0f, 1.0f, "%.2f" );
+        ImGuiUtil::SliderFloatWithInput( "Brush Size", &m_brushSize, 1.0f, 50.0f, "%.1f" );
+        ImGuiUtil::SliderFloatWithInput( "Brush Strength", &m_brushStrength, 0.0f, 1.0f, "%.2f" );
+        ImGuiUtil::SliderFloatWithInput( "Smooth Factor", &m_smoothFactor, 0.0f, 1.0f, "%.2f" );
         ImGui::PopItemWidth();
 
         ImGui::EndChild();
@@ -192,8 +193,8 @@ namespace workphone::ui
 
             // Layer properties
             ImGui::PushItemWidth( -1 );
-            ImGui::SliderFloat( "Scale", &m_layer_scales[i], 0.1f, 10.0f, "%.2f" );
-            ImGui::SliderFloat( "Blend", &m_layer_blends[i], 0.0f, 1.0f, "%.2f" );
+            ImGuiUtil::SliderFloatWithInput( "Scale", &m_layer_scales[i], 0.1f, 10.0f, "%.2f" );
+            ImGuiUtil::SliderFloatWithInput( "Blend", &m_layer_blends[i], 0.0f, 1.0f, "%.2f" );
             ImGui::PopItemWidth();
 
             ImGui::EndChild();
@@ -259,7 +260,7 @@ namespace workphone::ui
 
             ImGui::PushItemWidth( -1 );
             ImGui::InputFloat3( "Position", &m_tree_positions[i][0], "%.2f" );
-            ImGui::SliderFloat( "Scale", &m_tree_scales[i], 0.1f, 5.0f, "%.2f" );
+            ImGuiUtil::SliderFloatWithInput( "Scale", &m_tree_scales[i], 0.1f, 5.0f, "%.2f" );
             ImGui::PopItemWidth();
 
             ImGui::EndChild();
@@ -299,9 +300,9 @@ namespace workphone::ui
         ImGui::Separator();
 
         ImGui::PushItemWidth( -1 );
-        ImGui::SliderFloat( "Min Height", &m_grass_min_height, 0.1f, 2.0f, "%.2f" );
-        ImGui::SliderFloat( "Max Height", &m_grass_max_height, 0.1f, 2.0f, "%.2f" );
-        ImGui::SliderFloat( "Density", &m_grass_density, 0.0f, 1.0f, "%.2f" );
+        ImGuiUtil::SliderFloatWithInput( "Min Height", &m_grass_min_height, 0.1f, 2.0f, "%.2f" );
+        ImGuiUtil::SliderFloatWithInput( "Max Height", &m_grass_max_height, 0.1f, 2.0f, "%.2f" );
+        ImGuiUtil::SliderFloatWithInput( "Density", &m_grass_density, 0.0f, 1.0f, "%.2f" );
         ImGui::PopItemWidth();
 
         ImGui::EndChild();

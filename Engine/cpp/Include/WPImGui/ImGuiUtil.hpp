@@ -14,6 +14,12 @@ namespace workphone
         public:
             static bool ToggleButton( const char *str_id, bool *v, f32 size = 1.0f );
 
+            /** Draw a slider and precise numeric entry within the current item width.
+             *  Text edits commit on Enter or focus loss; Escape cancels the edit.
+             */
+            static bool SliderFloatWithInput( const char *label, f32 *value, f32 minimum,
+                                              f32 maximum, const char *format = "%.3f" );
+
             /** Draw a compact vertical separator between two same-line controls. */
             static void SameLineSeparator( f32 width = -1.0f );
 

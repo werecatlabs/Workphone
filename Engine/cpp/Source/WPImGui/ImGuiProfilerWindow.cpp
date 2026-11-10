@@ -1,4 +1,5 @@
 #include <WPImGui/WPImGuiPCH.hpp>
+#include <WPImGui/ImGuiUtil.hpp>
 #include <WPImGui/ImGuiProfilerWindow.hpp>
 #include <WPImGui/ImGuiProfileWindow.hpp>
 #include <Workphone/Workphone.hpp>
@@ -250,8 +251,8 @@ namespace workphone::ui
         ImGui::Checkbox( "Advanced panels", &profiler_ui::g_showAdvancedProfilePanels );
 
         ImGui::SliderInt( "Max Samples", &profiler_ui::g_maxSamples, 64, 20000 );
-        ImGui::SliderFloat( "Warning ms", &profiler_ui::g_warningMs, 0.1f, 33.3f, "%.2f" );
-        ImGui::SliderFloat( "Critical ms", &profiler_ui::g_criticalMs, 0.1f, 66.6f, "%.2f" );
+        ImGuiUtil::SliderFloatWithInput( "Warning ms", &profiler_ui::g_warningMs, 0.1f, 33.3f, "%.2f" );
+        ImGuiUtil::SliderFloatWithInput( "Critical ms", &profiler_ui::g_criticalMs, 0.1f, 66.6f, "%.2f" );
 
         profiler_ui::g_maxSamples = std::max( profiler_ui::g_maxSamples, 16 );
         profiler_ui::g_warningMs = std::max( profiler_ui::g_warningMs, 0.01f );
@@ -434,10 +435,13 @@ namespace workphone::ui
             {
                 state.showBudgets = true;
                 ImGui::Text( "Frame Budgets" );
-                ImGui::SliderFloat( "CPU warning threshold", &profiler_ui::g_warningMs, 0.1f, 33.3f, "%.2f ms" );
-                ImGui::SliderFloat( "CPU critical threshold", &profiler_ui::g_criticalMs, 0.1f, 66.6f, "%.2f ms" );
-                ImGui::SliderFloat( "Capture spike threshold", &state.captureSpikeThresholdMs, 0.1f, 100.0f,
-                                    "%.2f ms" );
+                ImGuiUtil::SliderFloatWithInput( "CPU warning threshold", &profiler_ui::g_warningMs,
+                                                 0.1f, 33.3f, "%.2f ms" );
+                ImGuiUtil::SliderFloatWithInput( "CPU critical threshold", &profiler_ui::g_criticalMs,
+                                                 0.1f, 66.6f, "%.2f ms" );
+                ImGuiUtil::SliderFloatWithInput( "Capture spike threshold",
+                                                 &state.captureSpikeThresholdMs, 0.1f, 100.0f,
+                                                 "%.2f ms" );
                 ImGui::Checkbox( "Freeze capture on spike", &state.freezeOnSpike );
 
                 ImGui::Separator();

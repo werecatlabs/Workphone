@@ -1,5 +1,6 @@
 #include <WPImGui/WPImGuiPCH.hpp>
 #include <WPImGui/ImGuiLabelSliderPair.hpp>
+#include <WPImGui/ImGuiUtil.hpp>
 #include <imgui.h>
 
 namespace workphone::ui
@@ -13,9 +14,14 @@ namespace workphone::ui
     void ImGuiLabelSliderPair::update()
     {
         ImGui::PushID( this );
+        ImGui::AlignTextToFramePadding();
+        const bool labelAbove = ImGui::GetContentRegionAvail().x <
+                                ImGui::CalcTextSize( m_label.c_str() ).x +
+                                    ImGui::GetFontSize() * 18.0f;
         ImGui::Text( "%s", m_label.c_str() );
-        ImGui::SameLine();
-        if( ImGui::SliderFloat( "", &m_value, m_minValue, m_maxValue ) )
+        if( !labelAbove ) ImGui::SameLine();
+        ImGui::SetNextItemWidth( ImGui::GetContentRegionAvail().x );
+        if( ImGuiUtil::SliderFloatWithInput( "", &m_value, m_minValue, m_maxValue ) )
         {
             if( auto parent = getParent() )
             {

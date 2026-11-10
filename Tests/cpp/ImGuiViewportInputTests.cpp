@@ -1,7 +1,9 @@
 #include <WPImGui/ImGuiApplication.hpp>
 #include <WPImGui/ImGuiButton.hpp>
 #include <WPImGui/ImGuiManager.hpp>
+#include <WPImGui/ImGuiLabelSliderPair.hpp>
 #include <WPImGui/ImGuiPropertyGrid.hpp>
+#include <WPImGui/ImGuiUtil.hpp>
 #include <WPImGui/ImGuiRenderWindow.hpp>
 #include <WPImGui/ImGuiText.hpp>
 #include <WPImGui/ImGuiWindow.hpp>
@@ -589,6 +591,202 @@ namespace
         parent->removeChild( button );
     }
 
+    void preciseFloatSliders()
+    {
+        auto &io = ImGui::GetIO();
+        const bool trickle = io.ConfigInputTrickleEventQueue;
+        io.ConfigInputTrickleEventQueue = false;
+        float values[] = { .5f, 2.0f };
+        unsigned changes[] = { 0, 0 };
+        const char *labels[] = { "##precise_first", "##precise_second" };
+        ImGuiID inputIds[2]{};
+        ImVec2 inputs[2], sliderStart[2], focusTarget;
+        float width = 220.0f;
+        bool checkWidth = false;
+        const auto render = [&] {
+            ImGui::NewFrame();
+            ImGui::SetNextWindowPos( ImVec2( 20, 20 ), ImGuiCond_Always );
+            ImGui::SetNextWindowSize( ImVec2( 500, 250 ), ImGuiCond_Always );
+            ImGui::SetNextWindowFocus();
+            ImGui::Begin( "Precise floating point sliders", nullptr, ImGuiWindowFlags_NoSavedSettings );
+            for( unsigned i = 0; i < 2; ++i )
+            {
+                const auto start = ImGui::GetCursorScreenPos();
+                sliderStart[i] = ImVec2( start.x + 12.0f, start.y + ImGui::GetFrameHeight() * .5f );
+                inputs[i] = ImVec2( start.x + width - 12.0f, start.y + ImGui::GetFrameHeight() * .5f );
+                ImGui::PushID( labels[i] );
+                inputIds[i] = ImGui::GetID( "##value" );
+                ImGui::PopID();
+                ImGui::SetNextItemWidth( width );
+                if( ui::ImGuiUtil::SliderFloatWithInput( labels[i], &values[i],
+                                                        i == 0 ? 0.0f : -10.0f,
+                                                        i == 0 ? 1.0f : 10.0f, "%.2f" ) )
+                    ++changes[i];
+                if( checkWidth )
+                    require( ImGui::GetItemRectMax().x <= start.x + width + 1.0f,
+                             "slider and exact entry must fit the requested narrow item width" );
+            }
+            ImGui::Button( "Finish editing" );
+            const auto minimum = ImGui::GetItemRectMin(), maximum = ImGui::GetItemRectMax();
+            focusTarget = ImVec2( ( minimum.x + maximum.x ) * .5f, ( minimum.y + maximum.y ) * .5f );
+            ImGui::End(); ImGui::EndFrame();
+        };
+        const auto click = [&]( const ImVec2 &position ) {
+            io.AddMousePosEvent( position.x, position.y );
+            io.AddMouseButtonEvent( 0, true ); render();
+            io.AddMouseButtonEvent( 0, false ); render();
+        };
+        const auto key = [&]( ImGuiKey value ) {
+            io.AddKeyEvent( value, true ); render();
+            io.AddKeyEvent( value, false ); render();
+        };
+        const auto replace = [&]( unsigned index, const char *text ) {
+            click( inputs[index] );
+            require( ImGui::GetCurrentContext()->ActiveId == inputIds[index],
+                     "the visible numeric field must be directly clickable with its own stable ID" );
+            io.AddKeyEvent( ImGuiKey_ModCtrl, true );
+            io.AddKeyEvent( ImGuiKey_A, true ); render();
+            io.AddKeyEvent( ImGuiKey_A, false );
+            io.AddKeyEvent( ImGuiKey_ModCtrl, false ); render();
+            key( ImGuiKey_Backspace );
+            io.AddInputCharactersUTF8( text ); render();
+        };
+
+        render(); render();
+        require( inputIds[0] != inputIds[1], "adjacent precise sliders must have independent input IDs" );
+        replace( 0, "0.000012345" );
+        require( values[0] == .5f && changes[0] == 0,
+                 "unfinished numeric typing must not publish partial slider values" );
+        key( ImGuiKey_Enter );
+        require( values[0] == .000012345f && changes[0] == 1,
+                 "Enter must commit the exact tiny decimal without rounding to the slider display format" );
+        render();
+        require( changes[0] == 1, "an accepted numeric edit must report only one change" );
+
+        replace( 0, "0.123456789" );
+        click( inputs[1] ); render();
+        require( values[0] == .123456789f && changes[0] == 2 && values[1] == 2.0f,
+                 "moving focus to another control must commit precision without changing the other slider" );
+        replace( 1, "-1.23456789" ); key( ImGuiKey_Enter );
+        require( values[1] == -1.23456789f && changes[1] == 1 && values[0] == .123456789f,
+                 "negative decimals and simultaneous controls must retain their independent values" );
+        replace( 0, "7.5e-6" ); key( ImGuiKey_Enter );
+        require( values[0] == 7.5e-6f && changes[0] == 3,
+                 "precise entry must accept scientific notation" );
+
+        replace( 0, "0.75" ); key( ImGuiKey_Escape );
+        click( focusTarget ); render();
+        require( values[0] == 7.5e-6f && changes[0] == 3,
+                 "Escape must cancel a draft and must not commit it on subsequent focus loss" );
+        for( const auto invalid : { "1e9999", "1.2.3", "" } )
+        {
+            replace( 0, invalid ); key( ImGuiKey_Enter );
+            click( focusTarget ); render();
+            require( values[0] == 7.5e-6f && changes[0] == 3,
+                     "overflow, malformed and empty input must retain the last finite committed value" );
+        }
+        replace( 0, "10" ); key( ImGuiKey_Enter );
+        require( values[0] == 1.0f && changes[0] == 4,
+                 "numeric entry above the maximum must clamp when committed" );
+        replace( 1, "-20" ); click( inputs[0] ); render();
+        require( values[1] == -10.0f && changes[1] == 2,
+                 "focusing an earlier widget must commit and clamp the later widget's draft" );
+
+        click( sliderStart[0] );
+        require( values[0] < 1.0f && values[0] >= 0.0f && changes[0] > 4,
+                 "adding exact entry must preserve ordinary slider pointer interaction" );
+        width = 140.0f; checkWidth = true;
+        render();
+        replace( 0, "0.246813579" ); key( ImGuiKey_Enter );
+        require( values[0] == .246813579f,
+                 "the numeric entry must remain clickable and precise in narrow panels" );
+
+        const auto beforeFocus = changes[0];
+        click( inputs[0] );
+        values[0] = .875f; render();
+        click( focusTarget ); render();
+        require( values[0] == .875f && changes[0] == beforeFocus,
+                 "focusing without editing must not overwrite an externally updated animation value on blur" );
+
+        replace( 0, "0.654321987" ); key( ImGuiKey_Tab ); render();
+        require( values[0] == .654321987f && changes[0] == beforeFocus + 1 &&
+                     ImGui::GetCurrentContext()->ActiveId != inputIds[0],
+                 "Tab must commit the precise draft once while moving keyboard focus" );
+        io.ConfigInputTrickleEventQueue = trickle;
+    }
+
+    void preciseSliderEvents()
+    {
+        class Changes : public IEventListener
+        {
+        public:
+            Parameter handleEvent( EventType type, hash_type event, const Array<Parameter> &args,
+                SmartPtr<ISharedObject> sender, SmartPtr<ISharedObject>, SmartPtr<IEvent> ) override
+            {
+                if( type == EventType::UI && event == IEvent::handleValueChanged )
+                {
+                    ++count;
+                    correctSender = correctSender && sender.get() == expected;
+                    correctPayload = correctPayload && args.size() == 1;
+                    if( args.size() == 1 ) value = args[0].getF32();
+                }
+                return {};
+            }
+            ISharedObject *expected = nullptr;
+            unsigned count = 0;
+            bool correctSender = true, correctPayload = true;
+            float value = 0;
+        };
+        auto parent = make_ptr<ui::ImGuiWindow>();
+        auto slider = make_ptr<ui::ImGuiLabelSliderPair>();
+        auto changes = make_ptr<Changes>();
+        changes->expected = slider.get();
+        slider->setLabel( "Roughness" );
+        slider->setValue( .5f );
+        slider->addObjectListener( changes );
+        parent->addChild( slider );
+        auto &io = ImGui::GetIO();
+        const bool trickle = io.ConfigInputTrickleEventQueue;
+        io.ConfigInputTrickleEventQueue = false;
+        ImVec2 input;
+        ImGuiID inputId = 0;
+        const auto render = [&] {
+            ImGui::NewFrame();
+            ImGui::SetNextWindowPos( ImVec2( 20, 20 ), ImGuiCond_Always );
+            ImGui::SetNextWindowSize( ImVec2( 500, 200 ), ImGuiCond_Always );
+            ImGui::SetNextWindowFocus();
+            ImGui::Begin( "Shared precise slider events", nullptr, ImGuiWindowFlags_NoSavedSettings );
+            ImGui::PushID( slider.get() ); ImGui::PushID( "" );
+            inputId = ImGui::GetID( "##value" );
+            ImGui::PopID(); ImGui::PopID();
+            slider->update();
+            const auto maximum = ImGui::GetItemRectMax();
+            input = ImVec2( maximum.x - 12.0f, maximum.y - ImGui::GetFrameHeight() * .5f );
+            ImGui::End(); ImGui::EndFrame();
+        };
+        render(); render();
+        io.AddMousePosEvent( input.x, input.y );
+        io.AddMouseButtonEvent( 0, true ); render();
+        io.AddMouseButtonEvent( 0, false ); render();
+        require( ImGui::GetCurrentContext()->ActiveId == inputId,
+                 "the shared Lua and Editor slider must expose the numeric entry" );
+        io.AddKeyEvent( ImGuiKey_ModCtrl, true ); io.AddKeyEvent( ImGuiKey_A, true ); render();
+        io.AddKeyEvent( ImGuiKey_A, false ); io.AddKeyEvent( ImGuiKey_ModCtrl, false ); render();
+        io.AddInputCharactersUTF8( "0.314159265" ); render();
+        require( changes->count == 0 && slider->getValue() == .5f,
+                 "the shared slider must not notify listeners about unfinished text" );
+        io.AddKeyEvent( ImGuiKey_Enter, true ); render();
+        io.AddKeyEvent( ImGuiKey_Enter, false ); render();
+        require( slider->getValue() == .314159265f && changes->value == slider->getValue() &&
+                     changes->count == 1 && changes->correctSender && changes->correctPayload,
+                 "exact entry must dispatch one existing value-changed event with the slider and precise payload" );
+        render();
+        require( changes->count == 1, "unchanged slider frames must not dispatch duplicate events" );
+        io.ConfigInputTrickleEventQueue = trickle;
+        slider->removeObjectListener( changes );
+        parent->removeChild( slider );
+    }
+
     void projectThemeSelection()
     {
         auto settings = make_ptr<Properties>();
@@ -736,12 +934,14 @@ int main()
         categorizedPropertyGrid();
         windowInitialPlacement();
         buttonKeyboardAccelerators( fixture );
+        preciseFloatSliders();
+        preciseSliderEvents();
 #if defined WP_PLATFORM_WIN32
         nativeSystemMenuShortcuts();
 #endif
         displayedImageGeometry( fixture, true, false );
         displayedImageGeometry( fixture, false, true );
-        std::printf( "ImGui theme/text/property-grid/window-placement/button/native-message/viewport input: %u assertions passed\n", assertions );
+        std::printf( "ImGui theme/text/property-grid/window-placement/button/precise-sliders/native-message/viewport input: %u assertions passed\n", assertions );
         return 0;
     }
     catch( const std::exception &error )

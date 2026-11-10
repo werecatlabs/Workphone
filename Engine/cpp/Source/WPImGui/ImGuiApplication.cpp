@@ -3131,14 +3131,14 @@ namespace workphone::ui
 
         if( isPerspective )
         {
-            ImGui::SliderFloat( "Fov", &fov, 20.f, 110.f );
+            ImGuiUtil::SliderFloatWithInput( "Fov", &fov, 20.f, 110.f );
         }
         else
         {
-            ImGui::SliderFloat( "Ortho width", &viewWidth, 1, 20 );
+            ImGuiUtil::SliderFloatWithInput( "Ortho width", &viewWidth, 1, 20 );
         }
 
-        viewDirty |= ImGui::SliderFloat( "Distance", &m_camDistance, 1.f, 10.f );
+        viewDirty |= ImGuiUtil::SliderFloatWithInput( "Distance", &m_camDistance, 1.f, 10.f );
         ImGui::SliderInt( "Gizmo count", &m_gizmoCount, 1, 4 );
 
         if( viewDirty || firstFrame )
@@ -3235,13 +3235,13 @@ namespace workphone::ui
         }
         if( isPerspective )
         {
-            ImGui::SliderFloat( "Fov", &fov, 20.f, 110.f );
+            ImGuiUtil::SliderFloatWithInput( "Fov", &fov, 20.f, 110.f );
         }
         else
         {
-            ImGui::SliderFloat( "Ortho width", &viewWidth, 1, 20 );
+            ImGuiUtil::SliderFloatWithInput( "Ortho width", &viewWidth, 1, 20 );
         }
-        viewDirty |= ImGui::SliderFloat( "Distance", &m_camDistance, 1.f, 10.f );
+        viewDirty |= ImGuiUtil::SliderFloatWithInput( "Distance", &m_camDistance, 1.f, 10.f );
         ImGui::SliderInt( "Gizmo count", &m_gizmoCount, 1, 4 );
 
         if( viewDirty || firstFrame )

@@ -5,10 +5,99 @@
 #include <imgui.h>
 #include <imgui_internal.h>
 #include <algorithm>
+#include <cerrno>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 
 namespace workphone::ui
 {
+    bool ImGuiUtil::SliderFloatWithInput( const char *label, f32 *value, f32 minimum,
+                                         f32 maximum, const char *format )
+    {
+        const auto previous = *value;
+        const auto &style = ImGui::GetStyle();
+        const auto labelEnd = ImGui::FindRenderedTextEnd( label );
+        const auto labelWidth = ImGui::CalcTextSize( label, labelEnd ).x;
+        const auto available = ImGui::GetContentRegionAvail().x;
+        const auto requestedWidth = ImGui::CalcItemWidth();
+        const bool labelAbove = labelWidth > 0.0f &&
+                                available < labelWidth + ImGui::GetFontSize() * 18.0f;
+        const auto labelSpace = labelWidth > 0.0f && !labelAbove
+                                    ? labelWidth + style.ItemInnerSpacing.x : 0.0f;
+        const auto width = std::max( 1.0f, std::min( requestedWidth, available - labelSpace ) );
+        const auto spacing = std::min( style.ItemInnerSpacing.x, width * 0.1f );
+        const auto inputWidth = std::min( ImGui::GetFontSize() * 8.0f, ( width - spacing ) * 0.65f );
+
+        ImGui::BeginGroup();
+        ImGui::PushID( label );
+        if( labelAbove )
+        {
+            ImGui::TextUnformatted( label, labelEnd );
+        }
+        ImGui::SetNextItemWidth( width - inputWidth - spacing );
+        const bool sliderChanged = ImGui::SliderFloat(
+            "##slider", value, minimum, maximum, format,
+            ImGuiSliderFlags_AlwaysClamp | ImGuiSliderFlags_NoRoundToFormat );
+        ImGui::SameLine( 0.0f, spacing );
+        ImGui::SetNextItemWidth( inputWidth );
+
+        // Keep the draft's parsed value in window storage. ImGui owns the active
+        // text buffer, but can replace it when focus moves to an earlier widget.
+        auto storage = ImGui::GetStateStorage();
+        const auto stateId = ImGui::GetID( "##editState" );
+        const auto draftId = ImGui::GetID( "##draft" );
+        const auto frameId = ImGui::GetID( "##editFrame" );
+        const auto inputId = ImGui::GetID( "##value" );
+        constexpr int activeFlag = 1;
+        constexpr int validFlag = 2;
+        constexpr int dirtyFlag = 4;
+        auto state = storage->GetInt( frameId, -1 ) == ImGui::GetFrameCount() - 1
+                         ? storage->GetInt( stateId ) : 0;
+        const bool wasActive = ( state & activeFlag ) != 0;
+        const bool hadFocus = ImGui::GetActiveID() == inputId;
+        char buffer[64];
+        std::snprintf( buffer, sizeof( buffer ), "%.9g", static_cast<double>( *value ) );
+        bool edited = false;
+        const bool submitted = ImGui::InputText(
+            "##value", buffer, sizeof( buffer ), ImGuiInputTextFlags_CharsScientific |
+                ImGuiInputTextFlags_AutoSelectAll | ImGuiInputTextFlags_EnterReturnsTrue |
+                ImGuiInputTextFlags_CallbackEdit,
+            []( ImGuiInputTextCallbackData *data ) {
+                *static_cast<bool *>( data->UserData ) = true;
+                return 0;
+            }, &edited );
+        if( edited ) state |= dirtyFlag;
+        const bool active = ImGui::IsItemActive();
+        if( active || hadFocus || submitted )
+        {
+            char *end = nullptr;
+            errno = 0;
+            const auto draft = std::strtof( buffer, &end );
+            const bool valid = end != buffer && *end == '\0' && errno != ERANGE &&
+                               std::isfinite( draft );
+            state = ( state & dirtyFlag ) | ( valid ? validFlag : 0 );
+            if( valid ) storage->SetFloat( draftId, draft );
+        }
+        const bool cancelled = ( wasActive || hadFocus ) && ImGui::IsKeyPressed( ImGuiKey_Escape );
+        if( !sliderChanged && !cancelled && ( submitted || ( wasActive && !active ) ) &&
+            ( state & ( validFlag | dirtyFlag ) ) == ( validFlag | dirtyFlag ) )
+        {
+            *value = std::max( minimum, std::min( maximum, storage->GetFloat( draftId ) ) );
+        }
+        storage->SetInt( stateId, active ? ( state | activeFlag ) : 0 );
+        storage->SetInt( frameId, ImGui::GetFrameCount() );
+        ItemTooltip( "Type an exact value. Enter or Tab applies; Escape cancels." );
+        if( labelWidth > 0.0f && !labelAbove )
+        {
+            ImGui::SameLine( 0.0f, style.ItemInnerSpacing.x );
+            ImGui::TextUnformatted( label, labelEnd );
+        }
+        ImGui::PopID();
+        ImGui::EndGroup();
+        return *value != previous;
+    }
+
     bool ImGuiUtil::ToggleButton( const char *str_id, bool *v, f32 size )
     {
         bool itemClicked = false;
