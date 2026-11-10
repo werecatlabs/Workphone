@@ -5,7 +5,8 @@ param(
     [string]$CTestExecutable,
     [switch]$RequireExternalAssets,
     [switch]$CaptureCrashDumps,
-    [switch]$TerrainOnly
+    [switch]$TerrainOnly,
+    [switch]$AllowMissingHardware
 )
 $ErrorActionPreference = 'Stop'
 $repositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
@@ -102,7 +103,13 @@ try {
 if (-not (Test-Path -LiteralPath $reportPath)) { throw 'CTest did not produce a report.' }
 [xml]$report = Get-Content -LiteralPath $reportPath -Raw
 $skipped = @($report.testsuite.testcase | Where-Object { $_.status -eq 'notrun' -or $_.skipped })
-$unexpectedSkips = @($skipped | Where-Object { $RequireExternalAssets -or $_.name -ne 'WorkphoneGraphics.mesh_import_assets' })
+$allowedSkips = @()
+if (-not $RequireExternalAssets) { $allowedSkips += 'WorkphoneGraphics.mesh_import_assets' }
+# Hosted runners can lack a hardware adapter. Require the software equivalent to pass.
+if ($AllowMissingHardware -and ($report.testsuite.testcase | Where-Object { $_.name -eq 'WPGraphics.occlusion_depth_warp' -and $_.status -eq 'run' -and -not $_.failure })) {
+    $allowedSkips += 'WPGraphics.occlusion_depth_gpu'
+}
+$unexpectedSkips = @($skipped | Where-Object { $_.name -notin $allowedSkips })
 foreach ($skip in $skipped) { Write-Warning "Coverage unavailable: $($skip.name)" }
 $missingResults = @($requiredTests | Where-Object { $_ -notin $report.testsuite.testcase.name })
 $fixturePaths = @(
@@ -324,6 +331,7 @@ $evidence = [ordered]@{
     systemAdapters = $adapters; adapterQueryError = $adapterError
     testSources = $hashes; externalFixtures = $fixtures; testBinaries = $binaries; tests = $results
     testExitCode = $testExit; requiredTests = $requiredTests; requireExternalAssets = [bool]$RequireExternalAssets
+    allowMissingHardware = [bool]$AllowMissingHardware
     crashCaptureEnabled = [bool]$crashDumpPath; crashDumpPath = $crashDumpPath
     crashDumpAvailable = [bool]($crashDumpPath -and (Test-Path -LiteralPath $crashDumpPath))
     coverageComplete = ($testExit -eq 0 -and $skipped.Count -eq 0 -and $missingResults.Count -eq 0 -and $changedBinaries.Count -eq 0 -and $changedSources.Count -eq 0 -and $changedLibraries.Count -eq 0 -and $changedExecutableInputs.Count -eq 0 -and $changedValidationSources.Count -eq 0)
@@ -334,4 +342,4 @@ $evidence = [ordered]@{
 $evidence | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $evidencePath -Encoding utf8
 if (-not $evidence.validationPassed) { throw "Graphics validation failed, mandatory tests were skipped, required results are absent, or binaries changed during execution. See $reportPath and $evidencePath" }
 Write-Host "Graphics, catalog and resource checks passed. Report: $reportPath; evidence: $evidencePath"
-if ($skipped.Count -gt 0) { Write-Host 'External-media coverage remains unavailable; this is not a release certification.' }
+if ($skipped.Count -gt 0) { Write-Host 'Some coverage was unavailable. See the skipped tests in the report.' }

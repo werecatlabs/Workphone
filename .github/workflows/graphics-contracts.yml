@@ -2,9 +2,9 @@ name: WPGraphics verification baseline
 on:
   workflow_dispatch:
   push:
-    paths: ['Engine/c/**', 'Engine/cpp/**', 'Dependencies/**', 'Tests/**', 'Tools/*WPGraphics*.ps1', 'Tools/ValidateClawGraphics.ps1', 'CMake/**', 'CMakeLists.txt', 'CMakePresets.json', '.github/workflows/graphics-contracts.yml']
+    paths: ['Engine/c/**', 'Engine/cpp/**', 'Dependencies/**', 'Tests/**', 'Tools/powershell/*WPGraphics*.ps1', 'Tools/powershell/ValidateClawGraphics.ps1', 'Tools/powershell/*ValidationEvidence.ps1', 'CMake/**', 'CMakeLists.txt', 'CMakePresets.json', '.github/workflows/graphics-contracts.yml']
   pull_request:
-    paths: ['Engine/c/**', 'Engine/cpp/**', 'Dependencies/**', 'Tests/**', 'Tools/*WPGraphics*.ps1', 'Tools/ValidateClawGraphics.ps1', 'CMake/**', 'CMakeLists.txt', 'CMakePresets.json', '.github/workflows/graphics-contracts.yml']
+    paths: ['Engine/c/**', 'Engine/cpp/**', 'Dependencies/**', 'Tests/**', 'Tools/powershell/*WPGraphics*.ps1', 'Tools/powershell/ValidateClawGraphics.ps1', 'Tools/powershell/*ValidationEvidence.ps1', 'CMake/**', 'CMakeLists.txt', 'CMakePresets.json', '.github/workflows/graphics-contracts.yml']
 permissions:
   contents: read
 jobs:
@@ -38,7 +38,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build and validate required graphics, catalog and resource tests
         shell: pwsh
-        run: ./Tools/BuildWPGraphicsBaseline.ps1 -Configuration ${{ matrix.configuration }} -Generator "Visual Studio 17 2022"
+        run: ./Tools/powershell/BuildWPGraphicsBaseline.ps1 -Configuration ${{ matrix.configuration }} -Generator "Visual Studio 17 2022" -AllowMissingHardware
       - uses: actions/upload-artifact@v4
         if: always()
         with:
