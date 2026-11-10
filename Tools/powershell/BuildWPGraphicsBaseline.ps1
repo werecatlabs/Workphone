@@ -9,7 +9,8 @@ param(
     [switch]$CaptureCrashDumps,
     [switch]$IncludeTerrainPackage,
     [switch]$IncludeTerrainGameplayPackage,
-    [switch]$TerrainOnly
+    [switch]$TerrainOnly,
+    [switch]$AllowMissingHardware
 )
 $ErrorActionPreference = 'Stop'
 $repositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
@@ -79,16 +80,24 @@ foreach ($config in $Configuration) {
         $inventoryText = & $ctestExecutable --test-dir $buildPath -C $config -R $selection --show-only=json-v1
         if ($LASTEXITCODE -ne 0) { throw 'CTest build inventory failed.' }
         $inventory = ($inventoryText -join "`n") | ConvertFrom-Json
+        $testArguments = @($inventory.tests.command)
+        if ($inventory.tests | Where-Object { -not $_.command }) {
+            # On a clean build CTest omits missing executables from the JSON commands,
+            # but its text listing still reports their configured paths.
+            $testListing = & $ctestExecutable --test-dir $buildPath -C $config -R $selection -N
+            if ($LASTEXITCODE -ne 0) { throw 'CTest executable listing failed.' }
+            $testArguments += @(foreach ($line in $testListing) {
+                if ($line -cmatch '^Could not find executable (.+)$') { $Matches[1] }
+            })
+        }
         $mapping = @{}
         foreach ($line in Get-Content -LiteralPath (Join-Path $buildPath "graphics-validation/$config/targets.txt")) {
             $target, $path = $line -split '\|', 2
             $mapping[[IO.Path]::GetFullPath($path)] = $target
         }
-        $resolvedTargets = @($preset.targets) + @(foreach ($test in $inventory.tests) {
-            foreach ($argument in $test.command) {
-                if ([IO.Path]::IsPathRooted($argument) -and $mapping.ContainsKey([IO.Path]::GetFullPath($argument))) {
-                    $mapping[[IO.Path]::GetFullPath($argument)]
-                }
+        $resolvedTargets = @($preset.targets) + @(foreach ($argument in $testArguments) {
+            if ([IO.Path]::IsPathRooted($argument) -and $mapping.ContainsKey([IO.Path]::GetFullPath($argument))) {
+                $mapping[[IO.Path]::GetFullPath($argument)]
             }
         })
         $resolvedTargets = @($resolvedTargets | Sort-Object -Unique)
@@ -113,7 +122,7 @@ foreach ($config in $Configuration) {
             ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $buildPath "terrain-gt0-$config-build-source.json") -Encoding utf8
         if ($changed.Count) { throw "Terrain sources changed during $config build. Repeat the build against stable inputs; see terrain-gt0-$config-build-source.json." }
     }
-    & (Join-Path $PSScriptRoot 'ValidateClawGraphics.ps1') -BuildDirectory $buildPath -Configuration $config -CTestExecutable $ctestExecutable -RequireExternalAssets:$RequireExternalAssets -CaptureCrashDumps:$CaptureCrashDumps -TerrainOnly:$TerrainOnly
+    & (Join-Path $PSScriptRoot 'ValidateClawGraphics.ps1') -BuildDirectory $buildPath -Configuration $config -CTestExecutable $ctestExecutable -RequireExternalAssets:$RequireExternalAssets -CaptureCrashDumps:$CaptureCrashDumps -TerrainOnly:$TerrainOnly -AllowMissingHardware:$AllowMissingHardware
     if ($IncludeTerrainPackage) {
         & (Join-Path $PSScriptRoot 'ValidateTerrainPackage.ps1') -BuildDirectory $buildPath -Configuration $config
     }
