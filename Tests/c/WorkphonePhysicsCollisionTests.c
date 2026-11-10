@@ -495,12 +495,74 @@ static int test_deterministic_catch_up_matches_separate_ticks( void )
     return 1;
 }
 
+static int test_scene_collision_matrix_filters_contacts( void )
+{
+    const wp_u32 player = (wp_u32)1 << 31;
+    const wp_u32 world = (wp_u32)1 << 1;
+    const wp_u32 default_layer = (wp_u32)1 << 2;
+    wp_scene_collision_matrix matrix = { 0 };
+    wp_physics_scene *scene = wp_physics_scene_create();
+    wp_rigidbody *moving = wp_rigidbody_create( WORKPHONE_RIGIDBODY_DYNAMIC );
+    wp_rigidbody *stationary = wp_rigidbody_create( WORKPHONE_RIGIDBODY_STATIC );
+    wp_collision_shape *moving_shape = wp_collision_shape_create( WORKPHONE_COLLISION_SHAPE_BOX );
+    wp_collision_shape *stationary_shape = wp_collision_shape_create( WORKPHONE_COLLISION_SHAPE_BOX );
+    wp_vec3f hit_point, hit_normal;
+    wp_rigidbody *hit = NULL;
+
+    CHECK( scene && moving && stationary && moving_shape && stationary_shape );
+    wp_physics_scene_set_gravity( scene, vector3( 0, 0, 0 ) );
+    wp_collision_shape_set_box_half_extents( moving_shape, vector3( .5f, .5f, .5f ) );
+    wp_collision_shape_set_box_half_extents( stationary_shape, vector3( .5f, .5f, .5f ) );
+    CHECK( wp_rigidbody_add_shape( moving, moving_shape ) >= 0 );
+    CHECK( wp_rigidbody_add_shape( stationary, stationary_shape ) >= 0 );
+    wp_rigidbody_set_position( moving, vector3( .75f, 0, 0 ) );
+    wp_rigidbody_set_collision_type( moving, player );
+    wp_rigidbody_set_collision_type( stationary, world );
+    CHECK( wp_physics_scene_add_actor( scene, moving ) );
+    CHECK( wp_physics_scene_add_actor( scene, stationary ) );
+
+    matrix.named_layers = player | world | default_layer;
+    matrix.default_layer = default_layer;
+    matrix.disabled[31] = world;
+    matrix.disabled[1] = player;
+    matrix.disabled[2] = default_layer;
+    wp_physics_scene_set_collision_matrix( scene, &matrix );
+    wp_physics_scene_simulate( scene, 1.0f / 60.0f );
+    CHECK( wp_physics_scene_get_broadphase_stats( scene ).candidate_pairs > 0 );
+    CHECK( wp_physics_scene_get_broadphase_stats( scene ).narrowphase_tests == 0 );
+    CHECK( wp_physics_scene_intersects_ex( scene, vector3( 0, 2, 0 ), vector3( 0, -2, 0 ),
+                                           &hit_point, &hit_normal, &hit, NULL, 0, world ) );
+    CHECK( hit == stationary );
+
+    wp_rigidbody_set_collision_type( moving, world );
+    wp_rigidbody_set_collision_type( stationary, player );
+    wp_physics_scene_simulate( scene, 1.0f / 60.0f );
+    CHECK( wp_physics_scene_get_broadphase_stats( scene ).narrowphase_tests == 0 );
+
+    wp_rigidbody_set_collision_type( moving, 0 );
+    wp_rigidbody_set_collision_type( stationary, 0 );
+    wp_physics_scene_simulate( scene, 1.0f / 60.0f );
+    CHECK( wp_physics_scene_get_broadphase_stats( scene ).narrowphase_tests == 0 );
+
+    wp_physics_scene_set_collision_matrix( scene, NULL );
+    wp_physics_scene_simulate( scene, 1.0f / 60.0f );
+    CHECK( wp_physics_scene_get_broadphase_stats( scene ).narrowphase_tests > 0 );
+
+    wp_physics_scene_destroy( scene );
+    wp_rigidbody_destroy( moving );
+    wp_rigidbody_destroy( stationary );
+    wp_collision_shape_destroy( moving_shape );
+    wp_collision_shape_destroy( stationary_shape );
+    return 1;
+}
+
 int main( void )
 {
     int passed = 1;
     passed &= test_aabb_tree_radius_sphere_query();
     passed &= test_project_simulation_options_have_effects();
     passed &= test_deterministic_catch_up_matches_separate_ticks();
+    passed &= test_scene_collision_matrix_filters_contacts();
     passed &= test_large_track_mesh_uses_local_candidates();
     passed &= test_2d_box_contact_stays_in_plane();
     passed &= test_track_keeps_road_and_barrier_contacts();

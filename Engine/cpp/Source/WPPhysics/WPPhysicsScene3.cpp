@@ -1,6 +1,7 @@
 #include <WPPhysics/WPPhysicsPCH.hpp>
 #include <WPPhysics/WPPhysicsScene3.hpp>
 #include <Workphone/Workphone.hpp>
+#include <Workphone/Physics/CollisionLayerMatrix.hpp>
 #include <algorithm>
 #include <stdexcept>
 #include <thread>
@@ -14,6 +15,39 @@ namespace workphone::physics
 
     namespace
     {
+        wp_scene_collision_matrix resolveCollisionMatrix( const String &layerNames,
+                                                          const String &disabledPairs )
+        {
+            StringPairs pairs;
+            if( !parseDisabledCollisionPairs( disabledPairs, pairs ) )
+                throw std::invalid_argument( "Disabled collision pairs must contain two layer names per pair." );
+
+            wp_scene_collision_matrix matrix{};
+            Array<String> layers;
+            // Keep legacy profiles with ambiguous layer lists on their original filter.
+            if( pairs.empty() || !parseCollisionLayerNames( layerNames, layers ) )
+                return matrix;
+
+            for( size_t i = 0; i < layers.size(); ++i )
+            {
+                matrix.named_layers |= u32( 1 ) << i;
+                if( layers[i] == "Default" )
+                    matrix.default_layer = u32( 1 ) << i;
+            }
+            for( const auto &[first, second] : pairs )
+            {
+                const auto firstLayer = std::find( layers.begin(), layers.end(), first );
+                const auto secondLayer = std::find( layers.begin(), layers.end(), second );
+                if( firstLayer == layers.end() || secondLayer == layers.end() )
+                    continue;
+                const auto i = firstLayer - layers.begin();
+                const auto j = secondLayer - layers.begin();
+                matrix.disabled[i] |= u32( 1 ) << j;
+                matrix.disabled[j] |= u32( 1 ) << i;
+            }
+            return matrix;
+        }
+
         void executePhysicsRanges( void *, wp_u32 count, wp_u32 workers,
                                    wp_physics_range_task task, void *context )
         {
@@ -88,8 +122,9 @@ namespace workphone::physics
         properties->setProperty( "physics.broadphaseProviderStatus",
             wp_physics_scene_get_broadphase_provider_status( m_scene ) );
         properties->setProperty( "physics.collisionLayers", m_collisionLayerNames );
+        properties->setProperty( disabledCollisionPairsProperty, m_disabledCollisionPairs );
         const auto layers = StringUtil::split( m_collisionLayerNames, "," );
-        for( size_t i = 0; i < layers.size() && i < 32; ++i )
+        for( size_t i = 0; i < layers.size() && i < WP_SCENE_COLLISION_LAYER_COUNT; ++i )
             properties->setProperty( "layer." + StringUtil::trim( layers[i] ), u32( 1 ) << i );
         return properties;
     }
@@ -98,6 +133,16 @@ namespace workphone::physics
     {
         if( !properties ) return;
         ScopedLock lock( this );
+        auto layerNames = m_collisionLayerNames;
+        auto disabledPairs = m_disabledCollisionPairs;
+        properties->getPropertyValue( "physics.collisionLayers", layerNames );
+        properties->getPropertyValue( disabledCollisionPairsProperty, disabledPairs );
+        const bool updateCollisionMatrix = layerNames != m_collisionLayerNames ||
+                                           disabledPairs != m_disabledCollisionPairs;
+        wp_scene_collision_matrix matrix{};
+        if( updateCollisionMatrix )
+            matrix = resolveCollisionMatrix( layerNames, disabledPairs );
+
         auto options = wp_physics_scene_get_simulation_options( m_scene );
         properties->getPropertyValue( "physics.solverIterations", options.solver_iterations );
         properties->getPropertyValue( "physics.substeps", options.minimum_substeps );
@@ -118,7 +163,12 @@ namespace workphone::physics
             auto vector = wp_physics_scene_get_gravity( m_scene );
             vector.y = gravity; wp_physics_scene_set_gravity( m_scene, vector );
         }
-        properties->getPropertyValue( "physics.collisionLayers", m_collisionLayerNames );
+        if( updateCollisionMatrix )
+        {
+            wp_physics_scene_set_collision_matrix( m_scene, &matrix );
+            m_collisionLayerNames = std::move( layerNames );
+            m_disabledCollisionPairs = std::move( disabledPairs );
+        }
     }
 
     void WPPhysicsScene3::update()

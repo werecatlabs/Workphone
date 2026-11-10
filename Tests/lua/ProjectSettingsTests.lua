@@ -7,7 +7,9 @@ end
 BaseEditor = {}
 Vector2F = function(x, y) return {x=x, y=y} end
 IEvent = {UI=1, handleSelection=11, handleValueChanged=12, handlePropertyChanged=13}
-StringUtil = {getHash32=function(value) assert(value=="projectSettingsAction"); return 12345 end}
+StringUtil = {getHash32=function(value)
+    return assert(({projectSettingsAction=12345, createProjectCollisionMatrix=12346})[value])
+end}
 Parameters = function()
     return {push_back=function(self, value) table.insert(self, value) end,
         getAsStringArray=function(self) return self end}
@@ -65,11 +67,22 @@ local function properties()
     return result
 end
 local parent=element()
+function parent:getProperties() return self.properties or properties() end
+function parent:setProperties(value) self.properties=value end
 local ui={addElement=function() return element() end, removeElement=function(_, value) value.removed=true end}
 local native={calls={}, fail=false, available=true}
 local window={getParentWindow=function() return parent end, setHandleEvents=function() end}
 function window:handleEvent(eventType, hash, arguments, sender, request, event)
-    assert(eventType==IEvent.UI and hash==12345 and sender==nil and event==nil)
+    assert(eventType==IEvent.UI and event==nil)
+    if hash==12346 then
+        assert(sender.label=="Collision Matrix" and request==nil)
+        local matrix=element()
+        function matrix:setProperties(value) self.properties=value end
+        function matrix:getProperties() return self.properties end
+        sender:addChild(matrix)
+        return matrix
+    end
+    assert(hash==12345 and sender==nil)
     table.insert(native.calls, request)
     if not native.available then return end
     if native.fail then
@@ -84,6 +97,7 @@ function window:handleEvent(eventType, hash, arguments, sender, request, event)
         request:setPropertyAsString("project.company", "")
         request:setPropertyAsString("project.startupScene", "")
         request:setPropertyAsFloat("physics.gravity", -12.25)
+        request:setPropertyAsString("physics.disabledCollisionPairs", "Player,Enemy")
         request:setPropertyAsInt("graphics.shadowQuality", 4)
         request:setPropertyAsInt("graphics.customWidth", 1173)
         request:setPropertyAsInt("graphics.customHeight", 641)
@@ -102,7 +116,9 @@ function window:handleEvent(eventType, hash, arguments, sender, request, event)
         request:setPropertyAsBool("graphics.hdr", true)
         request:setPropertyAsInt("editor.theme", 4)
         request:setPropertyAsBool("services.cloudSave", false)
-        for _, key in ipairs({"project.name", "graphics.vsync", "graphics.hdr", "services.cloudSave"}) do
+        request:setPropertyAsString("physics.disabledCollisionPairs", "Default,World")
+        for _, key in ipairs({"project.name", "graphics.vsync", "graphics.hdr", "services.cloudSave",
+            "physics.disabledCollisionPairs"}) do
             request:setPropertyAsBool("included." .. key, true)
         end
     elseif native.onCommit then
@@ -129,7 +145,9 @@ assert(editor.settings.shadowQuality==4 and editor.shadowQualityControl:getSelec
     "Reading Ultra shadows must preserve its schema value in the dropdown")
 assert(not editor.cloudSaveControl.enabled and editor.cloudSaveControl.label:find("(Unavailable)", 1, true))
 assert(editor.settings.cloudSave==true)
-assert(#editor.controlBindings==132, "All project settings must be bound")
+assert(#editor.controlBindings==133, "All project settings must be bound")
+assert(parent.size.x==860 and parent.size.y==720 and parent.properties.values.initialPlacement=="floating",
+    "Project Settings should open at a usable size on first use")
 assert(table.concat(editor.editorThemeControl.options, ",")=="Classic,Dark,Light,High Contrast,Default")
 assert(editor.editorThemeControl:getSelectedOption()==4, "Missing project theme displays Default")
 
@@ -142,6 +160,25 @@ local function assertNoSettings(request)
     end
 end
 editor:handleEvent(event(IEvent.handleSelection, editor.saveButton))
+assertNoSettings(native.calls[#native.calls])
+local matrix=editor.disabledCollisionPairsControl
+assert(matrix:getProperties().values["physics.disabledCollisionPairs"]=="Player,Enemy")
+local callsBeforeMatrixEdit=#native.calls
+matrix:getProperties():setPropertyAsString("physics.disabledCollisionPairs", "Player,World")
+editor:handleEvent(event(IEvent.handleValueChanged, matrix))
+assert(editor.settings.disabledCollisionPairs=="Player,World" and #native.calls==callsBeforeMatrixEdit,
+    "Editing the matrix must stage the value without applying it")
+local reorderedLayers="Default,World,Player,Enemy,Trigger,UI"
+editor.collisionLayersControl:setText(reorderedLayers)
+editor:handleEvent(event(IEvent.handleValueChanged, editor.collisionLayersControl))
+assert(matrix:getProperties().values["physics.collisionLayers"]==reorderedLayers and
+    matrix:getProperties().values["physics.disabledCollisionPairs"]=="Player,World",
+    "Reordering layers must refresh the matrix and retain staged named pairs")
+editor:handleEvent(event(IEvent.handleSelection, editor.saveButton))
+local savedMatrix=native.calls[#native.calls].values
+assert(savedMatrix["physics.collisionLayers"]==reorderedLayers and
+    savedMatrix["physics.disabledCollisionPairs"]=="Player,World")
+editor:handleEvent(event(IEvent.handleSelection, editor.applyButton))
 assertNoSettings(native.calls[#native.calls])
 editor.editorThemeControl:setSelectedOption(2)
 editor:handleEvent(event(IEvent.handleSelection, editor.editorThemeControl))
@@ -273,7 +310,8 @@ assert(native.calls[#native.calls].values.action=="importProjectSettingsJson")
 editor:handleEvent(event(IEvent.handleSelection, editor.saveButton))
 local imported=native.calls[#native.calls].values
 assert(imported["project.name"]=="Imported project" and imported["graphics.vsync"]==false and
-    imported["graphics.hdr"]==true and imported["services.cloudSave"]==false,
+    imported["graphics.hdr"]==true and imported["services.cloudSave"]==false and
+    imported["physics.disabledCollisionPairs"]=="Default,World",
     "Explicit imported values must be staged even when they match the displayed defaults")
 assert(imported["editor.theme"]==nil and imported["project.company"]==nil,
     "The merged import response must not stage values absent from the file")
@@ -333,7 +371,8 @@ editor:handleEvent(event(IEvent.handleValueChanged, editor.cloudSaveControl))
 assert(editor.settings.cloudSave==false and editor.cloudSaveControl:getValue()==false)
 editor:handleEvent(event(IEvent.handleSelection, editor.saveButton))
 local reset=native.calls[#native.calls].values
-assert(reset["editor.theme"]==4 and reset["graphics.hdr"]==true and reset["services.cloudSave"]==nil,
+assert(reset["editor.theme"]==4 and reset["graphics.hdr"]==true and reset["services.cloudSave"]==nil and
+    reset["physics.disabledCollisionPairs"]=="",
     "Reset must explicitly stage all available defaults while preserving unavailable values")
 before=#native.calls
 

@@ -64,6 +64,7 @@ static const SettingDefinition settingDefinitions[] =
     { "physics.simulationRate", "int", "60", 30.0, 240.0, true },
     { "physics.solverIterations", "int", "8", 1.0, 64.0, true },
     { "physics.collisionLayers", "string", "Default,Player,Enemy,World,Trigger,UI", 0, 0, false },
+    { "physics.disabledCollisionPairs", "string", "", 0, 0, false },
     { "physics.broadphase", "int", "1", 0, 3, true },
     { "physics.continuousCollision", "bool", "true", 0, 0, false },
     { "physics.substeps", "int", "1", 1.0, 8.0, true },

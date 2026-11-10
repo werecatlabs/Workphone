@@ -87,6 +87,7 @@ ProjectSettingsTypes =
 	PhysicsThreads = 117,
 	DeterministicPhysics = 118,
 	PhysicsDebugDraw = 119,
+	CollisionMatrix = 120,
 
 	-- Audio
 	MasterVolume = 130,
@@ -244,6 +245,7 @@ local ProjectSettingsDefaults =
 	simulationRate = 60,
 	solverIterations = 8,
 	collisionLayers = "Default,Player,Enemy,World,Trigger,UI",
+	disabledCollisionPairs = "",
 	broadphase = 1,
 	continuousCollision = true,
 	physicsSubsteps = 1,
@@ -391,6 +393,7 @@ local ProjectSettingsStoreMap =
 	simulationRate = { name = "physics.simulationRate", type = "int" },
 	solverIterations = { name = "physics.solverIterations", type = "int" },
 	collisionLayers = { name = "physics.collisionLayers", type = "string" },
+	disabledCollisionPairs = { name = "physics.disabledCollisionPairs", type = "string" },
 	broadphase = { name = "physics.broadphase", type = "int" },
 	continuousCollision = { name = "physics.continuousCollision", type = "bool" },
 	physicsSubsteps = { name = "physics.substeps", type = "int" },
@@ -773,9 +776,13 @@ function ProjectSettings:load()
 	self:loadSettings();
 	self.controlBindings = {};
 
+	parentWindow:setSize(Vector2F(860.0, 720.0));
+	local placement = parentWindow:getProperties();
+	placement:setPropertyAsString("initialPlacement", "floating");
+	parentWindow:setProperties(placement);
+
 	self.editorWindow = ui:addElement(windowTypeInfo);
 	self.editorWindow:setLabel("Project Settings");
-	self.editorWindow:setSize(Vector2F(860.0, 720.0));
 	parentWindow:addChild(self.editorWindow);
 
 	self.tabBar = ui:addElement(tabBarTypeInfo);
@@ -899,6 +906,19 @@ function ProjectSettings:load()
 		{ "None", "ETC2", "ASTC", "BC7", "Device Default" }, self.settings.textureCompressionAndroid), "textureCompressionAndroid", "dropdown");
 
 	-- Physics --------------------------------------------------------------
+	local collisionHeader = self:addHeader(ui, physicsTab, "Collision Matrix");
+	self:bind(addEntry(ui, collisionHeader, "Collision Layers", ProjectSettingsTypes.CollisionLayers),
+		"collisionLayers", "text"):setText(self.settings.collisionLayers);
+	addText(ui, collisionHeader, "Enter comma-separated names and assign a Collision Layer on each Rigidbody.");
+	addText(ui, collisionHeader, "Checked pairs can collide if their Rigidbody masks also allow it.");
+	local collisionMatrix = self.window:handleEvent(IEvent.UI, StringUtil.getHash32("createProjectCollisionMatrix"),
+		Parameters(), collisionHeader, nil, nil);
+	if collisionMatrix ~= nil then
+		collisionMatrix:setElementId(ProjectSettingsTypes.CollisionMatrix);
+		collisionMatrix:setLabel("Collision Matrix");
+		self:bind(collisionMatrix, "disabledCollisionPairs", "collisionMatrix");
+	end
+
 	local physicsHeader = self:addHeader(ui, physicsTab, "Simulation");
 	self:bind(addSlider(ui, physicsHeader, "Gravity Y", ProjectSettingsTypes.Gravity, -50.0, 0.0, self.settings.gravity), "gravity", "floatSlider");
 	self:bind(addSlider(ui, physicsHeader, "Simulation Rate", ProjectSettingsTypes.SimulationRate, 30.0, 240.0, self.settings.simulationRate), "simulationRate", "intSlider");
@@ -911,8 +931,6 @@ function ProjectSettings:load()
 	self:bind(addToggle(ui, physicsHeader, "Continuous Collision", ProjectSettingsTypes.ContinuousCollision, self.settings.continuousCollision), "continuousCollision", "toggle");
 	self:bind(addToggle(ui, physicsHeader, "Deterministic Physics", ProjectSettingsTypes.DeterministicPhysics, self.settings.deterministicPhysics), "deterministicPhysics", "toggle");
 	self:bind(addToggle(ui, physicsHeader, "Physics Debug Draw", ProjectSettingsTypes.PhysicsDebugDraw, self.settings.physicsDebugDraw), "physicsDebugDraw", "toggle");
-	self:bind(addEntry(ui, physicsHeader, "Collision Layers", ProjectSettingsTypes.CollisionLayers), "collisionLayers", "text"):setText(self.settings.collisionLayers);
-	addText(ui, physicsHeader, "Enter comma-separated names, then assign a Collision Layer on each Rigidbody.");
 
 	-- Audio ----------------------------------------------------------------
 	local soundHeader = self:addHeader(ui, soundTab, "Mixer / Runtime Audio");
@@ -1068,6 +1086,8 @@ function ProjectSettings:getControlValue(control, kind)
 		return round(control:getValue());
 	elseif kind == "floatSlider" then
 		return control:getValue();
+	elseif kind == "collisionMatrix" then
+		return control:getProperties():getPropertyAsString("physics.disabledCollisionPairs");
 	end
 
 	return nil;
@@ -1086,6 +1106,11 @@ function ProjectSettings:setControlValue(control, kind, value)
 		control:setValue(value == true);
 	elseif kind == "intSlider" or kind == "floatSlider" then
 		control:setValue(value or 0);
+	elseif kind == "collisionMatrix" then
+		local properties = IApplicationManager.instance():getFactoryManager():make_object("Properties");
+		properties:setPropertyAsString("physics.collisionLayers", self.settings.collisionLayers);
+		properties:setPropertyAsString("physics.disabledCollisionPairs", value or "");
+		control:setProperties(properties);
 	end
 end
 
@@ -1482,6 +1507,9 @@ function ProjectSettings:handleControlChanged(sender)
 				self.stagedKeys[key] = true;
 			end
 			self:syncFromControls();
+			if key == "collisionLayers" then
+				self:setControlValue(self.disabledCollisionPairsControl, "collisionMatrix", self.settings.disabledCollisionPairs);
+			end
 			self:updateBroadphaseOptions();
 			self:updateRendererSummary();
 			self:updateControlAvailability(binding);

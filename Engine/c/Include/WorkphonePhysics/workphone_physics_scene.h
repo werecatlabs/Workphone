@@ -129,6 +129,22 @@ typedef struct wp_scene_simulation_options
 void wp_physics_scene_set_simulation_options( wp_physics_scene *scene,
                                              const wp_scene_simulation_options *options );
 wp_scene_simulation_options wp_physics_scene_get_simulation_options( const wp_physics_scene *scene );
+
+#define WP_SCENE_COLLISION_LAYER_COUNT 32
+typedef struct wp_scene_collision_matrix
+{
+    wp_u32 disabled[WP_SCENE_COLLISION_LAYER_COUNT];
+    wp_u32 named_layers;
+    wp_u32 default_layer;
+} wp_scene_collision_matrix;
+
+/* Applies disabled rows to simulation contacts before body/shape filters.
+ * Callers supply symmetric rows: bit i in row j and bit j in row i disable
+ * named layers i and j. The Default bit, when supplied, represents category zero.
+ * Passing NULL clears the matrix. Raycasts use their own filters. */
+void wp_physics_scene_set_collision_matrix( wp_physics_scene *scene,
+                                           const wp_scene_collision_matrix *matrix );
+
 /* Last GPU/plugin provider traversal status; see wp_broadphase_get_provider_status. */
 wp_s32 wp_physics_scene_get_broadphase_provider_status( const wp_physics_scene *scene );
 /* The executor must join all tasks before returning. Contacts remain ordered

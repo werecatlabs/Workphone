@@ -194,8 +194,13 @@ namespace
                 BOOST_REQUIRE( application->getSoundManager() );
                 BOOST_REQUIRE_CLOSE( application->getSoundManager()->getVolume(), .37f, .01f );
                 BOOST_REQUIRE( application->getPhysicsManager() );
-                BOOST_REQUIRE( application->getPhysicsManager()->getPhysicsScene() );
-                BOOST_REQUIRE_CLOSE( application->getPhysicsManager()->getPhysicsScene()->getGravity().Y(), -7.5f, .001f );
+                const auto physicsScene = application->getPhysicsManager()->getPhysicsScene();
+                BOOST_REQUIRE( physicsScene );
+                BOOST_REQUIRE_CLOSE( physicsScene->getGravity().Y(), -7.5f, .001f );
+#if WP_BUILD_PHYSICS3
+                BOOST_REQUIRE_EQUAL( project->getProperties()->getProperty( "physics.disabledCollisionPairs" ), "Enemy,Player" );
+                BOOST_REQUIRE_EQUAL( physicsScene->getProperties()->getProperty( "physics.disabledCollisionPairs" ), "Enemy,Player" );
+#endif
                 evidence->setProperty( "startupAudioAndGravityMatchedBeforeUpdate", true );
                 const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds( 20 );
                 while( std::chrono::steady_clock::now() < deadline )
@@ -264,6 +269,9 @@ namespace
                         self.frameRateLimitControl:setValue(73)
                         self.shadowQualityControl:setSelectedOption(4)
                         self.gravityControl:setValue(-7.5)
+                        if self.capabilities.disabledCollisionPairs then
+                            self:setControlValue(self.disabledCollisionPairsControl, "collisionMatrix", "Enemy,Player")
+                        end
                         self:restartFixtureDispatch(self.applyButton)
                         self.window:setName("Restart Apply completed")
                     end
@@ -295,12 +303,15 @@ namespace
             {
                 scripts->loadScriptFromString( String( R"(
                     function ProjectSettings:restartFixtureObserve()
-                        assert(#self.controlBindings == 132)
+                        assert(#self.controlBindings == 133)
                         assert(self.companyControl:getText() == ")" ) + company + R"(")
                         assert(self.masterVolumeControl:getValue() == 37)
                         assert(self.frameRateLimitControl:getValue() == 73)
                         assert(self.shadowQualityControl:getSelectedOption() == 4)
                         assert(self.gravityControl:getValue() == -7.5)
+                        if self.capabilities.disabledCollisionPairs then
+                            assert(self:getControlValue(self.disabledCollisionPairsControl, "collisionMatrix") == "Enemy,Player")
+                        end
                         self.window:setName("Restart controls restored")
                     end
                 )" );
@@ -492,7 +503,7 @@ BOOST_AUTO_TEST_CASE( editor_project_settings_live_bridge_test )
 
     scripts->loadScriptFromString( R"(
         function ProjectSettings:projectSettingsIntegrationProbe()
-            assert(#self.controlBindings == 132)
+            assert(#self.controlBindings == 133)
             assert(self.capabilities.cloudSave == true)
             assert(self.cloudSaveControl:isEnabled())
             -- Device recreation is explicitly unavailable in the current window;

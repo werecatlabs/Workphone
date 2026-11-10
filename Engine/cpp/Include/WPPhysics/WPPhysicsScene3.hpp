@@ -143,6 +143,7 @@ namespace workphone::physics
 
         wp_physics_scene *m_scene = nullptr;  ///< Handle to the internal physics scene.
         String m_collisionLayerNames = "Default,Player,Enemy,World,Trigger,UI";
+        String m_disabledCollisionPairs;
 
         ConcurrentArray<SmartPtr<IPhysicsBody3>> m_actors;  ///< List of actors managed by this scene.
 

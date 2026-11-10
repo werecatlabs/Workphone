@@ -3,6 +3,7 @@
 #include <WPImGui/ImGuiApplication.hpp>
 #include <WPImGui/ImGuiButton.hpp>
 #include <WPImGui/ImGuiCollapsingHeader.hpp>
+#include <WPImGui/ImGuiCollisionMatrix.hpp>
 #include <WPImGui/ImGuiColourPicker.hpp>
 #include <WPImGui/ImGuiDataGrid.hpp>
 #include <WPImGui/ImGuiFileBrowser.hpp>
@@ -80,6 +81,7 @@ namespace workphone::ui
             FactoryUtil::addFactory<ImGuiApplication>( factoryManager );
             FactoryUtil::addFactory<ImGuiButton>( factoryManager );
             FactoryUtil::addFactory<ImGuiCollapsingHeader>( factoryManager );
+            FactoryUtil::addFactory<ImGuiCollisionMatrix>( factoryManager );
             FactoryUtil::addFactory<ImGuiColourPicker>( factoryManager );
             FactoryUtil::addFactory<ImGuiDataGrid>( factoryManager );
             FactoryUtil::addFactory<ImGuiDropdown>( factoryManager );

@@ -1,6 +1,7 @@
 #include <EditorPCH.hpp>
 #include <editor/ProjectSettingsInteractionBackend.hpp>
 #include <Workphone/Workphone.hpp>
+#include <Workphone/Physics/CollisionLayerMatrix.hpp>
 #include <Workphone/Scene/Components/Rigidbody.hpp>
 #include <Workphone/System/InteractionBackendProviders.hpp>
 #if WP_BUILD_PHYSICS3
@@ -9,7 +10,6 @@
 #include <cstdlib>
 #include <cerrno>
 #include <cmath>
-#include <set>
 
 namespace workphone::editor
 {
@@ -23,6 +23,7 @@ namespace workphone::editor
             "sound.voiceLimit", "sound.streaming", "sound.occlusion" };
         const char *inputKeys[] = { "input.system", "input.gamepad", "input.touch", "input.mouseCapture",
             "input.rebinds", "input.gestures", "input.haptics" };
+        constexpr bool supportsCollisionMatrix = WP_BUILD_PHYSICS3 != 0;
 
         String appendKey( const String &list, const String &key )
         {
@@ -101,17 +102,17 @@ namespace workphone::editor
             }
             if( settings.hasProperty( "physics.collisionLayers" ) )
             {
-                const auto text = settings.getProperty( "physics.collisionLayers" );
-                const auto layers = StringUtil::split( text, "," );
-                std::set<String> unique;
-                if( layers.empty() || layers.size() > 32 || text.empty() || text.back() == ',' )
+                Array<String> layers;
+                if( !physics::parseCollisionLayerNames( settings.getProperty( "physics.collisionLayers" ),
+                                                        layers ) )
                 { error = "Collision Layers requires 1 to 32 distinct, comma-separated names."; return false; }
-                for( const auto &layer : layers )
-                {
-                    const auto name = StringUtil::trim( layer );
-                    if( name.empty() || !unique.insert( name ).second )
-                    { error = "Collision layer names must be nonempty and unique."; return false; }
-                }
+            }
+            if( settings.hasProperty( physics::disabledCollisionPairsProperty ) )
+            {
+                StringPairs pairs;
+                if( !physics::parseDisabledCollisionPairs(
+                        settings.getProperty( physics::disabledCollisionPairsProperty ), pairs ) )
+                { error = "The collision matrix contains an invalid layer pair."; return false; }
             }
             return true;
         }
@@ -126,6 +127,11 @@ namespace workphone::editor
         };
         for( const auto key : physicsKeys ) describe( key,
             "Native scene simulation: iterative solver, fixed or adaptive substeps, SAP/DBVT, parallel integration and named collision masks." );
+        const String matrixKey( physics::disabledCollisionPairsProperty );
+        response->setProperty( "capability." + matrixKey, supportsCollisionMatrix );
+        if( !supportsCollisionMatrix )
+            response->setProperty( "unavailable." + matrixKey,
+                                   "The collision matrix requires the native 3D physics backend." );
         response->setProperty( "capability.physics.broadphase.gpu", hasPhysicsBroadphaseProvider() );
         for( const auto key : audioKeys ) describe( key,
             "Native mixer and XAudio2 endpoint; category gain, positional attenuation/pan, raycast occlusion and voice admission. Device/rate apply at audio startup; streaming/buffer settings on new voices." );
@@ -195,6 +201,8 @@ namespace workphone::editor
         if( physics && settings->hasProperty( "physics.debugDraw" ) )
             physics->setEnableDebugDraw( settings->getPropertyAsBool( "physics.debugDraw" ) );
         for( const auto key : physicsKeys ) record( key, scene != nullptr );
+        record( workphone::physics::disabledCollisionPairsProperty,
+                supportsCollisionMatrix && scene != nullptr );
         auto audio = app ? app->getSoundManager() : nullptr;
         if( audio ) audio->setProperties( settings );
         auto actualAudio = audio ? audio->getProperties() : nullptr;

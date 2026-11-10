@@ -57,6 +57,8 @@ typedef struct wp_physics_scene
     wp_u32 min_threads;
     wp_u32 max_threads;
     wp_scene_simulation_options simulation_options;
+    wp_scene_collision_matrix collision_matrix;
+    wp_s32 collision_matrix_active;
     wp_physics_parallel_for executor;
     void *executor_context;
     wp_f32 fixed_accumulator;
@@ -923,6 +925,31 @@ static wp_s32 collision_filter_values_pass( wp_u32 type_a, wp_u32 mask_a, wp_u32
     return ( type_a == 0u && type_b == 0u ) || ( type_a & mask_b ) != 0u || ( type_b & mask_a ) != 0u;
 }
 
+static wp_s32 collision_matrix_allows_pair( const wp_physics_scene *scene, const wp_rigidbody *body_a,
+                                            const wp_rigidbody *body_b )
+{
+    const wp_scene_collision_matrix *matrix = &scene->collision_matrix;
+    wp_u32 type_a = wp_rigidbody_get_collision_type( body_a );
+    wp_u32 type_b = wp_rigidbody_get_collision_type( body_b );
+    wp_u32 layer;
+
+    if( type_a == 0u )
+        type_a = matrix->default_layer;
+    if( type_b == 0u )
+        type_b = matrix->default_layer;
+    /* Legacy categories outside the named layers retain the existing filter. A
+     * multi-bit category can collide if any of its named pairs is enabled. */
+    if( type_a == 0u || type_b == 0u || ( ( type_a | type_b ) & ~matrix->named_layers ) != 0u )
+        return 1;
+
+    for( layer = 0; type_a != 0u; ++layer, type_a >>= 1 )
+    {
+        if( ( type_a & 1u ) != 0u && ( type_b & ~matrix->disabled[layer] ) != 0u )
+            return 1;
+    }
+    return 0;
+}
+
 static wp_s32 shape_pair_filter_passes( const wp_rigidbody *body_a, const wp_collision_shape *shape_a,
                                         const wp_rigidbody *body_b, const wp_collision_shape *shape_b )
 {
@@ -1680,6 +1707,8 @@ static void solve_broadphase_pair( const wp_broadphase_pair *pair, void *context
     wp_rigidbody *body_b = pair->body_b;
     wp_s32 sa, sb;
     ++scene->broadphase_stats.candidate_pairs;
+    if( scene->collision_matrix_active && !collision_matrix_allows_pair( scene, body_a, body_b ) )
+        return;
     if( scene->obb_enabled )
     {
         wp_s32 local_rebuilt, world_updated;
@@ -2117,6 +2146,28 @@ wp_scene_simulation_options wp_physics_scene_get_simulation_options( const wp_ph
 {
     wp_scene_simulation_options options = { 0 };
     return scene ? scene->simulation_options : options;
+}
+
+void wp_physics_scene_set_collision_matrix( wp_physics_scene *scene,
+                                           const wp_scene_collision_matrix *matrix )
+{
+    wp_u32 layer;
+    if( !scene )
+        return;
+
+    scene->collision_matrix_active = 0;
+    if( !matrix )
+        return;
+
+    scene->collision_matrix = *matrix;
+    for( layer = 0; layer < WP_SCENE_COLLISION_LAYER_COUNT; ++layer )
+    {
+        if( matrix->disabled[layer] != 0u )
+        {
+            scene->collision_matrix_active = 1;
+            break;
+        }
+    }
 }
 
 wp_s32 wp_physics_scene_get_broadphase_provider_status( const wp_physics_scene *scene )

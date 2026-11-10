@@ -223,6 +223,25 @@ namespace workphone::editor
             processProjectSettingsAction( workphone::dynamic_pointer_cast<Properties>( object ) );
             return {};
         }
+        if( getClassName() == "ProjectSettings" && eventType == EventType::UI &&
+            eventValue == static_cast<hash_type>( StringUtil::getHash32( "createProjectCollisionMatrix" ) ) )
+        {
+            if( auto parent = dynamic_pointer_cast<ui::IUIElement>( sender ) )
+            {
+                auto application = core::IApplicationManager::instancePtr();
+                auto uiManager = application ? application->getUI() : nullptr;
+                const auto type = TypeManager::instance()->getIdFromName( "workphone::ui::ImGuiCollisionMatrix" );
+                if( uiManager && type )
+                {
+                    if( auto matrix = uiManager->addElement( type ) )
+                    {
+                        parent->addChild( matrix );
+                        return Parameter( static_pointer_cast<ISharedObject>( matrix ) );
+                    }
+                }
+            }
+            return {};
+        }
         return EditorWindow::handleEvent( eventType, eventValue, arguments, sender, object, event );
     }
 
