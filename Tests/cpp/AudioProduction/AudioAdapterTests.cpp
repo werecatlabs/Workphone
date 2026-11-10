@@ -2,6 +2,7 @@
 #include <WPAudio/WPAudioManager.hpp>
 #include <WPAudio/WPAudioSound.hpp>
 #include <WPAudio/WPAudioEffectVolume.hpp>
+#include <WPAudio/WPAudioEffectDelay.hpp>
 #include <WPAudio/WPAudioSoundListener.hpp>
 #include <Workphone/Sound/Sound.hpp>
 #include <Workphone/Core/Properties.hpp>
@@ -18,9 +19,12 @@ public:
 };
 class UpdatingSound : public Sound {
 public:
-    unsigned updates=0;
+    unsigned updates=0, unloads=0;
     UpdatingSound() { setLoadingState(LoadingState::Loaded); }
     void update() override { ++updates; }
+    void unload(SmartPtr<ISharedObject>) override {
+        ++unloads; stop(); setLoadingState(LoadingState::Unloaded);
+    }
 };
 int main() {
     TypeManager types; types.load(); TypeManager::setInstance(&types);
@@ -36,6 +40,20 @@ int main() {
         manager->destroyResource(sound); CHECK(!sound->getOwner() && !manager->getByName("registered.wav"));
         manager->track(sound); manager->removeAll(); CHECK(!manager->getByName("registered.wav") && !sound->getOwner());
         CHECK(!manager->isRealtime());
+        // Compatibility removal must preserve another manager's loaded voice.
+        {
+            auto other=make_ptr<FixtureManager>();
+            auto owned=make_ptr<UpdatingSound>();
+            owned->setFilePath("owned.wav"); manager->track(owned); owned->play();
+            other->removeSound(owned);
+            CHECK(owned->getOwner()==manager && owned->isLoaded() && owned->isPlaying());
+            CHECK(owned->unloads==0 && manager->getByName("owned.wav")==owned);
+            manager->removeSound(owned);
+            CHECK(owned->unloads==1 && !owned->isLoaded() && !owned->isPlaying());
+            CHECK(!owned->getOwner() && !manager->getByName("owned.wav"));
+            manager->removeSound(owned); other->removeSound(owned);
+            CHECK(owned->unloads==1);
+        }
         // No device is required to verify the concrete owner's suspended update
         // boundary or that holding it never changes individual voice intent.
         {
@@ -87,6 +105,9 @@ int main() {
         volume.setVolume(0.5f); volume.process(); CHECK(output[0]==0.5f && output[1]==-0.5f);
         volume.setBypass(true); volume.process(); CHECK(output[0]==1 && output[1]==-1 && output[2]==0.25f);
         volume.setOutput(input); volume.process(); CHECK(input[0]==1);
+        CAudioEffectDelay delay; CHECK(!delay.isSupported() && delay.getBypass());
+        delay.setInput(input); delay.setOutput(output); delay.setNumSamples(3);
+        output[0]=99; delay.process(); CHECK(output[0]==input[0] && output[2]==input[2]);
         std::puts("WPAudio adapter registry/master gain and bypass passed (no device output)");
     } catch(const std::exception &e) { std::fprintf(stderr,"%s\n",e.what()); result=1; }
     TypeManager::setInstance(nullptr); types.unload(); return result;

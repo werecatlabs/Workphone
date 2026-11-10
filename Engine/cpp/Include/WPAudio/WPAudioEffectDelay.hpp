@@ -1,4 +1,5 @@
 #pragma once
+#include <WPAudio/WPAudioPrerequisites.hpp>
 #include <Workphone/Interface/Memory/ISharedObject.hpp>
 #include <Workphone/Interface/Sound/IAudioEffectDelay.hpp>
 
@@ -6,12 +7,10 @@ namespace workphone
 {
     /**
      * @class CAudioEffectDelay
-     * @brief Concrete implementation of a delay audio effect.
-     *
-     * This class provides the functionality to process audio samples and apply a
-     * delay effect based on the configured sample rate and delay time.
+     * @brief Compatibility placeholder; delay DSP is not available yet.
+     * Always bypasses until the mixer DSP implementation is delivered.
      */
-    class CAudioEffectDelay : public IAudioEffectDelay
+    class WPAudio_API CAudioEffectDelay : public IAudioEffectDelay
     {
     public:
         /** @brief Default constructor. */
@@ -25,6 +24,7 @@ namespace workphone
          * Applies the delay effect to the input buffer and writes the result to the output buffer.
          */
         void process() override;
+        bool isSupported() const noexcept { return false; }
 
         /** @brief Gets the pointer to the input audio buffer. @return Pointer to the input buffer. */
         f32 *getInput() override;
@@ -65,6 +65,6 @@ namespace workphone
         f32 **m_buffer = nullptr;
         s32 m_bufferPosition = 0;
         u32 m_sampleRate = 0;
-        bool m_bBypass = false;
+        bool m_bBypass = true;
     };
 }  // namespace workphone

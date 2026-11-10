@@ -1,9 +1,77 @@
 # WPAudio implementation status
 
-10 October 2026. Initial baseline `f02dac9ac`; continuation builds were verified
-against checkout `eead5c43d` plus the working-tree changes described here.
-This is an implementation ledger for [the production plan](WPAUDIO_PRODUCTION_PLAN.md),
-not a production-readiness certificate. M0 and M1 are **in progress**; M2-M11 remain open.
+Updated 10 November 2026. Current source baseline `96db9f5fd` plus this batch.
+The October validation below is historical unless explicitly refreshed here.
+This is an implementation ledger for [the production plan](WPAUDIO_PRODUCTION_PLAN.md).
+M0's offline architecture decisions are recorded; M1 and M2 are **in progress**.
+Device certification and the production common-output migration remain open.
+
+## November continuation
+
+- [Architecture decision](WPAUDIO_ARCHITECTURE.md): selected native renderer,
+  single output stream per context, compatibility/ABI migration, codec profile,
+  budgets, settings and platform capability boundaries. Physical-device latency,
+  capture and negotiated-output evidence remain pending.
+- Native terminal notifications reserve one of 2,048 bounded credits per playback
+  run. Start/restart exhaustion is explicit; stop/release/restart/natural endings
+  publish exactly once with context, handle generation, playback ID and frame.
+  The control thread polls independently of command acknowledgements. Master
+  gain/mute commands and atomic queue/notification telemetry are implemented.
+- Device failure seals command admission, acknowledges pending starts as failed,
+  publishes one device-failure terminal per active run, and keeps failed renders
+  silent without advancing the clock. In-flight publication during failure is
+  drained by control polling; no failure-time sample reclamation occurs in render.
+- `CoreOutputPump` owns a dedicated render/submission worker and three preallocated
+  blocks. Both the XAudio2 probe and fake-output tests use it. Callbacks publish
+  atomics only; shutdown joins the worker and fences sink callbacks before
+  reclaiming buffers/context. Failure and 1,000 startup/shutdown cycles are tested.
+  **WPAudioSound still uses native per-sound transport**: this worker is a tested
+  migration component, not a completed production switch.
+- Foreign-manager `removeSound` now respects registry ownership. Delay explicitly
+  reports unsupported and copies bypass samples; legacy sound-name maps log
+  unavailability. Lua demo parameter, routing, effect and snapshot actions report
+  unavailable services instead of claiming engine changes.
+- Existing `AudioResourceCompiler`, `AudioResourceStream`, `AudioPcmRing` and
+  ResourceSystem package/range infrastructure were already present in this
+  checkout. This batch extends those implementations. Compiler output version 2
+  converts validated PCM8/16/24/32 and float32 source to canonical PCM16 WAV,
+  preserving rate/layout, rounding without dither and reporting finite clipping.
+  Old version-1 caches/packages require recooking.
+- Tool-side waveform analysis returns up to 4,096 per-channel extrema/RMS bins;
+  invalid inputs retain the prior result. Editor waveform widgets/persisted
+  analysis metadata are still pending.
+- `WPAudio.assets` now registers the previously orphaned package stream fixture.
+  It exercises cooked-only mounts after deleting sources, exact streamed sample
+  comparison against common-core buffered rendering, controlled residency
+  pressure/silence/retry, cold cancellation, repeated superseding seeks, loop
+  endpoint handling, retirement, three pinned reimport generations and malformed
+  replacement. The test uses package/range IO with a simulated consumer; it does
+  not capture a hardware endpoint.
+
+## Current validation
+
+Eight standalone mandatory suites pass in current Debug and RelWithDebInfo,
+including under MSVC AddressSanitizer (19.52.37025, Windows SDK 10.0.26100.0).
+`WPAudio.device` skips with endpoint absence. The standalone project also exposes
+`WP_AUDIO_BUILD_DEVICE_TESTS=OFF` to exclude platform output probes from headless
+builds; all eight suites also pass in that separate RelWithDebInfo configuration.
+The old `Tests/AudioProduction` directory moved to
+`Tests/cpp/AudioProduction`.
+
+Current RelWithDebInfo Workphone, WPAudio, WPSQLite and the asset/adapter/scene
+test executables build successfully. All three integration suites pass.
+`WPAudio.assets` passes (1.2-1.8 seconds on this host), including
+the real ResourceSystem compiler, source-deleted package mount, bounded range IO
+and simulated PCM consumer. This is an offline package test, not a packaged-game
+or hardware-output certification.
+
+```powershell
+cmake -S Tests/cpp/AudioProduction -B project_audio_contracts -G "Visual Studio 18 2026" -A x64
+cmake --build project_audio_contracts --config Debug --parallel 4
+ctest --test-dir project_audio_contracts -C Debug -L mandatory --output-on-failure
+cmake --build project_x64 --config RelWithDebInfo --target WPAudioAssetTests WPAudioAdapterTests WPAudioSceneTests --parallel 8
+ctest --test-dir project_x64 -C RelWithDebInfo -R '^WPAudio.(assets|adapter|scene)$' --output-on-failure
+```
 
 ## Delivered foundation
 
@@ -67,7 +135,7 @@ not a production-readiness certificate. M0 and M1 are **in progress**; M2-M11 re
   unavailable bank services report failure, and unsupported child-bus controls
   no longer change master mute. Other authored Editor services remain open.
 
-## M0 architecture spike and decision boundary
+## October architecture spike evidence (historical)
 
 The candidate destination remains the plan's native-core design. The portable
 renderer is implemented once, and `XAudio2CoreSpike.cpp` feeds its blocks through
@@ -90,16 +158,17 @@ nor the standard mixed-stream/DSP stress profile.
 
 The device spike returns explicit skip code 77: `CreateMasteringVoice` reports
 HRESULT `0x80070490` (no output endpoint available in this session). Therefore
-M0's latency/device gates and its final ownership decision remain open.
+M0's latency/device gates remain open. The current ownership decision is recorded
+in the November architecture document linked above.
 
-## Reproducible validation
+## October validation and reproducible commands
 
 The isolated project needs no graphics, Editor, content pack or sound device.
 It builds the bundled Lua interpreter for the headless Editor logic fixture;
 no separately installed Lua runtime is required:
 
 ```powershell
-cmake -S Tests/AudioProduction -B project_audio_contracts -G "Visual Studio 18 2026" -A x64
+cmake -S Tests/cpp/AudioProduction -B project_audio_contracts -G "Visual Studio 18 2026" -A x64
 cmake --build project_audio_contracts --config Debug --parallel 8
 ctest --test-dir project_audio_contracts -C Debug -L mandatory --output-on-failure
 cmake --build project_audio_contracts --config RelWithDebInfo --parallel 8
@@ -145,7 +214,7 @@ concurrency, leak-soak or realtime-allocation certification.
 The AddressSanitizer configuration used:
 
 ```powershell
-cmake -S Tests/AudioProduction -B project_audio_contracts/asan -G "Visual Studio 18 2026" -A x64 `
+cmake -S Tests/cpp/AudioProduction -B project_audio_contracts/asan -G "Visual Studio 18 2026" -A x64 `
   -DCMAKE_C_FLAGS=/fsanitize=address "-DCMAKE_CXX_FLAGS=/fsanitize=address /EHsc" `
   -DCMAKE_EXE_LINKER_FLAGS=/INCREMENTAL:NO
 cmake --build project_audio_contracts/asan --config RelWithDebInfo --parallel 8
@@ -155,26 +224,23 @@ ctest --test-dir project_audio_contracts/asan -C RelWithDebInfo -L mandatory --o
 
 ## Outstanding work and limits
 
-1. Complete M0 hardware spike, measured ABI/migration comparison, output-device
-   matrix, codec/license choices, negotiated settings and reference budgets.
-2. Complete M1 production migration to native-core voice handles and the common
-   output stream. Shared immutable storage and bounded cross-thread commands are
-   implemented; scene/manager compatibility wrappers still use native voices.
-   Terminal-event publication is still separate from command acknowledgements;
-   game-thread completion delivery must be integrated. Core gains are immediate
-   rather than ramped. Native C
-   legacy event/project scaffolding is not an authoritative playback path.
-3. Windows enabling looping on a buffer already submitted takes effect on the
-   next submission; only disabling an active loop is updated in place. Complete
-   uniform transport, terminal reasons and callback-race stress in the adapter.
-4. Complete emitter transform/enable/listener/scene context integration, durable
-   asset identity, serialization/undo and preview buses. Independent transports
-   are implemented, but audible two-actor/preview/Stop Play evidence is pending.
-5. M2-M7: bounded streaming/decoders, full mixer/DSP/virtualization, 3D acoustics,
-   authored events/music/dialogue, cooking/packaging/reimport and functional Lua
-   Editor/project settings services remain to be implemented.
-6. M8 certification and all R2 milestones remain open: device capture/listening,
-   Editor workflows, static/audio-disabled matrix, race/fault injection, realtime
-   platform/adapter allocation instrumentation, packaged runs and long-duration soak are required.
+1. M0 hardware baseline capture, negotiated-output/device matrix and measured
+   latency/ownership comparison remain open. Offline architecture choices do
+   not substitute for those measurements.
+2. M1 production migration remains: connect compatibility sounds and the existing
+   streamed resource provider to core voice handles, route all output through
+   the common worker, and wire terminal delivery into the engine control owner.
+   The offline core/worker and production per-sound adapter currently coexist.
+   Migration can be developed offline but still needs implementation and device
+   verification; it is not blocked solely by unavailable hardware.
+3. M2 still needs persisted waveform/import settings, authored bank grouping,
+   Editor reimport workflow integration, broader stream/rate/loop matrices and
+   aggregate streaming budget acceptance. PCM package/sample parity is covered;
+   device captures and clean packaged-game playback remain unverified. Compressed
+   codecs are outside the selected initial PCM profile.
+4. M3-M7 mixer/event/spatial/Editor/music features retain their plan gates.
+   M8 certification and all R2 milestones remain open. Static/audio-disabled
+   engine startup, callback/race instrumentation, physical device recovery,
+   listening and long-duration soak evidence must be recorded separately.
 
-No release gate in section 12 of the plan is marked passed by this batch.
+No production release gate in section 12 of the plan is marked passed by this batch.

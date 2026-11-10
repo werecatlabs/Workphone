@@ -13,7 +13,7 @@ extern "C" {
 typedef enum wp_audio_result {
     WP_AUDIO_OK, WP_AUDIO_INVALID_ARGUMENT, WP_AUDIO_INVALID_FORMAT,
     WP_AUDIO_UNSUPPORTED, WP_AUDIO_LIMIT, WP_AUDIO_OUT_OF_MEMORY,
-    WP_AUDIO_STALE_HANDLE, WP_AUDIO_EMPTY
+    WP_AUDIO_STALE_HANDLE, WP_AUDIO_EMPTY, WP_AUDIO_DEVICE_ERROR
 } wp_audio_result;
 typedef struct wp_audio_wav_info {
     uint32_t size; /* sizeof(wp_audio_wav_info) */
@@ -32,9 +32,11 @@ uint64_t wp_audio_clip_frames(const wp_audio_clip *clip);
 typedef struct wp_audio_context wp_audio_context;
 typedef struct wp_audio_voice_handle { uint64_t context; uint32_t slot, generation; } wp_audio_voice_handle;
 typedef enum wp_audio_voice_state { WP_AUDIO_PENDING, WP_AUDIO_PLAYING,
-    WP_AUDIO_PAUSED, WP_AUDIO_FINISHED, WP_AUDIO_STOPPED } wp_audio_voice_state;
+    WP_AUDIO_PAUSED, WP_AUDIO_FINISHED, WP_AUDIO_STOPPED, WP_AUDIO_FAILED } wp_audio_voice_state;
 typedef enum wp_audio_completion { WP_AUDIO_COMPLETION_NONE,
-    WP_AUDIO_COMPLETION_NATURAL, WP_AUDIO_COMPLETION_STOPPED } wp_audio_completion;
+    WP_AUDIO_COMPLETION_NATURAL, WP_AUDIO_COMPLETION_STOPPED,
+    WP_AUDIO_COMPLETION_RELEASED, WP_AUDIO_COMPLETION_RESTARTED,
+    WP_AUDIO_COMPLETION_DEVICE_FAILURE } wp_audio_completion;
 typedef struct wp_audio_context_desc {
     uint32_t size, sample_rate, voice_capacity, max_block_frames;
 } wp_audio_context_desc;
@@ -47,6 +49,14 @@ typedef struct wp_audio_voice_desc {
 } wp_audio_voice_desc;
 wp_audio_result wp_audio_context_create(const wp_audio_context_desc *desc, wp_audio_context **context);
 void wp_audio_context_destroy(wp_audio_context *context);
+/* Render-owner device failure. Seals command admission, cancels pending
+ * requests with DEVICE_ERROR acknowledgements and terminalizes active runs
+ * exactly once. Pins are reclaimed only by control polling/destruction.
+ * An in-flight producer publication may finish after sealing; command_poll
+ * cancels it after the render owner has finished failure handling. Render and
+ * restart/create/submit remain failed until context recreation. Call this on
+ * the render owner before it exits; never concurrently with another renderer. */
+wp_audio_result wp_audio_context_fail(wp_audio_context *context);
 uint64_t wp_audio_context_clock(const wp_audio_context *context);
 wp_audio_result wp_audio_context_gain(wp_audio_context *context, float gain, int mute);
 wp_audio_result wp_audio_voice_create(wp_audio_context *context, const wp_audio_voice_desc *desc,
@@ -60,15 +70,34 @@ wp_audio_result wp_audio_voice_gain(wp_audio_context *context, wp_audio_voice_ha
 wp_audio_result wp_audio_voice_loop(wp_audio_context *context, wp_audio_voice_handle handle, int loop);
 wp_audio_result wp_audio_voice_status(wp_audio_context *context, wp_audio_voice_handle handle,
                                      wp_audio_voice_state *state, uint64_t *cursor);
-/* Consume one terminal reason on control thread. Release does not emit an event. */
+/* Exclusive-owner legacy polling for a live handle. Release invalidates this
+ * handle; use completion_poll for release notifications that outlive it. */
 wp_audio_result wp_audio_voice_poll(wp_audio_context *context, wp_audio_voice_handle handle,
                                    wp_audio_completion *reason);
+/* Optional terminal delivery for a concurrent control/render pair. Configure
+ * while quiescent, before creating voices/submitting commands. Enabling reserves
+ * one of 2048 notification credits for every accepted playback run; create and
+ * restart return LIMIT when exhausted. Polling returns credits. Notifications
+ * are never overwritten/dropped, even after release/reuse of a voice slot.
+ * Each run emits once, including active release/restart; repeated stop/release
+ * does not emit again. playback_id starts at 1 and advances on restart. frame is
+ * the exclusive output end-frame (commands apply at the next block boundary).
+ * Legacy voice_poll is exclusive-owner and independent of this event stream.
+ * completion_poll may run concurrently with render on the sole control poller. */
+typedef struct wp_audio_completion_event {
+    uint32_t size;
+    wp_audio_voice_handle voice;
+    uint64_t playback_id, frame;
+    wp_audio_completion reason;
+} wp_audio_completion_event;
+wp_audio_result wp_audio_context_notifications(wp_audio_context *context, int enabled);
+wp_audio_result wp_audio_completion_poll(wp_audio_context *context, wp_audio_completion_event *event);
 /* Writes interleaved stereo float, no limiter. Rejected calls do not advance clock. */
 wp_audio_result wp_audio_render(wp_audio_context *context, float *output, uint32_t frames);
 
 /* Optional bounded SPSC command publication: exactly one producer/poller and
- * one render owner. These two functions may run concurrently with render.
- * All other APIs still require exclusive access to the context. Queued start
+ * one render owner. submit/poll, completion_poll and stats_snapshot may run
+ * concurrently with render. Other APIs require exclusive context access. Queued start
  * returns a handle in its acknowledgement; queued release retires clip data on
  * the polling/control thread. Direct creation/release require quiescent render.
  * 128 requests may be outstanding, with eight slots reserved for stop commands.
@@ -79,7 +108,8 @@ typedef enum wp_audio_command_type {
     WP_AUDIO_COMMAND_GAIN, WP_AUDIO_COMMAND_LOOP, WP_AUDIO_COMMAND_PAUSE,
     WP_AUDIO_COMMAND_RESUME, WP_AUDIO_COMMAND_SEEK, WP_AUDIO_COMMAND_RESTART,
     WP_AUDIO_COMMAND_STOP, WP_AUDIO_COMMAND_STOP_ALL,
-    WP_AUDIO_COMMAND_START, WP_AUDIO_COMMAND_RELEASE
+    WP_AUDIO_COMMAND_START, WP_AUDIO_COMMAND_RELEASE,
+    WP_AUDIO_COMMAND_MASTER_GAIN /* value = gain [0,1], frame = mute 0/1 */
 } wp_audio_command_type;
 typedef struct wp_audio_command {
     uint32_t size;
@@ -96,6 +126,15 @@ typedef struct wp_audio_acknowledgement {
 } wp_audio_acknowledgement;
 wp_audio_result wp_audio_command_submit(wp_audio_context *context, const wp_audio_command *command);
 wp_audio_result wp_audio_command_poll(wp_audio_context *context, wp_audio_acknowledgement *acknowledgement);
+/* Independently sampled atomic telemetry, safe with the command producer and
+ * renderer. Rejections count capacity admission failures (not invalid arguments).
+ * High-water marks are bounded. Not an atomic transaction across all fields. */
+typedef struct wp_audio_context_stats {
+    uint32_t size;
+    uint64_t commands_accepted, commands_rejected, command_high_water;
+    uint64_t completions_published, notification_rejections, notification_high_water;
+} wp_audio_context_stats;
+wp_audio_result wp_audio_context_stats_snapshot(wp_audio_context *context, wp_audio_context_stats *stats);
 /* Process-wide native-core allocator instrumentation. Excludes platform,
  * adapter and C++ cache allocations. Read while owners are quiescent for an
  * exact leak balance; concurrent fields are independently sampled counters. */

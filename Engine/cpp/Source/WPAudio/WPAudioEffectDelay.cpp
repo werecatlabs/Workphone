@@ -14,6 +14,8 @@ namespace workphone
 
     void CAudioEffectDelay::process()
     {
+        if( !m_input || !m_output ) return;
+        for( size_t i = 0; i < m_numSamples; ++i ) m_output[i] = m_input[i];
     }
 
     f32 *CAudioEffectDelay::getInput()
@@ -53,7 +55,8 @@ namespace workphone
 
     void CAudioEffectDelay::setBypass( bool bypass )
     {
-        m_bBypass = bypass;
+        if( !bypass ) WP_LOG_ERROR( "WPAudio: delay DSP is unavailable; effect remains bypassed." );
+        m_bBypass = true;
     }
 
     u32 CAudioEffectDelay::getNumChannels() const
