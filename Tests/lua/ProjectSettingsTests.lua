@@ -145,7 +145,7 @@ assert(editor.settings.shadowQuality==4 and editor.shadowQualityControl:getSelec
     "Reading Ultra shadows must preserve its schema value in the dropdown")
 assert(not editor.cloudSaveControl.enabled and editor.cloudSaveControl.label:find("(Unavailable)", 1, true))
 assert(editor.settings.cloudSave==true)
-assert(#editor.controlBindings==133, "All project settings must be bound")
+assert(#editor.controlBindings==132, "The collision layer list and matrix share a binding")
 assert(parent.size.x==860 and parent.size.y==720 and parent.properties.values.initialPlacement=="floating",
     "Project Settings should open at a usable size on first use")
 assert(table.concat(editor.editorThemeControl.options, ",")=="Classic,Dark,Light,High Contrast,Default")
@@ -161,25 +161,33 @@ local function assertNoSettings(request)
 end
 editor:handleEvent(event(IEvent.handleSelection, editor.saveButton))
 assertNoSettings(native.calls[#native.calls])
-local matrix=editor.disabledCollisionPairsControl
+local matrix=editor.collisionLayersControl
 assert(matrix:getProperties().values["physics.disabledCollisionPairs"]=="Player,Enemy")
 local callsBeforeMatrixEdit=#native.calls
 matrix:getProperties():setPropertyAsString("physics.disabledCollisionPairs", "Player,World")
 editor:handleEvent(event(IEvent.handleValueChanged, matrix))
 assert(editor.settings.disabledCollisionPairs=="Player,World" and #native.calls==callsBeforeMatrixEdit,
     "Editing the matrix must stage the value without applying it")
-local reorderedLayers="Default,World,Player,Enemy,Trigger,UI"
-editor.collisionLayersControl:setText(reorderedLayers)
-editor:handleEvent(event(IEvent.handleValueChanged, editor.collisionLayersControl))
-assert(matrix:getProperties().values["physics.collisionLayers"]==reorderedLayers and
-    matrix:getProperties().values["physics.disabledCollisionPairs"]=="Player,World",
-    "Reordering layers must refresh the matrix and retain staged named pairs")
+local renamedLayers="Default,Hero,Enemy,World,Trigger,UI"
+matrix:getProperties():setPropertyAsString("physics.collisionLayers", renamedLayers)
+matrix:getProperties():setPropertyAsString("physics.disabledCollisionPairs", "Hero,World")
+editor:handleEvent(event(IEvent.handleValueChanged, matrix))
+assert(editor.settings.collisionLayers==renamedLayers and editor.settings.disabledCollisionPairs=="Hero,World" and
+    #native.calls==callsBeforeMatrixEdit, "The list and pair changes must stage together")
 editor:handleEvent(event(IEvent.handleSelection, editor.saveButton))
 local savedMatrix=native.calls[#native.calls].values
-assert(savedMatrix["physics.collisionLayers"]==reorderedLayers and
-    savedMatrix["physics.disabledCollisionPairs"]=="Player,World")
+assert(savedMatrix["physics.collisionLayers"]==renamedLayers and
+    savedMatrix["physics.disabledCollisionPairs"]=="Hero,World")
 editor:handleEvent(event(IEvent.handleSelection, editor.applyButton))
 assertNoSettings(native.calls[#native.calls])
+local remainingLayers="Default,Enemy,World,Trigger,UI"
+matrix:getProperties():setPropertyAsString("physics.collisionLayers", remainingLayers)
+matrix:getProperties():setPropertyAsString("physics.disabledCollisionPairs", "")
+editor:handleEvent(event(IEvent.handleValueChanged, matrix))
+editor:handleEvent(event(IEvent.handleSelection, editor.saveButton))
+local removedLayer=native.calls[#native.calls].values
+assert(removedLayer["physics.collisionLayers"]==remainingLayers and removedLayer["physics.disabledCollisionPairs"]=="",
+    "Removing a layer must persist an empty rule set when its last pair is removed")
 editor.editorThemeControl:setSelectedOption(2)
 editor:handleEvent(event(IEvent.handleSelection, editor.editorThemeControl))
 editor.editorThemeControl:setSelectedOption(4)

@@ -87,7 +87,6 @@ ProjectSettingsTypes =
 	PhysicsThreads = 117,
 	DeterministicPhysics = 118,
 	PhysicsDebugDraw = 119,
-	CollisionMatrix = 120,
 
 	-- Audio
 	MasterVolume = 130,
@@ -907,16 +906,12 @@ function ProjectSettings:load()
 
 	-- Physics --------------------------------------------------------------
 	local collisionHeader = self:addHeader(ui, physicsTab, "Collision Matrix");
-	self:bind(addEntry(ui, collisionHeader, "Collision Layers", ProjectSettingsTypes.CollisionLayers),
-		"collisionLayers", "text"):setText(self.settings.collisionLayers);
-	addText(ui, collisionHeader, "Enter comma-separated names and assign a Collision Layer on each Rigidbody.");
-	addText(ui, collisionHeader, "Checked pairs can collide if their Rigidbody masks also allow it.");
 	local collisionMatrix = self.window:handleEvent(IEvent.UI, StringUtil.getHash32("createProjectCollisionMatrix"),
 		Parameters(), collisionHeader, nil, nil);
 	if collisionMatrix ~= nil then
-		collisionMatrix:setElementId(ProjectSettingsTypes.CollisionMatrix);
-		collisionMatrix:setLabel("Collision Matrix");
-		self:bind(collisionMatrix, "disabledCollisionPairs", "collisionMatrix");
+		collisionMatrix:setElementId(ProjectSettingsTypes.CollisionLayers);
+		collisionMatrix:setLabel("Collision Layers");
+		self:bind(collisionMatrix, "collisionLayers", "collisionMatrix");
 	end
 
 	local physicsHeader = self:addHeader(ui, physicsTab, "Simulation");
@@ -1086,8 +1081,6 @@ function ProjectSettings:getControlValue(control, kind)
 		return round(control:getValue());
 	elseif kind == "floatSlider" then
 		return control:getValue();
-	elseif kind == "collisionMatrix" then
-		return control:getProperties():getPropertyAsString("physics.disabledCollisionPairs");
 	end
 
 	return nil;
@@ -1108,8 +1101,9 @@ function ProjectSettings:setControlValue(control, kind, value)
 		control:setValue(value or 0);
 	elseif kind == "collisionMatrix" then
 		local properties = IApplicationManager.instance():getFactoryManager():make_object("Properties");
-		properties:setPropertyAsString("physics.collisionLayers", self.settings.collisionLayers);
-		properties:setPropertyAsString("physics.disabledCollisionPairs", value or "");
+		properties:setPropertyAsString("physics.collisionLayers", value);
+		properties:setPropertyAsString("physics.disabledCollisionPairs", self.settings.disabledCollisionPairs);
+		properties:setPropertyAsBool("editCollisionPairs", self:bindingBlockReason("disabledCollisionPairs") == nil);
 		control:setProperties(properties);
 	end
 end
@@ -1117,10 +1111,16 @@ end
 function ProjectSettings:syncFromControls()
 	for _, binding in ipairs(self.controlBindings) do
 		if binding.control ~= nil and self:bindingBlockReason(binding.key) == nil then
-			local value = self:getControlValue(binding.control, binding.kind);
-			local unavailableChoices = self.graphicsUnavailableChoices[binding.key];
-			if unavailableChoices == nil or unavailableChoices[value] == nil then
-				self.settings[binding.key] = value;
+			if binding.kind == "collisionMatrix" then
+				local properties = binding.control:getProperties();
+				self.settings.collisionLayers = properties:getPropertyAsString("physics.collisionLayers");
+				self.settings.disabledCollisionPairs = properties:getPropertyAsString("physics.disabledCollisionPairs");
+			else
+				local value = self:getControlValue(binding.control, binding.kind);
+				local unavailableChoices = self.graphicsUnavailableChoices[binding.key];
+				if unavailableChoices == nil or unavailableChoices[value] == nil then
+					self.settings[binding.key] = value;
+				end
 			end
 		end
 	end
@@ -1507,9 +1507,6 @@ function ProjectSettings:handleControlChanged(sender)
 				self.stagedKeys[key] = true;
 			end
 			self:syncFromControls();
-			if key == "collisionLayers" then
-				self:setControlValue(self.disabledCollisionPairsControl, "collisionMatrix", self.settings.disabledCollisionPairs);
-			end
 			self:updateBroadphaseOptions();
 			self:updateRendererSummary();
 			self:updateControlAvailability(binding);

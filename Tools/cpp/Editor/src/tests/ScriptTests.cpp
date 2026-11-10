@@ -270,7 +270,8 @@ namespace
                         self.shadowQualityControl:setSelectedOption(4)
                         self.gravityControl:setValue(-7.5)
                         if self.capabilities.disabledCollisionPairs then
-                            self:setControlValue(self.disabledCollisionPairsControl, "collisionMatrix", "Enemy,Player")
+                            self.settings.disabledCollisionPairs = "Enemy,Player"
+                            self:setControlValue(self.collisionLayersControl, "collisionMatrix", self.settings.collisionLayers)
                         end
                         self:restartFixtureDispatch(self.applyButton)
                         self.window:setName("Restart Apply completed")
@@ -303,14 +304,14 @@ namespace
             {
                 scripts->loadScriptFromString( String( R"(
                     function ProjectSettings:restartFixtureObserve()
-                        assert(#self.controlBindings == 133)
+                        assert(#self.controlBindings == 132)
                         assert(self.companyControl:getText() == ")" ) + company + R"(")
                         assert(self.masterVolumeControl:getValue() == 37)
                         assert(self.frameRateLimitControl:getValue() == 73)
                         assert(self.shadowQualityControl:getSelectedOption() == 4)
                         assert(self.gravityControl:getValue() == -7.5)
                         if self.capabilities.disabledCollisionPairs then
-                            assert(self:getControlValue(self.disabledCollisionPairsControl, "collisionMatrix") == "Enemy,Player")
+                            assert(self.collisionLayersControl:getProperties():getPropertyAsString("physics.disabledCollisionPairs") == "Enemy,Player")
                         end
                         self.window:setName("Restart controls restored")
                     end
@@ -503,7 +504,7 @@ BOOST_AUTO_TEST_CASE( editor_project_settings_live_bridge_test )
 
     scripts->loadScriptFromString( R"(
         function ProjectSettings:projectSettingsIntegrationProbe()
-            assert(#self.controlBindings == 133)
+            assert(#self.controlBindings == 132)
             assert(self.capabilities.cloudSave == true)
             assert(self.cloudSaveControl:isEnabled())
             -- Device recreation is explicitly unavailable in the current window;
