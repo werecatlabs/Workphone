@@ -66,6 +66,23 @@ assert(results.success == false and editor.status:find("unavailable"))
 editor._settings.bus = 0
 assert(editor:_applyManagerSettings())
 assert(currentManager.mute == true and currentManager.volume == 0.2)
+-- Authored controls require a real service: no table-only success, and routing
+-- must not modify the project master settings as a side effect.
+editor._parameters = {preserved = {value = 0.3}}
+editor._effects = {[0] = {type = "preserved"}}
+editor._activeSnapshot = {path = "preserved"}
+editor._settings.eventBus = "preserved"
+editor._settings.busVolume = 0.9
+editor._settings.busMute = false
+for _, action in ipairs({"refreshEvents", "createParameter", "deleteParameter", "routeEventToBus",
+    "addOrReplaceEffect", "removeEffect", "startSnapshot", "stopSnapshot"}) do
+    results.success = true
+    editor:_performAction(action, results)
+    assert(results.success == false and editor.status:find("unavailable"), action)
+    assert(editor._parameters.preserved.value == 0.3 and editor._effects[0].type == "preserved", action)
+    assert(editor._activeSnapshot.path == "preserved" and editor._settings.eventBus == "preserved", action)
+    assert(currentManager.mute == true and currentManager.volume == 0.2, action)
+end
 editor:unload()
 assert(currentManager.destroyed == 1 and editor._currentSound == nil)
 editor:unload()
@@ -158,3 +175,8 @@ assert(snapshot.values.busVolume == 0.44 and snapshot.values.busMute == false)
 assert(startupManager.volumeWrites == 1 and startupManager.muteWrites == 1)
 loadedEditor:unload()
 print("SoundEditor startup/restore preserves project master gain and mute; explicit mixer edits remain live")
+editor._settings = {bus = 1, rawCommand = "mute"}
+local previousMute = currentManager.mute
+editor:_executeRawCommand(results)
+assert(results.success == false and editor.status:find("unavailable"))
+assert(currentManager.mute == previousMute)

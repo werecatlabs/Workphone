@@ -12,6 +12,7 @@
 #include <chrono>
 #include <cstring>
 #include <stdexcept>
+#include <workphone_audio_core.h>
 
 namespace audio_runtime_stream_contracts
 {
@@ -38,6 +39,10 @@ namespace audio_runtime_stream_contracts
         auto mount=ResourcePayloadMount::create(runtimeConfig,scheduler,limits,error);require(bool(mount),error.c_str());RuntimeResourceRangeInfo info;
         require(mount->resourceInfo(id,info,error)&&info.independentlyVerified,"Long PCM streaming requires real independent manifest chunk pins");
         auto factory=audio::AudioResourceStream::leafProviderFactory(mount,error);require(factory&&factory->handles(id),"Large v4 WAV must select its native cold leaf provider");
+        auto cancelled=factory->create(mount,id,info,100,error);require(bool(cancelled),error.c_str());
+        cancelled->cancel();std::shared_ptr<const RuntimeResource> cancelledResult;
+        require(cancelled->poll(cancelledResult,error)==ResourceLeafStatus::Error&&!cancelledResult,"Cancelled cold provider must not publish a resource");
+        cancelled->drain();cancelled.reset();
         auto provider=factory->create(mount,id,info,100,error);require(bool(provider),error.c_str());std::shared_ptr<const RuntimeResource> sparse;
         const auto coldDeadline=std::chrono::steady_clock::now()+std::chrono::seconds(10);ResourceLeafStatus status=ResourceLeafStatus::Pending;
         while(status==ResourceLeafStatus::Pending&&std::chrono::steady_clock::now()<coldDeadline){status=provider->poll(sparse,error);if(status==ResourceLeafStatus::Pending)std::this_thread::sleep_for(std::chrono::milliseconds(1));}
@@ -47,6 +52,22 @@ namespace audio_runtime_stream_contracts
         // its raw owner. That conversion is never counted as cold admission.
         auto raw=runtime.load(id,error);require(bool(raw),error.c_str());auto converted=audio::AudioResourceStream::capture(raw,mount,error);
         require(converted&&converted!=raw&&converted->payload.empty()&&!audio::AudioResourceStream::captureStats(*converted).cold,"Full-input conversion must remain distinguishable from cold range loading");converted.reset();
+        // Render a buffered reference through the actual common core, then
+        // compare every streamed PCM sample against it, excluding underrun
+        // silence (which deliberately does not advance the content cursor).
+        Array<float> buffered(pcmBytes/2);
+        {
+            wp_audio_clip *decoded=nullptr;
+            require(wp_audio_clip_decode(raw->payload.data(),raw->payload.size(),&decoded)==WP_AUDIO_OK,"Buffered reference decode");
+            std::unique_ptr<wp_audio_clip,decltype(&wp_audio_clip_destroy)> clip(decoded,wp_audio_clip_destroy);
+            wp_audio_context_desc description{sizeof(description),48000,1,256};wp_audio_context *created=nullptr;
+            require(wp_audio_context_create(&description,&created)==WP_AUDIO_OK,"Buffered reference context");
+            std::unique_ptr<wp_audio_context,decltype(&wp_audio_context_destroy)> context(created,wp_audio_context_destroy);
+            wp_audio_voice_desc voiceDescription{sizeof(voiceDescription),clip.get(),0,1,0,1,0};wp_audio_voice_handle voice{};
+            require(wp_audio_voice_create(context.get(),&voiceDescription,&voice)==WP_AUDIO_OK,"Buffered reference voice");
+            for(size_t at=0;at<buffered.size();at+=512)
+                require(wp_audio_render(context.get(),buffered.data()+at,256)==WP_AUDIO_OK,"Buffered reference render");
+        }
         std::weak_ptr<const RuntimeResource> old=raw;raw.reset();runtime.clearRuntimeCache();runtime.shutdown();require(old.expired(),"Sparse native PCM metadata must not retain the original whole resource");old.reset();
         auto stream=audio::AudioResourceStream::create(sparse,mount,error);require(bool(stream),error.c_str());require(stream->frames()==pcmBytes/4&&stream->residentBytes()<(1u<<20),"PCM ring/bootstrap must remain bounded below one MiB for a multi-MiB clip");
         std::atomic_bool stop{false},done{false},valid{true};std::atomic<u64> consumed{0};
@@ -56,8 +77,12 @@ namespace audio_runtime_stream_contracts
             if(!block.bytes){done=true;break;}
             if(block.slot==audio::AudioPcmRing::slotCount){for(size_t i=0;i<block.size;++i)if(block.bytes[i])valid=false;std::this_thread::yield();continue;}
             const auto &slot=stream->ring().slot(block.slot);for(size_t i=0;i<block.size;++i)if(block.bytes[i]!=pattern(slot.offset+i))valid=false;
+            for(size_t i=0;i<block.size;i+=2){const u32 sample=u32(block.bytes[i])|(u32(block.bytes[i+1])<<8);
+                const auto signedSample=sample>=32768?int(sample)-65536:int(sample);
+                if(buffered[(slot.offset+i)/2]!=float(signedSample)/32768.0f)valid=false;}
             stream->ring().submitted(block,true);consumed+=block.size;const bool end=block.dataEnd;stream->ring().complete(block.slot,end);if(end)done=true;
         }});
+        struct Join {std::atomic_bool &stop;std::thread &thread;~Join(){stop=true;if(thread.joinable())thread.join();}} join{stop,callback};
         const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(15);
         while(!done&&std::chrono::steady_clock::now()<deadline){stream->process(false);std::this_thread::sleep_for(std::chrono::milliseconds(1));}
         stop=true;callback.join();require(done&&valid&&consumed==pcmBytes,"Concurrent native callback ring must deliver every verified PCM byte in sequence");
@@ -98,6 +123,26 @@ namespace audio_runtime_stream_contracts
             if(block.slot<audio::AudioPcmRing::slotCount){require(stream->ring().slot(block.slot).offset==seekByte,"Seek generation must discard older range completions");for(size_t i=0;i<block.size;++i)require(block.bytes[i]==pattern(seekByte+i),"Recovered seek PCM differs from its sealed payload");stream->ring().submitted(block,true);stream->ring().complete(block.slot,false);recovered=true;}
             else std::this_thread::sleep_for(std::chrono::milliseconds(1));}
         require(recovered,"PCM range retry must recover after pressure is released");
+        for(u64 iteration=0;iteration<12;++iteration)
+        {
+            // Supersede each outstanding demand before its result is consumed.
+            const u64 rejectedByte=(iteration%8+3)*audio::AudioPcmRing::blockBytes;
+            const u64 acceptedByte=(iteration%7+12)*audio::AudioPcmRing::blockBytes;
+            require(stream->reset(rejectedByte/4,error)&&stream->reset(acceptedByte/4,error),error.c_str());
+            const auto seekDeadline=std::chrono::steady_clock::now()+std::chrono::seconds(10);bool ready=false;
+            while(!ready&&std::chrono::steady_clock::now()<seekDeadline)
+            {
+                stream->process(false);const auto block=stream->ring().acquire(4096);
+                if(block.slot<audio::AudioPcmRing::slotCount)
+                {
+                    require(stream->ring().slot(block.slot).offset==acceptedByte,"Cancelled seek must never publish stale offsets");
+                    for(size_t i=0;i<block.size;++i)require(block.bytes[i]==pattern(acceptedByte+i),"Repeated sought bytes must agree with buffered source");
+                    stream->ring().submitted(block,true);stream->ring().complete(block.slot,false);ready=true;
+                }
+                else std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            require(ready,"Repeated seek must recover after cancellation");
+        }
         require(stream->reset(7*audio::AudioPcmRing::blockBytes/4,error),error.c_str());require(stream->reset(3*audio::AudioPcmRing::blockBytes/4,error),error.c_str());
         const auto before=scheduler->stats().used[size_t(StreamMemoryClass::SourceCpu)];stream.reset();const auto after=scheduler->stats().used[size_t(StreamMemoryClass::SourceCpu)];
         require(before>=after+audio::AudioPcmRing::slotCount*audio::AudioPcmRing::blockBytes,"Native PCM retirement must release its bounded source ring admission");

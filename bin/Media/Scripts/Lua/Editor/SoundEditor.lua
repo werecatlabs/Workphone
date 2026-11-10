@@ -1189,53 +1189,24 @@ function SoundEditor:_performAction(actionName, results)
 		self._isPaused = false;
 		self:_setStatus("Stopped " .. tostring(self:_getCurrentEventPath()), results);
 	elseif actionName == "refreshEvents" then
-		self:_setStatus("Event list refreshed (" .. tostring(#SoundEditorOptions.events) .. " built-in entries).", results);
-	elseif actionName == "createParameter" then
-		local name = self:_getCurrentParameterName();
-		self._parameters[name] =
-		{
-			value = self._settings.parameterValue or 0.0,
-			seekSpeed = self._settings.parameterSeekSpeed or 0.0,
-		};
-		self:_setResult(results, "parameterName", name);
-		self:_setStatus("Created/updated parameter: " .. tostring(name), results);
-	elseif actionName == "deleteParameter" then
-		local name = self:_getCurrentParameterName();
-		self._parameters[name] = nil;
-		self:_setStatus("Deleted parameter: " .. tostring(name), results);
+		self:_setResult(results, "success", false);
+		self:_setStatus("Authored event discovery is unavailable; listed events are examples.", results);
+	elseif actionName == "createParameter" or actionName == "deleteParameter" then
+		self:_setResult(results, "success", false);
+		self:_setStatus("Authored audio parameter services are unavailable in this backend.", results);
 	elseif actionName == "routeEventToBus" then
-		self._settings.eventBus = self:_getOptionLabel(SoundEditorOptions.buses, self._settings.bus, "bus:/Master");
-		self:_applyManagerSettings();
-		self:_setStatus("Routed event to " .. tostring(self._settings.eventBus), results);
-	elseif actionName == "addOrReplaceEffect" then
-		local slot = self._settings.effectSlot or 0;
-		self._effects[slot] =
-		{
-			type = self._settings.effectType or 0,
-			wet = self._settings.effectWet or 1.0,
-			bypass = self._settings.effectBypass == true,
-		};
-		self:_setStatus("Effect slot " .. tostring(slot + 1) .. " updated.", results);
-	elseif actionName == "removeEffect" then
-		local slot = self._settings.effectSlot or 0;
-		self._effects[slot] = nil;
-		self:_setStatus("Effect slot " .. tostring(slot + 1) .. " cleared.", results);
+		self:_setResult(results, "success", false);
+		self:_setStatus("Authored event routing is unavailable in this backend.", results);
+	elseif actionName == "addOrReplaceEffect" or actionName == "removeEffect" then
+		self:_setResult(results, "success", false);
+		self:_setStatus("Authored audio effect services are unavailable in this backend.", results);
     elseif actionName == "loadBank" or actionName == "unloadBank" or actionName == "buildBanks" then
         self:_setResult(results, "success", false);
         self:_setResult(results, "bankLoaded", false);
         self:_setStatus("Audio bank services are unavailable in this backend.", results);
-	elseif actionName == "startSnapshot" then
-		self._activeSnapshot =
-		{
-			path = self:_getCurrentSnapshotPath(),
-			intensity = self._settings.snapshotIntensity or 1.0,
-			fadeTime = self._settings.snapshotFadeTime or 0.0,
-		};
-		self:_setStatus("Started snapshot: " .. tostring(self._activeSnapshot.path), results);
-	elseif actionName == "stopSnapshot" then
-		local path = self._activeSnapshot and self._activeSnapshot.path or self:_getCurrentSnapshotPath();
-		self._activeSnapshot = nil;
-		self:_setStatus("Stopped snapshot: " .. tostring(path), results);
+	elseif actionName == "startSnapshot" or actionName == "stopSnapshot" then
+		self:_setResult(results, "success", false);
+		self:_setStatus("Audio snapshot services are unavailable in this backend.", results);
 	elseif actionName == "executeRawCommand" then
 		self:_executeRawCommand(results);
 	elseif actionName == "clearDebugValues" then
@@ -1276,16 +1247,13 @@ function SoundEditor:_executeRawCommand(results)
 		self:_performAction("resumeEvent", results);
 	elseif op == "load" then
 		self:_performAction("loadEvent", results);
-	elseif op == "mute" then
-		self._settings.busMute = true;
-		if self.busMuteCheckbox then self.busMuteCheckbox:setValue(true); end
-		self:_applyManagerSettings("busMute");
-		self:_setStatus("Muted audio.", results);
-	elseif op == "unmute" then
-		self._settings.busMute = false;
-		if self.busMuteCheckbox then self.busMuteCheckbox:setValue(false); end
-		self:_applyManagerSettings("busMute");
-		self:_setStatus("Unmuted audio.", results);
+	elseif op == "mute" or op == "unmute" then
+		self._settings.busMute = op == "mute";
+		if self.busMuteCheckbox then self.busMuteCheckbox:setValue(self._settings.busMute); end
+		local applied = self:_applyManagerSettings("busMute");
+		self:_setResult(results, "success", applied);
+		self:_setStatus(applied and (op == "mute" and "Muted audio." or "Unmuted audio.")
+			or "Selected mixer bus service is unavailable", results);
 	else
 		self:_setStatus("Unknown raw command: " .. tostring(command), results);
 	end

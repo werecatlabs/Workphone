@@ -505,9 +505,8 @@ namespace workphone
 
     void WPAudioManager::loadSoundMap( const Properties &soundMap )
     {
-        // Store sound name to file path mappings
-        // This allows sounds to be referenced by name rather than file path
-        // TODO: Implement property iteration when Properties API is available
+        (void)soundMap;
+        WP_LOG_ERROR( "WPAudio: legacy sound-name maps are unavailable; load a resource path or ResourceID." );
     }
 
     bool WPAudioManager::loadSoundEvents( const String &filePath )
@@ -536,19 +535,9 @@ namespace workphone
 
     void WPAudioManager::removeSound( SmartPtr<ISound> sound )
     {
-        if( !sound )
-        {
-            return;
-        }
-
-        // Ensure the sound is unloaded before removing
-        if( sound->isLoaded() )
-        {
-            sound->unload( nullptr );
-        }
-
+        // Registry membership is authoritative. The base operation unloads and
+        // clears ownership only for resources owned by this manager.
         SoundManager::destroyResource( sound );
-        sound->setOwner( nullptr );
     }
 
     void WPAudioManager::removeAll()
