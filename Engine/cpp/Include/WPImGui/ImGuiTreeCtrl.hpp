@@ -6,6 +6,8 @@
 #include <WPImGui/ImGuiElement.hpp>
 #include <Workphone/Interface/UI/IUITreeCtrl.hpp>
 #include <Workphone/Core/ConcurrentArray.hpp>
+#include <Workphone/Memory/AtomicSharedPtr.hpp>
+#include <map>
 
 namespace workphone
 {
@@ -89,6 +91,8 @@ namespace workphone
              * @copydoc ISharedObject::unload
              */
             void unload( SmartPtr<ISharedObject> data ) override;
+
+            void setProperties( SmartPtr<Properties> properties ) override;
 
             /**
              * @brief Create and add a root-level tree node.
@@ -383,6 +387,30 @@ namespace workphone
 
             /// Static id extension used for generating unique node ids.
             static u32 m_nodeIdExt;
+
+        private:
+            struct AssetBrowserState
+            {
+                SmartPtr<IUITreeNode> folder;
+                std::map<u32, Array<SmartPtr<IUITreeNode>>> folders;
+                Array<SmartPtr<IUITreeNode>> items;
+                String search;
+            };
+
+            void drawAssetBrowser( const AssetBrowserState &state );
+            void drawAssetFolders( const AssetBrowserState &state, u32 parentId );
+            void drawAssetContents( const AssetBrowserState &state, float height );
+            void drawAssetContextMenu();
+            void handleAssetItem( SmartPtr<IUITreeNode> node, const AssetBrowserState *contents,
+                                  bool activate );
+            void selectAssetItem( SmartPtr<IUITreeNode> node, const AssetBrowserState *contents );
+            void notifyAssetItem( SmartPtr<IUITreeNode> node, hash_type event, bool contents );
+            void acceptAssetDrop( SmartPtr<IUITreeNode> destination );
+
+            AtomicSharedPtr<AssetBrowserState> m_assetBrowser;
+            u32 m_assetViewFolder = 0;
+            String m_assetViewSearch;
+            int m_assetIconSize = 48;
         };
     }  // end namespace ui
 }  // namespace workphone

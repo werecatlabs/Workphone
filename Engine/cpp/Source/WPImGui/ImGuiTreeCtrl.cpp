@@ -81,6 +81,7 @@ namespace workphone::ui
                 setLoadingState( LoadingState::Unloading );
 
                 m_treeSelectedNodes.clear();
+                m_assetBrowser = nullptr;
 
                 auto treeNodes = getTreeNodes();
                 for( auto &treeNode : treeNodes )
@@ -203,6 +204,8 @@ namespace workphone::ui
         auto ui = applicationManager->getUIPtr();
 
         clearSelectedTreeNodes();
+        if( m_assetBrowser )
+            m_assetBrowser = workphone::make_shared<AssetBrowserState>();
 
         if( auto root = getRoot() )
         {
@@ -458,7 +461,11 @@ namespace workphone::ui
             treeCtrl->setDragSourceElement( nullptr );
         }
 
-        if( auto root = treeCtrl->getRoot() )
+        if( auto assetBrowser = treeCtrl->m_assetBrowser.load() )
+        {
+            treeCtrl->drawAssetBrowser( *assetBrowser );
+        }
+        else if( auto root = treeCtrl->getRoot() )
         {
             auto label = Util::getText( root );
             if( StringUtil::isNullOrEmpty( label ) )

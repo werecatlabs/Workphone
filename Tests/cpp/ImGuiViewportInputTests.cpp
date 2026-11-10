@@ -1,11 +1,13 @@
 #include <WPImGui/ImGuiApplication.hpp>
 #include <WPImGui/ImGuiButton.hpp>
+#include <WPImGui/ImGuiDragJob.hpp>
 #include <WPImGui/ImGuiManager.hpp>
 #include <WPImGui/ImGuiLabelSliderPair.hpp>
 #include <WPImGui/ImGuiPropertyGrid.hpp>
 #include <WPImGui/ImGuiUtil.hpp>
 #include <WPImGui/ImGuiRenderWindow.hpp>
 #include <WPImGui/ImGuiText.hpp>
+#include <WPImGui/ImGuiTreeCtrl.hpp>
 #include <WPImGui/ImGuiWindow.hpp>
 #include <WPImGui/WPImGuiStyle.hpp>
 #include <Workphone/Core/Properties.hpp>
@@ -22,6 +24,7 @@
 #include <Workphone/Memory/FactoryUtil.hpp>
 #include <Workphone/Jobs/EventJob.hpp>
 #include <Workphone/Interface/System/IEventListener.hpp>
+#include <Workphone/Interface/UI/IUITreeNode.hpp>
 #include <Workphone/Thread/Thread.hpp>
 #include <WorkphoneCore/workphone.h>
 #include <imgui.h>
@@ -229,6 +232,75 @@ namespace
         SmartPtr<core::ApplicationManager> application;
         TaskId previousTask;
     };
+
+    class AssetDragSource final : public ui::IUIDragSource
+    {
+    public:
+        Parameter handleEvent( EventType, hash_type event, const Array<Parameter> &arguments,
+                               SmartPtr<ISharedObject>, SmartPtr<ISharedObject>, SmartPtr<IEvent> ) override
+        {
+            if( event != IEvent::handleDrag || arguments.empty() )
+                return {};
+            node = arguments[0].object;
+            return Parameter( String( "asset payload" ) );
+        }
+
+        SmartPtr<ISharedObject> node;
+    };
+
+    void assetTileStartsTreeDrag( Fixture &fixture )
+    {
+        auto manager = fixture.application->getUI();
+        auto factories = fixture.application->getFactoryManager();
+        if( !factories->hasFactoryById( ui::ImGuiDragJob::typeInfo() ) )
+            FactoryUtil::addFactory<ui::ImGuiDragJob>( factories );
+
+        auto tree = manager->addElementByType<ui::IUITreeCtrl>();
+        auto root = tree->addRoot();
+        auto folder = tree->addNode();
+        folder->setElementId( 1 );
+        folder->setName( "Assets" );
+        root->addChild( folder );
+        auto asset = tree->addNode();
+        asset->setElementId( 2 );
+        asset->setName( "Assets/model.obj" );
+        folder->addChild( asset );
+
+        auto settings = make_ptr<Properties>();
+        settings->setProperty( "assetBrowser", true );
+        settings->setProperty( "assetFolder", folder->getTreeNodeId() );
+        tree->setProperties( settings );
+        auto source = make_ptr<AssetDragSource>();
+        tree->setDragSource( source );
+
+        ImVec2 tilePosition;
+        const auto render = [&] {
+            ImGui::NewFrame();
+            ImGui::SetNextWindowPos( ImVec2( 30, 30 ) );
+            ImGui::SetNextWindowSize( ImVec2( 320, 260 ) );
+            ImGui::Begin( "Asset browser drag", nullptr, ImGuiWindowFlags_NoSavedSettings );
+            const auto origin = ImGui::GetCursorScreenPos();
+            tilePosition = ImVec2( origin.x + 15.0f, origin.y + 15.0f );
+            ui::ImGuiTreeCtrl::createElement( tree );
+            ImGui::End();
+            ImGui::EndFrame();
+        };
+        render();
+        auto &io = ImGui::GetIO();
+        io.AddMousePosEvent( tilePosition.x, tilePosition.y );
+        render();
+        io.AddMouseButtonEvent( ImGuiMouseButton_Left, true );
+        render();
+        io.AddMousePosEvent( tilePosition.x + 120.0f, tilePosition.y );
+        render();
+        const auto *payload = ImGui::GetDragDropPayload();
+        require( source->node == asset && payload && payload->IsDataType( "_TREENODE" ) &&
+                     payload->DataSize == 13 && std::memcmp( payload->Data, "asset payload", 13 ) == 0,
+                 "dragging an asset tile must publish the tree node's existing payload" );
+        io.AddMouseButtonEvent( ImGuiMouseButton_Left, false );
+        render();
+        manager->removeElement( tree );
+    }
 
     void mouse( ui::ClawUIManager &manager, Vector2F position, IMouseState::Event type )
     {
@@ -934,6 +1006,7 @@ int main()
         categorizedPropertyGrid();
         windowInitialPlacement();
         buttonKeyboardAccelerators( fixture );
+        assetTileStartsTreeDrag( fixture );
         preciseFloatSliders();
         preciseSliderEvents();
 #if defined WP_PLATFORM_WIN32

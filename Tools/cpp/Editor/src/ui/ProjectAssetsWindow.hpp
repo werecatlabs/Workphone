@@ -210,13 +210,15 @@ namespace workphone
             void navigateForward();
             void navigateUp();
             void updateNavigationControls();
+            void publishAssetBrowser();
 
             void applySearchFilter( const String &filter );
             bool updateNodeFilter( SmartPtr<ui::IUITreeNode> node, const String &filter );
-            void updateThumbnailPreview( const String &filePath );
+            void updateThumbnailPreview( SmartPtr<ui::IUITreeNode> node = nullptr );
 
             static String getAssetIcon( const String &path, bool isFolder );
-            static String getAssetDisplayName( const String &path, bool isFolder );
+            static void configureAssetNode( SmartPtr<ui::IUITreeNode> node, const String &path,
+                                            bool isFolder );
 
             SmartPtr<ui::IUITreeNode> findNodeByPath( const String &path ) const;
             void removeTreeNode( SmartPtr<ui::IUITreeNode> node );
@@ -237,7 +239,7 @@ namespace workphone
             SmartPtr<ui::IUITextEntry> m_searchEntry;
             SmartPtr<ui::IUIText> m_breadcrumbText;
             SmartPtr<ui::IUIImage> m_thumbnailPreview;
-            SmartPtr<ui::IUIText> m_thumbnailCaption;
+            WeakPtr<ui::IUITreeNode> m_thumbnailNode;
 
             SmartPtr<IEventListener> m_menuListener;
             SmartPtr<ui::IUIMenu> m_applicationMenu;
@@ -253,6 +255,7 @@ namespace workphone
             Array<String> m_navigationHistory;
             s32 m_navigationHistoryIndex = -1;
             String m_currentFolder;
+            WeakPtr<ui::IUITreeNode> m_currentFolderNode;
             String m_searchFilter;
 
             //SmartPtr<TemplateFilter> m_parentFilter;

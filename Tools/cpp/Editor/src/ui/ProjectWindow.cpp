@@ -97,6 +97,7 @@ namespace workphone::editor
                 m_fileWindow = workphone::make_ptr<FileWindow>();
                 m_fileWindow->setParent( parentWindow );
                 m_fileWindow->load( nullptr );
+                m_fileWindow->setWindowVisible( false );
 #endif
             }
 

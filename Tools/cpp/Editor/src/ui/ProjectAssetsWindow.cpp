@@ -20,6 +20,9 @@ namespace workphone::editor
 {
     namespace
     {
+        constexpr hash_type assetFolderElementId = 1;
+        constexpr hash_type assetFileElementId = 2;
+
         bool isWithinFolder( const String &path, const String &folder )
         {
             auto root = StringUtil::make_lower( StringUtil::cleanupPath( folder ) );
@@ -112,32 +115,24 @@ namespace workphone::editor
                 m_refreshButton =
                     addNavigationButton( ICON_FA_ROTATE "##AssetsRefresh", MenuId::Refresh, true );
 
-                m_breadcrumbText = ui->addElementByType<ui::IUIText>();
-                m_breadcrumbText->setText( ICON_FA_FOLDER_OPEN " Assets" );
-                //Util::setText( m_breadcrumbText, ICON_FA_FOLDER_OPEN " Assets" );
-                parentWindow->addChild( m_breadcrumbText );
-
                 m_searchEntry = ui->addElementByType<ui::IUITextEntry>();
-                m_searchEntry->setLabel( ICON_FA_MAGNIFYING_GLASS " Search##AssetSearch" );
-                m_searchEntry->setPlaceholder( "Filter by name, type, or path..." );
+                m_searchEntry->setLabel( "##AssetSearch" );
+                m_searchEntry->setPlaceholder( "Search assets..." );
                 m_searchEntry->setText( "" );
+                m_searchEntry->setSameLine( true );
                 m_searchEntry->addObjectListener( listener );
                 parentWindow->addChild( m_searchEntry );
 
-                m_thumbnailCaption = ui->addElementByType<ui::IUIText>();
-                m_thumbnailCaption->setText( "" );
-                //Util::setText( m_thumbnailCaption, "" );
-                m_thumbnailCaption->setVisible( false );
-                parentWindow->addChild( m_thumbnailCaption );
+                m_breadcrumbText = ui->addElementByType<ui::IUIText>();
+                m_breadcrumbText->setText( ICON_FA_FOLDER_OPEN " Assets" );
+                parentWindow->addChild( m_breadcrumbText );
 
                 m_thumbnailPreview = ui->addElementByType<ui::IUIImage>();
-                m_thumbnailPreview->setSize( Vector2F( 160.0f, 100.0f ) );
-                m_thumbnailPreview->setVisible( false );
-                parentWindow->addChild( m_thumbnailPreview );
 
                 auto treeCtrl = ui->addElementByType<ui::IUITreeCtrl>();
                 parentWindow->addChild( treeCtrl );
                 m_tree = treeCtrl;
+                publishAssetBrowser();
 
                 auto dragSource = workphone::make_ptr<DragSource>();
                 dragSource->setOwner( this );
@@ -261,6 +256,13 @@ namespace workphone::editor
                 auto ui = applicationManager->getUI();
                 WP_ASSERT( ui );
 
+                updateThumbnailPreview();
+                if( m_thumbnailPreview )
+                {
+                    ui->removeElement( m_thumbnailPreview );
+                    m_thumbnailPreview = nullptr;
+                }
+
                 if( m_tree )
                 {
                     if( m_treeListener )
@@ -298,15 +300,10 @@ namespace workphone::editor
                 m_refreshButton = nullptr;
                 m_searchEntry = nullptr;
                 m_breadcrumbText = nullptr;
-                if( m_thumbnailPreview )
-                {
-                    m_thumbnailPreview->setTexture( nullptr );
-                    m_thumbnailPreview = nullptr;
-                }
-                m_thumbnailCaption = nullptr;
                 m_navigationHistory.clear();
                 m_navigationHistoryIndex = -1;
                 m_currentFolder.clear();
+                m_currentFolderNode = nullptr;
                 m_searchFilter.clear();
 
                 auto dataArray = getData();
@@ -354,7 +351,7 @@ namespace workphone::editor
         auto data = factoryManager->make_ptr<ProjectTreeData>( fileExt, path, nullptr, nullptr );
         if( auto fileNode = tree->addNode() )
         {
-            Util::setText( fileNode, getAssetDisplayName( path, false ) );
+            configureAssetNode( fileNode, path, false );
             fileNode->setNodeUserData( data );
             parent->addChild( fileNode );
             addData( data );
@@ -421,11 +418,9 @@ namespace workphone::editor
                 auto data =
                     factoryManager->make_ptr<ProjectTreeData>( folderStr, folderPath, project, project );
 
-                auto folderName = Path::getFileName( folderPath );
-
                 if( auto node = tree->addNode() )
                 {
-                    Util::setText( node, getAssetDisplayName( folderName, true ) );
+                    configureAssetNode( node, folderPath, true );
 
                     node->setNodeUserData( data );
 
@@ -537,11 +532,9 @@ namespace workphone::editor
                 auto data =
                     factoryManager->make_ptr<ProjectTreeData>( "folder", folderPath, project, project );
 
-                auto folderName = Path::getFileName( folderPath );
-
                 if( auto node = tree->addNode() )
                 {
-                    Util::setText( node, getAssetDisplayName( folderName, true ) );
+                    configureAssetNode( node, folderPath, true );
 
                     node->setNodeUserData( data );
 
@@ -588,11 +581,9 @@ namespace workphone::editor
                         auto data = factoryManager->make_ptr<ProjectTreeData>( "file", filePath, nullptr,
                                                                                nullptr );
 
-                        auto fileName = Path::getFileName( filePath );
-
                         if( auto fileNode = tree->addNode() )
                         {
-                            Util::setText( fileNode, getAssetDisplayName( fileName, false ) );
+                            configureAssetNode( fileNode, filePath, false );
 
                             fileNode->setNodeUserData( data );
 
@@ -768,9 +759,13 @@ namespace workphone::editor
                     !fileSystem->isExistingFolder( folderToRestore ) )
                 {
                     folderToRestore = assetsFolder;
+                    m_navigationHistory.clear();
+                    m_navigationHistoryIndex = -1;
                 }
 
+                updateThumbnailPreview();
                 tree->clear();
+                m_currentFolderNode = nullptr;
                 clearData();
 
                 auto rootNode = tree->addRoot();
@@ -818,8 +813,17 @@ namespace workphone::editor
                 tree->expand( rootNode );
 
                 m_currentFolder = Path::lexically_normal( folderToRestore );
-                if( auto selectedFolderNode = findNodeByPath( m_currentFolder ) )
+                auto selectedFolderNode = findNodeByPath( m_currentFolder );
+                if( !selectedFolderNode )
                 {
+                    m_currentFolder = assetsFolder;
+                    selectedFolderNode = node;
+                    m_navigationHistory.clear();
+                    m_navigationHistoryIndex = -1;
+                }
+                if( selectedFolderNode )
+                {
+                    m_currentFolderNode = selectedFolderNode;
                     tree->setSelectedTreeNode( selectedFolderNode );
                     tree->expand( selectedFolderNode );
                 }
@@ -944,8 +948,7 @@ namespace workphone::editor
             }
             else if( ownerType == "folder" )
             {
-                // ImGui already toggled the folder on double-click.
-                navigateToFolder( projectTreeData->getObjectType(), true, false );
+                navigateToFolder( projectTreeData->getObjectType() );
             }
         }
     }
@@ -982,6 +985,7 @@ namespace workphone::editor
 
     String ProjectAssetsWindow::getSelectedFolderPath() const
     {
+        ScopedLock lock( this );
         auto applicationManager = core::IApplicationManager::instancePtr();
         if( !applicationManager )
         {
@@ -1012,6 +1016,10 @@ namespace workphone::editor
         auto projectPath = applicationManager->getProjectPath();
         auto assetsPath = Path::lexically_normal( projectPath, "Assets" );
         auto fileSystem = applicationManager->getFileSystemPtr();
+        if( fileSystem && !m_currentFolder.empty() && fileSystem->isExistingFolder( m_currentFolder ) )
+        {
+            return m_currentFolder;
+        }
         return fileSystem && fileSystem->isExistingFolder( assetsPath ) ? assetsPath : projectPath;
     }
 
@@ -1293,13 +1301,15 @@ namespace workphone::editor
         }
 
         m_currentFolder = path;
+        m_currentFolderNode = node;
         tree->setSelectedTreeNode( node );
         if( expandNode )
         {
             tree->expand( node );
         }
-        updateThumbnailPreview( {} );
+        updateThumbnailPreview();
         updateNavigationControls();
+        publishAssetBrowser();
         return true;
     }
 
@@ -1373,10 +1383,9 @@ namespace workphone::editor
                 if( currentKey.size() > rootPrefix.size() &&
                     currentKey.compare( 0, rootPrefix.size(), rootPrefix ) == 0 )
                 {
-                    auto relativePath = Path::getRelativePath( root, m_currentFolder );
-                    relativePath = StringUtil::replaceAll( relativePath, "\\", " / " );
-                    relativePath = StringUtil::replaceAll( relativePath, "/", " / " );
-                    displayPath += " / " + relativePath;
+                    auto relativePath =
+                        StringUtil::cleanupPath( Path::getRelativePath( root, m_currentFolder ) );
+                    displayPath += " / " + StringUtil::replaceAll( relativePath, "/", " / " );
                 }
                 else
                 {
@@ -1384,7 +1393,20 @@ namespace workphone::editor
                 }
             }
 
-            //Util::setText( m_breadcrumbText, ICON_FA_FOLDER_OPEN " " + displayPath );
+            m_breadcrumbText->setText( ICON_FA_FOLDER_OPEN " " + displayPath );
+        }
+    }
+
+    void ProjectAssetsWindow::publishAssetBrowser()
+    {
+        if( auto tree = getTree() )
+        {
+            const auto folder = m_currentFolderNode.lock();
+            auto properties = workphone::make_ptr<Properties>();
+            properties->setProperty( "assetBrowser", true );
+            properties->setProperty( "assetFolder", folder ? folder->getTreeNodeId() : u32( 0 ) );
+            properties->setProperty( "assetSearch", m_searchFilter );
+            tree->setProperties( properties );
         }
     }
 
@@ -1409,6 +1431,7 @@ namespace workphone::editor
                 }
             }
         }
+        publishAssetBrowser();
     }
 
     bool ProjectAssetsWindow::updateNodeFilter( SmartPtr<ui::IUITreeNode> node, const String &filter )
@@ -1443,17 +1466,32 @@ namespace workphone::editor
         return visible;
     }
 
-    void ProjectAssetsWindow::updateThumbnailPreview( const String &filePath )
+    void ProjectAssetsWindow::updateThumbnailPreview( SmartPtr<ui::IUITreeNode> node )
     {
-        if( !m_thumbnailPreview || !m_thumbnailCaption )
+        if( !m_thumbnailPreview )
         {
             return;
         }
 
+        if( auto previous = m_thumbnailNode.lock() )
+        {
+            if( previous == node )
+            {
+                return;
+            }
+            previous->setNodeData( nullptr );
+        }
+        m_thumbnailNode = nullptr;
         m_thumbnailPreview->setTexture( nullptr );
-        m_thumbnailPreview->setVisible( false );
-        m_thumbnailCaption->setVisible( false );
-        if( StringUtil::isNullOrEmpty( filePath ) || !ApplicationUtil::isSupportedTexture( filePath ) )
+        auto treeData =
+            node ? workphone::dynamic_pointer_cast<ProjectTreeData>( node->getNodeUserData() )
+                 : nullptr;
+        if( !treeData || treeData->getOwnerType() != fileExt )
+        {
+            return;
+        }
+        const auto filePath = treeData->getObjectType();
+        if( !ApplicationUtil::isSupportedTexture( filePath ) )
         {
             return;
         }
@@ -1473,10 +1511,8 @@ namespace workphone::editor
         if( auto texture = textureManager->loadFromFile( absolutePath ) )
         {
             m_thumbnailPreview->setTexture( texture );
-            m_thumbnailPreview->setVisible( true );
-            m_thumbnailCaption->setText( ICON_FA_FILE_IMAGE " Preview: " +
-                                         Path::getFileName( filePath ) );
-            m_thumbnailCaption->setVisible( true );
+            node->setNodeData( m_thumbnailPreview );
+            m_thumbnailNode = node;
         }
     }
 
@@ -1518,7 +1554,10 @@ namespace workphone::editor
         {
             return ICON_FA_PALETTE;
         }
-        if( extension == ".scene" || extension == ".prefab" || extension == ".resource" )
+        if( extension == ".scene" || extension == ApplicationUtil::builtinSceneExt ||
+            extension == ApplicationUtil::builtinXmlSceneExt ||
+            extension == ApplicationUtil::builtinBinarySceneExt || extension == ".prefab" ||
+            extension == ".fbprefab" || extension == ".resource" )
         {
             return ICON_FA_CUBES;
         }
@@ -1539,9 +1578,14 @@ namespace workphone::editor
         return ICON_FA_FILE;
     }
 
-    String ProjectAssetsWindow::getAssetDisplayName( const String &path, bool isFolder )
+    void ProjectAssetsWindow::configureAssetNode( SmartPtr<ui::IUITreeNode> node,
+                                                  const String &path, bool isFolder )
     {
-        return getAssetIcon( path, isFolder ) + "  " + Path::getFileName( path );
+        const auto icon = getAssetIcon( path, isFolder );
+        Util::setText( node, icon + "  " + Path::getFileName( path ) );
+        node->setElementId( isFolder ? assetFolderElementId : assetFileElementId );
+        node->setName( path );
+        node->setLabel( icon );
     }
 
     SmartPtr<ui::IUITreeNode> ProjectAssetsWindow::findNodeByPath( const String &path ) const
@@ -1608,7 +1652,8 @@ namespace workphone::editor
         };
         collectNodes( node );
 
-        if( auto parent = node->getParent() )
+        auto parent = node->getParent();
+        if( parent )
         {
             parent->removeChild( node );
         }
@@ -1618,6 +1663,17 @@ namespace workphone::editor
             return std::find( removedNodes.begin(), removedNodes.end(), candidate ) !=
                    removedNodes.end();
         };
+        if( isRemoved( m_thumbnailNode.lock() ) )
+        {
+            updateThumbnailPreview();
+        }
+        if( isRemoved( m_currentFolderNode.lock() ) )
+        {
+            auto parentFolder = workphone::dynamic_pointer_cast<ui::IUITreeNode>( parent );
+            m_currentFolderNode = parentFolder;
+            m_currentFolder = parentFolder ? parentFolder->getName() : String();
+            updateNavigationControls();
+        }
         if( isRemoved( selectedNode ) )
         {
             tree->setSelectedTreeNode( nullptr );
@@ -1781,11 +1837,11 @@ namespace workphone::editor
         EventType eventType, hash_type eventValue, const Array<Parameter> &arguments,
         SmartPtr<ISharedObject> sender, SmartPtr<ISharedObject> object, SmartPtr<IEvent> event )
     {
-        if( auto owner = getOwnerPtr() )
+        if( auto owner = getOwner(); owner && !arguments.empty() )
         {
             if( eventValue == IEvent::handleTreeSelectionRelease )
             {
-                ScopedLock lock( owner );
+                ScopedLock lock( owner.get() );
 
                 owner->m_selectedObject = object;
 
@@ -1793,6 +1849,10 @@ namespace workphone::editor
                 if( obj && obj->isDerived<ui::IUITreeNode>() )
                 {
                     auto node = workphone::static_ptr_cast<ui::IUITreeNode>( obj );
+                    if( node->getOwnerTree() != owner->getTree() )
+                    {
+                        return {};
+                    }
 
                     auto nodeUserData = node->getNodeUserData();
                     auto treeData = workphone::static_pointer_cast<ProjectTreeData>( nodeUserData );
@@ -1801,12 +1861,23 @@ namespace workphone::editor
                         static const auto folderType = String( "folder" );
                         if( treeData->getOwnerType() == folderType )
                         {
-                            // Keep the expansion state chosen by the tree click.
-                            owner->navigateToFolder( treeData->getObjectType(), true, false );
+                            const bool tileSelection =
+                                arguments.size() > 1 &&
+                                arguments[1].type == ParameterType::PARAM_TYPE_BOOL &&
+                                arguments[1].getBool();
+                            if( tileSelection )
+                            {
+                                owner->updateThumbnailPreview();
+                            }
+                            else
+                            {
+                                // Keep the expansion state chosen by the folder tree.
+                                owner->navigateToFolder( treeData->getObjectType(), true, false );
+                            }
                         }
                         else
                         {
-                            owner->updateThumbnailPreview( treeData->getObjectType() );
+                            owner->updateThumbnailPreview( node );
                             owner->handleTreeSelectionActivated( node );
                         }
                     }
@@ -1814,12 +1885,15 @@ namespace workphone::editor
             }
             else if( eventValue == IEvent::handleTreeNodeDoubleClicked )
             {
-                ScopedLock lock( owner );
+                ScopedLock lock( owner.get() );
 
                 owner->m_selectedObject = object;
 
-                auto node = workphone::static_ptr_cast<ui::IUITreeNode>( arguments[0].object );
-                owner->handleTreeNodeDoubleClicked( node );
+                auto node = workphone::dynamic_pointer_cast<ui::IUITreeNode>( arguments[0].object );
+                if( node && node->getOwnerTree() == owner->getTree() )
+                {
+                    owner->handleTreeNodeDoubleClicked( node );
+                }
             }
         }
 
@@ -1859,30 +1933,38 @@ namespace workphone::editor
             return {};
         }
 
-        if( eventValue == IEvent::handleValueChanged && element == owner->m_searchEntry )
+        if( element == owner->m_searchEntry )
         {
-            auto filter = arguments.empty() ? owner->m_searchEntry->getText() : arguments[0].getStr();
-            owner->applySearchFilter( filter );
+            if( eventValue == IEvent::handleValueChanged )
+            {
+                ScopedLock lock( owner.get() );
+                auto filter = arguments.empty() ? owner->m_searchEntry->getText()
+                                                : arguments.back().getStr();
+                owner->applySearchFilter( filter );
+            }
             return {};
         }
 
         auto menuId = static_cast<MenuId>( element->getElementId() );
-        switch( menuId )
         {
-        case MenuId::NavigateBack:
-            owner->navigateBack();
-            return {};
-        case MenuId::NavigateForward:
-            owner->navigateForward();
-            return {};
-        case MenuId::NavigateUp:
-            owner->navigateUp();
-            return {};
-        case MenuId::NavigateRoot:
-            owner->navigateToFolder( owner->getAssetsRootPath() );
-            return {};
-        default:
-            break;
+            ScopedLock lock( owner.get() );
+            switch( menuId )
+            {
+            case MenuId::NavigateBack:
+                owner->navigateBack();
+                return {};
+            case MenuId::NavigateForward:
+                owner->navigateForward();
+                return {};
+            case MenuId::NavigateUp:
+                owner->navigateUp();
+                return {};
+            case MenuId::NavigateRoot:
+                owner->navigateToFolder( owner->getAssetsRootPath() );
+                return {};
+            default:
+                break;
+            }
         }
 
         auto factoryManager = applicationManager->getFactoryManager();
