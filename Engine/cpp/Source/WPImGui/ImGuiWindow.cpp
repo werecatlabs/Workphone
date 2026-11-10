@@ -72,7 +72,7 @@ namespace workphone::ui
             {
                 if( !window->applyInitialPlacement() && !window->isDocked() )
                 {
-                    ImGui::SetNextWindowDockID( uiApplication->m_dockLeftIdRight, ImGuiCond_FirstUseEver );
+                    ImGui::SetNextWindowDockID( uiApplication->m_dockProjectId, ImGuiCond_FirstUseEver );
                     window->setDocked( true );
                 }
 

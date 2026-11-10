@@ -541,9 +541,13 @@ namespace workphone
                 io.DeltaTime = ( deltaTime > 0.0f && deltaTime < 1.0f ) ? deltaTime : ( 1.0f / 60.0f );
             }
 
-            const float width = m_vpWidth > 0 ? static_cast<float>( m_vpWidth ) : 400.0f;
-            const float height = m_vpHeight > 0 ? static_cast<float>( m_vpHeight ) : 400.0f;
-            io.DisplaySize = ImVec2( width, height );
+            // The native client size is available before the renderer has resized its viewport.
+            if( !hasPlatformBackend || io.DisplaySize.x <= 0.0f || io.DisplaySize.y <= 0.0f )
+            {
+                const float width = m_vpWidth > 0 ? static_cast<float>( m_vpWidth ) : 400.0f;
+                const float height = m_vpHeight > 0 ? static_cast<float>( m_vpHeight ) : 400.0f;
+                io.DisplaySize = ImVec2( width, height );
+            }
             io.DisplayFramebufferScale = ImVec2( 1.0f, 1.0f );
 
             ImGui::NewFrame();

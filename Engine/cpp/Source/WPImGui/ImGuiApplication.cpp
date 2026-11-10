@@ -1704,34 +1704,20 @@ namespace workphone::ui
 
     void ImGuiApplication::setupDefaultDockLayout( ImGuiID dockspaceId, const ImVec2 &dockspaceSize )
     {
-        ImGui::DockBuilderRemoveNode( dockspaceId );
         ImGui::DockBuilderAddNode( dockspaceId, ImGuiDockNodeFlags_DockSpace );
         ImGui::DockBuilderSetNodeSize( dockspaceId, dockspaceSize );
 
-        ImGuiID leftWorkspaceId = 0;
-        ImGuiID rightPanelStripId = 0;
-        ImGui::DockBuilderSplitNode( dockspaceId, ImGuiDir_Right, 0.43f, &rightPanelStripId,
-                                     &leftWorkspaceId );
-
-        ImGui::DockBuilderSplitNode( leftWorkspaceId, ImGuiDir_Up, 0.045f, &m_dockLeftIdUp,
-                                     &m_dockLeftIdLeft );
-
-        ImGuiID objectAndSceneId = 0;
-        ImGui::DockBuilderSplitNode( rightPanelStripId, ImGuiDir_Right, 0.32f, &m_dockProjectId,
-                                     &objectAndSceneId );
-        ImGui::DockBuilderSplitNode( objectAndSceneId, ImGuiDir_Right, 0.51f, &m_dockSceneId,
-                                     &m_dockObjectId );
-
-        // Retain the legacy IDs used by ImGuiWindow for sensible fallback placement.
-        m_dockLeftIdRight = m_dockProjectId;
-
-        ImGui::DockBuilderDockWindow( "Toolbar1", m_dockLeftIdUp );
-        ImGui::DockBuilderDockWindow( "Object", m_dockObjectId );
-        ImGui::DockBuilderDockWindow( "Object Window", m_dockObjectId );
-        ImGui::DockBuilderDockWindow( "Scene", m_dockSceneId );
-        ImGui::DockBuilderDockWindow( "Scene Window", m_dockSceneId );
-        ImGui::DockBuilderDockWindow( "Project", m_dockProjectId );
-        ImGui::DockBuilderDockWindow( "Project Window", m_dockProjectId );
+        ImGuiID workspaceId = 0;
+        const float toolbarHeight = ImGui::GetStyle().WindowPadding.y * 2.0f +
+                                    ImFloor( ImGui::GetFontSize() * 1.7f );
+        ImGui::DockBuilderSplitNode( dockspaceId, ImGuiDir_Up, toolbarHeight / dockspaceSize.y,
+                                     &m_dockToolbarId, &workspaceId );
+        ImGui::DockBuilderSplitNode( workspaceId, ImGuiDir_Right, 0.25f, &m_dockObjectId,
+                                     &workspaceId );
+        ImGui::DockBuilderSplitNode( workspaceId, ImGuiDir_Down, 0.26f, &m_dockProjectId,
+                                     &workspaceId );
+        ImGui::DockBuilderSplitNode( workspaceId, ImGuiDir_Left, 0.24f, &m_dockSceneId,
+                                     &m_dockViewportId );
         ImGui::DockBuilderFinish( dockspaceId );
     }
 
@@ -1841,17 +1827,20 @@ namespace workphone::ui
                 ImGui::PopStyleVar( 2 );
             }
 
-            // Versioning the ID applies this improved default once. ImGui will persist any
-            // subsequent rearrangement made by the user.
+            // Keep the dockspace ID stable so existing layouts can be restored.
             const auto dockspaceId = ImGui::GetID( "WorkphoneMainDockspaceV2" );
             if( ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_DockingEnable )
             {
-                if( !ImGui::DockBuilderGetNode( dockspaceId ) )
+                const auto dockspaceSize = ImGui::GetContentRegionAvail();
+                const auto dockspace = ImGui::DockBuilderGetNode( dockspaceId );
+                if( dockspace || ( dockspaceSize.x > 0.0f && dockspaceSize.y > 0.0f ) )
                 {
-                    setupDefaultDockLayout( dockspaceId, ImGui::GetContentRegionAvail() );
+                    if( !dockspace )
+                    {
+                        setupDefaultDockLayout( dockspaceId, dockspaceSize );
+                    }
+                    ImGui::DockSpace( dockspaceId, ImVec2( 0.0f, 0.0f ), dockspace_flags );
                 }
-
-                ImGui::DockSpace( dockspaceId, ImVec2( 0.0f, 0.0f ), dockspace_flags );
             }
 
             auto menuBar = getMenubar();
@@ -1899,15 +1888,15 @@ namespace workphone::ui
                 auto toolbar = getToolbar();
                 if( toolbar )
                 {
-                    if( m_dockLeftIdUp != 0 )
+                    if( m_dockToolbarId != 0 )
                     {
-                        ImGui::SetNextWindowDockID( m_dockLeftIdUp, ImGuiCond_FirstUseEver );
+                        ImGui::SetNextWindowDockID( m_dockToolbarId, ImGuiCond_FirstUseEver );
                     }
                     createElement( toolbar );
 
                     if( auto toolbarWindow = ImGui::FindWindowByName( "Toolbar1" ) )
                     {
-                        m_dockLeftIdUp = toolbarWindow->DockId;
+                        m_dockToolbarId = toolbarWindow->DockId;
                     }
                 }
             }
@@ -1925,13 +1914,9 @@ namespace workphone::ui
                 auto visible = renderWindow->isVisible();
                 if( visible )
                 {
-                    if( !renderWindow->isDocked() )
+                    if( m_dockViewportId != 0 )
                     {
-                        if( m_dockLeftIdLeft != 0 )
-                        {
-                            ImGui::SetNextWindowDockID( m_dockLeftIdLeft, ImGuiCond_FirstUseEver );
-                        }
-                        renderWindow->setDocked( true );
+                        ImGui::SetNextWindowDockID( m_dockViewportId, ImGuiCond_FirstUseEver );
                     }
 
                     auto label = renderWindow->getLabel();
@@ -1941,11 +1926,14 @@ namespace workphone::ui
                         label = defaultLabel;
                     }
 
-                    if( ImGui::Begin( label.c_str(), &visible, ImGuiWindowFlags_None ) )
+                    const bool drawContents = ImGui::Begin( label.c_str(), &visible, ImGuiWindowFlags_None );
+                    const auto dockId = ImGui::GetWindowDockID();
+                    renderWindow->setDocked( dockId != 0 );
+                    if( drawContents )
                     {
-                        if( const auto dockId = ImGui::GetWindowDockID(); dockId != 0 )
+                        if( dockId != 0 )
                         {
-                            m_dockLeftIdLeft = dockId;
+                            m_dockViewportId = dockId;
                         }
 
                         renderWindow->setVisible( visible, false );
@@ -2574,7 +2562,7 @@ namespace workphone::ui
                             windowTitle = "Project Window";
                         }
 
-                        ImGuiID defaultDockId = m_dockLeftIdRight;
+                        ImGuiID defaultDockId = m_dockProjectId;
                         if( windowTitle == "Object Window" )
                         {
                             defaultDockId = m_dockObjectId;
@@ -2582,10 +2570,6 @@ namespace workphone::ui
                         else if( windowTitle == "Scene Window" )
                         {
                             defaultDockId = m_dockSceneId;
-                        }
-                        else if( windowTitle == "Project Window" )
-                        {
-                            defaultDockId = m_dockProjectId;
                         }
 
                         auto nativeWindow = dynamic_pointer_cast<ImGuiWindow>( window );
@@ -2614,7 +2598,6 @@ namespace workphone::ui
                                 else if( windowTitle == "Project Window" )
                                 {
                                     m_dockProjectId = dockId;
-                                    m_dockLeftIdRight = dockId;
                                 }
 
                                 auto children = window->getChildren();

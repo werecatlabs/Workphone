@@ -90,9 +90,8 @@ namespace workphone
 
             static ImGuiOverlayOgre *getOverlay();
 
-            ImGuiID m_dockLeftIdLeft = 0;
-            ImGuiID m_dockLeftIdRight = 0;
-            ImGuiID m_dockLeftIdUp = 0;
+            ImGuiID m_dockViewportId = 0;
+            ImGuiID m_dockToolbarId = 0;
             ImGuiID m_dockObjectId = 0;
             ImGuiID m_dockSceneId = 0;
             ImGuiID m_dockProjectId = 0;

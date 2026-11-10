@@ -1423,6 +1423,18 @@ namespace workphone::editor
             //    }
             //}
 
+            // Maximize before starting the render task so ImGui can size the initial dock splits.
+            if( auto graphicsSystem = applicationManager->getGraphicsSystem() )
+            {
+                auto window = graphicsSystem->getDefaultWindow();
+                if( window )
+                {
+                    const auto windowName = String( "Workphone" );
+                    window->setTitle( windowName );
+                    window->maximize();
+                }
+            }
+
             auto taskManager = applicationManager->getTaskManager();
             taskManager->setState( ITaskManager::State::FreeStep );
 
@@ -1433,17 +1445,6 @@ namespace workphone::editor
             if( projectWindow )
             {
                 projectWindow->buildTree();
-            }
-
-            if( auto graphicsSystem = applicationManager->getGraphicsSystem() )
-            {
-                auto window = graphicsSystem->getDefaultWindow();
-                if( window )
-                {
-                    const auto windowName = String( "Workphone" );
-                    window->setTitle( windowName );
-                    window->maximize();
-                }
             }
 
             if( m_cameraActor )
