@@ -128,6 +128,9 @@ namespace workphone
             properties->getPropertyValue( "SceneFilePath", m_sceneFilePath );
         }
 
+        m_packageArchives.clear();
+        properties->getPropertyValue( "packageArchives", m_packageArchives );
+
         properties->getPropertyValue( "scriptFilePaths", m_scriptFilePaths );
         if( m_scriptFilePaths.empty() )
         {
@@ -155,6 +158,11 @@ namespace workphone
         }
 
         setFilePath( filePath );
+    }
+
+    const Array<String> &RuntimeProject::getPackageArchives() const
+    {
+        return m_packageArchives;
     }
 
     String RuntimeProject::getApplicationFilePath() const

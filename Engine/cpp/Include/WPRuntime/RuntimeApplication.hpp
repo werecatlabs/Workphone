@@ -199,6 +199,8 @@ namespace workphone
          */
         void createPlugins() override;
 
+        void createFileSystem() override;
+
         /// Path to the scene file to be loaded by the runtime.
         String m_sceneFilePath;
 
@@ -209,6 +211,11 @@ namespace workphone
         AtomicValue<bool> m_sceneLoadCoroutineQueued = false;
 
     private:
+        String getMediaPath() const override;
+
+        String m_packageRoot;
+        Array<String> m_packageArchives;
+        String m_packageMountError;
         SmartPtr<ui::IUIText> m_fpsText;
         // Accessed by the render task while the application is running.
         std::chrono::steady_clock::time_point m_fpsSampleStart;

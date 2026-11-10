@@ -1,4 +1,5 @@
 #include <Workphone/WorkphonePCH.hpp>
+#include <Workphone/IO/PackageArchive.hpp>
 #include <Workphone/IO/ZipUtil.hpp>
 #include <Workphone/IO/FileDataStream.hpp>
 
@@ -9,9 +10,14 @@
 #        include <zzip/zzip.h>
 #        include <zzip/plugin.h>
 #        include <zip.h>
+#        include <array>
+#        include <filesystem>
 #        include <iostream>
 #        include <fstream>
-#        include <winerror.h>
+#        include <limits>
+#        include <memory>
+#        include <unordered_set>
+#        include <windows.h>
 
 #        if defined( MSDOS ) || defined( OS2 ) || defined( WIN32 ) || defined( __CYGWIN__ )
 #            include <fcntl.h>
@@ -204,336 +210,259 @@ namespace workphone
 #        endif
     }
 
+    namespace
+    {
+        constexpr unsigned char archiveXor = 13;
+        constexpr auto maxPackedSize = static_cast<ZPOS64_T>(
+            ( std::numeric_limits<zzip_off_t>::max )() );
+        constexpr size_t maxPackedEntries = 65534;
+        constexpr uLong utf8Names = 1 << 11;
+
+        voidpf ZCALLBACK openWideZip( voidpf, const void *path, int )
+        {
+            return _wfopen( static_cast<const wchar_t *>( path ), L"wb" );
+        }
+
+        uLong ZCALLBACK writeObfuscatedZip( voidpf, voidpf stream, const void *data,
+                                            uLong size )
+        {
+            auto file = static_cast<FILE *>( stream );
+            const auto position = _ftelli64( file );
+            if( position < 0 || static_cast<ZPOS64_T>( position ) + size > maxPackedSize )
+            {
+                return 0;
+            }
+
+            const auto source = static_cast<const unsigned char *>( data );
+            std::array<unsigned char, 16384> buffer;
+            uLong written = 0;
+            while( written < size )
+            {
+                const auto count = ( std::min )( static_cast<size_t>( size - written ),
+                                                buffer.size() );
+                for( size_t i = 0; i < count; ++i )
+                {
+                    buffer[i] = source[written + i] ^ archiveXor;
+                }
+                const auto result = fwrite( buffer.data(), 1, count, file );
+                written += static_cast<uLong>( result );
+                if( result != count )
+                {
+                    break;
+                }
+            }
+            return written;
+        }
+
+        auto writeZipEntry( zipFile archive, const std::filesystem::path &sourcePath,
+                            const std::string &name, int compression, bool obfuscate,
+                            const std::function<bool()> &shouldCancel ) -> int
+        {
+            std::error_code error;
+            const auto fileSize = std::filesystem::file_size( sourcePath, error );
+            if( error || ( obfuscate && fileSize >= maxPackedSize ) )
+            {
+                return ZIP_ERRNO;
+            }
+
+            std::ifstream source( sourcePath, std::ios::binary );
+            if( !source )
+            {
+                return ZIP_ERRNO;
+            }
+
+            constexpr auto zip32MaxSize = 0xffffffffULL;
+            zip_fileinfo info{};
+            auto result = zipOpenNewFileInZip4_64(
+                archive, name.c_str(), &info, nullptr, 0, nullptr, 0, nullptr, Z_DEFLATED,
+                compression, 0, -MAX_WBITS, 8, Z_DEFAULT_STRATEGY, nullptr, 0, 0, utf8Names,
+                fileSize >= zip32MaxSize ? 1 : 0 );
+            if( result != ZIP_OK )
+            {
+                return result;
+            }
+
+            std::array<char, 65536> buffer;
+            uintmax_t bytesRead = 0;
+            while( result == ZIP_OK && source )
+            {
+                if( shouldCancel && shouldCancel() )
+                {
+                    result = ZIP_ERRNO;
+                    break;
+                }
+                source.read( buffer.data(), buffer.size() );
+                const auto count = source.gcount();
+                bytesRead += count;
+                if( count > 0 )
+                {
+                    result = zipWriteInFileInZip( archive, buffer.data(),
+                                                   static_cast<unsigned int>( count ) );
+                }
+            }
+
+            const auto closeResult = zipCloseFileInZip( archive );
+            if( result == ZIP_OK && ( !source.eof() || source.bad() || bytesRead != fileSize ) )
+            {
+                result = ZIP_ERRNO;
+            }
+            return result == ZIP_OK ? closeResult : result;
+        }
+
+        auto createZip( const StringW &destinationPath, const Array<StringW> &paths,
+                        const StringW &rootDir, bool relativePaths, int compression,
+                        bool obfuscate, const std::function<bool()> &shouldCancel = {} ) -> int
+        {
+            if( destinationPath.empty() || compression < -1 || compression > 9 ||
+                ( relativePaths && rootDir.empty() ) ||
+                ( obfuscate && paths.size() > maxPackedEntries ) )
+            {
+                return ZIP_PARAMERROR;
+            }
+
+            try
+            {
+                const auto destination = std::filesystem::path( destinationPath.c_str() );
+                const auto suffix = L"." + StringUtil::generateUUID().to_wstring() + L".partial";
+                auto temporary = destination;
+                temporary += suffix.c_str();
+                struct RemoveTemporary
+                {
+                    const std::filesystem::path &path;
+
+                    ~RemoveTemporary()
+                    {
+                        std::error_code error;
+                        std::filesystem::remove( path, error );
+                    }
+                } removeTemporary{ temporary };
+
+                zlib_filefunc64_def io{};
+                fill_fopen64_filefunc( &io );
+                io.zopen64_file = openWideZip;
+                if( obfuscate )
+                {
+                    io.zwrite_file = writeObfuscatedZip;
+                }
+
+                const auto closeZip = []( zipFile file ) { zipClose( file, nullptr ); };
+                std::unique_ptr<void, decltype( closeZip )> archive(
+                    zipOpen2_64( temporary.c_str(), APPEND_STATUS_CREATE, nullptr, &io ), closeZip );
+                if( !archive )
+                {
+                    return ZIP_ERRNO;
+                }
+
+                auto root = std::filesystem::path( rootDir.c_str() );
+                if( relativePaths )
+                {
+                    root = std::filesystem::absolute( root ).lexically_normal();
+                }
+
+                std::unordered_set<std::string> packedNames;
+                for( const auto &path : paths )
+                {
+                    const auto source = std::filesystem::path( path.c_str() );
+                    const auto entry = relativePaths ? std::filesystem::absolute( source )
+                                                            .lexically_normal()
+                                                            .lexically_relative( root ) :
+                                                       source.filename();
+                    if( entry.empty() || entry == L"." || entry.begin()->native() == L".." )
+                    {
+                        return ZIP_PARAMERROR;
+                    }
+
+                    const auto entryUtf8 = entry.generic_u8string();
+                    const auto name = std::string(
+                        reinterpret_cast<const char *>( entryUtf8.data() ), entryUtf8.size() );
+                    if( obfuscate &&
+                        ( name.size() >= WP_MAX_PATH || !packedNames.insert( name ).second ) )
+                    {
+                        return ZIP_PARAMERROR;
+                    }
+
+                    const auto result =
+                        writeZipEntry( archive.get(), source, name, compression, obfuscate, shouldCancel );
+                    if( result != ZIP_OK )
+                    {
+                        return result;
+                    }
+                }
+
+                const auto closeResult = zipClose( archive.release(), nullptr );
+                if( closeResult != ZIP_OK )
+                {
+                    return closeResult;
+                }
+                if( shouldCancel && shouldCancel() )
+                {
+                    return ZIP_ERRNO;
+                }
+
+                return MoveFileExW( temporary.c_str(), destination.c_str(),
+                                    MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH ) ?
+                           ZIP_OK :
+                           ZIP_ERRNO;
+            }
+            catch( const std::exception & )
+            {
+                return ZIP_ERRNO;
+            }
+        }
+    }  // namespace
+
     auto ZipUtil::createZipFileFromPath( const StringW &destinationPath, const Array<StringW> &paths )
         -> int
     {
-#        if defined WP_PLATFORM_WIN32
-        auto sDestinationPath = StringUtil::toStringC( destinationPath );
-
-        zipFile zf = zipOpen( sDestinationPath.c_str(), APPEND_STATUS_CREATE );
-        if( zf == nullptr )
-        {
-            return 1;
-        }
-
-        bool _return = true;
-        for( auto path : paths )
-        {
-            std::fstream file( path.c_str(), std::ios::binary | std::ios::in );
-            if( file.is_open() )
-            {
-                file.seekg( 0, std::ios::end );
-                auto size = file.tellg();
-                file.seekg( 0, std::ios::beg );
-
-                Array<char> buffer( size );
-                if( size == 0 || file.read( &buffer[0], size ) )
-                {
-                    zip_fileinfo zfi = { 0 };
-                    auto fileName = path.substr( path.rfind( '\\' ) + 1 );
-                    fileName = PathW::getFileName( fileName );
-
-                    auto sFileName = StringUtil::toUTF16to8( fileName );
-                    if( S_OK == zipOpenNewFileInZip( zf, sFileName.c_str(), &zfi, nullptr, 0, nullptr, 0,
-                                                     nullptr, Z_DEFLATED, m_compressionLevel ) )
-                    {
-                        auto pBuf = size == 0 ? "" : &buffer[0];
-                        if( zipWriteInFileInZip( zf, pBuf, (u32)size ) )
-                        {
-                            _return = false;
-                        }
-
-                        if( zipCloseFileInZip( zf ) )
-                        {
-                            _return = false;
-                        }
-
-                        file.close();
-                        continue;
-                    }
-                }
-                file.close();
-            }
-            _return = false;
-        }
-
-        if( zipClose( zf, nullptr ) )
-        {
-            return 3;
-        }
-
-        if( !_return )
-        {
-            return 4;
-        }
-
-        return S_OK;
-#        else
-        return 0;
-#        endif
+        return createZip( destinationPath, paths, {}, false, m_compressionLevel, false );
     }
 
     auto ZipUtil::createZipFileFromPath( const StringW &destinationPath, const Array<StringW> &paths,
                                          const StringW &rootDir, bool useRelativePaths ) -> int
     {
-        return createZipFileFromPath(destinationPath,paths,rootDir,useRelativePaths,m_compressionLevel);
+        return createZip( destinationPath, paths, rootDir, useRelativePaths, m_compressionLevel,
+                          false );
     }
 
     auto ZipUtil::createZipFileFromPath( const StringW &destinationPath, const Array<StringW> &paths,
-                                         const StringW &rootDir, bool useRelativePaths, int compressionLevel ) -> int
+                                         const StringW &rootDir, bool useRelativePaths,
+                                         int compressionLevel ) -> int
     {
-        if(compressionLevel < -1 || compressionLevel > 9)return 5;
-#        if defined WP_PLATFORM_WIN32
-        auto sDestinationPath = StringUtil::toStringC( destinationPath );
-        zipFile zf = zipOpen( sDestinationPath.c_str(), APPEND_STATUS_CREATE );
-        if( zf == nullptr )
-        {
-            return 1;
-        }
-
-        bool _return = true;
-        for( auto path : paths )
-        {
-            std::fstream file( path.c_str(), std::ios::binary | std::ios::in );
-            if( file.is_open() )
-            {
-                file.seekg( 0, std::ios::end );
-                auto size = file.tellg();
-                file.seekg( 0, std::ios::beg );
-
-                Array<char> buffer( size );
-                if( size == 0 || file.read( &buffer[0], size ) )
-                {
-                    zip_fileinfo zfi = { 0 };
-                    StringW fileName;
-
-                    if( useRelativePaths )
-                    {
-                        // Assuming that the paths are relative to a certain root directory
-                        // You need to specify the root directory
-                        fileName = path.substr( rootDir.length() + 1 );  // Adjust this logic as needed
-                    }
-                    else
-                    {
-                        fileName = path.substr( path.rfind( '\\' ) + 1 );
-                        fileName = PathW::getFileName( fileName );
-                    }
-
-                    auto sFileName = StringUtil::toUTF16to8( fileName );
-                    if( S_OK == zipOpenNewFileInZip( zf, sFileName.c_str(), &zfi, nullptr, 0, nullptr, 0,
-                                                     nullptr, Z_DEFLATED, compressionLevel ) )
-                    {
-                        auto pBuf = size == 0 ? "" : &buffer[0];
-                        if( zipWriteInFileInZip( zf, pBuf, (u32)size ) )
-                        {
-                            _return = false;
-                        }
-
-                        if( zipCloseFileInZip( zf ) )
-                        {
-                            _return = false;
-                        }
-
-                        file.close();
-                        continue;
-                    }
-                }
-                file.close();
-            }
-            _return = false;
-        }
-
-        if( zipClose( zf, nullptr ) )
-        {
-            return 3;
-        }
-
-        if( !_return )
-        {
-            return 4;
-        }
-
-        return S_OK;
-#        else
-        return 0;
-#        endif
+        return createZip( destinationPath, paths, rootDir, useRelativePaths, compressionLevel, false );
     }
 
     auto ZipUtil::createZipFileFromPath( const StringW &destinationPath, const StringW &zipPath,
                                          const Array<StringW> &paths ) -> int
     {
-        auto destinationPathCStr = StringUtil::toStringC( destinationPath );
-        zipFile zf = zipOpen( destinationPathCStr.c_str(), APPEND_STATUS_CREATE );
-        if( zf == nullptr )
-        {
-            return 1;
-        }
-
-        bool _return = true;
-        for( auto path : paths )
-        {
-            std::fstream file( path.c_str(), std::ios::binary | std::ios::in );
-            if( file.is_open() )
-            {
-                file.seekg( 0, std::ios::end );
-                auto size = file.tellg();
-                file.seekg( 0, std::ios::beg );
-
-                Array<char> buffer( size );
-                if( size == 0 || file.read( &buffer[0], size ) )
-                {
-                    zip_fileinfo zfi = { 0 };
-                    StringW fileName = path.substr( path.rfind( '\\' ) + 1 );
-                    StringW zipFilePath = PathW::getRelativePath( zipPath, path );
-                    auto zipFilePathCStr = StringUtil::toStringC( zipFilePath );
-
-                    if( S_OK == zipOpenNewFileInZip( zf, zipFilePathCStr.c_str(), &zfi, nullptr, 0,
-                                                     nullptr, 0, nullptr, Z_DEFLATED,
-                                                     m_compressionLevel ) )
-                    {
-                        auto pBuf = size == 0 ? "" : &buffer[0];
-                        if( zipWriteInFileInZip( zf, pBuf, (u32)size ) )
-                        {
-                            _return = false;
-                        }
-
-                        if( zipCloseFileInZip( zf ) )
-                        {
-                            _return = false;
-                        }
-
-                        continue;
-                    }
-                }
-            }
-
-            _return = false;
-        }
-
-        if( zipClose( zf, nullptr ) )
-        {
-            return 3;
-        }
-
-        if( !_return )
-        {
-            return 4;
-        }
-
-        return S_OK;
+        return createZip( destinationPath, paths, zipPath, true, m_compressionLevel, false );
     }
 
     auto ZipUtil::createObfuscatedZipFileFromPath( const StringW &destinationPath,
                                                    const Array<StringW> &paths ) -> int
     {
-        auto destinationTempPath = destinationPath + L".tempzip";
-        createZipFileFromPath( destinationTempPath, paths );
-
-        /* Convert the file */
-        FILE *fin = _wfopen( destinationTempPath.c_str(), L"rb" );
-
-        if( !fin )
-        {
-            fprintf( stderr, "Can't open input file \"%s\"\n", (c8 *)destinationTempPath.c_str() );
-            exit( 1 );
-        }
-
-        FILE *fout = _wfopen( destinationPath.c_str(), L"wb" );
-
-        if( !fout )
-        {
-            fprintf( stderr, "Can't open output file \"%s\"\n", (c8 *)destinationPath.c_str() );
-            exit( 1 );
-        }
-
-        int ch;
-
-        while( ( ch = fgetc( fin ) ) != EOF )
-        {
-            ch ^= 13;  //ApplicationTypes::XOR_VALUE;
-            fputc( ch, fout );
-        }
-
-        fclose( fout );
-        fclose( fin );
-
-        return 0;
+        return createZip( destinationPath, paths, {}, false, m_compressionLevel, true );
     }
 
     auto ZipUtil::createObfuscatedZipFileFromPath( const StringW &destinationPath,
                                                    const Array<StringW> &paths, const StringW &rootDir,
                                                    bool useRelativePaths ) -> int
     {
-        auto destinationTempPath = destinationPath + L".tempzip";
-        createZipFileFromPath( destinationTempPath, paths, rootDir, useRelativePaths );
+        return createZip( destinationPath, paths, rootDir, useRelativePaths, m_compressionLevel, true );
+    }
 
-        /* Convert the file */
-        FILE *fin = _wfopen( destinationTempPath.c_str(), L"rb" );
-
-        if( !fin )
-        {
-            fprintf( stderr, "Can't open input file \"%s\"\n", (c8 *)destinationTempPath.c_str() );
-            exit( 1 );
-        }
-
-        FILE *fout = _wfopen( destinationPath.c_str(), L"wb" );
-
-        if( !fout )
-        {
-            fprintf( stderr, "Can't open output file \"%s\"\n", (c8 *)destinationPath.c_str() );
-            exit( 1 );
-        }
-
-        int ch;
-
-        while( ( ch = fgetc( fin ) ) != EOF )
-        {
-            ch ^= 13;  //ApplicationTypes::XOR_VALUE;
-            fputc( ch, fout );
-        }
-
-        fclose( fout );
-        fclose( fin );
-
-        return 0;
+    auto writeGamePackageArchive( const StringW &destination, const Array<StringW> &files,
+                                  const StringW &projectRoot,
+                                  const std::function<bool()> &shouldCancel ) -> int
+    {
+        return createZip( destination, files, projectRoot, true, Z_DEFAULT_COMPRESSION, true,
+                          shouldCancel );
     }
 
     auto ZipUtil::createObfuscatedZipFileFromPath( const StringW &destinationPath,
                                                    const StringW &zipPath, const Array<StringW> &paths )
         -> int
     {
-        StringW destinationTempPath = destinationPath + L".tempzip";
-        createZipFileFromPath( destinationTempPath, zipPath, paths );
-
-        /* Convert the file */
-        FILE *fin = _wfopen( destinationTempPath.c_str(), L"rb" );
-
-        if( !fin )
-        {
-            fprintf( stderr, "Can't open input file \"%s\"\n", (c8 *)destinationTempPath.c_str() );
-            exit( 1 );
-        }
-
-        FILE *fout = _wfopen( destinationPath.c_str(), L"wb" );
-
-        if( !fout )
-        {
-            fprintf( stderr, "Can't open output file \"%s\"\n", (c8 *)destinationPath.c_str() );
-            exit( 1 );
-        }
-
-        int ch;
-
-        while( ( ch = fgetc( fin ) ) != EOF )
-        {
-            ch ^= 13;  //ApplicationTypes::XOR_VALUE;
-            fputc( ch, fout );
-        }
-
-        fclose( fout );
-        fclose( fin );
-
-        return 0;
+        return createZip( destinationPath, paths, zipPath, true, m_compressionLevel, true );
     }
 
 #        define CHUNK 16384
@@ -695,16 +624,38 @@ namespace workphone
         return 0;
     }
 
+    int ZipUtil::createZipFileFromPath( const StringW &, const Array<StringW> &, const StringW &, bool )
+    {
+        return 1;
+    }
+
+    int ZipUtil::createZipFileFromPath( const StringW &, const Array<StringW> &, const StringW &, bool, int )
+    {
+        return 1;
+    }
+
     s32 ZipUtil::createObfuscatedZipFileFromPath( const StringW &destinationPath,
                                                   const Array<StringW> &paths )
     {
-        return 0;
+        return 1;
     }
 
     s32 ZipUtil::createObfuscatedZipFileFromPath( const StringW &destinationPath, const StringW &zipPath,
                                                   const Array<StringW> &paths )
     {
-        return 0;
+        return 1;
+    }
+
+    int ZipUtil::createObfuscatedZipFileFromPath( const StringW &, const Array<StringW> &,
+                                                   const StringW &, bool )
+    {
+        return 1;
+    }
+
+    int writeGamePackageArchive( const StringW &, const Array<StringW> &, const StringW &,
+                                  const std::function<bool()> & )
+    {
+        return 1;
     }
 
     s32 ZipUtil::def( FILE *source, FILE *dest, int level )

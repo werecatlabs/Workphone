@@ -91,7 +91,7 @@ namespace workphone
 
     protected:
         ZZIP_FILE *m_zipFile = nullptr;
-        ObfuscatedZipArchive *m_archive = nullptr;
+        SmartPtr<ObfuscatedZipArchive> m_archive;
     };
 }  // namespace workphone
 

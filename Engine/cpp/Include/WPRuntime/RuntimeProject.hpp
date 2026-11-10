@@ -109,6 +109,8 @@ namespace workphone
 
         void setSceneFilePath( const String &sceneFilePath );
 
+        const Array<String> &getPackageArchives() const;
+
         /**
          * @brief Query whether the project is an archive package.
          * @return true if the project represents an archive; false otherwise.
@@ -229,6 +231,8 @@ namespace workphone
 
         /// Scene path selected by the project file.
         String m_sceneFilePath;
+
+        Array<String> m_packageArchives;
     };
 }  // namespace workphone
 

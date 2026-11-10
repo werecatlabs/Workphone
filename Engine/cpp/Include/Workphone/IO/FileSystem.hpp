@@ -488,6 +488,8 @@ namespace workphone
         WP_CLASS_REGISTER_DECL;
 
     private:
+        bool mountArchive( const String &filePath, ArchiveType type );
+
         /**
          * @brief Determines if a file resides in the same directory as the given path.
          * @param[in] path Directory path to compare against.

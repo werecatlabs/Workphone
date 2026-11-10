@@ -17,6 +17,19 @@ settings, logs and caches use `%LOCALAPPDATA%/Workphone/Editor`. Use
 Existing checkout settings, asset databases and personal layouts are excluded.
 Windows x64 and the Microsoft Visual C++ x64 release Redistributable are required.
 
+## Build a standalone Windows game
+
+Save your project and its scenes, then choose **File → Build Game…**. The build
+uses the startup scene from Project Settings, falling back to the saved current
+scene. Choose a new output folder and click **Build**. When the build completes,
+use **Run Game** or open `WPRuntime.exe` from the output folder. Keep that entire
+folder together when moving the build. It contains the runtime, split `.fbpak`
+archives, and loose files that the runtime needs to access on disk. This workflow
+supports Claw/Lua projects on Windows x64. **File → Resource Packages…** opens
+the separate checked resource packaging tool.
+
+## Validate the Editor package
+
 `--package-smoke` exercises the release executable's existing headless Editor
 lifecycle with the software renderer, mounted Editor scripts, resource and
 graphics managers, actual Lua object binding/execution, and orderly teardown.

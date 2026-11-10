@@ -2354,6 +2354,7 @@ namespace workphone::editor
                                 invoker->callObjectMember( "update" );
                             }
                         }
+                        editorUI->updateGamePackageWindow();
                         auto packageWindow = editorUI->getPackageWindow();
                         if( packageWindow && packageWindow->isLoaded() &&
                             packageWindow->isWindowVisible() )

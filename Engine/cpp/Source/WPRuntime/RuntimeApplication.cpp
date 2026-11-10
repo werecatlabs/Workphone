@@ -2,6 +2,8 @@
 #include <WPRuntime/RuntimeApplication.hpp>
 #include <WPRuntime/RuntimeStartup.hpp>
 #include <Workphone/Workphone.hpp>
+#include <Workphone/IO/FileSystem.hpp>
+#include <Workphone/IO/PackagePaths.hpp>
 #include <Workphone/Interface/UI/IUIText.hpp>
 #include <filesystem>
 
@@ -80,6 +82,25 @@
 
 namespace workphone
 {
+    namespace
+    {
+        namespace fs = std::filesystem;
+
+        fs::path executableDirectory()
+        {
+#ifdef _WIN32
+            std::vector<wchar_t> module( 32768 );
+            const auto count =
+                GetModuleFileNameW( nullptr, module.data(), static_cast<DWORD>( module.size() ) );
+            if( count > 0 && count < module.size() )
+            {
+                return fs::path( std::wstring( module.data(), count ) ).parent_path();
+            }
+#endif
+            return {};
+        }
+    }  // namespace
+
     const f32 RuntimeApplication::DEFAULT_THREAD_UPDATE = 1.0f / 200.0f;
     const f32 RuntimeApplication::DEFAULT_TASK_UPDATE = 1.0f / 60.0f;
 
@@ -137,9 +158,21 @@ namespace workphone
             const auto startupDirectory = Path::getWorkingDirectory();
             auto projectFilePath = getProjectFilePath();
             auto projectPath = startupDirectory;
+            m_packageRoot.clear();
+            m_packageArchives.clear();
+            m_packageMountError.clear();
             if( !projectFilePath.empty() )
             {
                 projectFilePath = Path::getAbsolutePath( startupDirectory, projectFilePath );
+                if( Path::isExistingFolder( projectFilePath ) )
+                {
+                    const auto descriptor =
+                        fs::u8path( projectFilePath.c_str() ) / runtimePackageProjectName;
+                    if( fs::is_regular_file( descriptor ) )
+                    {
+                        projectFilePath = descriptor.generic_u8string().c_str();
+                    }
+                }
                 setProjectFilePath( projectFilePath );
                 const auto extension =
                     StringUtil::make_lower( Path::getFileExtension( projectFilePath ) );
@@ -148,17 +181,33 @@ namespace workphone
                     RuntimeProject project;
                     project.load( projectFilePath );
                     const auto documentDirectory = Path::getFilePath( projectFilePath );
-                    projectPath = project.getPath().empty()
-                                      ? documentDirectory
-                                      : Path::getAbsolutePath( documentDirectory, project.getPath() );
-                    if( !project.getSceneFilePath().empty() )
+                    if( Path::getFileName( projectFilePath ) == runtimePackageProjectName )
                     {
-                        setSceneFilePath( Path::getAbsolutePath( projectPath,
-                                                                project.getSceneFilePath() ) );
+                        const auto root = fs::u8path( documentDirectory.c_str() );
+                        validateRuntimePackageArchives( root, project.getPackageArchives() );
+                        setSceneFilePath( runtimePackageScenePath( project.getSceneFilePath() ) );
+                        if( !fs::is_directory( root / "Media" ) )
+                        {
+                            throw std::runtime_error( "Missing Media directory beside Runtime.fbproject" );
+                        }
+                        fs::current_path( root );
+                        m_packageRoot = projectPath = documentDirectory;
+                        m_packageArchives = project.getPackageArchives();
+                        m_packageMountError = "Unable to initialize the packaged game file system";
+                    }
+                    else
+                    {
+                        projectPath = project.getPath().empty()
+                                          ? documentDirectory
+                                          : Path::getAbsolutePath( documentDirectory, project.getPath() );
+                        if( !project.getSceneFilePath().empty() )
+                        {
+                            setSceneFilePath( Path::getAbsolutePath( projectPath,
+                                                                    project.getSceneFilePath() ) );
+                        }
                     }
                 }
-                else if( extension == ".fbscene" || extension == ".fbscenexml" ||
-                         extension == ".fbscenebin" )
+                else if( isRuntimeSceneExtension( extension ) )
                 {
                     projectPath = Path::getFilePath( projectFilePath );
                     setSceneFilePath( projectFilePath );
@@ -181,6 +230,10 @@ namespace workphone
             applicationManager->setSettingsPath( settingsPath + "/" );
 
             Application::load( data );
+            if( !m_packageMountError.empty() )
+            {
+                throw std::runtime_error( m_packageMountError );
+            }
 
             if( auto renderUI = applicationManager->getRenderUI() )
             {
@@ -534,24 +587,55 @@ namespace workphone
 
     void RuntimeApplication::createPlugins()
     {
-        auto runtimeConfig = configFilePath;
-#ifdef _WIN32
         // Launchers may choose a project or source directory as the working
         // directory; the runtime plugin list travels with the executable.
-        std::vector<wchar_t> module( 32768 );
-        const auto count =
-            GetModuleFileNameW( nullptr, module.data(), static_cast<DWORD>( module.size() ) );
-        if( count > 0 && count < module.size() )
-        {
-            const auto executableDirectory =
-                std::filesystem::path( std::wstring( module.data(), count ) )
-                    .parent_path().generic_u8string();
-            runtimeConfig = Path::getAbsolutePath( executableDirectory.c_str(), configFilePath );
-        }
-#endif
-        setPluginsConfigFilePath( runtimeConfig );
+        const auto directory = executableDirectory();
+        setPluginsConfigFilePath( directory.empty()
+                                      ? configFilePath
+                                      : String( ( directory / fs::u8path( configFilePath.c_str() ) )
+                                                    .generic_u8string().c_str() ) );
 
         Application::createPlugins();
+    }
+
+    void RuntimeApplication::createFileSystem()
+    {
+        Application::createFileSystem();
+        if( m_packageArchives.empty() )
+        {
+            return;
+        }
+        auto applicationManager = core::IApplicationManager::instance();
+        auto fileSystem = applicationManager->getFileSystem();
+        if( !fileSystem )
+        {
+            throw std::runtime_error( m_packageMountError );
+        }
+        for( const auto &name : m_packageArchives )
+        {
+            const auto path = m_packageRoot + "/" + name;
+            if( !fileSystem->addFileArchive( path, true, false, IFileSystem::ArchiveType::ObfuscatedZip ) )
+            {
+                m_packageMountError = "Unable to mount package archive: " + path;
+                throw std::runtime_error( m_packageMountError );
+            }
+            WP_LOG( "Mounted game archive: " + path );
+        }
+        if( !fileSystem->isExistingFile( getSceneFilePath(), false, false ) )
+        {
+            m_packageMountError = "Packaged startup scene is missing: " + getSceneFilePath();
+            throw std::runtime_error( m_packageMountError );
+        }
+        if( auto concrete = dynamic_pointer_cast<FileSystem>( fileSystem ) )
+        {
+            setPackagePathRemapping( *concrete, true );
+        }
+        m_packageMountError.clear();
+    }
+
+    String RuntimeApplication::getMediaPath() const
+    {
+        return m_packageRoot.empty() ? Application::getMediaPath() : m_packageRoot + "/Media";
     }
 
     RuntimeApplication::ApplicationListener::ApplicationListener() = default;
@@ -676,21 +760,22 @@ int WPRuntimeMain( int argc, char *argv[] )
 {
     using namespace workphone;
 
-    static const auto defaultAppPath = String( "./" );
-    auto appPath = String();
-
-    // parse parameters
-    if( argc >= 2 )
-    {
-        appPath = argv[1];
-    }
-    else
-    {
-        appPath = defaultAppPath;
-    }
-
     try
     {
+        String appPath = argc >= 2 ? String( argv[1] ) : String( "./" );
+        if( argc < 2 )
+        {
+            const auto directory = executableDirectory();
+            if( !directory.empty() )
+            {
+                const auto descriptor = directory / runtimePackageProjectName;
+                if( fs::is_regular_file( descriptor ) )
+                {
+                    appPath = descriptor.generic_u8string().c_str();
+                }
+            }
+        }
+
         auto typeManager = TypeManager::instance();
         if( !typeManager )
         {

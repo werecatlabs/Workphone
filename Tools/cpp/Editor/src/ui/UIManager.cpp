@@ -45,6 +45,7 @@
 #include <ui/TagManager.hpp>
 #include <ui/TerrainWindow.hpp>
 #include <ui/CityRoadWindow.hpp>
+#include <ui/GamePackageWindow.hpp>
 #include <Workphone/Workphone.hpp>
 #include <Workphone/Database/ResourceDatabase.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsPipeline.hpp>
@@ -313,8 +314,13 @@ namespace workphone::editor
             Util::addMenuItem( fileMenu, static_cast<s32>( WidgetId::ProjectSettingsId ),
                                ICON_FA_FILE " Settings", "Settings", ui::IUIMenuItem::Type::Normal );
             Util::addMenuSeparator( fileMenu );
+#ifdef _WIN32
+            Util::addMenuItem( fileMenu, static_cast<s32>( WidgetId::BuildGameId ),
+                               ICON_FA_FILE " Build Game...", "Build a standalone Windows game",
+                               ui::IUIMenuItem::Type::Normal );
+#endif
             Util::addMenuItem( fileMenu, static_cast<s32>( WidgetId::CreatePackageId ),
-                               ICON_FA_FILE " Create Package", "Create Package",
+                               ICON_FA_FILE " Resource Packages...", "Build checked resource packages",
                                ui::IUIMenuItem::Type::Normal );
             //Util::addMenuSeparator( fileMenu );
 
@@ -875,6 +881,11 @@ namespace workphone::editor
         setPackageWindow( packageWindow );
         packageWindow->setWindowVisible( false );
 
+#ifdef _WIN32
+        m_gamePackageWindow = workphone::make_ptr<GamePackageWindow>();
+        m_gamePackageWindow->load( nullptr );
+#endif
+
         auto projectSettingsWindow = factoryManager->make_ptr<ScriptWindow>();
         projectSettingsWindow->setClassName( "ProjectSettings" );
         projectSettingsWindow->load( nullptr );
@@ -1066,6 +1077,11 @@ namespace workphone::editor
         {
             m_cityRoadWindow->unload( nullptr );
             m_cityRoadWindow = nullptr;
+        }
+        if( m_gamePackageWindow )
+        {
+            m_gamePackageWindow->unload( nullptr );
+            m_gamePackageWindow = nullptr;
         }
 
         if( auto fileWindow = getFileWindow() )
@@ -1338,6 +1354,14 @@ namespace workphone::editor
         return m_cityRoadWindow;
     }
 
+    void UIManager::updateGamePackageWindow()
+    {
+        if( m_gamePackageWindow )
+        {
+            m_gamePackageWindow->update();
+        }
+    }
+
     void UIManager::setTerrainWindow( TerrainWindow *val )
     {
         m_terrainWindow = val;
@@ -1603,6 +1627,14 @@ namespace workphone::editor
                 else
                 {
                     WP_LOG_INFO( "Open a project to edit its game graphics options." );
+                }
+            }
+            break;
+            case WidgetId::BuildGameId:
+            {
+                if( auto window = uiManager->m_gamePackageWindow )
+                {
+                    window->setWindowVisible( true );
                 }
             }
             break;

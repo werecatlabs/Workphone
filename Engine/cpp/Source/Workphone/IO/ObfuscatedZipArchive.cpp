@@ -2,48 +2,123 @@
 #include <Workphone/IO/ObfuscatedZipArchive.hpp>
 #include <Workphone/IO/ObfuscatedZipFile.hpp>
 #include <Workphone/IO/FileList.hpp>
-#include <Workphone/IO/FileSystem.hpp>
-#include <Workphone/IO/MemoryFile.hpp>
 #include <Workphone/Core/LogManager.hpp>
 #include <Workphone/Core/Path.hpp>
-#include <cstdio>
-#include <cstdlib>
+#include <Workphone/Core/StringUtil.hpp>
+#include <Workphone/Interface/IApplicationManager.hpp>
+#include <Workphone/Interface/IO/IFileSystem.hpp>
+#include <algorithm>
+#include <cctype>
+#include <cerrno>
+#include <filesystem>
+#include <memory>
 #include <zzip/plugin.h>
 #include <zzip/zzip.h>
+
+#ifdef WP_PLATFORM_WIN32
+#    include <io.h>
+#endif
 
 namespace workphone
 {
     WP_CLASS_REGISTER_DERIVED( workphone, ObfuscatedZipArchive, IArchive );
 
-    const int XOR_VALUE = 13;
-
-    // Change this magic number to a value of your choosing.
-    static int xor_value = 0;
-    static zzip_plugin_io_handlers xor_handlers = {};
-    // Change "OBFUSZIP" to match the file extension of your choosing.
-    static zzip_strings_t xor_fileext[] = { ".zip", nullptr };
-
-    _zzip_plugin_io ObfuscatedZip_PluginIo;
-
-    std::map<s32, SmartPtr<IStream>> gObfuscatedZipFiles;
-
-    // Static method that un-obfuscates an obfuscated file.
-    static auto xor_read( int fd, void *buf, zzip_size_t len ) -> zzip_ssize_t
+    namespace
     {
-#if WP_COMPILER == WP_COMPILER_MSVC
-        auto bytes = _read( fd, buf, static_cast<u32>( len ) );
-#else
-        auto bytes = read( fd, buf, len );
+        constexpr unsigned char archiveXor = 13;
+
+#ifdef WP_PLATFORM_WIN32
+        int openWideArchive( zzip_char_t *name, int flags, ... )
+        {
+            try
+            {
+                const auto path = std::filesystem::u8path( name );
+                return _wopen( path.c_str(), flags );
+            }
+            catch( const std::exception & )
+            {
+                errno = EINVAL;
+                return -1;
+            }
+        }
 #endif
 
-        auto pch = static_cast<char *>( buf );
-        for( size_t i = 0; i < bytes; ++i )
+        auto readObfuscatedZip( int fd, void *buffer, zzip_size_t length ) -> zzip_ssize_t
         {
-            pch[i] ^= XOR_VALUE;
+#ifdef WP_PLATFORM_WIN32
+            const auto bytes = _read( fd, buffer, static_cast<unsigned int>( length ) );
+#else
+            const auto bytes = read( fd, buffer, length );
+#endif
+            auto data = static_cast<unsigned char *>( buffer );
+            for( zzip_ssize_t i = 0; i < bytes; ++i )
+            {
+                data[i] ^= archiveXor;
+            }
+            return bytes;
         }
 
-        return bytes;
-    }
+        auto archiveIo() -> zzip_plugin_io_handlers *
+        {
+            static auto handlers = [] {
+                zzip_plugin_io_handlers io{};
+                zzip_init_io( &io, 0 );
+#ifdef WP_PLATFORM_WIN32
+                io.fd.open = openWideArchive;
+#endif
+                io.fd.read = readObfuscatedZip;
+                return io;
+            }();
+            return &handlers;
+        }
+
+        auto lowerArchivePath( String path ) -> String
+        {
+            std::transform( path.begin(), path.end(), path.begin(), []( unsigned char ch ) {
+                return static_cast<char>( std::tolower( ch ) );
+            } );
+            return path;
+        }
+
+        auto archiveEntryPath( const String &filename ) -> String
+        {
+            auto path = StringUtil::cleanupPath( filename );
+            if( !Path::isPathAbsolute( path ) )
+            {
+                return path;
+            }
+
+            auto application = core::IApplicationManager::instancePtr();
+            if( !application )
+            {
+                return path;
+            }
+
+            auto project = StringUtil::cleanupPath( application->getProjectPath() );
+            if( project.empty() )
+            {
+                return path;
+            }
+            if( project.back() != '/' )
+            {
+                project += '/';
+            }
+
+            const auto equalPathChar = []( unsigned char left, unsigned char right ) {
+#ifdef WP_PLATFORM_WIN32
+                return std::tolower( left ) == std::tolower( right );
+#else
+                return left == right;
+#endif
+            };
+            if( path.size() > project.size() &&
+                std::equal( project.begin(), project.end(), path.begin(), equalPathChar ) )
+            {
+                return path.substr( project.size() );
+            }
+            return path;
+        }
+    }  // namespace
 
     ObfuscatedZipArchive::ObfuscatedZipArchive() = default;
 
@@ -58,109 +133,89 @@ namespace workphone
         unload( nullptr );
     }
 
-    void ObfuscatedZipArchive::load( SmartPtr<ISharedObject> data )
+    void ObfuscatedZipArchive::load( SmartPtr<ISharedObject> )
     {
+        RecursiveMutex::ScopedLock lock( m_mutex );
+        if( mZzipDir )
+        {
+            return;
+        }
+
         setLoadingState( LoadingState::Loading );
-
-        if( !xor_value )
+        const auto name = getPath();
+        zzip_error_t error = ZZIP_NO_ERROR;
+        static zzip_strings_t extensions[] = { nullptr };
+        const auto closeDirectory = []( ZZIP_DIR *directory ) { zzip_dir_close( directory ); };
+        std::unique_ptr<ZZIP_DIR, decltype( closeDirectory )> directory(
+            zzip_dir_open_ext_io( name.c_str(), &error, extensions, archiveIo() ), closeDirectory );
+        if( !directory )
         {
-            xor_value = 13;
+            WP_LOG_ERROR( "Unable to open packed archive " + name + ": " +
+                          getZzipErrorDescription( error ) );
+            setLoadingState( LoadingState::Unloaded );
+            return;
         }
 
-        zzip_init_io( &xor_handlers, 0 );
-        xor_handlers.fd.read = &xor_read;
-
-        auto name = getPath();
-
-        m_fileList = workphone::make_ptr<FileList>( name );
-
-        if( !mZzipDir )
+        try
         {
-            zzip_error_t zzipError;
-            // mZzipDir = zzip_dir_open(name.c_str(), &zzipError);
-            mZzipDir = zzip_dir_open_ext_io( name.c_str(), &zzipError, xor_fileext, &xor_handlers );
-            if( zzipError != ZZIP_NO_ERROR )
+            Array<FileInfo> files;
+            ZZIP_DIRENT entry{};
+            while( zzip_dir_read( directory.get(), &entry ) )
             {
-                WP_LOG_ERROR( "Error opening archive: " + name );
+                const String rawPath( entry.d_name );
+                const auto filePath = StringUtil::cleanupPath( rawPath );
+                if( filePath.empty() || rawPath.size() >= WP_MAX_PATH || entry.d_csize < 0 ||
+                    entry.st_size < 0 )
+                {
+                    continue;
+                }
+
+                FileInfo info;
+                const auto fileName = Path::getFileName( filePath ).substr( 0, WP_MAX_FILENAME - 1 );
+                info.fileName = fileName.c_str();
+                info.fileNameLowerCase = lowerArchivePath( fileName ).c_str();
+                // zzip requires the entry's original separators when opening legacy archives.
+                info.filePath = rawPath.c_str();
+                info.filePathLowerCase = lowerArchivePath( filePath ).c_str();
+                info.path = Path::getFilePath( filePath ).c_str();
+                info.absolutePath = filePath.c_str();
+                info.compressedSize = static_cast<u32>( entry.d_csize );
+                info.uncompressedSize = static_cast<u32>( entry.st_size );
+                info.isDirectory = rawPath.back() == '/' || rawPath.back() == '\\';
+                info.fileId = StringUtil::getUUID( filePath );
+                files.push_back( info );
             }
 
-            // Cache names
-            ZZIP_DIRENT zzipEntry;
-            while( zzip_dir_read( mZzipDir, &zzipEntry ) )
-            {
-                FileInfo fileInfo;
-                // info.archive = this;
-
-                // Get basename / path
-                String fileName;
-                String path;
-
-                StringUtil::splitFilename( zzipEntry.d_name, fileName, path );
-                path = StringUtil::cleanupPath( path );
-
-                String filePath;
-                if( !StringUtil::isNullOrEmpty( path ) )
-                {
-                    filePath = path + "/" + fileName;
-                }
-                else
-                {
-                    filePath = fileName;
-                }
-
-                filePath = StringUtil::cleanupPath( filePath );
-
-                fileInfo.fileName = fileName.c_str();
-                fileInfo.fileNameLowerCase = StringUtil::make_lower( fileInfo.fileName.c_str() ).c_str();
-
-                fileInfo.filePath = zzipEntry.d_name;
-                fileInfo.filePathLowerCase = StringUtil::make_lower( fileInfo.filePath.c_str() ).c_str();
-
-                fileInfo.path = filePath.c_str();
-
-                fileInfo.absolutePath = filePath.c_str();
-
-                // Get sizes
-                fileInfo.compressedSize = static_cast<u32>( zzipEntry.d_csize );
-                fileInfo.uncompressedSize = static_cast<u32>( zzipEntry.st_size );
-
-                fileInfo.isDirectory = fileName.empty();
-
-                fileInfo.fileId = StringUtil::getUUID( filePath );
-
-                // folder entries
-                if( fileInfo.fileName.empty() )
-                {
-                    fileInfo.fileName = fileInfo.fileName.substr( 0, fileInfo.fileName.length() - 1 );
-                    //StringUtil::splitFilename(fileInfo.filename, fileInfo.basename, fileInfo.path);
-                    // Set compressed size to -1 for folders; anyway nobody will check
-                    // the compressed size of a folder, and if he does, its useless anyway
-                    fileInfo.compressedSize = static_cast<u32>( -1 );
-                }
-
-                m_fileInfoList.push_back( fileInfo );
-            }
+            auto fileList = workphone::make_ptr<FileList>( name );
+            fileList->setFiles( files );
+            m_fileList = fileList;
+            mZzipDir = directory.release();
+            setLoadingState( LoadingState::Loaded );
         }
-
-        m_fileList->setFiles( m_fileInfoList );
-
-        setLoadingState( LoadingState::Loaded );
+        catch( ... )
+        {
+            setLoadingState( LoadingState::Unloaded );
+            throw;
+        }
     }
 
     void ObfuscatedZipArchive::reload( SmartPtr<ISharedObject> data )
     {
+        RecursiveMutex::ScopedLock lock( m_mutex );
+        unload( data );
+        load( data );
     }
 
-    void ObfuscatedZipArchive::unload( SmartPtr<ISharedObject> data )
+    void ObfuscatedZipArchive::unload( SmartPtr<ISharedObject> )
     {
+        RecursiveMutex::ScopedLock lock( m_mutex );
         setLoadingState( LoadingState::Unloading );
-
         if( mZzipDir )
         {
             zzip_dir_close( mZzipDir );
             mZzipDir = nullptr;
         }
-
+        m_fileList = nullptr;
         setLoadingState( LoadingState::Unloaded );
     }
 
@@ -179,39 +234,20 @@ namespace workphone
         m_password = password;
     }
 
-    auto ObfuscatedZipArchive::open( const String &filename, bool input, bool binary, bool truncate,
+    auto ObfuscatedZipArchive::open( const String &filename, bool input, bool, bool,
                                      bool ignorePath, bool ignoreCase ) -> SmartPtr<IStream>
     {
         RecursiveMutex::ScopedLock lock( m_mutex );
 
-        auto filePath = filename;
-        if( ignorePath )
+        FileInfo info;
+        if( !mZzipDir || !input || !findFileInfo( filename, info, ignorePath, ignoreCase ) ||
+            info.isDirectory )
         {
-            filePath = Path::getFileName( filePath );
+            return nullptr;
         }
 
-        auto flags = ZZIP_CASELESS;
-        if( binary )
-        {
-            flags |= ZZIP_ONLYZIP;
-        }
-        else
-        {
-            flags |= ZZIP_PREFERZIP;
-        }
-
-        if( ignorePath )
-        {
-            flags |= ZZIP_NOPATHS;
-        }
-
-        if( ignoreCase )
-        {
-            flags |= ZZIP_CASEINSENSITIVE;
-        }
-
-        auto zzipFile = zzip_file_open( mZzipDir, filePath.c_str(), flags );
-
+        const auto filePath = info.filePath.c_str();
+        auto zzipFile = zzip_file_open( mZzipDir, filePath, ZZIP_ONLYZIP );
         if( !zzipFile )
         {
             auto zerr = zzip_error( mZzipDir );
@@ -221,57 +257,78 @@ namespace workphone
             return nullptr;
         }
 
-        // Get uncompressed size too
-        ZZIP_STAT zstat;
-        zzip_dir_stat( mZzipDir, filePath.c_str(), &zstat, ZZIP_CASEINSENSITIVE );
-
-        auto size = static_cast<size_t>( zstat.st_size );
-        return workphone::make_ptr<ObfuscatedZipFile>( this, filePath, zzipFile,
-                                                       static_cast<u32>( size ) );
+        const auto closeFile = []( ZZIP_FILE *file ) { zzip_file_close( file ); };
+        std::unique_ptr<ZZIP_FILE, decltype( closeFile )> file( zzipFile, closeFile );
+        auto stream = workphone::make_ptr<ObfuscatedZipFile>( this, info.fileName.c_str(), file.get(),
+                                                             static_cast<u32>( info.uncompressedSize ) );
+        file.release();
+        stream->setFileInfo( info );
+        return stream;
     }
 
     auto ObfuscatedZipArchive::exists( const String &filename, bool ignorePath, bool ignoreCase ) const
         -> bool
     {
-        return m_fileList->exists( filename, ignorePath, ignoreCase );
+        FileInfo info;
+        return findFileInfo( filename, info, ignorePath, ignoreCase );
     }
 
     auto ObfuscatedZipArchive::isReadOnly() const -> bool
     {
-        return false;
+        return true;
     }
 
     auto ObfuscatedZipArchive::getPath() const -> String
     {
+        RecursiveMutex::ScopedLock lock( m_mutex );
         return { m_path.c_str() };
     }
 
     void ObfuscatedZipArchive::setPath( const String &path )
     {
+        RecursiveMutex::ScopedLock lock( m_mutex );
         m_path = path.c_str();
     }
 
     auto ObfuscatedZipArchive::findFileInfo( const String &filePath, FileInfo &fileInfo, bool ignorePath,
                                              bool ignoreCase ) const -> bool
     {
-        return m_fileList->findFileInfo( filePath, fileInfo, ignorePath, ignoreCase );
+        RecursiveMutex::ScopedLock lock( m_mutex );
+        if( !m_fileList )
+        {
+            return false;
+        }
+
+        const auto path = archiveEntryPath( filePath );
+        return m_fileList->findFileInfo( path, fileInfo, false, ignoreCase ) ||
+               ( ignorePath && m_fileList->findFileInfo( path, fileInfo, true, ignoreCase ) );
     }
 
     auto ObfuscatedZipArchive::findFileInfo( UUID id, FileInfo &fileInfo, bool ignorePath,
                                              bool ignoreCase ) const -> bool
     {
-        return m_fileList->findFileInfo( id, fileInfo, ignorePath, ignoreCase );
+        RecursiveMutex::ScopedLock lock( m_mutex );
+        if( !m_fileList )
+        {
+            return false;
+        }
+        if( m_fileList->findFileInfo( id, fileInfo, false, false ) )
+        {
+            return true;
+        }
+        return findFileInfo( fileInfo.filePath.c_str(), fileInfo, ignorePath, ignoreCase );
     }
 
     auto ObfuscatedZipArchive::getFileList() const -> SmartPtr<IFileList>
     {
+        RecursiveMutex::ScopedLock lock( m_mutex );
         return m_fileList;
     }
 
     auto ObfuscatedZipArchive::getFiles() const -> Array<FileInfo>
     {
-        auto files = m_fileList->getFiles();
-        return files.snapshot();
+        RecursiveMutex::ScopedLock lock( m_mutex );
+        return m_fileList ? m_fileList->getFiles().snapshot() : Array<FileInfo>{};
     }
 
     /// Utility method to format out zzip errors

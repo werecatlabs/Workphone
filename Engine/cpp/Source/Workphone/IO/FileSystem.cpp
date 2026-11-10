@@ -2,6 +2,7 @@
 #include <Workphone/IO/FileSystem.hpp>
 #include <Workphone/IO/FileSystemArchive.hpp>
 #include <Workphone/IO/ObfuscatedZipArchive.hpp>
+#include <Workphone/IO/PackagePaths.hpp>
 #include <Workphone/IO/ZipArchive.hpp>
 #include <Workphone/IO/FolderListing.hpp>
 #include <Workphone/IO/FileDataStream.hpp>
@@ -15,6 +16,7 @@
 #include <Workphone/Interface/System/IJobQueue.hpp>
 #include <Workphone/Interface/System/IJob.hpp>
 #include <algorithm>
+#include <atomic>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -49,6 +51,55 @@ namespace workphone
 
     namespace
     {
+        std::atomic<const FileSystem *> packageFileSystem{ nullptr };
+
+        auto resolvePackagePath( const FileSystem *fileSystem, const String &filePath,
+                                 const ConcurrentArray<SmartPtr<IArchive>> &folderArchives,
+                                 const ConcurrentArray<SmartPtr<IArchive>> &fileArchives ) -> String
+        {
+            if( packageFileSystem.load() != fileSystem || !Path::isPathAbsolute( filePath ) )
+            {
+                return {};
+            }
+
+            auto application = core::IApplicationManager::instancePtr();
+            if( !application )
+            {
+                return {};
+            }
+
+            const auto root = application->getProjectPath();
+            const auto candidate = packageRelativeAssetPath( root, filePath );
+            if( candidate.empty() )
+            {
+                return {};
+            }
+
+            std::error_code error;
+            if( std::filesystem::is_regular_file( std::filesystem::u8path( root.c_str() ) /
+                                                      std::filesystem::u8path( candidate.c_str() ),
+                                                  error ) )
+            {
+                return candidate;
+            }
+
+            const auto findExact = [&candidate]( const auto &archives ) -> String {
+                FileInfo info;
+                for( auto &archive : archives.snapshot() )
+                {
+                    if( archive && archive->findFileInfo( candidate, info, false, true ) &&
+                        !info.isDirectory )
+                    {
+                        return info.filePath.c_str();
+                    }
+                }
+                return {};
+            };
+
+            auto resolved = findExact( folderArchives );
+            return resolved.empty() ? findExact( fileArchives ) : resolved;
+        }
+
         inline std::error_code &_wpFsEc()
         {
             thread_local std::error_code ec;
@@ -56,6 +107,19 @@ namespace workphone
             return ec;
         }
     }  // namespace
+
+    void setPackagePathRemapping( const FileSystem &fileSystem, bool enabled )
+    {
+        if( enabled )
+        {
+            packageFileSystem.store( &fileSystem );
+        }
+        else
+        {
+            auto expected = &fileSystem;
+            packageFileSystem.compare_exchange_strong( expected, nullptr );
+        }
+    }
 
     WP_CLASS_REGISTER_DERIVED( workphone, FileSystem, IFileSystem );
 
@@ -117,6 +181,7 @@ namespace workphone
 
     void FileSystem::unload( SmartPtr<ISharedObject> data )
     {
+        setPackagePathRemapping( *this, false );
         try
         {
             if( isLoaded() )
@@ -169,11 +234,17 @@ namespace workphone
         }
     }
 
-    auto FileSystem::isExistingFile( const String &filePath, bool ignorePath, bool ignoreCase ) const
+    auto FileSystem::isExistingFile( const String &filename, bool ignorePath, bool ignoreCase ) const
         -> bool
     {
         try
         {
+            const auto resolved = resolvePackagePath( this, filename, m_folderArchives, m_fileArchives );
+            if( !resolved.empty() )
+            {
+                return true;
+            }
+            const auto &filePath = filename;
             if( !Path::hasFileName( filePath ) )
             {
                 return false;
@@ -298,6 +369,10 @@ namespace workphone
         try
         {
             auto relativePath = Path::lexically_normal( path, filePath );
+            if( packageFileSystem.load() == this )
+            {
+                return isExistingFile( relativePath, ignorePath, ignoreCase );
+            }
             if( Path::isPathAbsolute( relativePath ) )
             {
                 return Path::isExistingFile( relativePath.c_str() );
@@ -565,8 +640,7 @@ namespace workphone
             WP_EXCEPTION( "Invalid file name." );
         }
 
-        addArchive( filename, archiveType );
-        return true;
+        return mountArchive( filename, archiveType );
     }
 
     auto FileSystem::openFileDialog() -> SmartPtr<INativeFileDialog>
@@ -602,11 +676,15 @@ namespace workphone
         return open( filePath, true, isBinary, false, false, false );
     }
 
-    auto FileSystem::open( const String &filePath, bool input, bool binary, bool truncate,
+    auto FileSystem::open( const String &filename, bool input, bool binary, bool truncate,
                            bool ignorePath, bool ignoreCase ) -> SmartPtr<IStream>
     {
         try
         {
+            const auto resolved = input ? resolvePackagePath( this, filename, m_folderArchives,
+                                                               m_fileArchives ) : String();
+            const auto &filePath = resolved.empty() ? filename : resolved;
+            ignorePath = ignorePath && resolved.empty();
             WP_ASSERT( !StringUtil::isNullOrEmpty( filePath ) );
 
             auto applicationManager = core::IApplicationManager::instancePtr();
@@ -705,7 +783,8 @@ namespace workphone
             {
                 if( archive )
                 {
-                    if( archive->exists( filePath, ignorePath, ignoreCase ) )
+                    if( archive->getType() == static_cast<u8>( ArchiveType::ObfuscatedZip ) ||
+                        archive->exists( filePath, ignorePath, ignoreCase ) )
                     {
                         if( auto file = archive->open( filePath, input, binary, truncate, ignorePath,
                                                        ignoreCase ) )
@@ -1175,15 +1254,21 @@ namespace workphone
 
     void FileSystem::addArchive( const String &filePath, ArchiveType type )
     {
+        mountArchive( filePath, type );
+    }
+
+    bool FileSystem::mountArchive( const String &filePath, ArchiveType type )
+    {
         try
         {
             WP_ASSERT( IArchive::typeInfo() != 0 );
 
             auto applicationManager = core::IApplicationManager::instancePtr();
-            WP_ASSERT( applicationManager );
-
-            auto factoryManager = applicationManager->getFactoryManagerPtr();
-            WP_ASSERT( factoryManager );
+            auto factoryManager = applicationManager ? applicationManager->getFactoryManagerPtr() : nullptr;
+            if( !factoryManager )
+            {
+                return false;
+            }
 
             switch( type )
             {
@@ -1192,32 +1277,34 @@ namespace workphone
             {
                 auto a = factoryManager->make_ptr<FileSystemArchive>();
                 a->setPath( filePath );
-                addFolderArchive( a );
                 a->load( nullptr );
+                if( !a->isLoaded() )
+                {
+                    return false;
+                }
+                addFolderArchive( a );
+                return true;
             }
-            break;
             case ArchiveType::Zip:
             {
                 auto a = factoryManager->make_ptr<ZipArchive>( filePath, true, true );
-                addFileArchive( a );
                 a->load( nullptr );
+                addFileArchive( a );
+                return true;
             }
-            break;
             case ArchiveType::ObfuscatedZip:
             {
                 auto a = factoryManager->make_ptr<ObfuscatedZipArchive>( filePath, true, true );
-                addFileArchive( a );
                 a->load( nullptr );
+                if( !a->isLoaded() )
+                {
+                    return false;
+                }
+                addFileArchive( a );
+                return true;
             }
-            break;
-            case ArchiveType::Unknown:
-            {
-            }
-            break;
             default:
-            {
-            }
-            break;
+                return false;
             }
         }
         catch( Exception &e )
@@ -1228,6 +1315,7 @@ namespace workphone
         {
             WP_LOG_EXCEPTION( e );
         }
+        return false;
     }
 
     auto FileSystem::getFileArchive( u32 index ) -> SmartPtr<IArchive>
@@ -1726,7 +1814,7 @@ namespace workphone
         {
             return ArchiveType::FileSystem;
         }
-        if( typeName == "OBFUSZIP" )
+        if( typeName == "OBFUSZIP" || StringUtil::make_lower( typeName ) == ".fbpak" )
         {
             return ArchiveType::ObfuscatedZip;
         }
@@ -1859,6 +1947,10 @@ namespace workphone
                 if( archive )
                 {
                     auto fileList = archive->getFileList();
+                    if( !fileList )
+                    {
+                        continue;
+                    }
                     auto files = fileList->getFiles();
                     for( auto &file : files )
                     {
@@ -2101,9 +2193,12 @@ namespace workphone
         return false;
     }
 
-    auto FileSystem::findFileInfo( const String &filePath, FileInfo &fileInfo, bool ignorePath ) const
+    auto FileSystem::findFileInfo( const String &filename, FileInfo &fileInfo, bool ignorePath ) const
         -> bool
     {
+        const auto resolved = resolvePackagePath( this, filename, m_folderArchives, m_fileArchives );
+        const auto &filePath = resolved.empty() ? filename : resolved;
+        ignorePath = ignorePath && resolved.empty();
         if( Path::isPathAbsolute( filePath ) )
         {
             auto applicationManager = core::IApplicationManager::instance();
@@ -2134,14 +2229,17 @@ namespace workphone
                 }
             }
 
-            auto fileName = Path::getFileName( filePath );
-            for( auto &file : m_files )
+            if( resolved.empty() )
             {
-                if( StringUtil::isEqual( file.fileName.c_str(), fileName.c_str() ) ||
-                    StringUtil::isEqual( file.fileNameLowerCase.c_str(), fileName.c_str() ) )
+                auto fileName = Path::getFileName( filePath );
+                for( auto &file : m_files )
                 {
-                    fileInfo = file;
-                    return true;
+                    if( StringUtil::isEqual( file.fileName.c_str(), fileName.c_str() ) ||
+                        StringUtil::isEqual( file.fileNameLowerCase.c_str(), fileName.c_str() ) )
+                    {
+                        fileInfo = file;
+                        return true;
+                    }
                 }
             }
         }

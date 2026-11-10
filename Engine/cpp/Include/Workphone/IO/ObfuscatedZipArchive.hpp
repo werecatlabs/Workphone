@@ -158,6 +158,8 @@ namespace workphone
         WP_CLASS_REGISTER_DECL;
 
     protected:
+        friend class ObfuscatedZipFile;
+
         /** \brief Convert a zziplib error code to a human-readable string.
          *
          * @param zzipError Integer error code returned by zziplib functions.
@@ -166,16 +168,12 @@ namespace workphone
         String getZzipErrorDescription( s32 zzipError );
 
         //! Mutex protecting archive state for concurrent access.
-        RecursiveMutex m_mutex;
+        mutable RecursiveMutex m_mutex;
 
         //! Handle to the opened zziplib directory (root of the archive).
         ZZIP_DIR *mZzipDir = nullptr;
 
-        //! Cached list of files inside the archive. zziplib requires a single
-        //! directory scan, so we keep an in-memory index for further queries.
-        Array<FileInfo> m_fileInfoList;
-
-        //! FileList wrapper built from m_fileInfoList for API compatibility.
+        //! Cached list of files inside the archive.
         SmartPtr<FileList> m_fileList;
 
         //! Password used to open encrypted entries (empty if not set).

@@ -4,7 +4,8 @@
 #include <Workphone/Core/StringUtil.hpp>
 #include <nativefiledialog/include/nfd.h>
 #include <nativefiledialog/include/common.h>
-#include <iostream>
+#include <cstdlib>
+#include <memory>
 
 namespace workphone
 {
@@ -40,7 +41,7 @@ namespace workphone
         auto path = StringUtil::cleanupPath( defaultPath );
 #endif
 
-        if( !Path::isExistingFile( path ) )
+        if( !Path::isExistingFolder( path ) )
         {
             path = "";
         }
@@ -65,9 +66,10 @@ namespace workphone
         break;
         }
 
-        if( pOutPath )
+        const std::unique_ptr<nfdchar_t, decltype( &std::free )> selectedPath( pOutPath, &std::free );
+        if( selectedPath )
         {
-            auto outPath = StringUtil::cleanupPath( pOutPath );
+            auto outPath = StringUtil::cleanupPath( selectedPath.get() );
             setFilePath( outPath );
         }
 

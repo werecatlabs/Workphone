@@ -5,12 +5,12 @@ if(NOT WIN32 OR NOT MSVC OR NOT CMAKE_SIZEOF_VOID_P EQUAL 8 OR WP_STATIC_LIB
 endif()
 
 set(_editor_plugins WPGraphics WPAssimp WPSQLite WPPhysics WPLua WPAudio WPVehiclePhysics WPProcedural)
-set(_editor_runtime_targets Editor Workphone WPNetwork ${_editor_plugins})
+set(_editor_runtime_targets Editor WPRuntime Workphone WPNetwork ${_editor_plugins})
 if(NOT TARGET WorkphoneResourcePackage)
     message(FATAL_ERROR "Editor package requires the checked resource package tool")
 endif()
 list(APPEND _editor_runtime_targets WorkphoneResourcePackage)
-foreach(_application Editor WorkphoneResourcePackage)
+foreach(_application Editor WPRuntime WorkphoneResourcePackage)
     target_sources(${_application} PRIVATE "${CMAKE_CURRENT_LIST_DIR}/WorkphoneWindows.manifest")
 endforeach()
 set(_editor_config "# Workphone Editor package plugin profile\n")
@@ -21,6 +21,11 @@ foreach(_plugin IN LISTS _editor_plugins)
     string(APPEND _editor_config "Plugin=${_plugin}\n")
 endforeach()
 file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/editor-package.cfg" "${_editor_config}")
+set(_game_runtime_config "PluginFolder=.\n")
+foreach(_plugin IN LISTS _editor_plugins)
+    string(APPEND _game_runtime_config "Plugin=${_plugin}\n")
+endforeach()
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/wp_plugins_runtime.cfg" "${_game_runtime_config}")
 add_custom_target(WorkphoneEditorPackageBinaries DEPENDS ${_editor_runtime_targets})
 
 install(CODE "if(NOT CMAKE_INSTALL_CONFIG_NAME STREQUAL \"RelWithDebInfo\")\n message(FATAL_ERROR \"Editor package requires RelWithDebInfo; Debug Editor is a test harness\")\nendif()" COMPONENT WorkphoneEditor)
@@ -36,18 +41,21 @@ install(RUNTIME_DEPENDENCY_SET WorkphoneEditorRuntime
     PRE_EXCLUDE_REGEXES "[Aa][Pp][Ii]-[Mm][Ss]-" "[Ee][Xx][Tt]-[Mm][Ss]-"
     POST_EXCLUDE_REGEXES "^[Cc]:[/\\\\][Ww][Ii][Nn][Dd][Oo][Ww][Ss][/\\\\]"
     RUNTIME DESTINATION bin COMPONENT WorkphoneEditor CONFIGURATIONS RelWithDebInfo)
-foreach(_target Editor ${_editor_plugins} Workphone WPNetwork WorkphoneResourcePackage)
+foreach(_target IN LISTS _editor_runtime_targets)
     if(TARGET ${_target})
         install(FILES "$<TARGET_PDB_FILE:${_target}>" DESTINATION symbols
             COMPONENT WorkphoneEditorSymbols CONFIGURATIONS RelWithDebInfo)
     endif()
 endforeach()
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/editor-package.cfg" DESTINATION . COMPONENT WorkphoneEditor)
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/wp_plugins_runtime.cfg" DESTINATION bin COMPONENT WorkphoneEditor)
 install(DIRECTORY "${WP_ROOT}/bin/Media/Scripts/" DESTINATION Media/Scripts COMPONENT WorkphoneEditor
     FILES_MATCHING PATTERN "*.lua" PATTERN "*.sql")
 file(GLOB _editor_media "${WP_ROOT}/bin/Media/*.mat" "${WP_ROOT}/bin/Media/*.png"
-    "${WP_ROOT}/bin/Media/*.ttf" "${WP_ROOT}/bin/Media/*.fbmeshbin")
+    "${WP_ROOT}/bin/Media/*.ttf" "${WP_ROOT}/bin/Media/*.fbmeshbin" "${WP_ROOT}/bin/Media/*.wav")
 install(FILES ${_editor_media} DESTINATION Media COMPONENT WorkphoneEditor)
+install(DIRECTORY "${WP_ROOT}/bin/Media/Audio/" DESTINATION Media/Audio COMPONENT WorkphoneEditor
+    FILES_MATCHING PATTERN "*.wav" PATTERN "CREDITS.md")
 install(FILES "${WP_ROOT}/LICENSE" DESTINATION licenses COMPONENT WorkphoneEditor RENAME Workphone-LICENSE)
 foreach(_notice "Dependencies/boost/LICENSE_1_0.txt" "Dependencies/imgui/LICENSE.txt"
         "Dependencies/rapidjson/license.txt"

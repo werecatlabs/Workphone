@@ -1,11 +1,15 @@
 #include <WPRuntime/RuntimeStartup.hpp>
+#include <Workphone/Core/DataUtil.hpp>
+#include <Workphone/Core/Properties.hpp>
 #include <Workphone/System/ApplicationManager.hpp>
 #include <Workphone/System/TaskManager.hpp>
 #include <Workphone/IO/FileSystem.hpp>
+#include <Workphone/IO/PackagePaths.hpp>
 #include <Workphone/Scene/GameManager.hpp>
 #include <Workphone/Scene/GameScene.hpp>
 #include <Workphone/Scene/CameraManager.hpp>
 #include <Workphone/Memory/TypeManager.hpp>
+#include <fstream>
 #include <iostream>
 #include <stdexcept>
 
@@ -200,6 +204,87 @@ namespace
                      !startRuntimePlay( fixture.app ) && !fixture.app->isPlaying(),
                  "A missing game manager was accepted" );
     }
+
+    void packagedStartupContract()
+    {
+        namespace fs = std::filesystem;
+        const auto root = fs::temp_directory_path() /
+                          ("wp-runtime-startup-" + std::string( StringUtil::getUUID().c_str() ));
+        struct TempPackage
+        {
+            fs::path root;
+            ~TempPackage()
+            {
+                std::error_code error;
+                fs::remove_all( root, error );
+            }
+        } package{ root };
+        fs::create_directory( root );
+        std::ofstream( root / "Content_0.fbpak" ).put( 'X' );
+        std::ofstream( root / "Content_1.fbpak" ).put( 'X' );
+        const String scene = "Assets/Scenes/Selected.fbscene";
+        const auto descriptor = make_ptr<Properties>();
+        DataUtil::parse(
+            R"({"projectPath":".","currentScenePath":"Assets/Scenes/Selected.fbscene","applicationType":"Desktop","archive":true,"packageArchives":["Content_0.fbpak","Content_1.fbpak"]})",
+            descriptor.get(), DataFormat::JSON );
+        Array<String> archives;
+        require( descriptor && descriptor->getPropertyValue( "packageArchives", archives ) &&
+                     archives.size() == 2 && archives[0] == "Content_0.fbpak" &&
+                     archives[1] == "Content_1.fbpak" &&
+                     descriptor->getProperty( "currentScenePath" ) == scene,
+                 "The game package descriptor did not parse as emitted by the packager" );
+        validateRuntimePackageArchives( root, archives );
+
+        auto rejects = []( auto check ) {
+            try
+            {
+                check();
+            }
+            catch( const std::runtime_error & )
+            {
+                return true;
+            }
+            return false;
+        };
+        require( rejects( [&] { validateRuntimePackageArchives( root, {} ); } ),
+                 "Packaged startup accepted an empty archive list" );
+        require( rejects( [&] {
+                     validateRuntimePackageArchives( root, { "Content_0.fbpak", "Missing.fbpak" } );
+                 } ),
+                 "Packaged startup accepted a missing archive split" );
+        require( rejects( [&] {
+                     validateRuntimePackageArchives( root, { "Content_0.fbpak", "content_0.FBPAK" } );
+                 } ),
+                 "Packaged startup accepted duplicate archive names" );
+        require( rejects( [&] { validateRuntimePackageArchives( root, { "../Content_0.fbpak" } ); } ),
+                 "Packaged startup accepted an archive outside the output directory" );
+        require( runtimePackageScenePath( scene ) == scene,
+                 "Packaged startup discarded the scene's directory" );
+        const String absoluteScene( ( root / scene.c_str() ).generic_u8string().c_str() );
+        require( rejects( [&] { runtimePackageScenePath( absoluteScene ); } ) &&
+                     rejects( [&] { runtimePackageScenePath( "Assets/../Selected.fbscene" ); } ),
+                 "Packaged startup accepted an absolute or escaping scene path" );
+
+        const String project( root.generic_u8string().c_str() );
+        const auto original = root.parent_path() / "original";
+        const String oldScene( ( original / scene.c_str() ).generic_u8string().c_str() );
+        const String unrecognized( ( original / "NonAssets" / "Selected.fbscene" )
+                                       .generic_u8string().c_str() );
+        require( packageRelativeAssetPath( project, oldScene ) == scene,
+                 "Legacy package remapping failed to preserve nested paths" );
+        require( packageRelativeAssetPath( project, absoluteScene ).empty() &&
+                     packageRelativeAssetPath( project, scene ).empty() &&
+                     packageRelativeAssetPath( project, unrecognized ).empty(),
+                 "Legacy package remapping accepted a non-legacy path" );
+        const auto nonAsciiRoot = root / u8"Saved \u00c9dition";
+        const String nonAsciiProject( nonAsciiRoot.generic_u8string().c_str() );
+        const String nonAsciiCurrent( ( nonAsciiRoot / scene.c_str() ).generic_u8string().c_str() );
+        const String nonAsciiLegacy( ( root.parent_path() / u8"Original \u00c9dition" / scene.c_str() )
+                                          .generic_u8string().c_str() );
+        require( packageRelativeAssetPath( nonAsciiProject, nonAsciiLegacy ) == scene &&
+                     packageRelativeAssetPath( nonAsciiProject, nonAsciiCurrent ).empty(),
+                 "Legacy package remapping mishandled a UTF-8 parent directory" );
+    }
 }
 
 int main()
@@ -213,7 +298,8 @@ int main()
         selectedSceneAndPlayContract();
         failedAndPendingSceneContract();
         missingStartupDependenciesContract();
-        std::cout << "WPRuntime startup contracts passed (selected scene, play ordering, camera state/reset, failed loads, missing dependencies).\n";
+        packagedStartupContract();
+        std::cout << "WPRuntime startup contracts passed (selected scene, play ordering, camera state/reset, failed loads, missing dependencies, package paths).\n";
     }
     catch( const std::exception &error )
     {
