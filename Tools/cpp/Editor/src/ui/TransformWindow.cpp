@@ -81,9 +81,9 @@ namespace workphone::editor
                 parent->addChild( parentWindow );
             }
 
-            m_localPosition = createVectorField( ui, parentWindow, "Local Position" );
-            m_localRotation = createVectorField( ui, parentWindow, "Local Rotation" );
-            m_localScale = createVectorField( ui, parentWindow, "Local Scale" );
+            m_localPosition = createVectorField( ui, parentWindow, "Position" );
+            m_localRotation = createVectorField( ui, parentWindow, "Rotation" );
+            m_localScale = createVectorField( ui, parentWindow, "Scale" );
 
             if( !m_localPosition || !m_localRotation || !m_localScale )
             {
