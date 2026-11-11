@@ -2798,7 +2798,8 @@ namespace workphone::ui
     }
 
     void ImGuiApplication::createMenuItem( SmartPtr<IUIMenu> rootMenu,
-                                           SmartPtr<IUIElement> menuItemElement )
+                                           SmartPtr<IUIElement> menuItemElement,
+                                           SmartPtr<ISharedObject> contextTarget )
     {
         auto applicationManager = core::IApplicationManager::instancePtr();
 
@@ -2828,7 +2829,7 @@ namespace workphone::ui
                             auto menuItemElements = subMenu->getMenuItems();
                             for( auto &menuItemElement : menuItemElements )
                             {
-                                createMenuItem( rootMenu, menuItemElement );
+                                createMenuItem( rootMenu, menuItemElement, contextTarget );
                             }
 
                             ImGui::EndMenu();
@@ -2836,7 +2837,7 @@ namespace workphone::ui
                     }
                     else if( subMenuElement->isDerived<IUIMenuItem>() )
                     {
-                        createMenuItem( rootMenu, subMenuElement );
+                        createMenuItem( rootMenu, subMenuElement, contextTarget );
                     }
                 }
 
@@ -2853,24 +2854,26 @@ namespace workphone::ui
             {
                 auto text = menuItem->getText();
 
-                auto selected = false;
-                ImGui::MenuItem( text.c_str(), nullptr, &selected );
-
-                if( selected )
+                const auto imguiItem = dynamic_pointer_cast<ImGuiMenuItem>( menuItem );
+                const bool enabled = contextTarget || !imguiItem || !imguiItem->requiresContextTarget();
+                if( ImGui::MenuItem( text.c_str(), nullptr, false, enabled ) )
                 {
                     auto parent = rootMenu->getParent();
+                    Parameters args;
+                    if( contextTarget )
+                    {
+                        args.emplace_back( contextTarget );
+                    }
                     if( parent && parent->isDerived<IUIMenubar>() )
                     {
                         auto menuBar = workphone::static_pointer_cast<IUIMenubar>( parent );
 
-                        auto args = Array<Parameter>();
                         applicationManager->triggerEvent( EventType::UI, IEvent::handleSelection, args,
                                                           menuBar, menuItem, nullptr, false,
                                                           Thread::Application_Flag );
                     }
                     else
                     {
-                        auto args = Array<Parameter>();
                         applicationManager->triggerEvent( EventType::UI, IEvent::handleSelection, args,
                                                           rootMenu, menuItem, nullptr, false,
                                                           Thread::Application_Flag );

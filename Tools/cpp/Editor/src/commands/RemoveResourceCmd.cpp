@@ -77,6 +77,7 @@ namespace workphone::editor
         m_operationCatalog = catalog;
         m_operationId = result.operationId;
         m_operationRoot = catalog->getProjectRoot();
+        setState( State::Finished );
         if( auto fileSystem = app->getFileSystem() )
         {
             fileSystem->refreshPath( Path::getFilePath( m_filePath ), true );

@@ -78,6 +78,9 @@ namespace workphone
              */
             void setHelp( const String &help ) override;
 
+            void setProperties( SmartPtr<Properties> properties ) override;
+            bool requiresContextTarget() const;
+
             /**
              * \brief Macro used by the workphone type registration system.
              *
@@ -101,6 +104,7 @@ namespace workphone
              * \brief Optional help / tooltip string for the item.
              */
             FixedString<128> m_help;
+            bool m_requiresContextTarget = false;
         };
     }  // end namespace ui
 }  // namespace workphone

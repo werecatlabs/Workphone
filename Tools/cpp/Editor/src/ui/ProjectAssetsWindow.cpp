@@ -200,8 +200,11 @@ namespace workphone::editor
                 Util::addMenuItem( m_applicationMenu, static_cast<s32>( MenuId::Duplicate ), "Duplicate",
                                    "Duplicate this asset" );
                 Util::addMenuSeparator( m_applicationMenu );
-                Util::addMenuItem( m_applicationMenu, static_cast<s32>( MenuId::Remove ), "Delete",
-                                   "Delete this asset" );
+                auto deleteItem = Util::addMenuItem(
+                    m_applicationMenu, static_cast<s32>( MenuId::Remove ), "Delete", "Delete this asset" );
+                auto deleteProperties = workphone::make_ptr<Properties>();
+                deleteProperties->setProperty( "requiresContextTarget", true );
+                deleteItem->setProperties( deleteProperties );
                 Util::addMenuSeparator( m_applicationMenu );
                 Util::addMenuItem( m_applicationMenu, static_cast<s32>( MenuId::Import ), "Import",
                                    "Import" );
@@ -2097,14 +2100,33 @@ namespace workphone::editor
         break;
         case MenuId::Remove:
         {
-            if( StringUtil::isNullOrEmpty( selectedPath ) )
+            auto tree = owner->getTree();
+            auto node = arguments.empty()
+                            ? nullptr
+                            : workphone::dynamic_pointer_cast<ui::IUITreeNode>( arguments.front().getObject() );
+            if( !tree || !node || !node->getParent() || node->getParent() == tree->getRoot() )
+            {
+                break;
+            }
+
+            auto data = workphone::dynamic_pointer_cast<ProjectTreeData>( node->getNodeUserData() );
+            if( !data )
+            {
+                break;
+            }
+            auto path = data->getObjectType();
+            if( owner->findNodeByPath( path ) != node )
             {
                 break;
             }
 
             auto cmd = factoryManager->make_ptr<RemoveResourceCmd>();
-            cmd->setFilePath( selectedPath );
-            commandManager->addCommand( cmd );
+            cmd->setFilePath( path );
+            cmd->execute();
+            if( cmd->getState() == ICommand::State::Finished )
+            {
+                commandManager->addCommand( cmd );
+            }
         }
         break;
         case MenuId::Import:

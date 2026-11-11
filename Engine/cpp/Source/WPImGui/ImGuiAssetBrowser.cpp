@@ -85,6 +85,14 @@ namespace workphone::ui
 
     void ImGuiTreeCtrl::drawAssetBrowser( const AssetBrowserState &state )
     {
+        if( ImGui::IsMouseReleased( ImGuiMouseButton_Right ) &&
+            ImGui::IsWindowHovered( ImGuiHoveredFlags_ChildWindows |
+                                    ImGuiHoveredFlags_NoPopupHierarchy |
+                                    ImGuiHoveredFlags_AllowWhenBlockedByPopup ) )
+        {
+            m_assetContextTarget = nullptr;
+        }
+
         const auto available = ImGui::GetContentRegionAvail();
         const auto &style = ImGui::GetStyle();
         const float paneHeight = std::max( 1.0f, available.y - ImGui::GetFrameHeightWithSpacing() );
@@ -262,9 +270,10 @@ namespace workphone::ui
         {
             auto application = core::IApplicationManager::instancePtr();
             auto manager = application ? application->getUI() : nullptr;
+            auto target = m_assetContextTarget.lock();
             if( auto ui = manager ? dynamic_pointer_cast<ImGuiApplication>( manager->getApplication() ) : nullptr )
                 for( auto item : menu->getMenuItems() )
-                    ui->createMenuItem( menu, item );
+                    ui->createMenuItem( menu, item, target );
             ImGui::EndPopup();
         }
     }
@@ -275,6 +284,12 @@ namespace workphone::ui
         const bool hovered = ImGui::IsItemHovered();
         const bool open = contents && hovered && ImGui::IsMouseDoubleClicked( ImGuiMouseButton_Left );
         const bool context = hovered && ImGui::IsMouseClicked( ImGuiMouseButton_Right );
+        if( ImGui::IsMouseReleased( ImGuiMouseButton_Right ) &&
+            ImGui::IsItemHovered( ImGuiHoveredFlags_AllowWhenBlockedByPopup ) &&
+            node->getParent() != getRoot() )
+        {
+            m_assetContextTarget = node;
+        }
         if( open || ( context && !node->isSelected() ) )
             setSelectedTreeNode( node );
         else if( activate )

@@ -1660,7 +1660,18 @@ namespace workphone
             }
             const auto file = std::filesystem::u8path( manager.getProjectRoot().c_str() ) /
                               std::filesystem::u8path( path.c_str() );
-            const auto size = std::filesystem::file_size( file );
+            std::error_code sizeError;
+            const auto size = std::filesystem::file_size( file, sizeError );
+            if( sizeError == std::errc::no_such_file_or_directory )
+            {
+                throw std::runtime_error( "Indexed reference document is missing: " +
+                                          std::string( path.c_str() ) );
+            }
+            if( sizeError )
+            {
+                throw std::filesystem::filesystem_error( "Cannot inspect reference source document",
+                                                         file, sizeError );
+            }
             if( size > 64 * 1024 * 1024 || size > budget )
             {
                 throw std::runtime_error( "Reference source validation exceeds byte budget" );

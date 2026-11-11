@@ -38,4 +38,18 @@ namespace workphone::ui
     {
         m_help = help;
     }
+
+    void ImGuiMenuItem::setProperties( SmartPtr<Properties> properties )
+    {
+        if( properties )
+        {
+            properties->getPropertyValue( "requiresContextTarget", m_requiresContextTarget );
+            ImGuiElement<IUIMenuItem>::setProperties( properties );
+        }
+    }
+
+    bool ImGuiMenuItem::requiresContextTarget() const
+    {
+        return m_requiresContextTarget;
+    }
 }  // namespace workphone::ui

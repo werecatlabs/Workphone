@@ -135,6 +135,14 @@ namespace
         groupData->getPropertyObject( "texture" )
             .setAttribute( "resourceType", "workphone::CatalogTestResource" );
         saveDocument( "group/ref.fbscene", groupData );
+        fs::rename( root / "group", root / "externally-moved-group" );
+        blocked = catalog->performFileOperation( Op::Delete, "optional.bin" );
+        require( !blocked.succeeded && fs::exists( root / "optional.bin" ) &&
+                     catalog->hasResourceById( optionalId ) &&
+                     blocked.error.find( "Indexed reference document is missing: group/ref.fbscene" ) !=
+                         String::npos,
+                 "A missing indexed document must block deletion and identify the missing source" );
+        fs::rename( root / "externally-moved-group", root / "group" );
         auto groupDelete = catalog->performFileOperation( Op::Delete, "group" );
         require( groupDelete.succeeded && !catalog->hasResourceById( internalId ),
                  "Internal-only folder users do not block reversible quarantine" );

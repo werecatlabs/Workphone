@@ -74,7 +74,8 @@ namespace workphone
 
             void showApp( bool *p_open );
 
-            void createMenuItem( SmartPtr<IUIMenu> rootMenu, SmartPtr<IUIElement> menuItemElement );
+            void createMenuItem( SmartPtr<IUIMenu> rootMenu, SmartPtr<IUIElement> menuItemElement,
+                                 SmartPtr<ISharedObject> contextTarget = nullptr );
 
             Vector2I getWindowSize() const override;
             void setWindowSize( const Vector2I &size ) override;

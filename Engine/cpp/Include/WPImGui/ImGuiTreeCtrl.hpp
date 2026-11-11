@@ -408,6 +408,7 @@ namespace workphone
             void acceptAssetDrop( SmartPtr<IUITreeNode> destination );
 
             AtomicSharedPtr<AssetBrowserState> m_assetBrowser;
+            WeakPtr<IUITreeNode> m_assetContextTarget;
             u32 m_assetViewFolder = 0;
             String m_assetViewSearch;
             int m_assetIconSize = 48;
