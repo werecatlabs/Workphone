@@ -75,7 +75,7 @@ if(TARGET Workphone)
     if(TARGET WPSQLite)
         add_executable(BundledMediaTests BundledMediaTests.cpp)
         target_compile_features(BundledMediaTests PRIVATE cxx_std_17)
-        target_compile_definitions(BundledMediaTests PRIVATE BOOST_ALL_NO_LIB)
+        target_compile_definitions(BundledMediaTests PRIVATE BOOST_ALL_NO_LIB WP_TEST_SOURCE_ROOT="${WP_ROOT}")
         target_include_directories(BundledMediaTests PRIVATE
             ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Dependencies/boost)
         target_link_libraries(BundledMediaTests PRIVATE Workphone WPSQLite)

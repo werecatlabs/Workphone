@@ -9,6 +9,7 @@
 #include <Workphone/Interface/Database/IResourceDatabase.hpp>
 #include <Workphone/Core/LogManager.hpp>
 #include <Workphone/Core/Path.hpp>
+#include <Workphone/Database/ResourceDatabase.hpp>
 #include <Workphone/Mesh/ProgressiveMeshOptions.hpp>
 #include <Workphone/System/RuntimeAssetContext.hpp>
 #include <Workphone/System/CompiledResource.hpp>
@@ -16,6 +17,44 @@
 
 namespace workphone::scene
 {
+    namespace
+    {
+        SmartPtr<IMeshResource> loadMeshResource( const String &path )
+        {
+            auto application = core::IApplicationManager::instancePtr();
+            if( path.empty() || !application )
+            {
+                return nullptr;
+            }
+
+            if( auto resources = application->getResourceDatabase() )
+            {
+                if( auto mesh = resources->loadResourceByType<IMeshResource>( path ) )
+                {
+                    return mesh;
+                }
+                if( auto database = dynamic_cast<ResourceDatabase *>( resources.get() ) )
+                {
+                    if( auto mesh = dynamic_pointer_cast<IMeshResource>( database->loadMediaResource( path ) ) )
+                    {
+                        return mesh;
+                    }
+                }
+            }
+
+            // Generated meshes can be referenced by their cache file before they have a catalog entry.
+            if( StringUtil::make_lower( Path::getFileExtension( path ) ) == ".fbmeshbin" )
+            {
+                if( auto meshes = application->getMeshManager() )
+                {
+                    return dynamic_pointer_cast<IMeshResource>( meshes->loadFromFile( path ) );
+                }
+            }
+
+            return nullptr;
+        }
+    }  // namespace
+
     WP_CLASS_REGISTER_DERIVED( workphone::scene, Mesh, IComponent );
 
     u32 Mesh::m_idExt = 0;
@@ -107,18 +146,7 @@ namespace workphone::scene
     {
         if(m_runtimeAssetsMode){if(!meshPath.empty())throw std::runtime_error("Runtime mesh paths cannot load authoring files");m_meshPath.clear();return;}
         m_meshPath = meshPath;
-
-        if( !StringUtil::isNullOrEmpty( meshPath ) )
-        {
-            auto applicationManager = core::IApplicationManager::instance();
-            auto resourceDatabase = applicationManager->getResourceDatabase();
-
-            m_meshResource = resourceDatabase->loadResourceByType<IMeshResource>( meshPath );
-        }
-        else
-        {
-            m_meshResource = nullptr;
-        }
+        m_meshResource = loadMeshResource( meshPath );
 
         if( auto actor = getActor() )
         {
@@ -250,9 +278,6 @@ namespace workphone::scene
         }
         Component::setProperties( properties );
 
-        auto applicationManager = core::IApplicationManager::instance();
-        auto resourceDatabase = applicationManager->getResourceDatabase();
-
         auto meshPath = getMeshPath();
         properties->getPropertyValue( m_meshPathStr, meshPath );
 
@@ -272,40 +297,20 @@ namespace workphone::scene
 
         if( meshResource && meshResource != getMeshResource() )
         {
-            m_meshResource = meshResource;
-
-            auto meshFilePath = meshResource->getFilePath();
-            m_meshPath = meshFilePath;
-
-            if( auto actor = getActor() )
+            // Deserializing a UUID can retrieve a resource before its CPU mesh is loaded.
+            if( !meshResource->isLoaded() )
             {
-                auto meshRenderer = actor->getComponent<MeshRenderer>();
-                if( meshRenderer )
+                auto application = core::IApplicationManager::instance();
+                if( auto graphics = application->getGraphicsSystem() )
                 {
-                    meshRenderer->updateMesh();
+                    graphics->loadObject( meshResource );
                 }
             }
+            setMeshResource( meshResource );
         }
         else if( meshPath != getMeshPath() )
         {
-            meshPath = StringUtil::cleanupPath( meshPath );
-            m_meshPath = meshPath;
-
-            if( !StringUtil::isNullOrEmpty( meshPath ) )
-            {
-                auto meshResourceResult =
-                    resourceDatabase->loadResourceByType<IMeshResource>( meshPath );
-                m_meshResource = meshResourceResult;
-            }
-
-            if( auto actor = getActor() )
-            {
-                auto meshRenderer = actor->getComponent<MeshRenderer>();
-                if( meshRenderer )
-                {
-                    meshRenderer->updateMesh();
-                }
-            }
+            setMeshPath( StringUtil::cleanupPath( meshPath ) );
         }
 
         setProgressiveMeshOptions( progressiveMeshOptions );

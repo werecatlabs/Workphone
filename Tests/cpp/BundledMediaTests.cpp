@@ -1,4 +1,9 @@
 #include <Workphone/Workphone.hpp>
+#include <Workphone/Graphics/GraphicsSystem.hpp>
+#include <Workphone/Mesh/MeshManager.hpp>
+#include <Workphone/Scene/GameActor.hpp>
+#include <Workphone/Scene/GameManager.hpp>
+#include <Workphone/Scene/ScenePicking.hpp>
 #include <Workphone/System/BundledMediaPaths.hpp>
 #include <Workphone/Script/ScriptAsset.hpp>
 #include <WPSQLite/WPSQLite.hpp>
@@ -38,24 +43,34 @@ namespace
         SmartPtr<core::ApplicationManager> app = make_ptr<core::ApplicationManager>();
         SmartPtr<FactoryManager> factories = make_ptr<FactoryManager>();
         SmartPtr<SQLitePlugin> sqlite = make_ptr<SQLitePlugin>();
+        TaskId previousTask = Thread::getCurrentTask();
         ApplicationFixture()
         {
             core::IApplicationManager::setInstance( app );
+            Thread::setCurrentTask( TaskId::Primary );
             app->setLogManager( make_ptr<LogManagerDefault>() );
             factories->load( nullptr );
             app->setFactoryManager( factories );
+            app->setGameManager( make_ptr<scene::GameManager>() );
+            app->setGraphicsSystem( make_ptr<render::GraphicsSystem>() );
+            app->setMeshManager( make_ptr<MeshManager>() );
             sqlite->load( nullptr );
         }
         ~ApplicationFixture()
         {
+            app->setGameManager( nullptr );
             if( auto resources = app->getResourceDatabase() ) resources->unload( nullptr );
             app->setResourceDatabase( nullptr );
+            if( auto meshes = app->getMeshManager() ) meshes->unload( nullptr );
+            app->setMeshManager( nullptr );
+            app->setGraphicsSystem( nullptr );
             if( auto files = app->getFileSystem() ) files->unload( nullptr );
             app->setFileSystem( nullptr );
             sqlite->unload( nullptr );
             app->setFactoryManager( nullptr );
             factories->unload( nullptr );
             core::IApplicationManager::setInstance( nullptr );
+            Thread::setCurrentTask( previousTask );
         }
     };
 
@@ -86,6 +101,45 @@ namespace
         require( scripts.size() == 1, "Nested bundled scripts must be enumerated once" );
     }
 
+    void verifyScenePicking( AssetDatabaseManager &catalog )
+    {
+        const String meshPath = "cube_internal.fbmeshbin";
+        const String staleUuid = "c08aa9a6-9c6e-4120-b423-d8e6952e4ecb";
+        AssetDatabaseManager::EntrySnapshot entry;
+        require( !catalog.tryGetEntry( staleUuid, entry ), "The saved mesh UUID must be stale" );
+
+        auto actor = make_ptr<scene::GameActor>();
+        actor->setEnabled( true );
+        actor->setVisible( true );
+
+        // Older scenes save the media-relative path alongside a UUID that may
+        // no longer exist in the current installation's catalog.
+        auto saved = make_ptr<Properties>();
+        saved->setProperty( "Mesh Path", meshPath );
+        saved->setProperty( "Mesh Resource", staleUuid, Properties::resourceStr );
+        auto mesh = make_ptr<scene::Mesh>();
+        mesh->fromData( saved );
+        const auto resource = mesh->getMeshResource();
+        require( resource && catalog.tryGetEntry( resource->getHandle()->getUUIDAsString(), entry ) &&
+                     entry.path == meshPath,
+                 "The restored mesh must use the bundled cube's catalog identity" );
+        mesh->setEnabled( true );
+        actor->addComponentInstance( mesh );
+
+        // The CPU picker uses the authoring components and mesh data without a
+        // GPU scene. Attach the renderer after restoring the mesh properties.
+        auto renderer = make_ptr<scene::MeshRenderer>();
+        renderer->setEnabled( true );
+        actor->addComponentInstance( renderer );
+
+        const Ray3<real_Num> ray( { .2f, .1f, 20 }, { 0, 0, -1 } );
+        const Array<SmartPtr<scene::IGameActor>> actors{ actor };
+        require( scene::pickSceneActor( actors, ray, 40 ) == actor,
+                 "Scene picking must hit a bundled cube restored from a stale mesh UUID" );
+        actor->setVisible( false );
+        require( !scene::pickSceneActor( actors, ray, 40 ), "Scene picking must skip a hidden cube" );
+    }
+
     void runContracts()
     {
         TemporaryDirectory temporary;
@@ -101,6 +155,8 @@ namespace
         write( media / "DefaultUI.mat", "material" );
         write( media / "fa-solid-900.ttf", "font" );
         write( media / "Scripts/Lua/Core/BaseComponent.lua", "return {}" );
+        fs::copy_file( fs::u8path( WP_TEST_SOURCE_ROOT ) / "bin/Media/cube_internal.fbmeshbin",
+                       media / "cube_internal.fbmeshbin" );
         write( projectA / "Media/DefaultUI.mat", "project decoy" );
 
         const auto resolve = [&]( const fs::path &startup, const String &configured,
@@ -146,6 +202,7 @@ namespace
         require( catalog && catalog->isReadOnly() &&
                      fs::equivalent( fs::u8path( catalog->getProjectRoot().c_str() ), media ),
                  "Runtime catalog must mount read-only using the installation source root" );
+        verifyScenePicking( *catalog );
         auto script = dynamic_pointer_cast<ScriptAsset>(
             resources->loadMediaResource( "Scripts/Lua/Core/BaseComponent.lua" ) );
         require( script && !script->getHandle()->getUUID().is_nil(),
@@ -178,7 +235,7 @@ int main()
     try
     {
         runContracts();
-        std::cout << "PASS: runtime bundled media discovery, physical mounts, read-only catalog and UUID resolution\n";
+        std::cout << "PASS: bundled media discovery, physical mounts, catalog UUIDs and scene picking\n";
     }
     catch( const std::exception &error )
     {
