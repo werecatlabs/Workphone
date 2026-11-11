@@ -576,6 +576,77 @@ namespace
 #include "MaterialSurfaceHandoffContracts.hpp"
 #include "MaterialFullMemoryProfile.hpp"
 
+    void runMetallicColourRestoration( Fixture &fixture )
+    {
+        using namespace render;
+        auto source = make_ptr<ClawMaterial>();
+        source->load( nullptr );
+        const auto initial = source->getRenderState();
+        const ColourF automatic( 1.0f, 1.0f, 1.0f, 0.0f );
+        require( initial && initial->metallicColour == automatic &&
+                     source->getMetallicColour() == automatic, "metallic colour defaults to albedo" );
+
+        const auto legacyData = static_pointer_cast<Properties>( source->toData() );
+        const auto schemes = legacyData->getChildrenByName( "schemes" );
+        require( !schemes.empty(), "metallic colour source technique" );
+        const auto passes = schemes.front()->getChildrenByName( "passes" );
+        require( !passes.empty() && !passes.front()->hasProperty( "metallicColour" ),
+                 "automatic default is omitted from .mat" );
+        const auto legacyPath = fixture.root / "legacy_metallic_colour.mat";
+        std::ofstream( legacyPath ) << DataUtil::toString( legacyData.get() );
+
+        const auto albedo = ColourF( 0.125f, 0.25f, 0.5f, 1.0f );
+        const auto metallic = ColourF( 0.75f, 0.5f, 0.25f, 1.0f );
+        source->setMetallicColour( metallic );
+        require( source->getMetallicColour() == metallic &&
+                     source->getDiffuse() == initial->diffuseColour,
+                 "metallic colour edits preserve albedo" );
+        source->setDiffuse( albedo );
+        const auto edited = source->getRenderState();
+        require( edited && edited != initial && edited->diffuseColour == albedo &&
+                     edited->metallicColour == metallic && initial->metallicColour == automatic &&
+                     source->getMetallicColour() == metallic,
+                 "albedo edits preserve metallic colour in live and retained pass snapshots" );
+        source->setMetallicColour( metallic );
+        require( source->getRenderState() == edited, "unchanged metallic colour reuses pass snapshot" );
+        const auto constants = ClawMaterialRenderCache::prepare( *edited ).compose();
+        require( constants.metallic_color.x == metallic.r && constants.metallic_color.y == metallic.g &&
+                     constants.metallic_color.z == metallic.b && constants.metallic_color.w == metallic.a,
+                 "prepared DX11 constants retain independent metallic colour" );
+
+        auto pass = source->getTechnique( 0 )->getPass( 0 );
+        auto partial = make_ptr<Properties>();
+        partial->setProperty( "roughness", 0.75f );
+        pass->setProperties( partial );
+        require( pass->getRoughness() == 0.75f && source->getMetallicColour() == metallic,
+                 "partial pass properties preserve metallic colour" );
+
+        const auto enabledPath = ( fixture.root / "metallic_colour.mat" ).generic_string();
+        source->saveToFile( enabledPath.c_str() );
+        auto enabled = make_ptr<ClawMaterial>();
+        enabled->setFilePath( enabledPath.c_str() );
+        enabled->load( nullptr );
+        require( enabled->isLoaded() && enabled->getMetallicColour() == metallic &&
+                     enabled->getDiffuse() == albedo, "enabled metallic colour survives .mat load" );
+
+        const ColourF disabled( metallic.r, metallic.g, metallic.b, 0.0f );
+        source->setMetallicColour( disabled );
+        const auto disabledPath = ( fixture.root / "disabled_metallic_colour.mat" ).generic_string();
+        source->saveToFile( disabledPath.c_str() );
+        auto restored = make_ptr<ClawMaterial>();
+        restored->setFilePath( disabledPath.c_str() );
+        restored->load( nullptr );
+        require( restored->isLoaded() && restored->getMetallicColour() == disabled,
+                 "disabled metallic override retains authored RGB after .mat load" );
+        restored->loadFromFile( legacyPath.generic_string().c_str() );
+        require( restored->getMetallicColour() == automatic,
+                 "loading a legacy .mat clears any previously authored metallic colour" );
+
+        restored->unload( nullptr );
+        enabled->unload( nullptr );
+        source->unload( nullptr );
+    }
+
     void runSpecularRestoration( Fixture &fixture )
     {
         // Scene loads can contain a stale legacy colour alongside the saved slider.
@@ -3956,6 +4027,7 @@ int main( int argc, char **argv )
         runLegacyBatchScopes( fixture );
         runUpdatePublicationScopes( fixture );
         runRenderSnapshots( fixture );
+        runMetallicColourRestoration( fixture );
         runSpecularRestoration( fixture );
         run( fixture );
         std::cout << "PASS: first-load specular, scene material restoration, delayed completion, replacement, load order and "

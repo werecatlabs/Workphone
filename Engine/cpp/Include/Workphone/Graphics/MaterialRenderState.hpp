@@ -36,10 +36,13 @@ namespace workphone
         }
 
         static constexpr u32 TextureCount = 32;
+        static ColourF defaultMetallicColour() { return ColourF( 1.0f, 1.0f, 1.0f, 0.0f ); }
+
         ColourF specularColour = ColourF::White;
         ColourF ambientColour = ColourF::White;
         ColourF diffuseColour = ColourF::White;
         ColourF emissiveColour = ColourF::Black;
+        ColourF metallicColour = defaultMetallicColour();
         f32 alphaClip = 0.5f;
         f32 opacity = 1.0f;
         f32 refractionAmount = 0.0f;

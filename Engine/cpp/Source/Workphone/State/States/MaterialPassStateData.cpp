@@ -86,6 +86,10 @@ namespace workphone
             {
                 return false;
             }
+            if( !sameMaterialValue( a.metallicColour, b.metallicColour ) )
+            {
+                return false;
+            }
             if( !sameMaterialValue( a.alphaClip, b.alphaClip ) )
             {
                 return false;

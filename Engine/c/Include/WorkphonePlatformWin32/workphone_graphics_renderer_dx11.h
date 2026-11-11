@@ -134,7 +134,7 @@ wp_geometry_dx11 *wp_renderer_dx11_prepare_mesh_geometry_budgeted( wp_renderer_d
     struct wp_graphics_mesh *mesh, wp_u32 first, wp_u32 count,
     const wp_gpu_allocation_callbacks *callbacks );
 
-/** Parameters consumed by the built-in forward PBR mesh shader. */
+/** Parameters consumed by the built-in PBR mesh shader. */
 typedef struct wp_material_dx11
 {
     wp_vec4f base_color;
@@ -154,6 +154,7 @@ typedef struct wp_material_dx11
     wp_vec4f environment;       /* x enabled, y maximum LOD, z authored probe radiance (otherwise ambient-scaled) */
     wp_vec4f fog_color;         /* linear scene fog radiance */
     wp_vec4f fog_params;        /* mode (0 none, 1 exp, 2 exp2, 3 linear), density, start, end */
+    wp_vec4f metallic_color;    /* sRGB metallic tint, w=0 uses albedo, w=1 uses this tint */
 } wp_material_dx11;
 
 /* Owner-thread upload policy for built-in PNTC/terrain/foliage shaders. Combined

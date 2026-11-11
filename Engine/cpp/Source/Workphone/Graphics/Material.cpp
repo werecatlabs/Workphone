@@ -1328,6 +1328,43 @@ namespace workphone::render
         }
     }
 
+    ColourF Material::getMetallicColour() const
+    {
+        for( auto technique : getTechniques() )
+        {
+            for( auto pass : technique->getPasses() )
+            {
+                if( auto context = pass->getStateContext() )
+                {
+                    if( auto state = context->getStateDataById<MaterialPassStateData>( pass->getId() ) )
+                    {
+                        return state->getSurfaceState().metallicColour;
+                    }
+                }
+            }
+        }
+
+        return MaterialRenderState::defaultMetallicColour();
+    }
+
+    void Material::setMetallicColour( const ColourF &colour )
+    {
+        for( auto technique : getTechniques() )
+        {
+            for( auto pass : technique->getPasses() )
+            {
+                if( auto context = pass->getStateContext() )
+                {
+                    if( auto state =
+                            context->invalidateStateDataById<MaterialPassStateData>( pass->getId() ) )
+                    {
+                        state->setSurfaceValue( &MaterialRenderState::metallicColour, colour );
+                    }
+                }
+            }
+        }
+    }
+
     f32 Material::getRoughness() const
     {
         auto techniques = getTechniques();

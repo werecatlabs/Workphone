@@ -60,6 +60,7 @@ MaterialEditorTypes =
 	ClearCoatAmountId = 136,
 	ClearCoatRoughnessId = 137,
 	AnisotropyAmountId = 138,
+	UseMetallicColourId = 139,
 
 	-- Main UV transform.
 	UVTilingXId = 200,
@@ -652,6 +653,7 @@ function MaterialEditor:_clearRefs()
 	self.heightSourceDropdown = nil;
 
 	self.metallicColour = nil;
+	self.useMetallicColourToggle = nil;
 	self.emissionColour = nil;
 	self.albedoColour = nil;
 	self.specularSlider = nil;
@@ -1154,7 +1156,8 @@ function MaterialEditor:load()
 	self.parallaxStepsSlider = self:addBoundSlider(ui, pbrHeader, "Parallax Steps", MaterialEditorTypes.ParallaxStepsId, "parallaxSteps", 1.0, 64.0, "setParallaxSteps");
 
 	self.albedoColour = self:addBoundColour(ui, pbrHeader, "Albedo Colour", MaterialEditorTypes.AlbedoColourId, "albedoColour", "setDiffuse");
-	self.metallicColour = self:addBoundColour(ui, pbrHeader, "Metallic Colour", MaterialEditorTypes.MetallicColourId, "metallicColour", "setDiffuse");
+	self.useMetallicColourToggle = self:addBoundToggle(ui, pbrHeader, "Override Metallic Colour", MaterialEditorTypes.UseMetallicColourId, "useMetallicColour", nil);
+	self.metallicColour = self:addBoundColour(ui, pbrHeader, "Metallic Colour", MaterialEditorTypes.MetallicColourId, "metallicColour", "setMetallicColour");
 
 	local emissionHeader = ui:addElement(collapsingHeaderTypeInfo);
 	emissionHeader:setLabel("Emission / Advanced Lighting");
@@ -1437,15 +1440,7 @@ function MaterialEditor:updateSelectedMaterial()
 		self.materialSettings.uvProjection = safeGet(self.material, "getUVProjection", self.materialSettings.uvProjection);
 		self.materialSettings.uvTriplanarScale = safeGet(self.material, "getTriplanarScale", self.materialSettings.uvTriplanarScale);
 
-		if self.albedoColour then
-			local diffuseColour = safeGet(self.material, "getDiffuse", nil);
-			if diffuseColour then
-				safeCall(self.albedoColour, "setColour", diffuseColour);
-				if self.metallicColour then
-					safeCall(self.metallicColour, "setColour", diffuseColour);
-				end
-			end
-		end
+		self.materialSettings.albedoColour = safeGet(self.material, "getDiffuse", nil);
 
 		if self.emissionColour then
 			local emissionColour = safeGet(self.material, "getEmissive", nil);
@@ -1454,6 +1449,10 @@ function MaterialEditor:updateSelectedMaterial()
 			end
 		end
 	end
+
+	local metallicColour = safeGet(self.material, "getMetallicColour", nil) or ColourF(1, 1, 1, 0);
+	self.materialSettings.metallicColour = metallicColour;
+	self.materialSettings.useMetallicColour = metallicColour.a > 0.5;
 
 	for _, slot in pairs(self.textureSlots) do
 		if slot then
@@ -1567,6 +1566,18 @@ function MaterialEditor:applySettingToMaterial(binding, value)
 		self._shaderPathsDirty = true;
 	end
 
+	if binding.key == "metallicColour" or binding.key == "useMetallicColour" then
+		local colour = normaliseColourValue(self.materialSettings.metallicColour);
+		if colour ~= nil then
+			local enabled = self.materialSettings.useMetallicColour and 1 or 0;
+			colour = ColourF(colour.r, colour.g, colour.b, enabled);
+			self.materialSettings.metallicColour = colour;
+			safeCall(self.material, "setMetallicColour", colour);
+			safeCall(self.metallicColour, "setColour", colour);
+		end
+		return;
+	end
+
 	self:storeEditorSetting(binding.key, value, binding.valueType);
 
 	if binding.key == "doubleSided" then
@@ -1659,15 +1670,13 @@ function MaterialEditor:onSettingChanged(control, args, elementId)
 	end
 
 	self.materialSettings[binding.key] = value;
-	self:applySettingToMaterial(binding, value);
-	if binding.setterName == "setDiffuse" then
-		-- Both colour controls edit the same diffuse value. Keep Apply/Save from
-		-- overwriting it with the other control's stale value.
-		self.materialSettings.albedoColour = value;
-		self.materialSettings.metallicColour = value;
-		if self.albedoColour then safeCall(self.albedoColour, "setColour", value); end
-		if self.metallicColour then safeCall(self.metallicColour, "setColour", value); end
+	if binding.key == "metallicColour" then
+		self.materialSettings.useMetallicColour = true;
+		safeCall(self.useMetallicColourToggle, "setValue", true);
+	elseif binding.key == "albedoColour" then
+		safeCall(self.albedoColour, "setColour", value);
 	end
+	self:applySettingToMaterial(binding, value);
 
 	if binding.key == "renderMode" or
 		binding.key == "opacity" or
@@ -1807,7 +1816,10 @@ function MaterialEditor:applyAllSettings()
 			local value = self:getControlValue(control, binding, nil);
 			if value ~= nil then
 				self.materialSettings[binding.key] = value;
-				self:applySettingToMaterial(binding, value);
+				-- The metallic picker applies RGB and the preceding override toggle together.
+				if binding.key ~= "useMetallicColour" then
+					self:applySettingToMaterial(binding, value);
+				end
 			end
 		end
 	end

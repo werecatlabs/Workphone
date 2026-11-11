@@ -1348,9 +1348,12 @@ namespace workphone::render
                 const auto diffuse = material ? material->getDiffuse() : ColourF::White;
                 const auto specular =
                     material ? material->getSpecular() : ColourF( 0.04f, 0.04f, 0.04f, 1.0f );
+                const auto metallic = material ? material->getMetallicColour()
+                                               : MaterialRenderState::defaultMetallicColour();
                 const auto emissive = material ? material->getEmissive() : ColourF::Black;
                 nativeMaterial.base_color = { diffuse.r, diffuse.g, diffuse.b, diffuse.a };
                 nativeMaterial.specular_color = { specular.r, specular.g, specular.b, specular.a };
+                nativeMaterial.metallic_color = { metallic.r, metallic.g, metallic.b, metallic.a };
                 nativeMaterial.emissive_color = { emissive.r, emissive.g, emissive.b, emissive.a };
                 nativeMaterial.surface = { material ? material->getMetalness() : 0.0f,
                                            material ? material->getRoughness() : 0.5f, 1.0f, 1.0f };

@@ -19,7 +19,7 @@ namespace workphone::render
         struct Constants
         {
             wp_vec4f base_color{}, emissive_color{}, specular_color{};
-            wp_vec4f surface{}, uv_transform{}, controls{}, texture_sources{}, projection{};
+            wp_vec4f surface{}, uv_transform{}, controls{}, texture_sources{}, projection{}, metallic_color{};
         } constants;
 
         std::array<u32, 6> textureSlots{ 1u, 2u, 3u, 13u, 22u, 24u };
@@ -27,9 +27,9 @@ namespace workphone::render
 
         wp_material_dx11 compose() const
         {
-            static_assert( sizeof( Constants ) == sizeof( wp_vec4f ) * 8,
-                           "material constants must contain eight packed vectors" );
-            static_assert( sizeof( wp_material_dx11 ) == sizeof( wp_vec4f ) * 17,
+            static_assert( sizeof( Constants ) == sizeof( wp_vec4f ) * 9,
+                           "material constants must contain nine packed vectors" );
+            static_assert( sizeof( wp_material_dx11 ) == sizeof( wp_vec4f ) * 18,
                            "update draw composition when the native shader block changes" );
             wp_material_dx11 draw;
             // Copy contiguous groups and initialize only draw-owned fields. A
@@ -38,6 +38,7 @@ namespace workphone::render
             std::memcpy( &draw.base_color, &constants.base_color, sizeof( wp_vec4f ) * 3 );
             std::memcpy( &draw.surface, &constants.surface, sizeof( wp_vec4f ) * 3 );
             std::memcpy( &draw.texture_sources, &constants.texture_sources, sizeof( wp_vec4f ) * 2 );
+            draw.metallic_color = constants.metallic_color;
             draw.light_color = draw.light_direction = draw.camera_position = {};
             draw.map_flags = draw.extra_map_flags = {};
             draw.ambient_color = draw.environment = draw.fog_color = draw.fog_params = {};
@@ -144,9 +145,11 @@ namespace workphone::render
             const auto &diffuse = state.diffuseColour;
             const auto &specular = state.specularColour;
             const auto &emissive = state.emissiveColour;
+            const auto &metallic = state.metallicColour;
             const auto intensity = state.getFlag( emissionEnabledFlag ) ? state.emissionIntensity : 0.0f;
             value.base_color = { diffuse.r, diffuse.g, diffuse.b, diffuse.a };
             value.specular_color = { specular.r, specular.g, specular.b, specular.a };
+            value.metallic_color = { metallic.r, metallic.g, metallic.b, metallic.a };
             value.emissive_color = { emissive.r * intensity, emissive.g * intensity,
                                      emissive.b * intensity, emissive.a };
             value.surface = { state.metalness, state.roughness, state.uvTilingX, state.uvTilingY };

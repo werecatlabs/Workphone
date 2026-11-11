@@ -602,6 +602,8 @@ namespace workphone
                     .def( "setScale", &IMaterial::setScale )
                     .def( "getMetalness", &IMaterial::getMetalness )
                     .def( "setMetalness", &IMaterial::setMetalness )
+                    .def( "getMetallicColour", &IMaterial::getMetallicColour )
+                    .def( "setMetallicColour", &IMaterial::setMetallicColour )
                     .def( "getRoughness", &IMaterial::getRoughness )
                     .def( "setRoughness", &IMaterial::setRoughness )
                     .def( "getDiffuse", &IMaterial::getDiffuse )

@@ -24,6 +24,7 @@ namespace material_cache_benchmark
         auto state = std::make_shared<MaterialRenderState>();
         const auto v = f32( seed % 97 ) / 97.0f;
         state->diffuseColour = ColourF( v, 0.4f, 1.0f - v, 0.8f );
+        state->metallicColour = ColourF( 1.0f - v, 0.6f, v, seed % 2 ? 1.0f : 0.0f );
         state->emissiveColour = ColourF( v, v * 2.0f, v * 3.0f, 1.0f );
         state->flags = seed % 2 ? render::emissionEnabledFlag | render::cutoutFlag : 0u;
         state->emissionIntensity = 2.0f;

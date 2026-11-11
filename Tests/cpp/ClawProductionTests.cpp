@@ -1269,7 +1269,8 @@ namespace
                 binding == (policy && (mode == 2 || mode == 3) ? draws : 0) &&
                 uploadAfter.map_failures == uploadBefore.map_failures,
                 "only changed constant blocks are mapped");
-            const auto expectedBytes = policy ? draws * (mode == 0 ? 128 : mode == 1 ? 112 : mode == 2 ? 32 : 272) : draws * 272;
+            constexpr unsigned splitBytes[] = {144, 112, 32, 144 + 112 + 32};
+            const auto expectedBytes = draws * (policy ? splitBytes[mode] : sizeof(wp_material_dx11));
             ok &= check(bytes[variant] == expectedBytes, "material upload byte counts match block packing");
             ok &= check( after.draws - before.draws == draws && uploads[variant] == draws,
                          "material upload workload changes constants for each native draw" );
@@ -1311,7 +1312,7 @@ namespace
             stableAfter.view_uploads == stableBefore.view_uploads && stableAfter.binding_uploads == stableBefore.binding_uploads,
             "cancelled edits and binding invalidation reuse uploaded split constants");
         // Every vector has distinct data so offset swaps cannot pass through similar defaults.
-        std::array<wp_vec4f,17> vectors{};
+        std::array<wp_vec4f,18> vectors{};
         for(unsigned i = 0; i < vectors.size(); ++i) vectors[i] = {float(i*4+1),float(i*4+2),float(i*4+3),float(i*4+4)};
         vectors[10].z = vectors[10].w = 0; vectors[14].x = vectors[14].y = 0;
         wp_material_dx11 packed{}; static_assert(sizeof(packed) == sizeof(vectors));
@@ -1321,7 +1322,7 @@ namespace
         wp_renderer_dx11_set_material_textures(native, nullptr);
         wp_renderer_dx11_set_material(native, &packed);
         wp_renderer_dx11_draw_geometry_pntc(native, geometry, 0, 3, 0);
-        ok &= checkMaterialBuffer(native, 1, {vectors[0],vectors[1],vectors[2],vectors[6],vectors[7],vectors[8],vectors[11],vectors[12]});
+        ok &= checkMaterialBuffer(native, 1, {vectors[0],vectors[1],vectors[2],vectors[6],vectors[7],vectors[8],vectors[11],vectors[12],vectors[17]});
         ok &= checkMaterialBuffer(native, 6, {vectors[3],vectors[4],vectors[5],vectors[13],vectors[14],vectors[15],vectors[16]});
         ok &= checkMaterialBuffer(native, 7, {vectors[9],vectors[10]});
         // GPU readback covers unchanged views across material edits, independent
@@ -1357,6 +1358,7 @@ namespace
                     wp_renderer_dx11_set_texture_native(native, colour[step] < 0 ? nullptr : views[colour[step]].Get());
                     wp_renderer_dx11_set_material_textures(native, maps);
                     wp_material_dx11 value{}; value.base_color = {float(step)/8,0,0,1}; value.controls.z = -1;
+                    value.metallic_color = {0, 0.5f, 1, 1};
                     // Caller values cannot override transfer ownership derived from SRVs.
                     value.extra_map_flags.z = value.extra_map_flags.w = 9;
                     wp_renderer_dx11_set_material(native, &value);
@@ -1375,8 +1377,8 @@ namespace
                     value.extra_map_flags.w = emission[step] == 1 ? 1.f : 0.f;
                     if(policy) ok &= checkMaterialBuffer(native, 7, {value.map_flags,value.extra_map_flags});
                     else {
-                        std::vector<wp_vec4f> expected(17);
-                        static_assert(sizeof(value) == sizeof(wp_vec4f)*17);
+                        std::vector<wp_vec4f> expected(18);
+                        static_assert(sizeof(value) == sizeof(wp_vec4f)*18);
                         std::memcpy(expected.data(), &value, sizeof(value));
                         ok &= checkMaterialBuffer(native, 1, expected);
                     }

@@ -83,9 +83,11 @@ namespace workphone::render::material_cache_reference
             const auto &diffuse = state.diffuseColour;
             const auto &specular = state.specularColour;
             const auto &emissive = state.emissiveColour;
+            const auto &metallic = state.metallicColour;
             const auto intensity = state.getFlag( emissionEnabledFlag ) ? state.emissionIntensity : 0.0f;
             value.base_color = { diffuse.r, diffuse.g, diffuse.b, diffuse.a };
             value.specular_color = { specular.r, specular.g, specular.b, specular.a };
+            value.metallic_color = { metallic.r, metallic.g, metallic.b, metallic.a };
             value.emissive_color = { emissive.r * intensity, emissive.g * intensity,
                                      emissive.b * intensity, emissive.a };
             value.surface = { state.metalness, state.roughness, state.uvTilingX, state.uvTilingY };

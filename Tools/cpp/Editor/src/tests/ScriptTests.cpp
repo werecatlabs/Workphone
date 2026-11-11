@@ -1028,31 +1028,50 @@ BOOST_AUTO_TEST_CASE( editor_material_control_events_test )
                                Array<Parameter>{ Parameter( 0.73f ) }, slider, slider, nullptr );
     }
     BOOST_CHECK_CLOSE( material->getRoughness(), 0.73f, 0.01f );
-    auto colour = workphone::dynamic_pointer_cast<ui::IUIColourPicker>( controls[1] );
-    BOOST_REQUIRE( colour );
-    colour->setColour( ColourF( 0.2f, 0.4f, 0.6f, 1.0f ) );
-    for( auto listener : colour->getObjectListeners() )
-    {
-        listener->handleEvent(
-            EventType::UI, IEvent::handleValueChanged,
-            Array<Parameter>{ Parameter( 0.2f ), Parameter( 0.4f ), Parameter( 0.6f ) }, colour, colour,
-            nullptr );
-    }
-    BOOST_CHECK_CLOSE( material->getDiffuse().r, 0.2f, 0.01f );
-    BOOST_CHECK_CLOSE( material->getDiffuse().g, 0.4f, 0.01f );
-    BOOST_CHECK_CLOSE( material->getDiffuse().b, 0.6f, 0.01f );
+    auto albedoColour = workphone::dynamic_pointer_cast<ui::IUIColourPicker>( controls[1] );
     auto metallicColour = workphone::dynamic_pointer_cast<ui::IUIColourPicker>( controls[3] );
+    BOOST_REQUIRE( albedoColour );
     BOOST_REQUIRE( metallicColour );
-    BOOST_CHECK_CLOSE( metallicColour->getColour().r, 0.2f, 0.01f );
+    const auto editColour = []( const SmartPtr<ui::IUIColourPicker> &picker, const ColourF &colour ) {
+        picker->setColour( ColourF( colour.r, colour.g, colour.b, picker->getColour().a ) );
+        for( auto listener : picker->getObjectListeners() )
+        {
+            listener->handleEvent( EventType::UI, IEvent::handleValueChanged,
+                                   Array<Parameter>{ Parameter( colour.r ), Parameter( colour.g ),
+                                                     Parameter( colour.b ) },
+                                   picker, picker, nullptr );
+        }
+    };
+    const auto checkColourRgb = []( const ColourF &actual, const ColourF &expected ) {
+        BOOST_CHECK_CLOSE( actual.r, expected.r, 0.01f );
+        BOOST_CHECK_CLOSE( actual.g, expected.g, 0.01f );
+        BOOST_CHECK_CLOSE( actual.b, expected.b, 0.01f );
+    };
+    const auto checkColour = [&]( const ColourF &actual, const ColourF &expected ) {
+        checkColourRgb( actual, expected );
+        BOOST_CHECK_EQUAL( actual.a, expected.a );
+    };
+    const ColourF legacyMetallic( 1.0f, 1.0f, 1.0f, 0.0f );
+    const ColourF firstAlbedo( 0.8f, 0.3f, 0.2f, 1.0f );
+    const ColourF authoredMetallic( 0.7f, 0.2f, 0.1f, 1.0f );
+    const ColourF authoredAlbedo( 0.2f, 0.4f, 0.6f, 1.0f );
+    editColour( albedoColour, firstAlbedo );
+    checkColourRgb( metallicColour->getColour(), legacyMetallic );
+    checkColour( material->getMetallicColour(), legacyMetallic );
+    editColour( metallicColour, authoredMetallic );
+    checkColour( material->getDiffuse(), firstAlbedo );
+    checkColourRgb( albedoColour->getColour(), firstAlbedo );
+    editColour( albedoColour, authoredAlbedo );
+    checkColour( material->getMetallicColour(), authoredMetallic );
+    checkColourRgb( metallicColour->getColour(), authoredMetallic );
     // Apply must dispatch its action, including values without a change event.
     slider->setValue( 0.61f );
     auto apply = controls[2];
     application->triggerEvent( EventType::UI, IEvent::handleSelection, {}, apply, nullptr, nullptr,
                                false, Thread::Application_Flag );
     BOOST_CHECK_CLOSE( material->getRoughness(), 0.61f, 0.01f );
-    BOOST_CHECK_CLOSE( material->getDiffuse().r, 0.2f, 0.01f );
-    BOOST_CHECK_CLOSE( material->getDiffuse().g, 0.4f, 0.01f );
-    BOOST_CHECK_CLOSE( material->getDiffuse().b, 0.6f, 0.01f );
+    checkColour( material->getDiffuse(), authoredAlbedo );
+    checkColour( material->getMetallicColour(), authoredMetallic );
     // A later queue entry must not reload the saved file over unsaved edits.
     material->setRoughness( 0.84f );
     application->getGraphicsSystem()->update();
@@ -1072,6 +1091,8 @@ BOOST_AUTO_TEST_CASE( editor_material_control_events_test )
     selection->clearSelection();
     selection->addSelectedObject( component );
     window->updateSelection();
+    checkColourRgb( albedoColour->getColour(), authoredAlbedo );
+    checkColourRgb( metallicColour->getColour(), authoredMetallic );
     slider->setValue( 0.42f );
     for( auto listener : slider->getObjectListeners() )
     {
@@ -1089,7 +1110,8 @@ BOOST_AUTO_TEST_CASE( editor_material_control_events_test )
     application->getGameManager()->destroyActor( actor );
     material->reload( nullptr );
     BOOST_CHECK_CLOSE( material->getRoughness(), 0.36f, 0.01f );
-    BOOST_CHECK_CLOSE( material->getDiffuse().r, 0.2f, 0.01f );
+    checkColour( material->getDiffuse(), authoredAlbedo );
+    checkColour( material->getMetallicColour(), authoredMetallic );
     BOOST_CHECK_EQUAL( material->getUVProjection(), 3u );
     fileSystem->deleteFile( materialPath );
 }

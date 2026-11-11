@@ -23,6 +23,7 @@ namespace workphone::render
         const String EditorBoolsStr = String( "bools" );
         const String EditorStringsStr = String( "strings" );
         const String MaterialTypeDataStr = String( "materialType" );
+        const String MetallicColourStr = String( "metallicColour" );
         constexpr u32 LightingEnabledFlag = 1u << 19u;
 
         SafePtr<MaterialPassStateData> editSurfaceState( IStateContext &context, hash_type id )
@@ -62,9 +63,15 @@ namespace workphone::render
 
         void writePassState( Properties &properties, const MaterialPassStateData &state )
         {
+            const auto &surface = state.getSurfaceState();
             properties.setProperty(
                 MaterialTypeDataStr,
-                static_cast<s32>( static_cast<MaterialType>( state.getSurfaceState().materialType ) ) );
+                static_cast<s32>( surface.materialType ) );
+            const auto &colour = surface.metallicColour;
+            if( colour.r != 1.0f || colour.g != 1.0f || colour.b != 1.0f || colour.a != 0.0f )
+            {
+                properties.setProperty( MetallicColourStr, colour );
+            }
 
             auto editorProperties = workphone::make_ptr<Properties>();
             editorProperties->setName( EditorSettingsStr );
@@ -87,7 +94,8 @@ namespace workphone::render
             properties.addChild( editorProperties );
         }
 
-        void readPassState( const Properties &properties, MaterialPassStateData &state )
+        void readPassState( const Properties &properties, MaterialPassStateData &state,
+                            bool fullDocument )
         {
             auto materialType =
                 static_cast<s32>( static_cast<MaterialType>( state.getSurfaceState().materialType ) );
@@ -96,6 +104,11 @@ namespace workphone::render
             {
                 state.setSurfaceValue( &MaterialRenderState::materialType,
                                        static_cast<MaterialType>( materialType ) );
+            }
+            auto metallicColour = MaterialRenderState::defaultMetallicColour();
+            if( properties.getPropertyValue( MetallicColourStr, metallicColour ) || fullDocument )
+            {
+                state.setSurfaceValue( &MaterialRenderState::metallicColour, metallicColour );
             }
 
             if( auto editorProperties = properties.getChild( EditorSettingsStr ) )
@@ -1557,7 +1570,7 @@ namespace workphone::render
         {
             if( auto state = stateContext->invalidateStateDataById<MaterialPassStateData>( getId() ) )
             {
-                readPassState( *properties, *state );
+                readPassState( *properties, *state, true );
             }
         }
 
@@ -1731,7 +1744,7 @@ namespace workphone::render
         {
             if( auto state = stateContext->invalidateStateDataById<MaterialPassStateData>( getId() ) )
             {
-                readPassState( *properties, *state );
+                readPassState( *properties, *state, false );
             }
         }
 

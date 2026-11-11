@@ -125,7 +125,8 @@ static const wp_c8 s_ps_ptc_src[] = WP_HDR_OUTPUT_HLSL
 #define WP_MATERIAL_CONSTANTS_HLSL \
     "#ifdef WP_MATERIAL_SPLIT_CONSTANTS\n" \
     "cbuffer Material : register(b1) { float4 base_color; float4 emissive_color; float4 specular_color;\n" \
-    " float4 surface; float4 uv_transform; float4 controls; float4 texture_sources; float4 projection; };\n" \
+    " float4 surface; float4 uv_transform; float4 controls; float4 texture_sources; float4 projection;\n" \
+    " float4 metallic_color; };\n" \
     "cbuffer MaterialView : register(b6) { float4 light_color; float4 light_direction; float4 camera_position;\n" \
     " float4 ambient_color; float4 environment; float4 fog_color; float4 fog_params; };\n" \
     "cbuffer MaterialBindings : register(b7) { float4 map_flags; float4 extra_map_flags; };\n" \
@@ -133,7 +134,7 @@ static const wp_c8 s_ps_ptc_src[] = WP_HDR_OUTPUT_HLSL
     "cbuffer Material : register(b1) { float4 base_color; float4 emissive_color; float4 specular_color;\n" \
     " float4 light_color; float4 light_direction; float4 camera_position; float4 surface; float4 uv_transform;\n" \
     " float4 controls; float4 map_flags; float4 extra_map_flags; float4 texture_sources; float4 projection;\n" \
-    " float4 ambient_color; float4 environment; float4 fog_color; float4 fog_params; };\n" \
+    " float4 ambient_color; float4 environment; float4 fog_color; float4 fog_params; float4 metallic_color; };\n" \
     "#endif\n"
 
 #define WP_VERTEX_LIGHTING_HLSL "cbuffer VertexLighting:register(b8) { float4 vertex_light_direction; };\n"
@@ -291,7 +292,8 @@ static const wp_c8 s_ps_pntc_src[] = WP_HDR_OUTPUT_HLSL
     " i.uv = materialUV(i);\n"
     " float4 sampled = tex.Sample(tex_sampler, i.uv);\n"
     " float3 colourSample = extra_map_flags.z > 0.5 ? sampled.rgb : decode_srgb(sampled.rgb);\n"
-    " float3 albedo = colourSample * decode_srgb(base_color.rgb) * decode_srgb(i.color.rgb);\n"
+    " float3 vertexTint = decode_srgb(i.color.rgb);\n"
+    " float3 albedo = colourSample * decode_srgb(base_color.rgb) * vertexTint;\n"
     // Heightfields have an authored upward surface normal. Their two-sided raster
     // submission must not flip lighting into the ground based on front-face state.
     " float3 terrainNormal = normalize(i.normal), terrainOrm = float3(1,1,0);\n"
@@ -375,7 +377,10 @@ static const wp_c8 s_ps_pntc_src[] = WP_HDR_OUTPUT_HLSL
     " float gv = ndl * sqrt(ndv * ndv * (1.0 - a2) + a2);\n"
     " float gl = ndv * sqrt(ndl * ndl * (1.0 - a2) + a2);\n"
     " float3 dielectric = saturate(specular_color.rgb);\n"
-    " float3 f0 = lerp(dielectric, albedo, metalness);\n"
+    " float3 metallicTint = albedo;\n"
+    " if (metallic_color.w > 0.5 && terrain_controls.x < 0.5)\n"
+    "     metallicTint = colourSample * decode_srgb(metallic_color.rgb) * vertexTint;\n"
+    " float3 f0 = lerp(dielectric, metallicTint, metalness);\n"
     " float3 f = fresnelSchlick(vdh, f0);\n"
     " float3 specular = d * f * 0.5 / max(gv + gl, 1e-6);\n"
     " float3 diffuse = (1.0 - f) * (1.0 - metalness) * albedo / 3.14159265;\n"
@@ -407,7 +412,7 @@ static const wp_c8 s_ps_pntc_src[] = WP_HDR_OUTPUT_HLSL
     "     color += env * max(f0 * ab.x + ab.y, 0.0) * envScale * specAO; }\n"
     " color += emission;\n"
     "#ifdef WP_DEFERRED_GBUFFER\n"
-    " GBUFFER g;g.albedo=float4(albedo,ao);g.normal=float4(n,roughness);g.position=float4(i.world_pos,metalness+((projection.z>.5&&projection.z<1.5)?2:0));g.indirect=float4(max(color-directColor,0),alpha);g.specular=float4(dielectric,i.vertex_light);return g;\n"
+    " GBUFFER g;g.albedo=float4(albedo,ao);g.normal=float4(n,roughness);g.position=float4(i.world_pos,metalness+((projection.z>.5&&projection.z<1.5)?2:0));g.indirect=float4(max(color-directColor,0),alpha);g.specular=float4(f0,i.vertex_light);return g;\n"
     "#endif\n"
     " if (fog_params.x > 0.5) {\n"
     "     float distanceToEye = length(camera_position.xyz - i.world_pos);\n"
@@ -430,7 +435,7 @@ static const wp_c8 s_ps_deferred_src[] = WP_LOCAL_LIGHTING_HLSL WP_HDR_OUTPUT_HL
     " float4 pm=g2.Load(int3(q,0)),indirect=g3.Load(int3(q,0)),spec=g4.Load(int3(q,0));float3 n=normalize(nr.xyz),v=normalize(eye.xyz-pm.xyz);float metal=frac(pm.w*.5)*2;bool vertex=pm.w>1.5;\n"
     " float3 l=-light_direction.xyz*rsqrt(max(dot(light_direction.xyz,light_direction.xyz),1e-8)),h=normalize(v+l+1e-8);float nl=saturate(dot(n,l)),nv=max(saturate(dot(n,v)),.001),nh=saturate(dot(n,h)),vh=saturate(dot(v,h));\n"
     " float rough=nr.w,alpha=rough*rough,alpha2=alpha*alpha,denom=nh*nh*(alpha2-1)+1;float distribution=alpha2/max(3.14159265*denom*denom,1e-12);float visibility=.5/max(nl*sqrt(nv*nv*(1-alpha2)+alpha2)+nv*sqrt(nl*nl*(1-alpha2)+alpha2),1e-6);\n"
-    " float3 f0=lerp(spec.rgb,a.rgb,metal),f=f0+(1-f0)*pow(1-vh,5);float3 direct=vertex?a.rgb*light_colour.rgb*light_colour.a*spec.w/3.14159265:((1-f)*(1-metal)*a.rgb/3.14159265+distribution*visibility*f)*light_colour.rgb*light_colour.a*nl;\n"
+    " float3 f0=spec.rgb,f=f0+(1-f0)*pow(1-vh,5);float3 direct=vertex?a.rgb*light_colour.rgb*light_colour.a*spec.w/3.14159265:((1-f)*(1-metal)*a.rgb/3.14159265+distribution*visibility*f)*light_colour.rgb*light_colour.a*nl;\n"
     " direct*=shadowVisibility(pm.xyz,nl);direct+=evaluateLocalLights(pm.xyz,n,v,a.rgb,f0,rough,metal,pixel.xy);float ao=1;\n"
     " if(output_size.z>.5) {float occlusion=0;float2 offsets[8]={float2(1,0),float2(-1,0),float2(0,1),float2(0,-1),float2(1,1),float2(-1,1),float2(1,-1),float2(-1,-1)};[unroll] for(int j=0;j<8;++j) {int2 sampleq=clamp(q+(int2)(offsets[j]*3),int2(0,0),int2(output_size.xy)-1);float4 sn=g1.Load(int3(sampleq,0));float3 delta=g2.Load(int3(sampleq,0)).xyz-pm.xyz;float d2=dot(delta,delta);if(sn.w>.01&&d2>.0001&&d2<4) occlusion+=saturate(dot(n,delta)*rsqrt(d2)-.05)*saturate(1-d2/4);}ao=saturate(1-occlusion*.125);}\n"
     " float3 colour=max(direct+indirect.rgb*ao,0);if(fog.x>.5) {float distanceToEye=length(eye.xyz-pm.xyz);float amount=fog.x<1.5?1-exp(-fog.y*distanceToEye):fog.x<2.5?1-exp(-pow(fog.y*distanceToEye,2)):(distanceToEye-fog.z)/max(fog.w-fog.z,.001);colour=lerp(colour,max(fog_colour.rgb,0),saturate(amount));}\n"
@@ -564,6 +569,7 @@ typedef struct wp_material_surface_constants_dx11
 {
     wp_vec4f base_color, emissive_color, specular_color;
     wp_vec4f surface, uv_transform, controls, texture_sources, projection;
+    wp_vec4f metallic_color;
 } wp_material_surface_constants_dx11;
 typedef struct wp_material_view_constants_dx11
 {
@@ -574,7 +580,8 @@ typedef struct wp_material_binding_constants_dx11
 {
     wp_vec4f map_flags, extra_map_flags;
 } wp_material_binding_constants_dx11;
-typedef char wp_material_surface_size_check[sizeof(wp_material_surface_constants_dx11) == 128 ? 1 : -1];
+typedef char wp_material_size_check[sizeof(wp_material_dx11) == 288 ? 1 : -1];
+typedef char wp_material_surface_size_check[sizeof(wp_material_surface_constants_dx11) == 144 ? 1 : -1];
 typedef char wp_material_view_size_check[sizeof(wp_material_view_constants_dx11) == 112 ? 1 : -1];
 typedef char wp_material_binding_size_check[sizeof(wp_material_binding_constants_dx11) == 32 ? 1 : -1];
 
@@ -1778,6 +1785,7 @@ static wp_s32 wp_renderer_dx11_upload_material( wp_renderer_dx11 *r )
     memcpy( &surface.base_color, &r->material.base_color, sizeof(wp_vec4f) * 3 );
     memcpy( &surface.surface, &r->material.surface, sizeof(wp_vec4f) * 3 );
     memcpy( &surface.texture_sources, &r->material.texture_sources, sizeof(wp_vec4f) * 2 );
+    surface.metallic_color = r->material.metallic_color;
     memcpy( &view.light_color, &r->material.light_color, sizeof(wp_vec4f) * 3 );
     memcpy( &view.ambient_color, &r->material.ambient_color, sizeof(wp_vec4f) * 4 );
     memcpy( &bindings.map_flags, &r->material.map_flags, sizeof(wp_vec4f) * 2 );
@@ -3882,7 +3890,8 @@ wp_s32 wp_renderer_dx11_set_material_upload_mode( wp_renderer_dx11 *r, wp_s32 mo
     ID3D11PixelShader *shader = NULL;
     ID3DBlob *blob = NULL;
     D3D11_BUFFER_DESC desc;
-    const UINT sizes[3] = { 128, 112, 32 };
+    const UINT sizes[3] = { sizeof(wp_material_surface_constants_dx11),
+        sizeof(wp_material_view_constants_dx11), sizeof(wp_material_binding_constants_dx11) };
     wp_s32 i;
     HRESULT hr;
     if( !r || ( mode != WP_DX11_MATERIAL_UPLOAD_COMBINED && mode != WP_DX11_MATERIAL_UPLOAD_SPLIT ) ) return 0;

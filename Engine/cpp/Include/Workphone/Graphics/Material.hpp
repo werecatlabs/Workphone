@@ -769,6 +769,9 @@ namespace workphone
              */
             void setMetalness( f32 metalness ) override;
 
+            ColourF getMetallicColour() const override;
+            void setMetallicColour( const ColourF &colour ) override;
+
             /**
              * @brief Gets the roughness value for physically-based rendering.
              *

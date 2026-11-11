@@ -439,6 +439,55 @@ int main()
         require( diffuse[0] > 100 && diffuse[1] < 2 && diffuse[2] < 2,
                  "metallic slider restores tinted diffuse response at zero" );
         context->Unmap( staging, 0 );
+
+        material.ambient_color = { 0, 0, 0, 1 };
+        material.light_color = { 1, 1, 1, 2 };
+        material.light_direction = { 0, 0, 1, 0 };
+        material.surface.y = 0.55f;
+        wp_renderer_dx11_set_clear_color( renderer, 0, 0, 0, 1 );
+        const auto readTintedPixel = [&]() {
+            require( wp_renderer_dx11_begin_hdr_scene( renderer, 1.f ), "metallic tint scene must begin" );
+            wp_renderer_dx11_set_material( renderer, &material );
+            wp_renderer_dx11_draw_geometry_pntc( renderer, geometry, 0, 3, 0 );
+            wp_renderer_dx11_end_hdr_scene( renderer );
+            std::array<unsigned char, 32 * 32 * 4> pixels{};
+            require( wp_renderer_dx11_copy_render_texture_rgba8( target, pixels.data(), pixels.size() ),
+                     "metallic tint pixels must be readable" );
+            const auto *center = pixels.data() + ( 16 * 32 + 16 ) * 4;
+            return std::array{ center[0], center[1], center[2] };
+        };
+        for( auto policy : { WP_DX11_MATERIAL_UPLOAD_COMBINED, WP_DX11_MATERIAL_UPLOAD_SPLIT } )
+        {
+            require( wp_renderer_dx11_set_material_upload_mode( renderer, policy ),
+                     "metallic tint upload mode must initialize" );
+            for( int pipeline : { 0, 2 } )
+            {
+                wp_renderer_dx11_set_pipeline_mode( renderer, pipeline, 0 );
+                material.surface.x = 1;
+                material.base_color = { 1, 0, 0, 1 };
+                material.metallic_color = {};
+                const auto inherited = readTintedPixel();
+                require( inherited[0] > 40 && inherited[1] < 5 && inherited[2] < 5,
+                         "metallic reflectance must inherit albedo by default" );
+
+                material.metallic_color = { 0, 1, 0, 1 };
+                const auto tinted = readTintedPixel();
+                require( tinted[1] > 40 && tinted[0] < 5 && tinted[2] < 5,
+                         "explicit metallic tint must control metallic reflectance" );
+
+                material.base_color = { 0, 0, 1, 1 };
+                require( readTintedPixel() == tinted,
+                         "changing albedo must preserve explicit fully metallic reflectance" );
+
+                material.surface.x = 0;
+                const auto dielectric = readTintedPixel();
+                require( dielectric[2] > dielectric[1] + 40 && dielectric[2] > dielectric[0] + 40,
+                         "zero metalness must preserve the separately authored albedo" );
+            }
+        }
+        wp_renderer_dx11_set_pipeline_mode( renderer, 0, 0 );
+        require( wp_renderer_dx11_set_material_upload_mode( renderer, WP_DX11_MATERIAL_UPLOAD_COMBINED ),
+                 "metallic tint check must restore the default upload mode" );
         staging->Release();
         wp_renderer_dx11_set_render_texture( renderer, nullptr );
         wp_renderer_dx11_destroy_render_texture( target );

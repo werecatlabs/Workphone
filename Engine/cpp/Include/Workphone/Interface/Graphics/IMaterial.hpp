@@ -660,6 +660,12 @@ namespace workphone
              */
             bool handleStateChanged( SmartPtr<IState> &state ) override = 0;
 
+            /** Gets the metallic reflection colour. Alpha is zero when the shader uses albedo. */
+            virtual ColourF getMetallicColour() const = 0;
+
+            /** Sets the metallic reflection colour. Use alpha one for an explicit RGB override. */
+            virtual void setMetallicColour( const ColourF &colour ) = 0;
+
             WP_CLASS_REGISTER_DECL;
         };
     }  // end namespace render
