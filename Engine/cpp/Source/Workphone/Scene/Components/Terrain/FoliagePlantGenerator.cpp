@@ -163,6 +163,95 @@ namespace workphone::scene
             mesh.sections.push_back( { leafStart, u32( mesh.indices.size() ) - leafStart, 1 } );
         }
 
+        void palmMesh( const FoliagePlantRecipe &recipe, render::FoliageMeshData &mesh, u32 lod )
+        {
+            const u64 seed = recipe.seed;
+            const float h = recipe.height, radius = recipe.radius;
+            const float leanAngle = unit( seed + 812 ) * 2 * pi;
+            const Vector3F lean( std::cos( leanAngle ), 0, std::sin( leanAngle ) );
+            const Vector3F bendSide( -lean.z, 0, lean.x );
+            const float bend = std::min( radius * .22f, h * .10f );
+            const auto trunkPoint = [&]( float t ) {
+                return lean * bend * t * t * ( .5f + .5f * t ) +
+                       bendSide * bend * .18f * std::sin( pi * t ) * t +
+                       Vector3F( 0, h * .81f * t, 0 );
+            };
+            const auto trunkWidth = [&]( float t ) {
+                return recipe.trunkRadius * ( 1.12f - .42f * t + .06f * std::cos( t * 2 * pi ) );
+            };
+            const u32 trunkSegments = 12 - 4 * lod, sides = 10 - 3 * lod;
+            for( u32 segment = 0; segment < trunkSegments; ++segment )
+            {
+                const float t0 = float( segment ) / trunkSegments;
+                const float t1 = float( segment + 1 ) / trunkSegments;
+                cylinder( mesh, trunkPoint( t0 ), trunkPoint( t1 ), trunkWidth( t0 ), sides,
+                          trunkWidth( t1 ) / trunkWidth( t0 ) );
+            }
+            mesh.sections.push_back( { 0, u32( mesh.indices.size() ), 0 } );
+
+            const auto leafStart = u32( mesh.indices.size() );
+            const auto crown = trunkPoint( 1 );
+            const u32 fronds = std::max( 6u, recipe.branches );
+            const u32 frondSegments = 9 - 3 * lod;
+            // Keep the same radial crown at every distance; simplify its curves instead of
+            // removing whole fronds and exposing large gaps in the palm silhouette.
+            for( u32 frond = 0; frond < fronds; ++frond )
+            {
+                const u64 key = seed * 701u + u64( frond ) * 8191u;
+                const float yaw = frond * 2.39996323f + unit( seed + 41 ) * 2 * pi;
+                const Vector3F radial( std::cos( yaw ), 0, std::sin( yaw ) );
+                const Vector3F across( -radial.z, 0, radial.x );
+                const bool young = frond % 4 == 0;
+                const float reach = radius * ( young ? .55f + .18f * unit( key + 1 )
+                                                     : .85f + .15f * unit( key + 1 ) );
+                const float rise = h * ( young ? .15f + .025f * unit( key + 2 )
+                                               : .08f + .04f * unit( key + 2 ) );
+                const float droop = h * ( young ? .015f : .16f + .08f * unit( key + 3 ) );
+                const float skew = ( unit( key + 4 ) - .5f ) * .24f;
+                const auto centre = [&]( float t ) {
+                    return crown + radial * reach * t +
+                           across * reach * skew * std::sin( pi * t ) +
+                           Vector3F( 0, rise * std::sin( pi * t ) - droop * t * t, 0 );
+                };
+                const auto width = [&]( float t ) {
+                    return radius * ( .006f + .145f * std::sqrt( std::max( 0.f, std::sin( pi * t ) ) ) );
+                };
+                const auto fold = [&]( float t ) {
+                    return Vector3F( 0, -std::min( radius * .025f, h * .025f ) *
+                                            std::sin( pi * t ), 0 );
+                };
+                for( u32 segment = 0; segment < frondSegments; ++segment )
+                {
+                    const float t0 = float( segment ) / frondSegments;
+                    const float t1 = float( segment + 1 ) / frondSegments;
+                    const auto p0 = centre( t0 ), p1 = centre( t1 );
+                    for( u32 half = 0; half < 2; ++half )
+                    {
+                        const auto a = half == 0 ? p0 - across * width( t0 ) + fold( t0 ) : p0;
+                        const auto b = half == 0 ? p0 : p0 + across * width( t0 ) + fold( t0 );
+                        const auto c = half == 0 ? p1 : p1 + across * width( t1 ) + fold( t1 );
+                        const auto d = half == 0 ? p1 - across * width( t1 ) + fold( t1 ) : p1;
+                        const auto first = mesh.positions.size();
+                        quad( mesh, a, b, c, d );
+                        // One feathered frond atlas runs along the whole bent strip, with its
+                        // central stem on the fold. It must not repeat at each segment.
+                        const float u0 = half * .5f, u1 = u0 + .5f;
+                        mesh.uvs[first] = { u0, 1 - t0 };
+                        mesh.uvs[first + 1] = { u1, 1 - t0 };
+                        mesh.uvs[first + 2] = { u1, 1 - t1 };
+                        mesh.uvs[first + 3] = { u0, 1 - t1 };
+                    }
+                }
+            }
+            mesh.sections.push_back( { leafStart, u32( mesh.indices.size() ) - leafStart, 1 } );
+            // Narrow frond tips can be smaller than Vector3's normalisation tolerance for
+            // valid miniature recipes; their nonzero face normals still need unit length.
+            for( auto &normal : mesh.normals )
+            {
+                normal *= 1.f / std::sqrt( normal.lengthSquared() );
+            }
+        }
+
         void bounds( render::FoliageSpecies &species )
         {
             auto minimum = Vector3F( std::numeric_limits<f32>::max(), std::numeric_limits<f32>::max(),
@@ -188,8 +277,18 @@ namespace workphone::scene
     bool generateFoliagePlant( const FoliagePlantRecipe &r, render::FoliageSpecies &output,
                                String &error )
     {
+        return generateFoliagePlant( r, FoliagePlantShape::Broadleaf, output, error );
+    }
+
+    bool generateFoliagePlant( const FoliagePlantRecipe &r, FoliagePlantShape shape,
+                               render::FoliageSpecies &output, String &error )
+    {
         try
         {
+            if( u32( shape ) > u32( FoliagePlantShape::Palm ) )
+            {
+                throw std::runtime_error( "Unknown procedural plant shape." );
+            }
             if( r.speciesId.empty() || u32( r.kind ) > 3 || !std::isfinite( r.height ) ||
                 r.height < .05f || r.height > 100 || !std::isfinite( r.radius ) || r.radius < .01f ||
                 r.radius > 50 || !std::isfinite( r.trunkRadius ) || r.trunkRadius < .005f ||
@@ -210,7 +309,14 @@ namespace workphone::scene
                 auto &mesh = species.lods[lod];
                 if( !grass )
                 {
-                    broadleafMesh( r, mesh, lod );
+                    if( shape == FoliagePlantShape::Palm )
+                    {
+                        palmMesh( r, mesh, lod );
+                    }
+                    else
+                    {
+                        broadleafMesh( r, mesh, lod );
+                    }
                     continue;
                 }
                 const u32 branches = std::max( 1u, r.branches >> lod );

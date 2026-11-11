@@ -26,6 +26,27 @@ namespace workphone::editor
 
     using namespace scene;
 
+    namespace
+    {
+        struct FoliageMenuEntry
+        {
+            SceneWindow::MenuId menuId;
+            AddActorCmd::ActorType actorType;
+            const char *label;
+        };
+
+        constexpr FoliageMenuEntry foliageMenuEntries[] = {
+            { SceneWindow::MenuId::ADD_FOLIAGE_OAK, AddActorCmd::ActorType::FoliageOak, "Oak Tree" },
+            { SceneWindow::MenuId::ADD_FOLIAGE_BIRCH, AddActorCmd::ActorType::FoliageBirch, "Birch Tree" },
+            { SceneWindow::MenuId::ADD_FOLIAGE_PINE, AddActorCmd::ActorType::FoliagePine, "Pine Tree" },
+            { SceneWindow::MenuId::ADD_FOLIAGE_PALM, AddActorCmd::ActorType::FoliagePalm, "Palm Tree" },
+            { SceneWindow::MenuId::ADD_FOLIAGE_BUSH, AddActorCmd::ActorType::FoliageBush, "Bush" },
+            { SceneWindow::MenuId::ADD_FOLIAGE_GRASS, AddActorCmd::ActorType::FoliageGrass, "Grass Clump" },
+            { SceneWindow::MenuId::ADD_FOLIAGE_TALL_GRASS, AddActorCmd::ActorType::FoliageTallGrass,
+              "Tall Grass" }
+        };
+    }  // namespace
+
     SceneWindow::SceneWindow()
     {
         setObjectFlag( OBJECT_FLAG_TRIGGER_EVENTS, true );
@@ -280,6 +301,16 @@ namespace workphone::editor
                                    "Skybox", "Skybox" );
                 Util::addMenuItem( m_applicationAddMenu, static_cast<s32>( MenuId::ADD_NEW_TERRAIN ),
                                    "Terrain", "Terrain" );
+
+                auto foliageMenu = ui->addElementByType<ui::IUIMenu>();
+                foliageMenu->setLabel( "Foliage" );
+                for( const auto &entry : foliageMenuEntries )
+                {
+                    Util::addMenuItem( foliageMenu, static_cast<s32>( entry.menuId ), entry.label,
+                                       String( "Create procedural " ) + entry.label );
+                }
+                m_applicationAddMenu->addMenuItem( foliageMenu );
+
                 Util::addMenuSeparator( m_applicationAddMenu );
 
                 Util::addMenuItem( m_applicationAddMenu, static_cast<s32>( MenuId::ADD_BUTTON ),
@@ -1441,6 +1472,17 @@ namespace workphone::editor
                 }
 
                 auto menuId = static_cast<MenuId>( element->getElementId() );
+
+                for( const auto &entry : foliageMenuEntries )
+                {
+                    if( menuId == entry.menuId )
+                    {
+                        auto cmd = factoryManager->make_ptr<AddActorCmd>();
+                        cmd->setActorType( entry.actorType );
+                        commandManager->addCommand( cmd );
+                        return {};
+                    }
+                }
 
                 switch( menuId )
                 {
