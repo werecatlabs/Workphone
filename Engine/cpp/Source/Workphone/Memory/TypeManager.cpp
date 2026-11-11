@@ -169,6 +169,7 @@
 #include <Workphone/Physics/SphereShape.hpp>
 #include <Workphone/Physics/TerrainShape.hpp>
 #include <Workphone/Scene/Components/CutscenePlayer.hpp>
+#include <Workphone/Scene/Components/ProceduralFoliage.hpp>
 #include <Workphone/Scene/Cutscene.hpp>
 #include <Workphone/Scene/Directors/ResourceDirector.hpp>
 #include <Workphone/Scene/GameEditor.hpp>
