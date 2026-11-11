@@ -5,6 +5,7 @@
 #include <ui/ActorWindow.hpp>
 #include <ui/UIManager.hpp>
 #include <Workphone/Workphone.hpp>
+#include <Workphone/Scene/Components/ProceduralFoliage.hpp>
 
 namespace workphone::editor
 {
@@ -35,6 +36,7 @@ namespace workphone::editor
         m_actor = nullptr;
         m_parent = nullptr;
         m_expectedScene = nullptr;
+        m_actorSuspendedForUndo = false;
         setLoadingState( LoadingState::Unloaded );
     }
 
@@ -59,6 +61,16 @@ namespace workphone::editor
         bool selectionChanged = false;
         if( auto actor = getActor() )
         {
+            if( !m_actorSuspendedForUndo )
+            {
+                m_actorEnabledBeforeUndo = actor->isEnabled();
+                m_actorSuspendedForUndo = true;
+            }
+            // Keep retained render resources hidden while the command owns the
+            // detached actor. Child enabled flags remain authored; their renderers
+            // inherit this disabled root until redo restores it.
+            actor->setEnabled( false, false );
+
             if( auto selectionManager = applicationManager->getSelectionManager() )
             {
                 // An undone prefab removes its whole hierarchy. Deselect its actors and
@@ -138,6 +150,11 @@ namespace workphone::editor
             }
 
             scene->registerAllUpdates( actor );
+            if( m_actorSuspendedForUndo )
+            {
+                actor->setEnabled( m_actorEnabledBeforeUndo, false );
+                m_actorSuspendedForUndo = false;
+            }
             uiManager->rebuildSceneTree();
 
             return;
@@ -307,6 +324,20 @@ namespace workphone::editor
         auto gameScene = gameManager->getCurrentScene();
         WP_ASSERT( gameScene );
 
+        auto createFoliageActor = [&gameManager]( const String &name,
+                                                 ProceduralFoliage::Preset preset ) {
+            auto actor = gameManager->createActor();
+            if( actor )
+            {
+                actor->setName( name );
+                auto foliage = actor->addComponent<ProceduralFoliage>();
+                foliage->setPreset( preset );
+                // ProceduralMesh generates after insertion, using the same lifecycle
+                // on initial creation, scene reload and undo/redo.
+            }
+            return actor;
+        };
+
         auto createParticleSystemActor = [&gameManager]( const String &name, ActorType preset ) {
             auto actor = gameManager->createActor();
             if( !actor )
@@ -432,6 +463,20 @@ namespace workphone::editor
 
         switch( auto actorType = getActorType() )
         {
+        case ActorType::FoliageOak:
+            return createFoliageActor( "Oak Tree", ProceduralFoliage::Preset::Oak );
+        case ActorType::FoliageBirch:
+            return createFoliageActor( "Birch Tree", ProceduralFoliage::Preset::Birch );
+        case ActorType::FoliagePine:
+            return createFoliageActor( "Pine Tree", ProceduralFoliage::Preset::Pine );
+        case ActorType::FoliagePalm:
+            return createFoliageActor( "Palm Tree", ProceduralFoliage::Preset::Palm );
+        case ActorType::FoliageBush:
+            return createFoliageActor( "Bush", ProceduralFoliage::Preset::Bush );
+        case ActorType::FoliageGrass:
+            return createFoliageActor( "Grass Clump", ProceduralFoliage::Preset::Grass );
+        case ActorType::FoliageTallGrass:
+            return createFoliageActor( "Tall Grass", ProceduralFoliage::Preset::TallGrass );
         case ActorType::Actor:
         {
             auto filePath = getFilePath();

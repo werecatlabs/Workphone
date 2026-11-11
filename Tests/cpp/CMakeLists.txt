@@ -383,6 +383,22 @@ if (WP_BUILD_TESTS)
     set_tests_properties(WPGraphics.foliage_authoring PROPERTIES LABELS "foliage;headless;authoring" TIMEOUT 60)
     add_test(NAME WPGraphics.foliage_plant_geometry COMMAND WPFoliageAuthoringTests --plant-only)
     set_tests_properties(WPGraphics.foliage_plant_geometry PROPERTIES LABELS "foliage;headless;geometry" TIMEOUT 30)
+
+    add_executable(WPProceduralFoliageTests ProceduralFoliageTests.cpp)
+    target_compile_definitions(WPProceduralFoliageTests PRIVATE BOOST_ALL_NO_LIB)
+    target_include_directories(WPProceduralFoliageTests PRIVATE
+        ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Dependencies/boost)
+    target_link_libraries(WPProceduralFoliageTests PRIVATE $<TARGET_LINKER_FILE:Workphone>)
+    add_dependencies(WPProceduralFoliageTests Workphone)
+    if(WIN32)
+        target_link_directories(WPProceduralFoliageTests PRIVATE
+            ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
+    endif()
+    set_target_properties(WPProceduralFoliageTests PROPERTIES FOLDER Tests/Cpp)
+    add_test(NAME WPGraphics.procedural_foliage COMMAND WPProceduralFoliageTests)
+    set_tests_properties(WPGraphics.procedural_foliage PROPERTIES
+        LABELS "foliage;headless;scene;procedural" TIMEOUT 30)
+
     add_executable(WPTerrainContractsTests TerrainContractsTests.cpp)
     target_compile_definitions(WPTerrainContractsTests PRIVATE BOOST_ALL_NO_LIB)
     target_include_directories(WPTerrainContractsTests PRIVATE ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Dependencies/boost)

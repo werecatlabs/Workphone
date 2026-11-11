@@ -54,7 +54,14 @@ namespace workphone
                 Vehicle,
                 RenderTarget,
 
-                EmptyActor
+                EmptyActor,
+                FoliageOak,
+                FoliageBirch,
+                FoliagePine,
+                FoliageBush,
+                FoliageGrass,
+                FoliageTallGrass,
+                FoliagePalm
             };
 
             static const String prefabExtStr;
@@ -97,6 +104,8 @@ namespace workphone
             bool m_hasExpectedScene = false;
             Vector3<real_Num> m_worldPosition = Vector3<real_Num>::zero();
             bool m_hasWorldPosition = false;
+            bool m_actorEnabledBeforeUndo = true;
+            bool m_actorSuspendedForUndo = false;
             AtomicValue<ActorType> m_actorType = ActorType::EmptyActor;
             AtomicObject<String> m_filePath;
         };

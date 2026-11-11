@@ -5,6 +5,12 @@
 
 namespace workphone::scene
 {
+    enum class FoliagePlantShape : u32
+    {
+        Broadleaf,
+        Palm
+    };
+
     struct FoliagePlantRecipe
     {
         String speciesId = "generated-tree";
@@ -19,6 +25,8 @@ namespace workphone::scene
     // Leaf/grass atlas resource references are supplied by the caller and preserved.
     WPCore_API bool generateFoliagePlant( const FoliagePlantRecipe &, render::FoliageSpecies &output,
                                           String &error );
+    WPCore_API bool generateFoliagePlant( const FoliagePlantRecipe &, FoliagePlantShape shape,
+                                          render::FoliageSpecies &output, String &error );
     WPCore_API bool importFoliageMesh( SmartPtr<IMesh> mesh, const String &speciesId,
                                        const Array<render::FoliageMaterial> &materials,
                                        render::FoliageSpecies &output, String &error );

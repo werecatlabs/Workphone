@@ -413,6 +413,14 @@ namespace workphone
 
                 ADD_RENDER_TARGET,  ///< Add render-target texture menu item
 
+                ADD_FOLIAGE_OAK,
+                ADD_FOLIAGE_BIRCH,
+                ADD_FOLIAGE_PINE,
+                ADD_FOLIAGE_BUSH,
+                ADD_FOLIAGE_GRASS,
+                ADD_FOLIAGE_TALL_GRASS,
+                ADD_FOLIAGE_PALM,
+
                 COUNT  ///< Total count of menu items
             };
 
