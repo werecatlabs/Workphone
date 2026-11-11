@@ -24,6 +24,19 @@ namespace workphone
             OpenAI
         };
 
+        struct ImageGenerationRequest
+        {
+            String prompt;
+            String size = "1024x1024";
+            String quality = "medium";
+        };
+
+        struct ImageGenerationResult
+        {
+            Array<u8> pngBytes;
+            String error;
+        };
+
         /**
          * @brief Virtual destructor.
          */
@@ -50,6 +63,10 @@ namespace workphone
 
         /** Queries a specific provider without changing the manager's default. */
         virtual String query( const String &prompt, Provider provider ) const;
+
+        /** Generates one PNG without modifying the scene or writing files. This blocking call
+         * should run on a worker thread; errors return an empty image and a diagnostic. */
+        virtual ImageGenerationResult generateImage( const ImageGenerationRequest &request ) const;
 
         /**
          * @brief Processes a structured AI response and applies supported engine actions.

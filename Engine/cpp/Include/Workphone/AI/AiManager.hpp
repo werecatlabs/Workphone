@@ -46,6 +46,8 @@ namespace workphone
 
         String query( const String &prompt, Provider provider ) const override;
 
+        ImageGenerationResult generateImage( const ImageGenerationRequest &request ) const override;
+
         /**
          * @brief Processes the response received from the AI.
          * @param response The response string to process.
@@ -61,6 +63,14 @@ namespace workphone
         /** HTTPS transport; overridable for offline provider regression tests. */
         virtual bool requestOpenAI( const String &requestBody, String &responseBody, u32 &statusCode,
                                     String &error ) const;
+
+        /** Image HTTPS transport; overridable for offline provider regression tests. */
+        virtual bool requestOpenAIImage( const String &requestBody, String &responseBody,
+                                         u32 &statusCode, String &error ) const;
+
+        bool requestOpenAIEndpoint( const char *endpoint, int timeoutMilliseconds,
+                                     size_t maximumResponseSize, const String &requestBody,
+                                     String &responseBody, u32 &statusCode, String &error ) const;
 
         /**
          * @brief Queries the Ollama API for a response using the first query method.

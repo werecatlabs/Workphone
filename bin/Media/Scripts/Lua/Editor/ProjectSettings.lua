@@ -603,6 +603,7 @@ function ProjectSettings:_clearRefs()
 	self.graphicsStatusText = nil;
 	self.rendererSummaryText = nil;
 	self.controlBindings = {};
+	self.openaiSettingsHeader = nil;
 
 	-- Element references are cleared by name so Lua GC can release UI wrappers.
 	for key, _ in pairs(ProjectSettingsDefaults) do
@@ -796,8 +797,14 @@ function ProjectSettings:load()
 	local performanceTab = self.tabBar:addTabItem(); performanceTab:setLabel("Performance");
 	local servicesTab = self.tabBar:addTabItem(); servicesTab:setLabel("Code/Services");
 	local diagnosticsTab = self.tabBar:addTabItem(); diagnosticsTab:setLabel("Diagnostics");
+	local editorTab = self.tabBar:addTabItem(); editorTab:setLabel("Editor");
 	local advancedTab = self.tabBar:addTabItem(); advancedTab:setLabel("Advanced");
 	self.editorWindow:addChild(self.tabBar);
+
+	-- User credentials are native controls, deliberately excluded from project properties.
+	self.openaiSettingsHeader = self:addHeader(ui, editorTab, "OpenAI");
+	self.window:handleEvent(IEvent.UI, StringUtil.getHash32("createOpenAISettings"),
+		Parameters(), self.openaiSettingsHeader, nil, nil);
 
 	-- Application ----------------------------------------------------------
 	local identityHeader = self:addHeader(ui, applicationTab, "Project Identity");
@@ -1359,6 +1366,10 @@ function ProjectSettings:show()
 	print("ProjectSettings show called");
 	if self.editorWindow then
 		self.editorWindow:setVisible(true, false);
+	end
+	if self.openaiSettingsHeader then
+		self.window:handleEvent(IEvent.UI, StringUtil.getHash32("refreshOpenAISettings"),
+			Parameters(), self.openaiSettingsHeader, nil, nil);
 	end
 end
 

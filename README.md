@@ -3,6 +3,9 @@
 ## Summary
 Workphone is a game engine. It was made to explore procedural rendering and Ai integration.
 
+The Editor supports [text-to-image asset generation](docs/EDITOR_TEXT_TO_IMAGE.md)
+from **Window > Text to Image**.
+
 ## Supported Backends
 * Direct3D 11
 * OpenGL 3.3+

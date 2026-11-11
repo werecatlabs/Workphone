@@ -46,6 +46,7 @@
 #include <ui/TerrainWindow.hpp>
 #include <ui/CityRoadWindow.hpp>
 #include <ui/GamePackageWindow.hpp>
+#include <ui/TextToImageWindow.hpp>
 #include <Workphone/Workphone.hpp>
 #include <Workphone/Database/ResourceDatabase.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsPipeline.hpp>
@@ -716,6 +717,8 @@ namespace workphone::editor
                                ICON_FA_FILM " Scene", "Scene", ui::IUIMenuItem::Type::Normal );
             Util::addMenuItem( windowMenu, static_cast<s32>( WidgetId::CityRoadWindowId ), "City Roads",
                                "Draw and edit road splines on terrain", ui::IUIMenuItem::Type::Normal );
+            Util::addMenuItem( windowMenu, static_cast<s32>( WidgetId::TextToImageWindowId ), "Text to Image",
+                               "Generate image assets from a text prompt", ui::IUIMenuItem::Type::Normal );
             Util::addMenuItem( windowMenu, static_cast<s32>( WidgetId::SoundWindowId ),
                                ICON_FA_MUSIC " Sound", "Sound", ui::IUIMenuItem::Type::Normal );
             Util::addMenuItem( windowMenu, static_cast<s32>( WidgetId::ParticleWindowId ),
@@ -978,6 +981,9 @@ namespace workphone::editor
         m_cityRoadWindow->load( nullptr );
         m_cityRoadWindow->setWindowVisible( false );
 
+        m_textToImageWindow = workphone::make_ptr<TextToImageWindow>();
+        m_textToImageWindow->load( nullptr );
+
         auto proceduralModelEditorWindow = factoryManager->make_ptr<ScriptWindow>();
         proceduralModelEditorWindow->setClassName( "ProceduralModelEditor" );
         proceduralModelEditorWindow->load( nullptr );
@@ -1164,6 +1170,11 @@ namespace workphone::editor
         {
             m_gamePackageWindow->unload( nullptr );
             m_gamePackageWindow = nullptr;
+        }
+        if( m_textToImageWindow )
+        {
+            m_textToImageWindow->unload( nullptr );
+            m_textToImageWindow = nullptr;
         }
 
         if( auto fileWindow = getFileWindow() )
@@ -1442,6 +1453,14 @@ namespace workphone::editor
         if( m_gamePackageWindow )
         {
             m_gamePackageWindow->update();
+        }
+    }
+
+    void UIManager::updateTextToImageWindow()
+    {
+        if( m_textToImageWindow )
+        {
+            m_textToImageWindow->update();
         }
     }
 
@@ -2068,6 +2087,14 @@ namespace workphone::editor
             {
                 auto job = workphone::make_ptr<GenerateSkybox>();
                 jobQueue->addJob( job );
+            }
+            break;
+            case WidgetId::TextToImageWindowId:
+            {
+                if( auto window = uiManager->m_textToImageWindow )
+                {
+                    window->setWindowVisible( true );
+                }
             }
             break;
             case WidgetId::CreateBoxTestId:

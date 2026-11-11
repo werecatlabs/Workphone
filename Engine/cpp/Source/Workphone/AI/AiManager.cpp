@@ -1,5 +1,6 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/AI/AiManager.hpp>
+#include <Workphone/AI/OpenAICredentials.hpp>
 #include <Workphone/Interface/IApplicationManager.hpp>
 #include <Workphone/Interface/Ai/IPathfinder2.hpp>
 #include <Workphone/Core/StringUtil.hpp>
@@ -12,6 +13,7 @@
 #include <cstdlib>
 
 #if WP_USE_BOOST
+#    include "ImageGenerationValidation.hpp"
 #    include <boost/json.hpp>
 #    include <boost/json/basic_parser_impl.hpp>
 #    include <algorithm>
@@ -91,12 +93,13 @@ namespace workphone
             return String( text.data(), text.size() );
         }
 
+        template <size_t MaximumStringSize = maximumProviderResponseSize>
         struct UniqueKeyHandler
         {
             static constexpr size_t max_object_size = maximumControlResponseSize;
             static constexpr size_t max_array_size = maximumControlResponseSize;
             static constexpr size_t max_key_size = maximumControlResponseSize;
-            static constexpr size_t max_string_size = maximumProviderResponseSize;
+            static constexpr size_t max_string_size = MaximumStringSize;
             std::vector<std::unordered_set<std::string>> keys;
             std::string keyParts;
 
@@ -201,12 +204,13 @@ namespace workphone
             }
         };
 
+        template <size_t MaximumStringSize = maximumProviderResponseSize>
         bool parseUniqueJSON( json::string_view text, json::value &value )
         {
             boost::system::error_code error;
             json::parse_options options;
             options.max_depth = 32;
-            json::basic_parser<UniqueKeyHandler> validator( options );
+            json::basic_parser<UniqueKeyHandler<MaximumStringSize>> validator( options );
             const auto consumed = validator.write_some( false, text.data(), text.size(), error );
             if( error || !validator.done() || consumed != text.size() )
             {
@@ -2571,7 +2575,8 @@ launchFlightSimulator()
         {
             if( statusCode == 401 || statusCode == 403 )
             {
-                return "OpenAI authentication or access failed. Check OPENAI_API_KEY and model access.";
+                return "OpenAI authentication or access failed. Check the key in File > Settings > Editor "
+                       "(or OPENAI_API_KEY) and model access.";
             }
             if( statusCode == 429 )
             {
@@ -2961,20 +2966,146 @@ launchFlightSimulator()
 #endif
     }
 
+    IAiManager::ImageGenerationResult AiManager::generateImage(
+        const ImageGenerationRequest &options ) const
+    {
+        ImageGenerationResult result;
+#if WP_USE_BOOST
+        if( options.prompt.empty() || options.prompt.find_first_not_of( " \t\r\n" ) == String::npos )
+        {
+            result.error = "Enter a prompt describing the image to generate.";
+            return result;
+        }
+        if( options.prompt.size() > image_generation::maximumPromptSize )
+        {
+            result.error = "The image prompt exceeds the 32000-byte limit.";
+            return result;
+        }
+        if( options.size != "1024x1024" && options.size != "1536x1024" &&
+            options.size != "1024x1536" )
+        {
+            result.error = "Choose a supported image size: 1024x1024, 1536x1024 or 1024x1536.";
+            return result;
+        }
+        if( options.quality != "low" && options.quality != "medium" && options.quality != "high" )
+        {
+            result.error = "Choose low, medium or high image quality.";
+            return result;
+        }
+        try
+        {
+            const auto configuredModel = std::getenv( "OPENAI_IMAGE_MODEL" );
+            const String model = configuredModel && *configuredModel ? configuredModel : "gpt-image-2.5-flare";
+            if( model.size() > 128 || model.find_first_not_of( " \t\r\n" ) == String::npos ||
+                model.find_first_of( "\r\n" ) != String::npos )
+            {
+                result.error = "OPENAI_IMAGE_MODEL must contain a valid model name of at most 128 bytes.";
+                return result;
+            }
+            json::object request;
+            request["model"] = toJsonString( model );
+            request["prompt"] = toJsonString( options.prompt );
+            request["size"] = toJsonString( options.size );
+            request["quality"] = toJsonString( options.quality );
+            request["output_format"] = "png";
+            request["n"] = 1;
+
+            String body, error;
+            u32 statusCode = 0;
+            if( !requestOpenAIImage( json::serialize( request ), body, statusCode, error ) )
+            {
+                result.error = error.empty()
+                                   ? String( "Could not complete image generation. Check your network "
+                                             "connection and try again; the request may have timed out." )
+                                   : error;
+                return result;
+            }
+            if( statusCode < 200 || statusCode >= 300 )
+            {
+                if( statusCode == 401 || statusCode == 403 || statusCode == 429 )
+                    result.error = openAIHttpError( statusCode );
+                else if( statusCode == 400 )
+                    result.error = "OpenAI could not generate this image. Check the prompt, "
+                                   "OPENAI_IMAGE_MODEL and your model access.";
+                else
+                    result.error = "OpenAI image generation failed (HTTP " +
+                                   StringUtil::toString( statusCode ) +
+                                   "). Check OPENAI_IMAGE_MODEL and try again.";
+                return result;
+            }
+            if( body.size() > image_generation::maximumResponseSize )
+            {
+                result.error = "OpenAI image response exceeded the size limit.";
+                return result;
+            }
+            json::value value;
+            if( !parseUniqueJSON<image_generation::maximumResponseSize>(
+                    json::string_view( body.data(), body.size() ), value ) || !value.is_object() )
+            {
+                result.error = "OpenAI returned an invalid image response.";
+                return result;
+            }
+            const auto &root = value.as_object();
+            if( const auto failure = root.if_contains( "error" ); failure && !failure->is_null() )
+            {
+                result.error = "OpenAI could not generate this image. Try another prompt or check "
+                               "your API account and model access.";
+                return result;
+            }
+            const auto data = root.if_contains( "data" );
+            if( !data || !data->is_array() || data->as_array().size() != 1 ||
+                !data->as_array().front().is_object() )
+            {
+                result.error = "OpenAI returned no usable image.";
+                return result;
+            }
+            const auto encoded = data->as_array().front().as_object().if_contains( "b64_json" );
+            if( !encoded || !encoded->is_string() ||
+                !image_generation::decodeBase64( encoded->as_string().data(),
+                                                 encoded->as_string().size(), result.pngBytes ) ||
+                !image_generation::validatePng( result.pngBytes, options.size ) )
+            {
+                result.pngBytes.clear();
+                result.error = "OpenAI returned invalid PNG image data or unexpected dimensions.";
+            }
+        }
+        catch( const std::exception & )
+        {
+            result.pngBytes.clear();
+            result.error = "Image generation failed. Check your network connection and API configuration.";
+        }
+#else
+        result.error = "Image generation requires a build with Boost enabled.";
+#endif
+        return result;
+    }
+
     bool AiManager::requestOpenAI( const String &requestBody, String &responseBody, u32 &statusCode,
                                    String &error ) const
     {
+        return requestOpenAIEndpoint( "/v1/responses", 120000, 1024 * 1024,
+                                      requestBody, responseBody, statusCode, error );
+    }
+
+    bool AiManager::requestOpenAIImage( const String &requestBody, String &responseBody,
+                                        u32 &statusCode, String &error ) const
+    {
+        return requestOpenAIEndpoint( "/v1/images/generations", 300000, 32 * 1024 * 1024,
+                                      requestBody, responseBody, statusCode, error );
+    }
+
+    bool AiManager::requestOpenAIEndpoint( const char *endpoint, int timeoutMilliseconds,
+                                          size_t maximumResponseSize, const String &requestBody,
+                                          String &responseBody, u32 &statusCode, String &error ) const
+    {
+        responseBody.clear();
+        statusCode = 0;
+        error.clear();
 #if WP_USE_BOOST
-        const auto key = std::getenv( "OPENAI_API_KEY" );
-        if( !key || !*key )
+        auto application = core::IApplicationManager::instancePtr();
+        String apiKey;
+        if( !openai_credentials::resolveKey( application && application->isEditor(), apiKey, error ) )
         {
-            error = "Set OPENAI_API_KEY before starting the Editor to use ChatGPT Sol.";
-            return false;
-        }
-        const String apiKey( key );
-        if( apiKey.find_first_of( "\r\n" ) != String::npos )
-        {
-            error = "OPENAI_API_KEY contains invalid characters.";
             return false;
         }
 #    if defined _WIN32
@@ -2984,15 +3115,19 @@ launchFlightSimulator()
         {
             return false;
         }
-        WinHttpSetTimeouts( session, ollamaTimeoutMilliseconds, ollamaTimeoutMilliseconds,
-                            ollamaTimeoutMilliseconds, ollamaTimeoutMilliseconds );
+        if( !WinHttpSetTimeouts( session, timeoutMilliseconds, timeoutMilliseconds,
+                                 timeoutMilliseconds, timeoutMilliseconds ) )
+        {
+            return false;
+        }
         WinHttpHandle connection(
             WinHttpConnect( session, L"api.openai.com", INTERNET_DEFAULT_HTTPS_PORT, 0 ) );
         if( !connection )
         {
             return false;
         }
-        WinHttpHandle request( WinHttpOpenRequest( connection, L"POST", L"/v1/responses", nullptr,
+        const auto target = StringUtil::toUTF8to16( endpoint );
+        WinHttpHandle request( WinHttpOpenRequest( connection, L"POST", target.c_str(), nullptr,
                                                    WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES,
                                                    WINHTTP_FLAG_SECURE ) );
         DWORD redirectPolicy = WINHTTP_OPTION_REDIRECT_POLICY_NEVER;
@@ -3035,7 +3170,7 @@ launchFlightSimulator()
             {
                 return true;
             }
-            if( available > maximumProviderResponseSize - responseBody.size() )
+            if( available > maximumResponseSize - responseBody.size() )
             {
                 error = "OpenAI response exceeded the size limit.";
                 return false;
@@ -3061,22 +3196,23 @@ launchFlightSimulator()
             return false;
         }
         tcp::resolver resolver( context );
-        beast::get_lowest_layer( stream ).expires_after( ollamaTimeout );
+        const auto timeout = std::chrono::milliseconds( timeoutMilliseconds );
+        beast::get_lowest_layer( stream ).expires_after( timeout );
         beast::get_lowest_layer( stream ).connect( resolver.resolve( "api.openai.com", "443" ) );
         stream.handshake( asio::ssl::stream_base::client );
-        http::request<http::string_body> request( http::verb::post, "/v1/responses", 11 );
+        http::request<http::string_body> request( http::verb::post, endpoint, 11 );
         request.set( http::field::host, "api.openai.com" );
         request.set( http::field::user_agent, "Workphone" );
         request.set( http::field::content_type, "application/json" );
         request.set( http::field::authorization, toStdString( "Bearer " + apiKey ) );
         request.body() = toStdString( requestBody );
         request.prepare_payload();
-        beast::get_lowest_layer( stream ).expires_after( ollamaTimeout );
+        beast::get_lowest_layer( stream ).expires_after( timeout );
         http::write( stream, request );
         beast::flat_buffer buffer;
         http::response_parser<http::string_body> parser;
-        parser.body_limit( maximumProviderResponseSize );
-        beast::get_lowest_layer( stream ).expires_after( ollamaTimeout );
+        parser.body_limit( maximumResponseSize );
+        beast::get_lowest_layer( stream ).expires_after( timeout );
         http::read( stream, buffer, parser );
         auto response = parser.release();
         statusCode = response.result_int();

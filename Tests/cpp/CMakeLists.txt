@@ -7,6 +7,24 @@ include(cpp_defines)
 include(cpp_compiler_options)
 
 if(WP_BUILD_TESTS)
+    add_executable(OpenAICredentialTests OpenAICredentialTests.cpp)
+    target_compile_features(OpenAICredentialTests PRIVATE cxx_std_17)
+    target_include_directories(OpenAICredentialTests PRIVATE ${WP_ROOT}/Engine/cpp/Source/Workphone)
+    if(WIN32)
+        target_link_libraries(OpenAICredentialTests PRIVATE advapi32)
+    endif()
+    set_target_properties(OpenAICredentialTests PROPERTIES FOLDER Tests/Cpp)
+    add_test(NAME WPAI.editor_credentials COMMAND OpenAICredentialTests)
+    set_tests_properties(WPAI.editor_credentials PROPERTIES LABELS "editor;ai;credentials;headless" TIMEOUT 30)
+
+    add_executable(TextToImageAssetTests TextToImageAssetTests.cpp)
+    target_compile_features(TextToImageAssetTests PRIVATE cxx_std_17)
+    target_include_directories(TextToImageAssetTests PRIVATE ${WP_ROOT}/Tools/cpp/Editor/src)
+    set_target_properties(TextToImageAssetTests PROPERTIES FOLDER Tests/Cpp)
+    add_test(NAME WPEditor.text_to_image_assets COMMAND TextToImageAssetTests)
+    set_tests_properties(WPEditor.text_to_image_assets PROPERTIES
+        LABELS "editor;ai;filesystem;headless" TIMEOUT 30)
+
     add_executable(EditorSceneRefreshTests EditorSceneRefreshTests.cpp)
     target_compile_features(EditorSceneRefreshTests PRIVATE cxx_std_17)
     target_include_directories(EditorSceneRefreshTests PRIVATE ${WP_ROOT}/Tools/cpp/Editor/src)
@@ -56,6 +74,25 @@ if (WIN32 AND WP_GRAPHICS_SYSTEM_CLAW)
 endif()
 
 if(TARGET Workphone)
+    if(WP_ENABLE_BOOST)
+        add_executable(AiImageGenerationTests AiImageGenerationTests.cpp)
+        target_compile_features(AiImageGenerationTests PRIVATE cxx_std_17)
+        target_compile_definitions(AiImageGenerationTests PRIVATE BOOST_ALL_NO_LIB)
+        target_include_directories(AiImageGenerationTests PRIVATE
+            ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Dependencies/boost)
+        target_link_libraries(AiImageGenerationTests PRIVATE Workphone)
+        if(WIN32)
+            target_link_directories(AiImageGenerationTests PRIVATE
+                ${WP_ROOT}/Dependencies/lib/windows/boost
+                ${WP_ROOT}/Dependencies/lib/windows/boost/$<CONFIG>
+                ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
+        endif()
+        set_target_properties(AiImageGenerationTests PROPERTIES FOLDER Tests/Cpp)
+        add_test(NAME WPAI.image_generation COMMAND AiImageGenerationTests)
+        set_tests_properties(WPAI.image_generation PROPERTIES
+            LABELS "ai;images;headless" TIMEOUT 60)
+    endif()
+
     add_executable(RuntimeStartupTests RuntimeStartupTests.cpp)
     target_compile_features(RuntimeStartupTests PRIVATE cxx_std_17)
     target_compile_definitions(RuntimeStartupTests PRIVATE BOOST_ALL_NO_LIB)

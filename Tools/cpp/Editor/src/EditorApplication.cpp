@@ -2355,6 +2355,7 @@ namespace workphone::editor
                             }
                         }
                         editorUI->updateGamePackageWindow();
+                        editorUI->updateTextToImageWindow();
                         auto packageWindow = editorUI->getPackageWindow();
                         if( packageWindow && packageWindow->isLoaded() &&
                             packageWindow->isWindowVisible() )

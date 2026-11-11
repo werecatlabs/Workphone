@@ -8,7 +8,8 @@ BaseEditor = {}
 Vector2F = function(x, y) return {x=x, y=y} end
 IEvent = {UI=1, handleSelection=11, handleValueChanged=12, handlePropertyChanged=13}
 StringUtil = {getHash32=function(value)
-    return assert(({projectSettingsAction=12345, createProjectCollisionMatrix=12346})[value])
+    return assert(({projectSettingsAction=12345, createProjectCollisionMatrix=12346,
+        createOpenAISettings=12347, refreshOpenAISettings=12348})[value])
 end}
 Parameters = function()
     return {push_back=function(self, value) table.insert(self, value) end,
@@ -74,6 +75,13 @@ local native={calls={}, fail=false, available=true}
 local window={getParentWindow=function() return parent end, setHandleEvents=function() end}
 function window:handleEvent(eventType, hash, arguments, sender, request, event)
     assert(eventType==IEvent.UI and event==nil)
+    if hash==12347 or hash==12348 then
+        assert(sender.label=="OpenAI" and request==nil and #arguments==0,
+            "Credential controls must not exchange secrets through project properties")
+        if hash==12347 then native.credentialCreates=(native.credentialCreates or 0)+1
+        else native.credentialRefreshes=(native.credentialRefreshes or 0)+1 end
+        return
+    end
     if hash==12346 then
         assert(sender.label=="Collision Matrix" and request==nil)
         local matrix=element()
@@ -136,6 +144,11 @@ local editor=setmetatable({}, {__index=ProjectSettings})
 editor:__init(window)
 editor:load()
 assert(#native.calls==1 and native.calls[1].values.action=="readProjectSettings")
+assert(native.credentialCreates==1 and editor.openaiSettingsHeader.parent.label=="Editor",
+    "Editor settings must create the native OpenAI credential controls")
+editor:show()
+assert(native.credentialRefreshes==1 and #native.calls==1,
+    "Showing settings must refresh credentials without editing project settings")
 assert(editor.projectNameControl:getText()=="Stored project")
 assert(editor.companyControl:getText()=="" and editor.startupSceneControl:getText()=="")
 assert(editor.gravityControl:getValue()==-12.25)

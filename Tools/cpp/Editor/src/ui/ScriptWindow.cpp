@@ -4,6 +4,7 @@
 #include <editor/EditorManager.hpp>
 #include <editor/ProjectSettingsActions.hpp>
 #include <editor/MaterialShaderReloadActions.hpp>
+#include <editor/OpenAISettingsControls.hpp>
 #include <ui/ProjectTreeData.hpp>
 #include <ui/UIManager.hpp>
 #include <commands/DragDropActorCmd.hpp>
@@ -210,6 +211,19 @@ namespace workphone::editor
                                         SmartPtr<ISharedObject> sender, SmartPtr<ISharedObject> object,
                                         SmartPtr<IEvent> event )
     {
+        if( getClassName() == "ProjectSettings" && eventType == EventType::UI )
+        {
+            if( eventValue == static_cast<hash_type>( StringUtil::getHash32( "createOpenAISettings" ) ) )
+            {
+                createOpenAISettingsControls( dynamic_pointer_cast<ui::IUIElement>( sender ) );
+                return {};
+            }
+            if( eventValue == static_cast<hash_type>( StringUtil::getHash32( "refreshOpenAISettings" ) ) )
+            {
+                refreshOpenAISettingsControls( dynamic_pointer_cast<ui::IUIElement>( sender ) );
+                return {};
+            }
+        }
         if(eventType == EventType::UI &&
            eventValue == static_cast<hash_type>(StringUtil::getHash32("materialShaderReloadAction")))
         {

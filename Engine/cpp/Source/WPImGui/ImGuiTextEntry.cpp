@@ -60,13 +60,16 @@ namespace workphone::ui
             String newText = buffer;
             setText( newText );
 
-            auto args = Array<Parameter>();
-            args.resize( 2 );
-
-            args.emplace_back( newText );
-
-            applicationManager->triggerEvent( EventType::UI, IEvent::handleValueChanged, args, this,
-                                              this, nullptr, false, Thread::Application_Flag );
+            // Password fields are read explicitly by their owning controls. Do
+            // not broadcast credentials to application-wide event listeners.
+            if( !isSecureEntry() )
+            {
+                auto args = Array<Parameter>();
+                args.resize( 2 );
+                args.emplace_back( newText );
+                applicationManager->triggerEvent( EventType::UI, IEvent::handleValueChanged, args, this,
+                                                  this, nullptr, false, Thread::Application_Flag );
+            }
         }
 
         auto dropTarget = getDropTarget();
@@ -88,7 +91,7 @@ namespace workphone::ui
 
                     args[0].setStr( data );
                     args[1].setStr( name );
-                    args[2].setStr( value );
+                    args[2].setStr( isSecureEntry() ? String() : value );
 
                     dropTarget->handleEvent( EventType::UI, IEvent::handleDrop, args, this, this,
                                              nullptr );
@@ -106,7 +109,7 @@ namespace workphone::ui
                 auto args = Array<Parameter>();
                 args.resize( 2 );
 
-                args[0].str = getText();
+                args[0].str = isSecureEntry() ? String() : getText();
 
                 listener->handleEvent( EventType::Object, IEvent::handlePropertyChanged, args, this,
                                        this, nullptr );

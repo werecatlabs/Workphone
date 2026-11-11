@@ -20,4 +20,12 @@ namespace workphone
                                            : String( "No engine actions were applied." );
     }
 
+    IAiManager::ImageGenerationResult IAiManager::generateImage(
+        const ImageGenerationRequest &request ) const
+    {
+        ImageGenerationResult result;
+        result.error = "This AI manager does not support image generation.";
+        return result;
+    }
+
 }  // namespace workphone

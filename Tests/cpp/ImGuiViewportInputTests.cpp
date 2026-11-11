@@ -7,6 +7,7 @@
 #include <WPImGui/ImGuiUtil.hpp>
 #include <WPImGui/ImGuiRenderWindow.hpp>
 #include <WPImGui/ImGuiText.hpp>
+#include <WPImGui/ImGuiTextEntry.hpp>
 #include <WPImGui/ImGuiTreeCtrl.hpp>
 #include <WPImGui/ImGuiWindow.hpp>
 #include <WPImGui/WPImGuiStyle.hpp>
@@ -859,6 +860,106 @@ namespace
         parent->removeChild( slider );
     }
 
+    void secureTextEntryEvents( Fixture &fixture )
+    {
+        class TextEvents : public IEventListener
+        {
+        public:
+            Parameter handleEvent( EventType type, hash_type event, const Array<Parameter> &args,
+                                   SmartPtr<ISharedObject> sender, SmartPtr<ISharedObject>,
+                                   SmartPtr<IEvent> ) override
+            {
+                if( sender.get() != expected ) return {};
+                String payload;
+                for( const auto &argument : args ) payload += argument.str;
+                if( type == EventType::UI && event == IEvent::handleValueChanged )
+                {
+                    ++changes;
+                    changedText = payload;
+                }
+                if( type == EventType::Object && event == IEvent::handlePropertyChanged )
+                {
+                    ++commits;
+                    committedText = payload;
+                }
+                return {};
+            }
+            ISharedObject *expected = nullptr;
+            unsigned changes = 0, commits = 0;
+            String changedText, committedText;
+        };
+
+        auto &io = ImGui::GetIO();
+        const bool trickle = io.ConfigInputTrickleEventQueue;
+        io.ConfigInputTrickleEventQueue = false;
+        for( const bool secure : { true, false } )
+        {
+            auto parent = make_ptr<ui::ImGuiWindow>();
+            auto entry = make_ptr<ui::ImGuiTextEntry>();
+            auto global = make_ptr<TextEvents>();
+            auto local = make_ptr<TextEvents>();
+            global->expected = local->expected = entry.get();
+            entry->setLabel( secure ? "API key" : "Asset name" );
+            entry->setSecureEntry( secure );
+            // Opt in explicitly: a missing global-event flag must not make this
+            // test pass without exercising the credential disclosure boundary.
+            entry->setObjectFlag( OBJECT_FLAG_GLOBAL_EVENTS, true );
+            entry->setObjectFlag( OBJECT_FLAG_TRIGGER_EVENTS, true );
+            entry->addObjectListener( local );
+            fixture.application->addObjectListener( global );
+            parent->addChild( entry );
+
+            ImVec2 input;
+            ImGuiID inputId = 0;
+            const auto render = [&] {
+                ImGui::NewFrame();
+                ImGui::SetNextWindowPos( ImVec2( 20, 20 ), ImGuiCond_Always );
+                ImGui::SetNextWindowSize( ImVec2( 500, 200 ), ImGuiCond_Always );
+                ImGui::SetNextWindowFocus();
+                ImGui::Begin( "Secure text entry events", nullptr, ImGuiWindowFlags_NoSavedSettings );
+                inputId = ImGui::GetID( entry->getLabel().c_str() );
+                entry->update();
+                const auto minimum = ImGui::GetItemRectMin();
+                input = ImVec2( minimum.x + 12.0f, minimum.y + ImGui::GetFrameHeight() * .5f );
+                ImGui::End(); ImGui::EndFrame();
+            };
+            render(); render();
+            io.AddMousePosEvent( input.x, input.y );
+            io.AddMouseButtonEvent( 0, true ); render();
+            io.AddMouseButtonEvent( 0, false ); render();
+            require( ImGui::GetCurrentContext()->ActiveId == inputId,
+                     "text-entry regression must focus the actual native input" );
+            const String typed = secure ? "synthetic-api-key-do-not-broadcast" : "Generated texture";
+            io.AddInputCharactersUTF8( typed.c_str() ); render();
+            require( entry->getText() == typed,
+                     "masked and ordinary fields must both accept real typed input" );
+            if( secure )
+            {
+                require( global->changes == 0 && local->changes == 0,
+                         "typing a credential must not broadcast its value through UI events" );
+            }
+            else
+            {
+                require( global->changes == 1 && global->changedText == typed &&
+                             local->changes == 1 && local->changedText == typed,
+                         "ordinary fields must preserve their existing global and local text events" );
+            }
+            io.AddKeyEvent( ImGuiKey_Enter, true ); render();
+            io.AddKeyEvent( ImGuiKey_Enter, false ); render();
+            require( local->commits == 1 && global->commits == 0,
+                     "Enter must retain the field's local property-change notification" );
+            require( local->committedText == ( secure ? String() : typed ),
+                     "Enter must redact credential payloads while preserving ordinary text" );
+            require( entry->getText() == typed,
+                     "credential owners must still be able to explicitly read the masked field" );
+
+            fixture.application->removeObjectListener( global );
+            entry->removeObjectListener( local );
+            parent->removeChild( entry );
+        }
+        io.ConfigInputTrickleEventQueue = trickle;
+    }
+
     void projectThemeSelection()
     {
         auto settings = make_ptr<Properties>();
@@ -1009,12 +1110,13 @@ int main()
         assetTileStartsTreeDrag( fixture );
         preciseFloatSliders();
         preciseSliderEvents();
+        secureTextEntryEvents( fixture );
 #if defined WP_PLATFORM_WIN32
         nativeSystemMenuShortcuts();
 #endif
         displayedImageGeometry( fixture, true, false );
         displayedImageGeometry( fixture, false, true );
-        std::printf( "ImGui theme/text/property-grid/window-placement/button/precise-sliders/native-message/viewport input: %u assertions passed\n", assertions );
+        std::printf( "ImGui theme/text/property-grid/window-placement/button/precise-sliders/secure-text/native-message/viewport input: %u assertions passed\n", assertions );
         return 0;
     }
     catch( const std::exception &error )
