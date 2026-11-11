@@ -6,6 +6,7 @@
 #include <Workphone/Database/AssetCatalogPath.hpp>
 #include <Workphone/Database/AssetDocumentSave.hpp>
 #include <Workphone/Database/AuthoredDomainDatabase.hpp>
+#include <Workphone/Database/LightingPresetFile.hpp>
 #include <Workphone/Script/ScriptAsset.hpp>
 #include <Workphone/Database/ResourceReference.hpp>
 #include <Workphone/System/Director.hpp>
@@ -118,6 +119,7 @@ namespace workphone
         thread_local ResourceDatabase *activeImport = nullptr;
         thread_local String importProjectPath, importCachePath, importSettingsPath;
         thread_local std::function<bool()> currentImportSession;
+        thread_local const String *folderImportFile = nullptr;
         struct ImportStatusContext;
         thread_local ImportStatusContext *currentImportStatus = nullptr;
 
@@ -1295,7 +1297,17 @@ namespace workphone
                         const auto &files = folderListing->getFiles();
                         for( const auto &file : files )
                         {
-                            auto relativePath = Path::getRelativePath( projectPath, file );
+                            const auto relativePath = Path::getRelativePath( projectPath, file );
+                            // Nested imports run synchronously inside the active folder job.
+                            struct RestoreFolderImportFile
+                            {
+                                const String *previous = folderImportFile;
+                                ~RestoreFolderImportFile()
+                                {
+                                    folderImportFile = previous;
+                                }
+                            } restore;
+                            folderImportFile = &relativePath;
                             importFile( relativePath, overwrite );
                         }
 
@@ -3761,10 +3773,29 @@ namespace workphone
             }
             else if( ApplicationUtil::isSupportedTexture( filePath ) )
             {
-                if( graphicsSystem )
+                if( auto textureManager = graphicsSystem ? graphicsSystem->getTextureManager() : nullptr )
                 {
-                    auto textureManager = graphicsSystem ? graphicsSystem->getTextureManager() : nullptr;
-                    auto texture = textureManager->loadFromFile( filePath );
+                    // A folder import indexes every texture. Decode on demand so unused
+                    // textures do not fill the CPU streaming budget during the scan.
+                    SmartPtr<IResource> texture;
+                    if( folderImportFile && *folderImportFile == filePath )
+                    {
+                        auto entry = dynamic_pointer_cast<scene::ResourceDirector>(
+                            assetDatabaseManager->getResourceEntryFromPath( filePath ) );
+                        if( entry )
+                        {
+                            texture = textureManager->createOrRetrieve( entry->getResourceUUID(),
+                                                                        filePath, "Texture" ).first;
+                        }
+                        else
+                        {
+                            texture = textureManager->createOrRetrieve( filePath ).first;
+                        }
+                    }
+                    else
+                    {
+                        texture = textureManager->loadFromFile( filePath );
+                    }
                     if( texture )
                     {
                         if( assetDatabaseManager->hasResourceEntry( texture ) )
@@ -3818,36 +3849,13 @@ namespace workphone
                     }
                 }
             }
-            else if( fileExt == lightingPresetExt )
+            else if( fileExt == lightingPresetExt || fileExt == ".resource" )
             {
-                auto lightingpreset = workphone::make_ptr<scene::LightingDirector>();
-                if( lightingpreset )
+                String error;
+                registerLightingPresetFile( *assetDatabaseManager, *fileSystem, filePath, error );
+                if( !error.empty() )
                 {
-                    auto handle = lightingpreset->getHandle();
-                    auto uuid = handle->getUUIDAsString();
-                    if( StringUtil::isNullOrEmpty( uuid ) )
-                    {
-                        uuid = StringUtil::getUUID();
-                        handle->setUUID( uuid );
-                    }
-
-                    lightingpreset->setFilePath( filePath );
-
-                    auto dataStr = fileSystem->readAllText( filePath );
-
-                    auto properties = workphone::make_ptr<Properties>();
-                    DataUtil::parse( dataStr, properties.get() );
-
-                    lightingpreset->setProperties( properties );
-
-                    if( assetDatabaseManager->hasResourceEntry( lightingpreset ) )
-                    {
-                        assetDatabaseManager->updateResourceEntry( lightingpreset );
-                    }
-                    else
-                    {
-                        assetDatabaseManager->addResourceEntry( lightingpreset );
-                    }
+                    throw std::runtime_error( error.c_str() );
                 }
             }
 

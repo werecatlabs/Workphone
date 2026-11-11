@@ -1151,6 +1151,7 @@ if (WP_EDITOR_TESTS)
         editor_property_invalid_and_readonly_context_test
         editor_property_nested_buttons_and_resource_metadata_test
         editor_property_grid_nested_button_owner_event_test
+        editor_property_scene_lighting_drop_test
         procedural_components_road_properties
         city_road_viewport_authoring_test
         terrain_city_source_anchor_roundtrip_test

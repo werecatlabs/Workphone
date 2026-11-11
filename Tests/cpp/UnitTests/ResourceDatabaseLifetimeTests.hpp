@@ -139,6 +139,59 @@ namespace resource_database_lifetime_tests
 
 BOOST_AUTO_TEST_SUITE( ResourceDatabaseLifetimeTests )
 
+BOOST_AUTO_TEST_CASE( folder_import_keeps_textures_unloaded )
+{
+    using namespace mesh_import_streaming_integration_tests;
+    const auto app = core::IApplicationManager::instance();
+    BOOST_REQUIRE( app );
+    const auto source = std::filesystem::absolute( app->getMediaPath().c_str() ) / "panel.png";
+    Fixture fixture;
+    auto textureManager = app->getGraphicsSystem()->getTextureManager();
+    BOOST_REQUIRE( textureManager );
+    auto catalog = dynamic_pointer_cast<AssetDatabaseManager>( fixture.database->getDatabaseManager() );
+    BOOST_REQUIRE( catalog );
+
+    const auto folder = fixture.root + "/Assets";
+    const auto path = "Assets/" + StringUtil::getUUID() + ".png";
+    std::filesystem::create_directories( folder.c_str() );
+    std::filesystem::copy_file( source, fixture.directory / path.c_str() );
+    fixture.guard.addCleanup( [textureManager, path]() mutable {
+        textureManager->destroyResource( textureManager->getByName( path ) );
+    } );
+
+    fixture.database->importFolder( folder, false );
+    const auto entry = dynamic_pointer_cast<scene::ResourceDirector>( catalog->getResourceEntryFromPath( path ) );
+    BOOST_REQUIRE( entry );
+    const auto uuid = entry->getResourceUUID();
+    AssetDatabaseManager::EntrySnapshot record;
+    BOOST_REQUIRE( catalog->tryGetEntry( uuid, record ) );
+    BOOST_CHECK_EQUAL( record.type, "Texture" );
+
+    const auto sidecar = app->getSettingsPath() + StringUtil::toString( StringUtil::getUUID( path ) ) +
+                         ".resourcedata";
+    const auto recipe = readBytes( sidecar );
+    BOOST_REQUIRE( !recipe.empty() );
+    auto texture = dynamic_pointer_cast<render::ITexture>( textureManager->getById( uuid ) );
+    BOOST_REQUIRE( texture );
+    BOOST_CHECK( !texture->isLoaded() && texture->getSize().x == 0 );
+
+    textureManager->destroyResource( texture );
+    texture = nullptr;
+    BOOST_CHECK( !textureManager->getById( uuid ) );
+    fixture.database->importFolder( folder, true );
+    const auto repeated = dynamic_pointer_cast<scene::ResourceDirector>( catalog->getResourceEntryFromPath( path ) );
+    BOOST_REQUIRE( repeated );
+    BOOST_CHECK_EQUAL( repeated->getResourceUUID(), uuid );
+    BOOST_CHECK_EQUAL( readBytes( sidecar ), recipe );
+    texture = dynamic_pointer_cast<render::ITexture>( textureManager->getById( uuid ) );
+    BOOST_REQUIRE( texture );
+    BOOST_CHECK( !texture->isLoaded() && texture->getSize().x == 0 );
+
+    fixture.database->importFile( path, true );
+    BOOST_CHECK( texture->isLoaded() );
+    BOOST_CHECK( texture->getSize().x > 0 );
+}
+
 BOOST_AUTO_TEST_CASE( released_manager_resource_can_be_retrieved_and_database_unloaded )
 {
     using namespace resource_database_lifetime_tests;

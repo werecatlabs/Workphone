@@ -13,6 +13,7 @@
 #include <editor/Project.hpp>
 #include <jobs/FileSelectedJob.hpp>
 #include <Workphone/Workphone.hpp>
+#include <Workphone/Scene/Directors/LightingDirector.hpp>
 
 #include <set>
 
@@ -2039,12 +2040,22 @@ namespace workphone::editor
             auto names = StringUtil::split( factoryName, "::" );
             auto last = names.empty() ? "Untitled" : names.back();
             const auto directorFileName = String( last + ".resource" );
+            const auto directorPath = targetFolder + "/" + directorFileName;
+
+            if( factory->getObjectTypeId() == scene::LightingDirector::typeInfo() )
+            {
+                auto cmd = factoryManager->make_ptr<AddResourceCmd>();
+                cmd->setFilePath( directorPath );
+                cmd->setResourceType( AddResourceCmd::ResourceType::LightingPreset );
+                commandManager->addCommand( cmd );
+                break;
+            }
 
             auto director = factory->make_ptr<IBuildDirector>();
             auto properties = director->getProperties();
 
             auto dataStr = DataUtil::toString( properties.get(), true );
-            fileSystem->writeAllText( targetFolder + "/" + directorFileName, dataStr );
+            fileSystem->writeAllText( directorPath, dataStr );
             owner->refreshFolders( { targetFolder } );
         }
         break;

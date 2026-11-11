@@ -1,5 +1,6 @@
 #include <EditorPCH.hpp>
 #include <Workphone/Database/AssetReferenceChange.hpp>
+#include <Workphone/Database/LightingPresetFile.hpp>
 #include <Workphone/Core/PropertyPath.hpp>
 #include <ui/PropertiesWindow.hpp>
 #include <ui/TextureProfileInspector.hpp>
@@ -1299,9 +1300,11 @@ namespace workphone::editor
                 auto name = arguments[1].getStr();
                 DataUtil::parse( dataStr, dragData.get() );
 
-                if( properties->hasProperty( name ) &&
-                    properties->getPropertyObject( name ).getAttribute( Properties::resourceTypeStr ) ==
-                        "RenderTexture" )
+                if( !properties->hasProperty( name ) ) return {};
+                const auto &property = properties->getPropertyObject( name );
+                if( property.isReadOnly() ) return {};
+                const auto reference = property.getAttribute( Properties::resourceTypeStr );
+                if( reference == "RenderTexture" )
                 {
                     auto texture = findRenderTexture( dragData->getProperty( "actorUUID" ), true );
                     if( texture && texture->getHandle() )
@@ -1310,6 +1313,20 @@ namespace workphone::editor
                 }
 
                 auto filePath = dragData->getProperty( "filePath" );
+                if( AssetReferenceChange::referenceType( reference ) == scene::LightingDirector::typeInfo() )
+                {
+                    auto files = applicationManager->getFileSystem();
+                    auto catalog = resourceDatabase ? dynamic_pointer_cast<AssetDatabaseManager>(
+                                                          resourceDatabase->getDatabaseManager() ) : nullptr;
+                    if( catalog && files && !filePath.empty() )
+                    {
+                        String error;
+                        const auto uuid = registerLightingPresetFile( *catalog, *files, filePath, error );
+                        if( !uuid.empty() ) owner->propertyChange( properties, name, uuid, false );
+                        if( !error.empty() ) WP_LOG_ERROR( "Cannot register lighting resource: " + error );
+                    }
+                    return {};
+                }
                 if( !StringUtil::isNullOrEmpty( filePath ) )
                 {
                     if( !resourceDatabase ) return {};

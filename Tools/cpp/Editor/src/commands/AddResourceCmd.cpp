@@ -119,6 +119,7 @@ namespace workphone::editor
                 WP_ASSERT( director );
 
                 director->load( nullptr );
+                resource = director;
 
                 data = director->toData();
                 WP_ASSERT( data );

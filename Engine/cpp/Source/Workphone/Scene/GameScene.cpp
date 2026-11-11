@@ -1489,7 +1489,11 @@ namespace workphone::scene
         WP_ASSERT( applicationManager );
 
         auto lightingDirector = getLightingDirector();
-        properties->getPropertyAsType( ApplicationUtil::lightingStr, lightingDirector );
+        if( properties->getPropertyAsType( ApplicationUtil::lightingStr, lightingDirector ) )
+        {
+            setLightingDirector( lightingDirector );
+            updateLighting();
+        }
 
         //graphicsSceneManager->setAmbientLight( ColourF::White * 0.5f );
         //graphicsSceneManager->setEnableShadows( true );

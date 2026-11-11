@@ -53,7 +53,10 @@
 
 namespace workphone::editor
 {
-    SmartPtr<EditorWindow> UIManager::getLuaDebuggerWindow() const { return m_luaDebuggerWindow; }
+    SmartPtr<EditorWindow> UIManager::getLuaDebuggerWindow() const
+    {
+        return m_luaDebuggerWindow;
+    }
 
     u64 UIManager::getDeferredRenderCallbackCount() const
     {
@@ -81,18 +84,20 @@ namespace workphone::editor
     {
         auto app = core::IApplicationManager::instancePtr();
         auto scripts = app ? app->getScriptManager() : nullptr;
-        if( !scripts ) return false;
+        if( !scripts )
+        {
+            return false;
+        }
         auto graphics = app->getGraphicsSystem();
         const auto renderTask = graphics ? graphics->getRenderTask() : TaskId::Render;
         const bool debuggerEnabled = scripts->getDebuggerPort() != 0;
-        return shouldDeferEditorScriptCall( Thread::getCurrentTask() == renderTask,
-                                           debuggerEnabled,
-                                           debuggerEnabled && scripts->isDebuggerPaused(),
-                                           debuggerControl, renderThreadUnsafe );
+        return shouldDeferEditorScriptCall( Thread::getCurrentTask() == renderTask, debuggerEnabled,
+                                            debuggerEnabled && scripts->isDebuggerPaused(),
+                                            debuggerControl, renderThreadUnsafe );
     }
 
     void UIManager::enqueueScriptEvent( std::function<void()> call, bool debuggerControl,
-                                       std::uintptr_t owner, const String &refreshKey )
+                                        std::uintptr_t owner, const String &refreshKey )
     {
         auto app = core::IApplicationManager::instancePtr();
         auto graphics = app ? app->getGraphicsSystem() : nullptr;
@@ -101,112 +106,190 @@ namespace workphone::editor
         const WeakPtr<UIManager> manager( this );
         auto isolated = [call = std::move( call ), manager, renderOrigin]() {
             auto owner = manager.lock();
-            if( !owner || !owner->isLoaded() ) return;
-            const auto previous = owner->m_deferredRenderCallbackActive.load( std::memory_order_relaxed );
+            if( !owner || !owner->isLoaded() )
+            {
+                return;
+            }
+            const auto previous =
+                owner->m_deferredRenderCallbackActive.load( std::memory_order_relaxed );
             struct RestoreOrigin
             {
                 std::atomic<bool> &active;
                 bool previous;
-                ~RestoreOrigin() { active.store( previous, std::memory_order_relaxed ); }
+                ~RestoreOrigin()
+                {
+                    active.store( previous, std::memory_order_relaxed );
+                }
             } restore{ owner->m_deferredRenderCallbackActive, previous };
             // Nested debugger drains must retain an outer suspended callback's
             // real Render origin, even if the nested action arrived elsewhere.
-            owner->m_deferredRenderCallbackActive.store( previous || renderOrigin, std::memory_order_relaxed );
+            owner->m_deferredRenderCallbackActive.store( previous || renderOrigin,
+                                                         std::memory_order_relaxed );
             owner->m_dispatchedScriptEventCount.fetch_add( 1, std::memory_order_relaxed );
-            try { call(); }
+            try
+            {
+                call();
+            }
             catch( const std::exception &error )
             {
-                try { WP_LOG_EXCEPTION( error ); } catch( ... ) {}
+                try
+                {
+                    WP_LOG_EXCEPTION( error );
+                }
+                catch( ... )
+                {
+                }
             }
             catch( ... )
             {
-                try { WP_LOG_ERROR( "Unknown exception in a deferred Editor UI action." ); } catch( ... ) {}
+                try
+                {
+                    WP_LOG_ERROR( "Unknown exception in a deferred Editor UI action." );
+                }
+                catch( ... )
+                {
+                }
             }
         };
-        const bool accepted = m_scriptEvents.enqueue( std::move( isolated ), debuggerControl, owner, refreshKey.c_str() );
-        if( accepted && renderOrigin ) m_deferredRenderCallbackCount.fetch_add( 1, std::memory_order_relaxed );
-        if( !accepted &&
-            !m_scriptEventOverflowReported )
+        const bool accepted =
+            m_scriptEvents.enqueue( std::move( isolated ), debuggerControl, owner, refreshKey.c_str() );
+        if( accepted && renderOrigin )
+        {
+            m_deferredRenderCallbackCount.fetch_add( 1, std::memory_order_relaxed );
+        }
+        if( !accepted && !m_scriptEventOverflowReported )
         {
             m_scriptEventOverflowReported = true;
-            WP_LOG_ERROR( "Editor script event queue is full; pending authoring actions require continuing Lua." );
+            WP_LOG_ERROR(
+                "Editor script event queue is full; pending authoring actions require continuing Lua." );
         }
     }
 
     bool UIManager::deferScriptCall( EditorWindow *window, const String &member,
-                                    const Parameters &parameters, bool hasParameters,
-                                    bool discardResults, u64 viewportGeneration )
+                                     const Parameters &parameters, bool hasParameters,
+                                     bool discardResults, u64 viewportGeneration )
     {
         const bool debuggerControl = window && window == m_luaDebuggerWindow.get();
         // Terrain Lua may load textures while the render frame owns the texture
         // manager. Keep its callbacks on Application even without a debugger.
         const bool terrainWindow = window && window->isDerived<TerrainWindow>();
-        if( !window || !shouldDeferScriptCall( debuggerControl, terrainWindow ) ) return false;
+        if( !window || !shouldDeferScriptCall( debuggerControl, terrainWindow ) )
+        {
+            return false;
+        }
         const bool viewportBrush = terrainWindow && member == "handleViewportBrushEvent";
         if( viewportBrush && !viewportGeneration )
+        {
             viewportGeneration = static_cast<TerrainWindow *>( window )->getViewportScriptGeneration();
+        }
         auto invoker = window->getInvoker();
-        if( !invoker ) return true;
+        if( !invoker )
+        {
+            return true;
+        }
         const WeakPtr<EditorWindow> owner( window );
         const WeakPtr<IScriptInvoker> expectedInvoker( invoker.get() );
-        auto key = !hasParameters && ( member == "update" || member == "updateSelection" ) ? member : String();
+        auto key =
+            !hasParameters && ( member == "update" || member == "updateSelection" ) ? member : String();
         if( member == "handleViewportBrushEvent" && !parameters.empty() )
         {
             const auto &phaseArgument = parameters.front();
-            const auto phase = phaseArgument.type == ParameterType::PARAM_TYPE_CHAR_PTR
-                ? String( phaseArgument.getCharPtr() ? phaseArgument.getCharPtr() : "" )
-                : phaseArgument.getStr();
-            if( phase == "cancel" ) key = "viewportCancel";
+            const auto phase =
+                phaseArgument.type == ParameterType::PARAM_TYPE_CHAR_PTR
+                    ? String( phaseArgument.getCharPtr() ? phaseArgument.getCharPtr() : "" )
+                    : phaseArgument.getStr();
+            if( phase == "cancel" )
+            {
+                key = "viewportCancel";
+            }
         }
-        enqueueScriptEvent( [owner, expectedInvoker, member, parameters, hasParameters, discardResults,
-                             viewportBrush, viewportGeneration]() {
-            auto app = core::IApplicationManager::instancePtr();
-            if( !app || app->getQuit() ) return;
-            auto target = owner.lock();
-            auto expected = expectedInvoker.lock();
-            if( !target || !target->isLoaded() || !expected || target->getInvoker() != expected ) return;
-            // A delayed ray must not begin a stroke against a newly selected terrain.
-            if( viewportBrush && !isCurrentEditorScriptEventGeneration(
-                    viewportGeneration,
-                    static_cast<TerrainWindow *>( target.get() )->getViewportScriptGeneration() ) ) return;
-            invokeEditorScriptCall( *expected, member, parameters, hasParameters, discardResults );
-        }, debuggerControl, reinterpret_cast<std::uintptr_t>( window ), key );
+        enqueueScriptEvent(
+            [owner, expectedInvoker, member, parameters, hasParameters, discardResults, viewportBrush,
+             viewportGeneration]() {
+                auto app = core::IApplicationManager::instancePtr();
+                if( !app || app->getQuit() )
+                {
+                    return;
+                }
+                auto target = owner.lock();
+                auto expected = expectedInvoker.lock();
+                if( !target || !target->isLoaded() || !expected || target->getInvoker() != expected )
+                {
+                    return;
+                }
+                // A delayed ray must not begin a stroke against a newly selected terrain.
+                if( viewportBrush &&
+                    !isCurrentEditorScriptEventGeneration(
+                        viewportGeneration,
+                        static_cast<TerrainWindow *>( target.get() )->getViewportScriptGeneration() ) )
+                {
+                    return;
+                }
+                invokeEditorScriptCall( *expected, member, parameters, hasParameters, discardResults );
+            },
+            debuggerControl, reinterpret_cast<std::uintptr_t>( window ), key );
         return true;
     }
 
     bool UIManager::deferUIEvent( IEventListener *listener, EventType type, hash_type value,
-                                 const Parameters &arguments, SmartPtr<ISharedObject> sender,
-                                 SmartPtr<ISharedObject> object, SmartPtr<IEvent> event )
+                                  const Parameters &arguments, SmartPtr<ISharedObject> sender,
+                                  SmartPtr<ISharedObject> object, SmartPtr<IEvent> event )
     {
         auto element = dynamic_pointer_cast<ui::IUIElement>( object );
-        if( !element ) element = dynamic_pointer_cast<ui::IUIElement>( sender );
-        const bool debuggerControl = element &&
-            element->getElementId() == static_cast<s32>( WidgetId::LuaDebuggerWindowId );
-        if( !shouldDeferScriptCall( debuggerControl ) ) return false;
+        if( !element )
+        {
+            element = dynamic_pointer_cast<ui::IUIElement>( sender );
+        }
+        const bool debuggerControl =
+            element && element->getElementId() == static_cast<s32>( WidgetId::LuaDebuggerWindowId );
+        if( !shouldDeferScriptCall( debuggerControl ) )
+        {
+            return false;
+        }
         const WeakPtr<UIManager> owner( this );
         const WeakPtr<IEventListener> callback( listener );
-        enqueueScriptEvent( [owner, callback, type, value, arguments, sender, object, event]() {
-            auto app = core::IApplicationManager::instancePtr();
-            if( !app || app->getQuit() ) return;
-            auto manager = owner.lock();
-            auto target = callback.lock();
-            if( manager && manager->isLoaded() && target )
-                target->handleEvent( type, value, arguments, sender, object, event );
-        }, debuggerControl );
+        enqueueScriptEvent(
+            [owner, callback, type, value, arguments, sender, object, event]() {
+                auto app = core::IApplicationManager::instancePtr();
+                if( !app || app->getQuit() )
+                {
+                    return;
+                }
+                auto manager = owner.lock();
+                auto target = callback.lock();
+                if( manager && manager->isLoaded() && target )
+                {
+                    target->handleEvent( type, value, arguments, sender, object, event );
+                }
+            },
+            debuggerControl );
         return true;
     }
 
     void UIManager::dispatchQueuedScriptEvents( bool debuggerOnly )
     {
-        if( Thread::getCurrentTask() != TaskId::Application ) return;
+        if( Thread::getCurrentTask() != TaskId::Application )
+        {
+            return;
+        }
         m_scriptEvents.dispatch( debuggerOnly );
-        if( m_scriptEvents.size() == 0 ) m_scriptEventOverflowReported = false;
+        if( m_scriptEvents.size() == 0 )
+        {
+            m_scriptEventOverflowReported = false;
+        }
         if( !debuggerOnly )
         {
-            if( auto terrain = getTerrainWindow() ) terrain->refreshViewportScriptState();
-            if( auto actor = getActorWindow() ) actor->refreshTerrainViewportScriptState();
+            if( auto terrain = getTerrainWindow() )
+            {
+                terrain->refreshViewportScriptState();
+            }
+            if( auto actor = getActorWindow() )
+            {
+                actor->refreshTerrainViewportScriptState();
+            }
         }
     }
+
     WP_CLASS_REGISTER_DERIVED( workphone::editor, UIManager, ISharedObject );
     WP_CLASS_REGISTER_DERIVED( workphone::editor, UIManager::UpdateSelectionJob, Job );
     WP_CLASS_REGISTER_DERIVED( workphone::editor, UIManager::MenuBarListener, IEventListener );
@@ -394,53 +477,53 @@ namespace workphone::editor
                                ICON_FA_FILM " Delete Cache", "Delete Cache",
                                ui::IUIMenuItem::Type::Normal );
 
-            Util::addMenuSeparator( assetsMenu );
+            //Util::addMenuSeparator( assetsMenu );
 
-            auto resourcesMenu = ui->addElementByType<ui::IUIMenu>();
-            resourcesMenu->setLabel( "Resources" );
+            //auto resourcesMenu = ui->addElementByType<ui::IUIMenu>();
+            //resourcesMenu->setLabel( "Resources" );
 
-            Util::addMenuItem( resourcesMenu, static_cast<s32>( WidgetId::AddResourceNodeId ),
-                               ICON_FA_FILM " Add Resource Node", "Adds a node to the resource tree",
-                               ui::IUIMenuItem::Type::Normal );
+            //Util::addMenuItem( resourcesMenu, static_cast<s32>( WidgetId::AddResourceNodeId ),
+            //                   ICON_FA_FILM " Add Resource Node", "Adds a node to the resource tree",
+            //                   ui::IUIMenuItem::Type::Normal );
 
-            Util::addMenuItem( resourcesMenu, static_cast<s32>( WidgetId::DeleteResourceNodeId ),
-                               ICON_FA_FILM " Delete Resource Node",
-                               "Deletes a node to the resource tree", ui::IUIMenuItem::Type::Normal );
+            //Util::addMenuItem( resourcesMenu, static_cast<s32>( WidgetId::DeleteResourceNodeId ),
+            //                   ICON_FA_FILM " Delete Resource Node",
+            //                   "Deletes a node to the resource tree", ui::IUIMenuItem::Type::Normal );
 
-            Util::addMenuSeparator( resourcesMenu );
+            //Util::addMenuSeparator( resourcesMenu );
 
-            Util::addMenuItem( resourcesMenu, static_cast<s32>( WidgetId::ResourcesAddComponentId ),
-                               ICON_FA_FILM " Add Component", "Adds a component group",
-                               ui::IUIMenuItem::Type::Normal );
+            //Util::addMenuItem( resourcesMenu, static_cast<s32>( WidgetId::ResourcesAddComponentId ),
+            //                   ICON_FA_FILM " Add Component", "Adds a component group",
+            //                   ui::IUIMenuItem::Type::Normal );
 
-            Util::addMenuItem( resourcesMenu, static_cast<s32>( WidgetId::ResourcesRemoveComponentId ),
-                               ICON_FA_FILM " Remove Component", "Adds a component group",
-                               ui::IUIMenuItem::Type::Normal );
+            //Util::addMenuItem( resourcesMenu, static_cast<s32>( WidgetId::ResourcesRemoveComponentId ),
+            //                   ICON_FA_FILM " Remove Component", "Adds a component group",
+            //                   ui::IUIMenuItem::Type::Normal );
 
-            assetsMenu->addMenuItem( resourcesMenu );
+            //assetsMenu->addMenuItem( resourcesMenu );
 
-            auto assetsGroupMenu = ui->addElementByType<ui::IUIMenu>();
-            assetsGroupMenu->setLabel( "Group" );
+            //auto assetsGroupMenu = ui->addElementByType<ui::IUIMenu>();
+            //assetsGroupMenu->setLabel( "Group" );
 
-            Util::addMenuItem( assetsGroupMenu, static_cast<s32>( WidgetId::AddGroupId ),
-                               ICON_FA_FILM " Add Group", "Adds a component group",
-                               ui::IUIMenuItem::Type::Normal );
+            //Util::addMenuItem( assetsGroupMenu, static_cast<s32>( WidgetId::AddGroupId ),
+            //                   ICON_FA_FILM " Add Group", "Adds a component group",
+            //                   ui::IUIMenuItem::Type::Normal );
 
-            Util::addMenuItem( assetsGroupMenu, static_cast<s32>( WidgetId::RemoveGroupId ),
-                               ICON_FA_FILM " Remove Group", "Adds a component group",
-                               ui::IUIMenuItem::Type::Normal );
+            //Util::addMenuItem( assetsGroupMenu, static_cast<s32>( WidgetId::RemoveGroupId ),
+            //                   ICON_FA_FILM " Remove Group", "Adds a component group",
+            //                   ui::IUIMenuItem::Type::Normal );
 
-            Util::addMenuSeparator( assetsGroupMenu );
+            //Util::addMenuSeparator( assetsGroupMenu );
 
-            Util::addMenuItem( assetsGroupMenu, static_cast<s32>( WidgetId::GroupAddComponentId ),
-                               ICON_FA_FILM " Add Component", "Adds a component to a group",
-                               ui::IUIMenuItem::Type::Normal );
+            //Util::addMenuItem( assetsGroupMenu, static_cast<s32>( WidgetId::GroupAddComponentId ),
+            //                   ICON_FA_FILM " Add Component", "Adds a component to a group",
+            //                   ui::IUIMenuItem::Type::Normal );
 
-            Util::addMenuItem( assetsGroupMenu, static_cast<s32>( WidgetId::GroupRemoveComponentId ),
-                               ICON_FA_FILM " Remove Component", "Removes a component from a group",
-                               ui::IUIMenuItem::Type::Normal );
+            //Util::addMenuItem( assetsGroupMenu, static_cast<s32>( WidgetId::GroupRemoveComponentId ),
+            //                   ICON_FA_FILM " Remove Component", "Removes a component from a group",
+            //                   ui::IUIMenuItem::Type::Normal );
 
-            assetsMenu->addMenuItem( assetsGroupMenu );
+            //assetsMenu->addMenuItem( assetsGroupMenu );
 
             menuBar->addMenu( assetsMenu );
 
@@ -631,9 +714,8 @@ namespace workphone::editor
                                ui::IUIMenuItem::Type::Normal );
             Util::addMenuItem( windowMenu, static_cast<s32>( WidgetId::SceneWindowId ),
                                ICON_FA_FILM " Scene", "Scene", ui::IUIMenuItem::Type::Normal );
-            Util::addMenuItem( windowMenu, static_cast<s32>( WidgetId::CityRoadWindowId ),
-                               "City Roads", "Draw and edit road splines on terrain",
-                               ui::IUIMenuItem::Type::Normal );
+            Util::addMenuItem( windowMenu, static_cast<s32>( WidgetId::CityRoadWindowId ), "City Roads",
+                               "Draw and edit road splines on terrain", ui::IUIMenuItem::Type::Normal );
             Util::addMenuItem( windowMenu, static_cast<s32>( WidgetId::SoundWindowId ),
                                ICON_FA_MUSIC " Sound", "Sound", ui::IUIMenuItem::Type::Normal );
             Util::addMenuItem( windowMenu, static_cast<s32>( WidgetId::ParticleWindowId ),
@@ -1349,6 +1431,7 @@ namespace workphone::editor
     {
         return m_terrainWindow;
     }
+
     SmartPtr<CityRoadWindow> UIManager::getCityRoadWindow() const
     {
         return m_cityRoadWindow;
@@ -1513,7 +1596,12 @@ namespace workphone::editor
             object = sender;
         }
         if( auto owner = getOwner() )
-            if( owner->deferUIEvent( this, eventType, eventValue, arguments, sender, object, event ) ) return {};
+        {
+            if( owner->deferUIEvent( this, eventType, eventValue, arguments, sender, object, event ) )
+            {
+                return {};
+            }
+        }
         auto applicationManager = core::IApplicationManager::instancePtr();
         auto stateManager = applicationManager->getStateManagerPtr();
         auto fileSystem = applicationManager->getFileSystemPtr();
@@ -1734,12 +1822,22 @@ namespace workphone::editor
             break;
             case WidgetId::UndoId:
             {
-                String error;CityRoadEditCommand::dispatchHistory(commandManager,false,error);if(!error.empty())WP_LOG_ERROR(error);
+                String error;
+                CityRoadEditCommand::dispatchHistory( commandManager, false, error );
+                if( !error.empty() )
+                {
+                    WP_LOG_ERROR( error );
+                }
             }
             break;
             case WidgetId::RedoId:
             {
-                String error;CityRoadEditCommand::dispatchHistory(commandManager,true,error);if(!error.empty())WP_LOG_ERROR(error);
+                String error;
+                CityRoadEditCommand::dispatchHistory( commandManager, true, error );
+                if( !error.empty() )
+                {
+                    WP_LOG_ERROR( error );
+                }
             }
             break;
             case WidgetId::CutId:
@@ -1895,7 +1993,10 @@ namespace workphone::editor
             break;
             case WidgetId::LuaDebuggerWindowId:
             {
-                if( auto window = getOwner()->getLuaDebuggerWindow() ) window->setWindowVisible( true );
+                if( auto window = getOwner()->getLuaDebuggerWindow() )
+                {
+                    window->setWindowVisible( true );
+                }
             }
             break;
             case WidgetId::InputWindowId:
@@ -2373,7 +2474,12 @@ namespace workphone::editor
                                                        SmartPtr<IEvent> event )
     {
         if( auto owner = getOwner() )
-            if( owner->deferUIEvent( this, eventType, eventValue, arguments, sender, object, event ) ) return {};
+        {
+            if( owner->deferUIEvent( this, eventType, eventValue, arguments, sender, object, event ) )
+            {
+                return {};
+            }
+        }
         auto applicationManager = core::IApplicationManager::instancePtr();
         auto jobQueue = applicationManager->getJobQueuePtr();
         auto commandManager = applicationManager->getCommandManagerPtr();
@@ -2383,8 +2489,14 @@ namespace workphone::editor
         WP_ASSERT( editorManager );
 
         auto element = workphone::dynamic_pointer_cast<ui::IUIElement>( object );
-        if( !element ) element = workphone::dynamic_pointer_cast<ui::IUIElement>( sender );
-        if( !element ) return {};
+        if( !element )
+        {
+            element = workphone::dynamic_pointer_cast<ui::IUIElement>( sender );
+        }
+        if( !element )
+        {
+            return {};
+        }
         auto iElementId = element->getElementId();
 
         auto id = static_cast<WidgetId>( iElementId );
@@ -2629,7 +2741,12 @@ namespace workphone::editor
                                                      SmartPtr<IEvent> event )
     {
         if( auto owner = getOwner() )
-            if( owner->deferUIEvent( this, eventType, eventValue, arguments, sender, object, event ) ) return {};
+        {
+            if( owner->deferUIEvent( this, eventType, eventValue, arguments, sender, object, event ) )
+            {
+                return {};
+            }
+        }
         if( eventType == EventType::Loading )
         {
             if( eventValue == scene::IGameManager::sceneLoadedHash )

@@ -6,15 +6,25 @@
 #    include <ui/UIManager.hpp>
 #    include <editor/EditorManager.hpp>
 #    include <WPImGui/ImGuiPropertyGrid.hpp>
+#    include <WPSQLite/WPSQLite.hpp>
 #    include <Workphone/Core/PropertiesBinarySerializer.hpp>
+#    include <Workphone/Database/AssetDatabaseManager.hpp>
 #    include <Workphone/Database/ResourceDatabase.hpp>
+#    include <Workphone/IO/FileSystem.hpp>
+#    include <Workphone/Memory/FactoryUtil.hpp>
+#    include <Workphone/Scene/Directors/LightingDirector.hpp>
 #    include <Workphone/Scene/Directors/MeshResourceDirector.hpp>
+#    include <Workphone/Scene/GameManager.hpp>
+#    include <Workphone/Scene/GamePrefabManager.hpp>
+#    include <Workphone/Scene/GameScene.hpp>
 #    include <Workphone/System/ApplicationManager.hpp>
 #    include <Workphone/System/FileSelection.hpp>
 #    include <Workphone/System/FactoryManager.hpp>
 #    include <Workphone/System/JobQueue.hpp>
 #    include <Workphone/System/SelectionManager.hpp>
 #    include <boost/test/unit_test.hpp>
+#    include <filesystem>
+#    include <fstream>
 #    include <stdexcept>
 #    include <utility>
 
@@ -464,6 +474,125 @@ BOOST_AUTO_TEST_CASE( editor_property_grid_nested_button_owner_event_test )
     ui::ImGuiPropertyGrid::handlePropertyChanged( fixture.grid, owner, "value", "55" );
     BOOST_CHECK_EQUAL( fixture.application->lastEvent, IEvent::handlePropertyChanged );
     BOOST_CHECK( fixture.application->lastArguments[2].getObject() == owner );
+}
+
+BOOST_AUTO_TEST_CASE( editor_property_scene_lighting_drop_test )
+{
+    namespace fs = std::filesystem;
+    InspectorFixture fixture;
+    const auto directory = fs::temp_directory_path() / StringUtil::getUUID().c_str();
+    struct ProjectFiles
+    {
+        fs::path directory;
+        ~ProjectFiles()
+        {
+            std::error_code ignored;
+            fs::remove_all( directory, ignored );
+        }
+    } projectFiles{ directory };
+    fs::create_directories( directory / "Assets" );
+
+    auto app = fixture.application;
+    app->setFileSystem( make_ptr<FileSystem>() );
+    app->setGameManager( make_ptr<scene::GameManager>() );
+    app->setPrefabManager( make_ptr<scene::GamePrefabManager>() );
+    app->setProjectPath( directory.generic_u8string().c_str() );
+    app->setCachePath( directory.generic_u8string().c_str() );
+    app->getFactoryManager()->load( nullptr );
+    auto sqlite = make_ptr<SQLitePlugin>();
+    sqlite->load( nullptr );
+    FactoryUtil::addFactory<scene::LightingDirector>();
+
+    auto database = make_ptr<ResourceDatabase>();
+    database->load( nullptr );
+    auto catalog = dynamic_pointer_cast<AssetDatabaseManager>( database->getDatabaseManager() );
+    BOOST_REQUIRE( catalog );
+    catalog->loadFromFile( ( directory / database->getFilePath().c_str() ).generic_u8string().c_str() );
+    app->setResourceDatabase( database );
+    struct CatalogScope
+    {
+        SmartPtr<InspectorApplication> application;
+        SmartPtr<AssetDatabaseManager> catalog;
+        SmartPtr<SQLitePlugin> sqlite;
+        ~CatalogScope()
+        {
+            application->setResourceDatabase( nullptr );
+            catalog->unload( nullptr );
+            sqlite->unload( nullptr );
+        }
+    } catalogScope{ app, catalog, sqlite };
+    BOOST_REQUIRE( catalog->getDatabase() && catalog->getDatabase()->isLoaded() );
+
+    const auto writePreset = [&]( const char *path, const char *objectType, float red ) {
+        auto data = make_ptr<Properties>();
+        data->setProperty( "objectType", objectType );
+        data->setProperty( "ambientColour", ColourF( red, 0.4f, 0.6f, 1.0f ) );
+        const auto text = DataUtil::toString( data.get(), true, DataFormat::JSON );
+        std::ofstream file( directory / path, std::ios::binary );
+        file.write( text.data(), text.size() );
+        BOOST_REQUIRE( file.good() );
+    };
+    const char *legacy = "Assets/LightingDirector.resource";
+    const char *preset = "Assets/SceneLighting.lightingpreset";
+    const char *wrongType = "Assets/WrongDirector.resource";
+    writePreset( legacy, "workphone::scene::LightingDirector", 0.25f );
+    writePreset( wrongType, "workphone::Director", 0.0f );
+    app->setRunning( true );
+    database->importFolder( String( ( directory / "Assets" ).generic_u8string().c_str() ), false );
+    app->setRunning( false );
+    auto imported = dynamic_pointer_cast<scene::ResourceDirector>( catalog->getResourceEntryFromPath( legacy ) );
+    BOOST_REQUIRE( imported );
+    BOOST_CHECK( !catalog->getResourceEntryFromPath( wrongType ) );
+    writePreset( preset, "workphone::scene::LightingDirector", 0.75f );
+    BOOST_CHECK( !catalog->getResourceEntryFromPath( preset ) );
+
+    auto scene = make_ptr<scene::GameScene>();
+    fixture.window->setSelected( scene );
+    auto drop = make_ptr<PropertiesWindow::PropertiesDropTarget>();
+    drop->setOwner( fixture.window );
+    const auto dropFile = [&]( const String &path ) {
+        auto displayed = scene->getProperties();
+        fixture.grid->setProperties( displayed );
+        auto payload = make_ptr<Properties>();
+        payload->setProperty( "filePath", path );
+        Array<Parameter> arguments( 5 );
+        arguments[0].setStr( DataUtil::toString( payload.get(), true, DataFormat::JSON ) );
+        arguments[1].setStr( ApplicationUtil::lightingStr );
+        arguments[2].setStr( displayed->getProperty( ApplicationUtil::lightingStr ) );
+        arguments[3].setObject( displayed );
+        drop->handleEvent( EventType::UI, IEvent::handleDrop, arguments,
+                           fixture.grid, fixture.grid, nullptr );
+    };
+
+    dropFile( legacy );
+    auto lighting = scene->getLightingDirector();
+    BOOST_REQUIRE( lighting );
+    BOOST_CHECK_CLOSE( lighting->getAmbientColour().r, 0.25f, 0.001f );
+    const auto legacyUuid = lighting->getHandle()->getUUIDAsString();
+    BOOST_CHECK_EQUAL( legacyUuid, imported->getResourceUUID() );
+
+    dropFile( wrongType );
+    BOOST_CHECK( scene->getLightingDirector() == lighting );
+    BOOST_CHECK( !catalog->getResourceEntryFromPath( wrongType ) );
+
+    dropFile( ( directory / preset ).generic_u8string().c_str() );
+    lighting = scene->getLightingDirector();
+    BOOST_REQUIRE( lighting );
+    BOOST_CHECK_CLOSE( lighting->getAmbientColour().r, 0.75f, 0.001f );
+    const auto presetUuid = lighting->getHandle()->getUUIDAsString();
+    BOOST_CHECK_NE( legacyUuid, presetUuid );
+    BOOST_CHECK( catalog->hasResourceById( presetUuid ) );
+
+    auto saved = dynamic_pointer_cast<Properties>( scene->toData() );
+    BOOST_REQUIRE( saved );
+    BOOST_CHECK_EQUAL( saved->getProperty( ApplicationUtil::lightingStr ), presetUuid );
+    auto reopened = make_ptr<scene::GameScene>();
+    reopened->load( nullptr );
+    reopened->fromData( copyInspectorData( saved ) );
+    auto restored = reopened->getLightingDirector();
+    BOOST_REQUIRE( restored );
+    BOOST_CHECK_EQUAL( restored->getHandle()->getUUIDAsString(), presetUuid );
+    BOOST_CHECK_CLOSE( restored->getAmbientColour().r, 0.75f, 0.001f );
 }
 
 #endif
