@@ -52,6 +52,31 @@ namespace workphone
     namespace
     {
         std::atomic<const FileSystem *> packageFileSystem{ nullptr };
+        std::atomic<const FileSystem *> contentOnlyFileSystem{ nullptr };
+
+        bool isPrivateRuntimePath( const String &path, const String &directory )
+        {
+            if( directory.empty() || !Path::isPathAbsolute( path ) ||
+                !Path::isPathAbsolute( directory ) )
+            {
+                return false;
+            }
+            const auto native = std::filesystem::u8path( path.c_str() ).lexically_normal();
+            const auto root = std::filesystem::u8path( directory.c_str() ).lexically_normal();
+            auto component = native.begin();
+            for( const auto &parent : root )
+            {
+                if( parent.empty() ) continue;
+                if( component == native.end() ||
+                    packagePathAsciiLower( parent.generic_u8string().c_str() ) !=
+                        packagePathAsciiLower( component->generic_u8string().c_str() ) )
+                {
+                    return false;
+                }
+                ++component;
+            }
+            return component != native.end();
+        }
 
         auto resolvePackagePath( const FileSystem *fileSystem, const String &filePath,
                                  const ConcurrentArray<SmartPtr<IArchive>> &folderArchives,
@@ -76,7 +101,8 @@ namespace workphone
             }
 
             std::error_code error;
-            if( std::filesystem::is_regular_file( std::filesystem::u8path( root.c_str() ) /
+            if( contentOnlyFileSystem.load() != fileSystem &&
+                std::filesystem::is_regular_file( std::filesystem::u8path( root.c_str() ) /
                                                       std::filesystem::u8path( candidate.c_str() ),
                                                   error ) )
             {
@@ -96,7 +122,7 @@ namespace workphone
                 return {};
             };
 
-            auto resolved = findExact( folderArchives );
+            auto resolved = contentOnlyFileSystem.load() == fileSystem ? String() : findExact( folderArchives );
             return resolved.empty() ? findExact( fileArchives ) : resolved;
         }
 
@@ -108,6 +134,21 @@ namespace workphone
         }
     }  // namespace
 
+    bool isPackageFileSystem( const IFileSystem &fileSystem )
+    {
+        return packageFileSystem.load() == &fileSystem;
+    }
+
+    void setPackageContentOnly( const FileSystem &fileSystem, bool enabled )
+    {
+        if( enabled ) contentOnlyFileSystem.store( &fileSystem );
+        else
+        {
+            auto expected = &fileSystem;
+            contentOnlyFileSystem.compare_exchange_strong( expected, nullptr );
+        }
+    }
+
     void setPackagePathRemapping( const FileSystem &fileSystem, bool enabled )
     {
         if( enabled )
@@ -116,6 +157,7 @@ namespace workphone
         }
         else
         {
+            setPackageContentOnly( fileSystem, false );
             auto expected = &fileSystem;
             packageFileSystem.compare_exchange_strong( expected, nullptr );
         }
@@ -240,6 +282,19 @@ namespace workphone
         try
         {
             const auto resolved = resolvePackagePath( this, filename, m_folderArchives, m_fileArchives );
+            if( contentOnlyFileSystem.load() == this )
+            {
+                const auto &path = resolved.empty() ? filename : resolved;
+                for( auto &archive : m_fileArchives.snapshot() )
+                {
+                    if( archive && archive->exists( path, ignorePath && resolved.empty(), ignoreCase ) )
+                        return true;
+                }
+                auto app = core::IApplicationManager::instancePtr();
+                return app && ( isPrivateRuntimePath( filename, app->getCachePath() ) ||
+                                isPrivateRuntimePath( filename, app->getSettingsPath() ) ) &&
+                       Path::isExistingFile( filename );
+            }
             if( !resolved.empty() )
             {
                 return true;
@@ -691,7 +746,34 @@ namespace workphone
             WP_ASSERT( applicationManager );
 
             auto factoryManager = applicationManager->getFactoryManagerPtr();
-            WP_ASSERT( factoryManager );
+
+            // Packages are mounted before plugin/factory initialization so runtime
+            // settings can be read from the same archives as the rest of the game.
+            // Packaged content also takes precedence over stale loose editor files.
+            if( input && isPackageFileSystem( *this ) )
+            {
+                for( auto &archive : m_fileArchives.snapshot() )
+                {
+                    if( archive )
+                    {
+                        if( auto stream = archive->open( filePath, true, binary, false,
+                                                         ignorePath, ignoreCase ) )
+                        {
+                            return stream;
+                        }
+                    }
+                }
+            }
+            if( input && contentOnlyFileSystem.load() == this &&
+                !isPrivateRuntimePath( filePath, applicationManager->getCachePath() ) &&
+                !isPrivateRuntimePath( filePath, applicationManager->getSettingsPath() ) )
+            {
+                return nullptr;
+            }
+            if( !factoryManager )
+            {
+                return nullptr;
+            }
 
             auto projectPath = applicationManager->getProjectPath();
             if( StringUtil::isNullOrEmpty( projectPath ) )
@@ -1265,7 +1347,7 @@ namespace workphone
 
             auto applicationManager = core::IApplicationManager::instancePtr();
             auto factoryManager = applicationManager ? applicationManager->getFactoryManagerPtr() : nullptr;
-            if( !factoryManager )
+            if( !factoryManager && type != ArchiveType::ObfuscatedZip )
             {
                 return false;
             }
@@ -1294,7 +1376,9 @@ namespace workphone
             }
             case ArchiveType::ObfuscatedZip:
             {
-                auto a = factoryManager->make_ptr<ObfuscatedZipArchive>( filePath, true, true );
+                auto a = factoryManager
+                             ? factoryManager->make_ptr<ObfuscatedZipArchive>( filePath, true, true )
+                             : workphone::make_ptr<ObfuscatedZipArchive>( filePath, true, true );
                 a->load( nullptr );
                 if( !a->isLoaded() )
                 {
@@ -1548,7 +1632,7 @@ namespace workphone
 
     auto FileSystem::readAllBytes( const String &path ) -> Array<u8>
     {
-        if( Path::isPathAbsolute( path ) )
+        if( Path::isPathAbsolute( path ) && !isPackageFileSystem( *this ) )
         {
             std::ifstream file( path.c_str(), std::ios::binary | std::ios::ate );
             if( file )
@@ -1586,7 +1670,7 @@ namespace workphone
 
     auto FileSystem::readAllText( const String &path ) -> String
     {
-        if( Path::isPathAbsolute( path ) )
+        if( Path::isPathAbsolute( path ) && !isPackageFileSystem( *this ) )
         {
             auto stream = new std::fstream( path.c_str(), std::fstream::in );
 
@@ -2199,6 +2283,18 @@ namespace workphone
         const auto resolved = resolvePackagePath( this, filename, m_folderArchives, m_fileArchives );
         const auto &filePath = resolved.empty() ? filename : resolved;
         ignorePath = ignorePath && resolved.empty();
+        if( contentOnlyFileSystem.load() == this )
+        {
+            for( auto &archive : m_fileArchives.snapshot() )
+            {
+                if( archive && archive->findFileInfo( filePath, fileInfo, ignorePath ) )
+                    return true;
+            }
+            auto app = core::IApplicationManager::instancePtr();
+            if( !app || ( !isPrivateRuntimePath( filename, app->getCachePath() ) &&
+                          !isPrivateRuntimePath( filename, app->getSettingsPath() ) ) )
+                return false;
+        }
         if( Path::isPathAbsolute( filePath ) )
         {
             auto applicationManager = core::IApplicationManager::instance();

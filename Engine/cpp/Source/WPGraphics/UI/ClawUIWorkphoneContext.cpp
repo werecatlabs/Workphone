@@ -2,7 +2,6 @@
 #include <WPGraphics/UI/ClawUIWorkphoneContext.hpp>
 #include <Workphone/Workphone.hpp>
 #include <WorkphoneCore/workphone.h>
-#include <fstream>
 
 namespace workphone::ui
 {
@@ -14,19 +13,21 @@ namespace workphone::ui
             {
                 return {};
             }
-            std::ifstream stream( path.c_str(), std::ios::binary | std::ios::ate );
+            auto application = core::IApplicationManager::instancePtr();
+            auto fileSystem = application ? application->getFileSystem() : nullptr;
+            auto stream = fileSystem ? fileSystem->open( path, true, true, false, false, true )
+                                     : nullptr;
             if( !stream )
             {
                 return {};
             }
-            const auto length = stream.tellg();
+            const auto length = stream->size();
             if( length < 12 || length > 16 * 1024 * 1024 )
             {
                 return {};
             }
             std::vector<wp_byte> bytes( static_cast<size_t>( length ) );
-            stream.seekg( 0 );
-            if( !stream.read( reinterpret_cast<char *>( bytes.data() ), length ) )
+            if( stream->read( bytes.data(), length ) != length )
             {
                 return {};
             }
@@ -120,7 +121,8 @@ namespace workphone::ui
                 if( !project.empty() )
                 {
                     const auto path = Path::lexically_normal( project + "/Assets/UI/Fonts/Default.ttf" );
-                    if( Path::isExistingFile( path ) )
+                    auto fileSystem = application->getFileSystem();
+                    if( fileSystem && fileSystem->isExistingFile( path, false, true ) )
                     {
                         return path;
                     }

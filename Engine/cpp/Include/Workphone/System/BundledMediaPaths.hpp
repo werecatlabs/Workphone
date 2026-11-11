@@ -63,7 +63,8 @@ namespace workphone
     }
 
     inline bool mountBundledMediaCatalog( SmartPtr<IResourceDatabase> resources,
-                                           const String &mediaRoot, String &error )
+                                           const String &mediaRoot, String &error,
+                                           const String &catalogPath = {} )
     {
         auto database = dynamic_pointer_cast<ResourceDatabase>( resources );
         if( !database )
@@ -71,7 +72,7 @@ namespace workphone
             error = "Resource database does not support bundled media catalogs";
             return false;
         }
-        auto catalog = openMediaAssetCatalog( mediaRoot, error );
+        auto catalog = openMediaAssetCatalog( mediaRoot, error, catalogPath );
         if( !catalog ) return false;
         if( !database->setMediaCatalog( catalog ) )
         {

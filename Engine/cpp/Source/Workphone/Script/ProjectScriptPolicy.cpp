@@ -6,6 +6,8 @@
 #include <Workphone/Interface/Scene/IGameManager.hpp>
 #include <Workphone/Interface/Scene/IGameActor.hpp>
 #include <Workphone/Core/DataUtil.hpp>
+#include <Workphone/Interface/IO/IFileSystem.hpp>
+#include <Workphone/IO/PackagePaths.hpp>
 #include <filesystem>
 #include <fstream>
 #include <mutex>
@@ -86,7 +88,9 @@ namespace workphone
                 candidate->setProperties(profile);candidate->load(nullptr);
                 if(!candidate->isLoaded()){error="External script provider failed to load";return false;}
             }
-            if( profile->getPropertyAsInt( "scripting.reflection", 1 ) >= 2 )
+            const auto files = app->getFileSystem();
+            const auto packaged = files && isPackageFileSystem( *files );
+            if( !packaged && profile->getPropertyAsInt( "scripting.reflection", 1 ) >= 2 )
             {
                 auto registry = make_ptr<Properties>();
                 auto scripts=external?(candidate?candidate:previous):app->getScriptManager();

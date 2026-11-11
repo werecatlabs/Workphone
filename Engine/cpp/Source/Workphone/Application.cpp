@@ -32,6 +32,7 @@
 #include <Workphone/Interface/Input/IInputManager.hpp>
 #include <Workphone/Interface/IO/IFileSystem.hpp>
 #include <Workphone/Interface/IO/IStream.hpp>
+#include <Workphone/IO/PackagePaths.hpp>
 #include <Workphone/Interface/Physics/IPhysicsManager.hpp>
 #include <Workphone/Interface/Physics/IPhysicsScene3.hpp>
 #include <Workphone/Interface/Sound/ISound.hpp>
@@ -156,7 +157,11 @@ namespace workphone::core
             createFsm();
             WP_ASSERT( applicationManager->isValid() );
 
-            loadProjectRuntimeSettings( applicationManager->getProjectPath() );
+            if( auto files = applicationManager->getFileSystem();
+                !files || !isPackageFileSystem( *files ) )
+            {
+                loadProjectRuntimeSettings( applicationManager->getProjectPath() );
+            }
 
             createThreadPool();
             WP_ASSERT( applicationManager->isValid() );
@@ -738,7 +743,10 @@ namespace workphone::core
                 {
                     settingsPath += "/";
                 }
-                auto settingsText = Path::readAllText( settingsPath + "GameGraphics.settings" );
+                auto files = applicationManager->getFileSystem();
+                const auto packaged = files && isPackageFileSystem( *files );
+                auto settingsText = packaged ? files->readAllText( settingsPath + "GameGraphics.settings" )
+                                             : Path::readAllText( settingsPath + "GameGraphics.settings" );
                 if( !settingsText.empty() )
                 {
                     gameGraphics = workphone::make_ptr<Properties>();
@@ -785,10 +793,28 @@ namespace workphone::core
 
                 String mediaCatalogError;
                 const auto mediaRoot = applicationManager->getMediaPath();
-                if( mountBundledMediaCatalog( resourceDatabase, mediaRoot, mediaCatalogError ) )
+                String mediaCatalogPath;
+                if( packaged )
                 {
-                    WP_LOG( "Mounted bundled media catalog: " + mediaRoot +
-                            "/.workphone/media-assets.db" );
+                    const auto nativeCatalog = applicationManager->getCachePath() + "media-assets.db";
+                    if( std::filesystem::is_regular_file( std::filesystem::u8path( nativeCatalog.c_str() ) ) )
+                    {
+                        mediaCatalogPath = nativeCatalog;
+                        auto projectCatalog = resourceDatabase->getDatabaseManager();
+                        if( projectCatalog )
+                        {
+                            const auto projectCatalogPath =
+                                applicationManager->getCachePath() + resourceDatabase->getFilePath();
+                            projectCatalog->loadFromFile( projectCatalogPath );
+                        }
+                    }
+                }
+                if( mountBundledMediaCatalog( resourceDatabase, mediaRoot, mediaCatalogError,
+                                               mediaCatalogPath ) )
+                {
+                    WP_LOG( "Mounted bundled media catalog: " +
+                            ( mediaCatalogPath.empty() ? mediaRoot + "/.workphone/media-assets.db"
+                                                      : mediaCatalogPath ) );
                 }
                 else
                 {

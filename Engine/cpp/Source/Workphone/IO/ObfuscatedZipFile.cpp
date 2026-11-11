@@ -3,6 +3,7 @@
 #include <Workphone/IO/ObfuscatedZipArchive.hpp>
 #include <zzip/zzip.h>
 #include <zzip/plugin.h>
+#include <limits>
 
 namespace workphone
 {
@@ -91,15 +92,30 @@ namespace workphone
 
     void ObfuscatedZipFile::skip( size_Num count )
     {
-        if( !m_archive || count > m_size )
+        if( !m_archive )
         {
             return;
         }
         RecursiveMutex::ScopedLock lock( m_archive->m_mutex );
-        if( m_zipFile && count <= m_size - static_cast<size_Num>( zzip_tell( m_zipFile ) ) )
+        if( !m_zipFile ) return;
+        const auto current = zzip_tell( m_zipFile );
+        if( current < 0 || static_cast<size_Num>( current ) > m_size ) return;
+        const auto position = static_cast<size_Num>( current );
+        size_Num target;
+        // IStream's unsigned signature also carries negative relative offsets.
+        // Text line reads and mesh chunk lookahead both rewind through skip().
+        if( count > std::numeric_limits<size_Num>::max() / 2 )
         {
-            zzip_seek( m_zipFile, static_cast<zzip_off_t>( count ), SEEK_CUR );
+            const auto distance = size_Num( 0 ) - count;
+            if( distance > position ) return;
+            target = position - distance;
         }
+        else
+        {
+            if( count > m_size - position ) return;
+            target = position + count;
+        }
+        zzip_seek( m_zipFile, static_cast<zzip_off_t>( target ), SEEK_SET );
     }
 
     auto ObfuscatedZipFile::size() const -> size_Num

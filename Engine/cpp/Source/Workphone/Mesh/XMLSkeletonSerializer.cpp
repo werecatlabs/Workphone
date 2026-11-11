@@ -6,6 +6,9 @@
 #include <Workphone/Interface/Animation/IAnimation.hpp>
 #include <Workphone/Interface/Mesh/IGraphicsBone.hpp>
 #include <Workphone/Interface/Mesh/ISkeleton.hpp>
+#include <Workphone/Interface/IApplicationManager.hpp>
+#include <Workphone/Interface/IO/IFileSystem.hpp>
+#include <Workphone/Interface/IO/IStream.hpp>
 #include <Workphone/Math/Vector3.hpp>
 #include <Workphone/Math/Quaternion.hpp>
 #include <Workphone/Core/Path.hpp>
@@ -139,7 +142,30 @@ namespace workphone
         WP_LOG( "XMLSkeletonSerializer: reading XML data from " + filename + "..." );
 
         TiXmlDocument mXMLDoc;
-        if( !mXMLDoc.LoadFile( filename.c_str() ) )
+        auto application = core::IApplicationManager::instancePtr();
+        auto fileSystem = application ? application->getFileSystem() : nullptr;
+        if( fileSystem )
+        {
+            auto input = fileSystem->open( filename, true, true, false, false, true );
+            if( !input || input->size() == 0 || input->size() > ( 64u << 20 ) )
+            {
+                WP_LOG_ERROR( "XMLSkeletonSerializer missing or oversized XML file: " + filename );
+                return;
+            }
+            auto bytes = makeSourceBudgetSnapshot<char>();
+            bytes.resize( input->size() + 1, 0 );
+            if( input->read( bytes.data(), bytes.size() - 1 ) != bytes.size() - 1 )
+            {
+                WP_LOG_ERROR( "XMLSkeletonSerializer incomplete XML file: " + filename );
+                return;
+            }
+            mXMLDoc.Parse( bytes.data(), nullptr, TIXML_ENCODING_UTF8 );
+        }
+        else
+        {
+            mXMLDoc.LoadFile( filename.c_str() );
+        }
+        if( mXMLDoc.Error() )
         {
             WP_LOG_ERROR( "XMLSkeletonSerializer failed reading the XML file: " +
                           String( mXMLDoc.ErrorDesc() ) );

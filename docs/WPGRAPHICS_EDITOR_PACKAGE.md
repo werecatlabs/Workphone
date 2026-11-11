@@ -23,9 +23,20 @@ Save your project and its scenes, then choose **File → Build Game…**. The bu
 uses the startup scene from Project Settings, falling back to the saved current
 scene. Choose a new output folder and click **Build**. When the build completes,
 use **Run Game** or open `WPRuntime.exe` from the output folder. Keep that entire
-folder together when moving the build. It contains the runtime, split `.fbpak`
-archives, and loose files that the runtime needs to access on disk. This workflow
-supports Claw/Lua projects on Windows x64. **File → Resource Packages…** opens
+folder together when moving the build. It contains the runtime binaries, startup
+descriptor, plugin configuration and split `.fbpak` archives. Game assets,
+bundled Media, cooked resources, catalog snapshots and project settings live in
+the archives. The build does not publish loose Assets, Media, Cache or
+SettingsCache folders. WPRuntime mounts the archives before loading the game.
+Content reads use the mounted archives and reject missing entries even when the
+original project still exists. SQLite catalogs are copied into a private runtime
+cache because SQLite requires native files. Player settings, saves and diagnostics
+use the user's local application data directory, leaving the exported folder intact.
+The user-data location is specific to the installation path; moving the game starts
+with a separate settings/save location. Use project-relative references for custom
+content folders. Legacy absolute references can be rebased only beneath Assets,
+Cache, SettingsCache and Media. Rebuild older exports to use this archive-only format.
+This workflow supports Claw/Lua projects on Windows x64. **File → Resource Packages…** opens
 the separate checked resource packaging tool.
 
 ## Validate the Editor package

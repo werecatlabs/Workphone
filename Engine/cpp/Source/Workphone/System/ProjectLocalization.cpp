@@ -1,6 +1,9 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/System/ProjectLocalization.hpp>
 #include <Workphone/Interface/IApplicationManager.hpp>
+#include <Workphone/Interface/IO/IFileSystem.hpp>
+#include <Workphone/Interface/IO/IStream.hpp>
+#include <Workphone/IO/PackagePaths.hpp>
 #include <Workphone/Core/Properties.hpp>
 #include <rapidjson/document.h>
 #include <filesystem>
@@ -18,6 +21,7 @@ namespace workphone
             std::filesystem::path path;
             std::filesystem::file_time_type timestamp{};
             std::uintmax_t bytes = 0;
+            bool archived = false;
             std::map<std::string, std::string> entries;
         };
         std::mutex dictionaryMutex;
@@ -27,21 +31,44 @@ namespace workphone
         {
             const auto path = root / "Localization" / ( std::string( tag.c_str() ) + ".json" );
             auto &cached = dictionaries[tag.c_str()];
+            auto application = core::IApplicationManager::instancePtr();
+            auto fileSystem = application ? application->getFileSystem() : nullptr;
+            const auto packaged = fileSystem && isPackageFileSystem( *fileSystem );
             std::error_code error;
-            const auto timestamp = std::filesystem::last_write_time( path, error );
-            const auto bytes = !error ? std::filesystem::file_size( path, error ) : 0;
-            if( cached.path == path && cached.timestamp == timestamp && cached.bytes == bytes )
+            const auto timestamp = packaged ? std::filesystem::file_time_type{} :
+                                             std::filesystem::last_write_time( path, error );
+            const auto bytes = !packaged && !error ? std::filesystem::file_size( path, error ) : 0;
+            if( cached.path == path &&
+                ( ( ( packaged || error ) && cached.archived ) ||
+                  ( !error && !cached.archived && cached.timestamp == timestamp &&
+                    cached.bytes == bytes ) ) )
                 return cached;
             cached = Dictionary{};
             cached.path = path;
             cached.timestamp = timestamp;
             cached.bytes = bytes;
-            if( error || bytes > 1024 * 1024 ) return cached;
-            std::ifstream stream( path, std::ios::binary );
-            std::ostringstream contents;
-            contents << stream.rdbuf();
-            if( !stream || stream.bad() ) return cached;
-            const auto source = contents.str();
+            if( bytes > 1024 * 1024 ) return cached;
+            std::string source;
+            if( fileSystem )
+            {
+                auto input = fileSystem->open( String( path.generic_u8string().c_str() ),
+                                               true, true, false, false, true );
+                if( !input || input->size() > 1024 * 1024 ) return cached;
+                source.resize( input->size() );
+                if( input->read( source.data(), source.size() ) != source.size() ) return cached;
+                // Archives are immutable for the mounted project. Project switches
+                // call releaseProjectLocalization to discard this snapshot.
+                cached.archived = packaged || bool( error );
+            }
+            else
+            {
+                if( error ) return cached;
+                std::ifstream stream( path, std::ios::binary );
+                std::ostringstream contents;
+                contents << stream.rdbuf();
+                if( !stream || stream.bad() ) return cached;
+                source = contents.str();
+            }
             rapidjson::Document document;
             document.Parse<rapidjson::kParseValidateEncodingFlag>( source.data(), source.size() );
             if( document.HasParseError() || !document.IsObject() ) return cached;

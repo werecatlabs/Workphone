@@ -12,6 +12,8 @@
 
 namespace workphone
 {
+    class FileSystem;
+
     /**
      * @brief Runtime game application.
      *
@@ -212,10 +214,16 @@ namespace workphone
 
     private:
         String getMediaPath() const override;
+        void mountGameArchives( FileSystem &files );
+        void preparePackedContent();
+        void clearPackedSession();
 
         String m_packageRoot;
         Array<String> m_packageArchives;
         String m_packageMountError;
+        String m_packageSessionPath;
+        String m_previousWorkingDirectory;
+        bool m_packedContent = false;
         SmartPtr<ui::IUIText> m_fpsText;
         // Accessed by the render task while the application is running.
         std::chrono::steady_clock::time_point m_fpsSampleStart;

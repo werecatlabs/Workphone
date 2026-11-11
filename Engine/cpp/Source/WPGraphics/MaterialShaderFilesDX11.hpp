@@ -3,6 +3,10 @@
 #include <Workphone/System/SourceBudgetAllocator.hpp>
 #include <Workphone/System/SourceBudgetContainers.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
+#include <Workphone/Interface/IApplicationManager.hpp>
+#include <Workphone/Interface/IO/IFileSystem.hpp>
+#include <Workphone/Interface/IO/IStream.hpp>
+#include <Workphone/IO/PackagePaths.hpp>
 #include <d3dcompiler.h>
 #include <wrl/client.h>
 #include <filesystem>
@@ -31,6 +35,16 @@ namespace workphone::render::detail
         {
             std::error_code error;
             Stamp result;
+            auto application = core::IApplicationManager::instancePtr();
+            auto files = application ? application->getFileSystem() : nullptr;
+            if( files && isPackageFileSystem( *files ) )
+            {
+                FileInfo info;
+                result.exists = files->findFileInfo( path.generic_u8string().c_str(), info, false ) &&
+                                !info.isDirectory;
+                result.size = result.exists ? info.uncompressedSize : 0;
+                return result; // Mounted package entries are immutable.
+            }
             result.exists = std::filesystem::is_regular_file(path,error);
             if(result.exists)
             {
@@ -104,8 +118,21 @@ namespace workphone::render::detail
                 if(before.size > (4u<<20) || total+before.size > (16u<<20))
                 { error="Shader source/include byte limit exceeded"; return false; }
                 block.bytes.resize(size_t(before.size)+1);
-                std::ifstream input(block.file->path,std::ios::binary);
-                if(!input || !input.read(block.bytes.data(),std::streamsize(before.size)) || !(stamp(block.file->path)==before))
+                bool complete = false;
+                auto application = core::IApplicationManager::instancePtr();
+                auto files = application ? application->getFileSystem() : nullptr;
+                if( files && isPackageFileSystem( *files ) )
+                {
+                    auto input = files->open( block.file->path.generic_u8string().c_str(),
+                                               true, true, false, false, true );
+                    complete = input && input->read( block.bytes.data(), size_t( before.size ) ) == before.size;
+                }
+                else
+                {
+                    std::ifstream input( block.file->path, std::ios::binary );
+                    complete = input && bool( input.read( block.bytes.data(), std::streamsize( before.size ) ) );
+                }
+                if(!complete || !(stamp(block.file->path)==before))
                 { error=String("Shader file changed or could not be read: ")+String(block.file->path.u8string().c_str()); return false; }
                 block.bytes[size_t(before.size)]=0;
                 block.file->captured=before;block.file->read=true;

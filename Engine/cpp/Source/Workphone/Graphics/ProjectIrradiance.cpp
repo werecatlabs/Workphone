@@ -1,6 +1,9 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Graphics/ProjectIrradiance.hpp>
 #include <Workphone/Interface/IApplicationManager.hpp>
+#include <Workphone/Interface/IO/IFileSystem.hpp>
+#include <Workphone/Interface/IO/IStream.hpp>
+#include <Workphone/IO/PackagePaths.hpp>
 #include <Workphone/Interface/Scene/IGameManager.hpp>
 #include <Workphone/Interface/Scene/IGameActor.hpp>
 #include <Workphone/Interface/Scene/IGameScene.hpp>
@@ -163,8 +166,29 @@ namespace workphone
         }
         bool loadBake( const std::filesystem::path &path, Array<wp_irradiance_probe> &probes )
         {
-            if(!std::filesystem::is_regular_file(path) || std::filesystem::file_size(path)>65536)return false;
-            std::ifstream stream(path,std::ios::binary);std::ostringstream text;text<<stream.rdbuf();auto data=make_ptr<Properties>();DataUtil::parse(text.str().c_str(),data.get());
+            auto app = core::IApplicationManager::instancePtr();
+            auto files = app ? app->getFileSystem() : nullptr;
+            String source;
+            if( files && isPackageFileSystem( *files ) )
+            {
+                auto input = files->open( path.generic_u8string().c_str(), true, true, false,
+                                           false, true );
+                if( !input || input->size() == 0 || input->size() > 65536 ) return false;
+                source = input->getAsString();
+                if( source.size() != input->size() ) return false;
+            }
+            else
+            {
+                if( !std::filesystem::is_regular_file( path ) ||
+                    std::filesystem::file_size( path ) > 65536 ) return false;
+                std::ifstream stream( path, std::ios::binary );
+                std::ostringstream text;
+                text << stream.rdbuf();
+                if( !stream || stream.bad() ) return false;
+                source = text.str().c_str();
+            }
+            if( !DataUtil::isValidData( source ) ) return false;
+            auto data=make_ptr<Properties>();DataUtil::parse(source,data.get());
             const auto children=data->getChildren();if(data->getPropertyAsInt("irradianceVersion")!=1 || children.empty() || children.size()>4)return false;
             Array<wp_irradiance_probe> result;
             for(auto item:children)
@@ -210,6 +234,12 @@ namespace workphone
             {
                 if(!loadBake(path,staticData))
                 {
+                    auto files = app ? app->getFileSystem() : nullptr;
+                    if( files && isPackageFileSystem( *files ) )
+                    {
+                        error = "Packaged GI bake is missing or invalid. Bake lighting in the Editor and rebuild the game.";
+                        return false;
+                    }
                     for(auto &probe:staticData)if(!provider->sample(probe.position,256,mode==3?1:0,true,probe,error) || !validProbe(probe,error))return false;
                     saveBake(path,staticData);
                 }

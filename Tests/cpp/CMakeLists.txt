@@ -72,6 +72,28 @@ if(TARGET Workphone)
     add_test(NAME WPRuntime.startup COMMAND RuntimeStartupTests)
     set_tests_properties(WPRuntime.startup PROPERTIES LABELS "runtime;scene;headless" TIMEOUT 30)
 
+    if(WIN32 AND TARGET WPAssimp)
+        add_executable(PackageConsumerTests PackageConsumerTests.cpp
+            ${WP_ROOT}/Engine/cpp/Source/WPAssimp/IOStream.cpp
+            ${WP_ROOT}/Engine/cpp/Source/WPAssimp/IOSystem.cpp)
+        target_compile_features(PackageConsumerTests PRIVATE cxx_std_17)
+        target_compile_definitions(PackageConsumerTests PRIVATE BOOST_ALL_NO_LIB)
+        target_include_directories(PackageConsumerTests PRIVATE
+            ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Dependencies/boost
+            ${WP_ROOT}/Engine/cpp/Include/WPAssimp/Extern/assimp
+            ${WP_ROOT}/Engine/cpp/Include/WPAssimp/Extern/assimp/vc142)
+        target_link_libraries(PackageConsumerTests PRIVATE Workphone $<TARGET_LINKER_FILE:WPAssimp>)
+        target_link_directories(PackageConsumerTests PRIVATE
+            ${WP_ROOT}/Dependencies/lib/windows/boost
+            ${WP_ROOT}/Dependencies/lib/windows/boost/$<CONFIG>
+            ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
+        add_dependencies(PackageConsumerTests WPAssimp)
+        set_target_properties(PackageConsumerTests PROPERTIES FOLDER Tests/Cpp)
+        add_test(NAME WPRuntime.package_consumers COMMAND PackageConsumerTests)
+        set_tests_properties(WPRuntime.package_consumers PROPERTIES
+            LABELS "runtime;assets;filesystem;headless" TIMEOUT 30)
+    endif()
+
     if(TARGET WPSQLite)
         add_executable(BundledMediaTests BundledMediaTests.cpp)
         target_compile_features(BundledMediaTests PRIVATE cxx_std_17)

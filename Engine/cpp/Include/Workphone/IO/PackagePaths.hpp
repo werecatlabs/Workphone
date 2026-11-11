@@ -7,9 +7,13 @@
 namespace workphone
 {
     class FileSystem;
+    class IFileSystem;
 
     /** Enable legacy authored path remapping for one packaged game file system. */
     void WPCore_API setPackagePathRemapping( const FileSystem &fileSystem, bool enabled );
+    bool WPCore_API isPackageFileSystem( const IFileSystem &fileSystem );
+    /** Restrict shipped content reads to archives; private runtime data stays writable. */
+    void WPCore_API setPackageContentOnly( const FileSystem &fileSystem, bool enabled );
 
     inline String packagePathAsciiLower( String value )
     {

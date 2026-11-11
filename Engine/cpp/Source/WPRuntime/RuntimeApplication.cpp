@@ -5,6 +5,9 @@
 #include <Workphone/IO/FileSystem.hpp>
 #include <Workphone/IO/PackagePaths.hpp>
 #include <Workphone/Interface/UI/IUIText.hpp>
+#include <Workphone/Database/ResourceDatabase.hpp>
+#include <Workphone/System/ProjectRuntimeSettings.hpp>
+#include <cstdlib>
 #include <filesystem>
 
 #ifdef _WP_STATIC_LIB_
@@ -99,6 +102,23 @@ namespace workphone
 #endif
             return {};
         }
+
+        fs::path userGameDirectory( const String &packageRoot )
+        {
+            fs::path userDirectory;
+#ifdef _WIN32
+            if( const auto localAppData = _wgetenv( L"LOCALAPPDATA" ); localAppData && *localAppData )
+            {
+                userDirectory = localAppData;
+            }
+#endif
+            if( !userDirectory.is_absolute() )
+            {
+                userDirectory = fs::temp_directory_path();
+            }
+            const auto id = StringUtil::getUUID( packagePathAsciiLower( packageRoot ) );
+            return userDirectory / "Workphone" / "Games" / StringUtil::toString( id ).c_str();
+        }
     }  // namespace
 
     const f32 RuntimeApplication::DEFAULT_THREAD_UPDATE = 1.0f / 200.0f;
@@ -132,7 +152,10 @@ namespace workphone
         setProjectFilePath( path );
     }
 
-    RuntimeApplication::~RuntimeApplication() = default;
+    RuntimeApplication::~RuntimeApplication()
+    {
+        clearPackedSession();
+    }
 
     void RuntimeApplication::load( SmartPtr<ISharedObject> data )
     {
@@ -161,6 +184,7 @@ namespace workphone
             m_packageRoot.clear();
             m_packageArchives.clear();
             m_packageMountError.clear();
+            m_packedContent = false;
             if( !projectFilePath.empty() )
             {
                 projectFilePath = Path::getAbsolutePath( startupDirectory, projectFilePath );
@@ -186,14 +210,23 @@ namespace workphone
                         const auto root = fs::u8path( documentDirectory.c_str() );
                         validateRuntimePackageArchives( root, project.getPackageArchives() );
                         setSceneFilePath( runtimePackageScenePath( project.getSceneFilePath() ) );
-                        if( !fs::is_directory( root / "Media" ) )
+                        const auto version = project.getPackageFormatVersion();
+                        if( version != 1 && version != packedContentFormatVersion )
                         {
-                            throw std::runtime_error( "Missing Media directory beside Runtime.fbproject" );
+                            throw std::runtime_error( "Unsupported game package format" );
                         }
-                        fs::current_path( root );
+                        m_packedContent = version == packedContentFormatVersion;
+                        if( !m_packedContent )
+                        {
+                            if( !fs::is_directory( root / "Media" ) )
+                            {
+                                throw std::runtime_error( "Missing Media directory beside Runtime.fbproject" );
+                            }
+                            fs::current_path( root );
+                            m_packageMountError = "Unable to initialize the packaged game file system";
+                        }
                         m_packageRoot = projectPath = documentDirectory;
                         m_packageArchives = project.getPackageArchives();
-                        m_packageMountError = "Unable to initialize the packaged game file system";
                     }
                     else
                     {
@@ -222,17 +255,33 @@ namespace workphone
                 }
             }
             applicationManager->setProjectPath( projectPath );
-            const auto cachePath = Path::getAbsolutePath( projectPath, "Cache" );
-            const auto settingsPath = Path::getAbsolutePath( projectPath, "SettingsCache" );
-            std::filesystem::create_directories( std::filesystem::u8path( cachePath.c_str() ) );
-            std::filesystem::create_directories( std::filesystem::u8path( settingsPath.c_str() ) );
-            applicationManager->setCachePath( cachePath + "/" );
-            applicationManager->setSettingsPath( settingsPath + "/" );
+            if( m_packedContent )
+            {
+                preparePackedContent();
+            }
+            else
+            {
+                const auto cachePath = Path::getAbsolutePath( projectPath, "Cache" );
+                const auto settingsPath = Path::getAbsolutePath( projectPath, "SettingsCache" );
+                fs::create_directories( fs::u8path( cachePath.c_str() ) );
+                fs::create_directories( fs::u8path( settingsPath.c_str() ) );
+                applicationManager->setCachePath( cachePath + "/" );
+                applicationManager->setSettingsPath( settingsPath + "/" );
+            }
 
             Application::load( data );
             if( !m_packageMountError.empty() )
             {
                 throw std::runtime_error( m_packageMountError );
+            }
+            if( m_packedContent )
+            {
+                const auto resources = dynamic_pointer_cast<ResourceDatabase>(
+                    applicationManager->getResourceDatabase() );
+                if( !resources || !resources->getMediaCatalog() )
+                {
+                    throw std::runtime_error( "Unable to open the packaged Media catalog. See Application.log." );
+                }
             }
 
             if( auto renderUI = applicationManager->getRenderUI() )
@@ -265,7 +314,8 @@ namespace workphone
 
             WP_LOG( "Runtime project: " + applicationManager->getProjectPath() );
             // Metadata-only hosts do not install a resource database.
-            if( auto resourceDatabase = applicationManager->getResourceDatabase() )
+            if( auto resourceDatabase = applicationManager->getResourceDatabase();
+                resourceDatabase && !m_packedContent )
             {
                 const auto dbFilePath = resourceDatabase->getFilePath();
                 auto databasePath = Path::isPathAbsolute( dbFilePath )
@@ -293,6 +343,14 @@ namespace workphone
         catch( std::exception &e )
         {
             WP_LOG_EXCEPTION( e );
+            const auto app = core::IApplicationManager::instance();
+            if( m_packedContent && app && app->getApplication() == this )
+            {
+                // Stop any subsystems that opened the private catalogs before
+                // attempting to remove their backing files.
+                Application::unload( data );
+            }
+            clearPackedSession();
             throw;
         }
     }
@@ -315,6 +373,7 @@ namespace workphone
                 m_fpsText = nullptr;
             }
             Application::unload( data );
+            clearPackedSession();
 
             setLoadingState( LoadingState::Unloaded );
         }
@@ -600,37 +659,116 @@ namespace workphone
 
     void RuntimeApplication::createFileSystem()
     {
+        if( m_packedContent )
+        {
+            // Prepared before Application::load so the thread and graphics
+            // settings can be read from the same mounted archives.
+            for( const auto &name : m_packageArchives )
+            {
+                WP_LOG( "Mounted game archive: " + m_packageRoot + "/" + name );
+            }
+            return;
+        }
         Application::createFileSystem();
         if( m_packageArchives.empty() )
         {
             return;
         }
         auto applicationManager = core::IApplicationManager::instance();
-        auto fileSystem = applicationManager->getFileSystem();
+        auto fileSystem = dynamic_pointer_cast<FileSystem>( applicationManager->getFileSystem() );
         if( !fileSystem )
         {
             throw std::runtime_error( m_packageMountError );
         }
+        mountGameArchives( *fileSystem );
+        if( !fileSystem->isExistingFile( getSceneFilePath(), false, false ) )
+        {
+            m_packageMountError = "Packaged startup scene is missing: " + getSceneFilePath();
+            throw std::runtime_error( m_packageMountError );
+        }
+        m_packageMountError.clear();
+    }
+
+    void RuntimeApplication::mountGameArchives( FileSystem &files )
+    {
         for( const auto &name : m_packageArchives )
         {
             const auto path = m_packageRoot + "/" + name;
-            if( !fileSystem->addFileArchive( path, true, false, IFileSystem::ArchiveType::ObfuscatedZip ) )
+            if( !files.addFileArchive( path, true, false, IFileSystem::ArchiveType::ObfuscatedZip ) )
             {
                 m_packageMountError = "Unable to mount package archive: " + path;
                 throw std::runtime_error( m_packageMountError );
             }
             WP_LOG( "Mounted game archive: " + path );
         }
-        if( !fileSystem->isExistingFile( getSceneFilePath(), false, false ) )
+        setPackagePathRemapping( files, true );
+    }
+
+    void RuntimeApplication::preparePackedContent()
+    {
+        auto app = core::IApplicationManager::instance();
+        auto files = make_ptr<FileSystem>();
+        files->load( nullptr );
+        mountGameArchives( *files );
+        setPackageContentOnly( *files, true );
+        app->setFileSystem( files );
+        app->setMediaPath( getMediaPath() );
+        if( !files->open( getSceneFilePath(), true, true, false, false, true ) )
         {
-            m_packageMountError = "Packaged startup scene is missing: " + getSceneFilePath();
-            throw std::runtime_error( m_packageMountError );
+            throw std::runtime_error( "Packaged startup scene is missing: " + getSceneFilePath() );
         }
-        if( auto concrete = dynamic_pointer_cast<FileSystem>( fileSystem ) )
+        loadProjectRuntimeSettings( m_packageRoot );
+
+        const auto userDirectory = userGameDirectory( m_packageRoot );
+        const auto settings = userDirectory / "SettingsCache";
+        const auto sessions = userDirectory / "Sessions";
+        const auto session = sessions / StringUtil::getUUID().c_str();
+        const auto cache = session / "Cache";
+        fs::create_directories( settings );
+        fs::create_directories( sessions );
+        if( !fs::create_directory( session ) )
         {
-            setPackagePathRemapping( *concrete, true );
+            throw std::runtime_error( "Unable to create private game cache" );
         }
-        m_packageMountError.clear();
+        m_packageSessionPath = session.generic_u8string().c_str();
+        fs::create_directory( cache );
+        app->setCachePath( String( cache.generic_u8string().c_str() ) + "/" );
+        app->setSettingsPath( String( settings.generic_u8string().c_str() ) + "/" );
+
+        auto media = files->open( "Media/.workphone/media-assets.db", true, true, false );
+        if( !media )
+        {
+            throw std::runtime_error( "The package is missing its bundled Media catalog" );
+        }
+        copyRuntimePackageCatalog( *media, cache / "media-assets.db" );
+        if( auto project = files->open( "Cache/asset.db", true, true, false ) )
+        {
+            copyRuntimePackageCatalog( *project, cache / "asset.db" );
+        }
+
+        m_previousWorkingDirectory = fs::current_path().generic_u8string().c_str();
+        fs::current_path( userDirectory );
+    }
+
+    void RuntimeApplication::clearPackedSession()
+    {
+        std::error_code ignored;
+        if( !m_previousWorkingDirectory.empty() )
+        {
+            fs::current_path( fs::u8path( m_previousWorkingDirectory.c_str() ), ignored );
+            if( !ignored )
+            {
+                m_previousWorkingDirectory.clear();
+            }
+        }
+        if( !m_packageSessionPath.empty() )
+        {
+            fs::remove_all( fs::u8path( m_packageSessionPath.c_str() ), ignored );
+            if( !ignored )
+            {
+                m_packageSessionPath.clear();
+            }
+        }
     }
 
     String RuntimeApplication::getMediaPath() const

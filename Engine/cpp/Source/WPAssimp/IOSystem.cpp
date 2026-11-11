@@ -25,7 +25,7 @@ namespace workphone
         WP_ASSERT( fileSystem );
         WP_ASSERT( fileSystem->isValid() );
 
-        return fileSystem->isExistingFile( pFile );
+        return fileSystem->isExistingFile( pFile, false, true );
     }
 
     auto IOSystem::getOsSeparator() const -> char
@@ -43,7 +43,9 @@ namespace workphone
         WP_ASSERT( fileSystem );
         WP_ASSERT( fileSystem->isValid() );
 
-        auto stream = fileSystem->open( pFile );
+        // Companion .bin/.mtl/texture files must resolve beside their mesh,
+        // including inside a package with duplicate filenames in other folders.
+        auto stream = fileSystem->open( pFile, true, true, false, false, true );
         if( stream )
         {
             auto pStream = new IOStream( stream );

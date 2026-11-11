@@ -9,6 +9,8 @@
 #include <Workphone/System/RigResourceCompiler.hpp>
 #endif
 #include <Workphone/Interface/IApplicationManager.hpp>
+#include <Workphone/Interface/IO/IFileSystem.hpp>
+#include <Workphone/Interface/IO/IStream.hpp>
 #include <Workphone/Interface/Animation/IAnimation.hpp>
 #include <Workphone/Interface/Mesh/ISkeleton.hpp>
 #include <Workphone/Interface/System/IFSM.hpp>
@@ -938,13 +940,18 @@ namespace workphone::scene
         const auto project = app ? app->getProjectPath() : String();
         auto cache =
             Path::getAbsolutePath( project.empty() ? Path::getWorkingDirectory() : project, cacheKey );
-        if( !Path::isExistingFile( cache ) && cache.size() >= 13 &&
+        auto fileSystem = app ? app->getFileSystem() : nullptr;
+        const auto exists = [&]( const String &path ) {
+            return fileSystem ? fileSystem->isExistingFile( path, false, true )
+                              : Path::isExistingFile( path );
+        };
+        if( !exists( cache ) && cache.size() >= 13 &&
             cache.substr( cache.size() - 13 ) == ".skeleton.xml" )
         {
             cache = cache.substr( 0, cache.size() - 13 ) + ".sceneanim.xml";
             cacheKey = cacheKey.substr( 0, cacheKey.size() - 13 ) + ".sceneanim.xml";
         }
-        if( cache.empty() || !Path::isExistingFile( cache ) )
+        if( cache.empty() || !exists( cache ) )
         {
             m_playbackStatus =
                 "No playable runtime clips. Reimport the animated model to create its animation cache.";
@@ -979,17 +986,29 @@ namespace workphone::scene
         }
         else
         {
-            std::ifstream file( cache.c_str(), std::ios::binary | std::ios::ate );
-            const auto size = file ? static_cast<size_t>( file.tellg() ) : 0;
+            auto input = fileSystem ? fileSystem->open( cache, true, true, false, false, true )
+                                    : nullptr;
+            std::ifstream file;
+            if( !fileSystem ) file.open( cache.c_str(), std::ios::binary | std::ios::ate );
+            const auto size = input ? input->size() :
+                              file ? static_cast<size_t>( file.tellg() ) : 0;
             if( !size || size > ( 64u << 20 ) )
             {
                 throw std::runtime_error( "Invalid scene animation cache size" );
             }
             auto bytes = makeSourceBudgetSnapshot<char>();
             bytes.resize( size + 1, 0 );
-            file.seekg( 0 );
-            file.read( bytes.data(), size );
-            if( !file )
+            bool complete = false;
+            if( input )
+            {
+                complete = input->read( bytes.data(), size ) == size;
+            }
+            else if( file )
+            {
+                file.seekg( 0 );
+                complete = bool( file.read( bytes.data(), size ) );
+            }
+            if( !complete )
             {
                 throw std::runtime_error( "Incomplete scene animation cache" );
             }

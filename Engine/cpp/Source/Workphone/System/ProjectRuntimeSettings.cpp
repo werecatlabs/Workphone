@@ -4,6 +4,9 @@
 #include <Workphone/Core/Properties.hpp>
 #include <Workphone/Core/DataUtil.hpp>
 #include <Workphone/Core/LogManager.hpp>
+#include <Workphone/Interface/IO/IFileSystem.hpp>
+#include <Workphone/Interface/IO/IStream.hpp>
+#include <Workphone/IO/PackagePaths.hpp>
 #include <Workphone/Interface/System/IProfiler.hpp>
 #include <Workphone/Interface/System/IProfile.hpp>
 #include <filesystem>
@@ -27,27 +30,49 @@ namespace workphone
             auto app = core::IApplicationManager::instancePtr();
             return app ? app->getPlayerSettings() : nullptr;
         }
+
+        constexpr auto maxRuntimeSettingsBytes = 8 * 1024 * 1024;
+
+        SmartPtr<Properties> parseRuntimeSettings( const String &text )
+        {
+            if( !DataUtil::isValidData( text ) )
+                throw std::runtime_error( "Invalid project runtime settings JSON" );
+            auto settings = workphone::make_ptr<Properties>();
+            DataUtil::parse( text, settings.get() );
+            return settings;
+        }
     }
 
     void loadProjectRuntimeSettings( const String &projectDirectory )
     {
         auto app = core::IApplicationManager::instancePtr();
         if( !app ) return;
+        if( auto files = app->getFileSystem(); files && isPackageFileSystem( *files ) )
+        {
+            if( auto stream = files->open( "ProjectRuntime.settings", true, true, false ) )
+            {
+                if( stream->size() > maxRuntimeSettingsBytes )
+                    throw std::runtime_error( "Project runtime settings exceed 8 MiB" );
+                const auto text = stream->getAsString();
+                if( text.size() != stream->size() )
+                    throw std::runtime_error( "Unable to read packaged project runtime settings" );
+                app->setPlayerSettings( parseRuntimeSettings( text ) );
+            }
+            return;
+        }
         const auto path = std::filesystem::u8path( projectDirectory.c_str() ) / "ProjectRuntime.settings";
         if( !std::filesystem::exists( path ) ) return;
         const auto bytes = std::filesystem::file_size( path );
-        if( bytes > 8 * 1024 * 1024 )
+        if( bytes > maxRuntimeSettingsBytes )
             throw std::runtime_error( "Project runtime settings exceed 8 MiB" );
         std::ifstream stream( path, std::ios::binary );
         if( !stream ) throw std::runtime_error( "Unable to read project runtime settings" );
         std::ostringstream buffer;
         buffer << stream.rdbuf();
         const String text = buffer.str();
-        if( stream.bad() || !DataUtil::isValidData( text ) )
-            throw std::runtime_error( "Invalid project runtime settings JSON" );
-        auto settings = workphone::make_ptr<Properties>();
-        DataUtil::parse( text, settings.get() );
-        app->setPlayerSettings( settings );
+        if( stream.bad() )
+            throw std::runtime_error( "Unable to read project runtime settings" );
+        app->setPlayerSettings( parseRuntimeSettings( text ) );
         app->setProjectPath( std::filesystem::absolute( path ).parent_path().u8string() );
     }
 
@@ -113,7 +138,10 @@ namespace workphone
         schedule.nextWrite = timeSeconds + 1;
         try
         {
-            const auto folder = std::filesystem::u8path( directory.c_str() ) / "Cache/Diagnostics";
+            const auto files = app->getFileSystem();
+            const auto folder = files && isPackageFileSystem( *files )
+                                    ? std::filesystem::u8path( app->getCachePath().c_str() ) / "Diagnostics"
+                                    : std::filesystem::u8path( directory.c_str() ) / "Cache/Diagnostics";
             std::filesystem::create_directories( folder );
             const auto path = folder / "telemetry.csv";
             const bool header = !std::filesystem::exists( path ) || std::filesystem::file_size( path ) == 0;

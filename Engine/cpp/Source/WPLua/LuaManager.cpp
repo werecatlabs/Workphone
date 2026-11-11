@@ -11,6 +11,7 @@
 #include <Workphone/Interface/System/IPlugin.hpp>
 #include <Workphone/Interface/System/IPluginManager.hpp>
 #include <Workphone/Script/ProjectScriptPolicy.hpp>
+#include <Workphone/IO/PackagePaths.hpp>
 #include <Workphone/Scene/Components/Script.hpp>
 #include <WPLuabind/WPLuabind.hpp>
 #include <sstream>
@@ -1974,8 +1975,11 @@ namespace workphone
         {
             return runtime;
         }
-        const auto source = Path::readAllText( app->getProjectPath() +
-                                               "/.workphone/generated/ScriptReflection.settings" );
+        const auto path = app->getProjectPath() +
+                          "/.workphone/generated/ScriptReflection.settings";
+        auto files = app->getFileSystem();
+        const auto source = files && isPackageFileSystem( *files ) ? files->readAllText( path )
+                                                                  : Path::readAllText( path );
         auto generated = make_ptr<Properties>();
         if( !source.empty() )
         {

@@ -4,11 +4,14 @@
 #include <Workphone/System/ApplicationManager.hpp>
 #include <Workphone/System/TaskManager.hpp>
 #include <Workphone/IO/FileSystem.hpp>
+#include <Workphone/IO/PackageArchive.hpp>
 #include <Workphone/IO/PackagePaths.hpp>
 #include <Workphone/Scene/GameManager.hpp>
 #include <Workphone/Scene/GameScene.hpp>
 #include <Workphone/Scene/CameraManager.hpp>
 #include <Workphone/Memory/TypeManager.hpp>
+#include <Workphone/System/FactoryManager.hpp>
+#include <Workphone/System/ProjectRuntimeSettings.hpp>
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
@@ -225,12 +228,13 @@ namespace
         const String scene = "Assets/Scenes/Selected.fbscene";
         const auto descriptor = make_ptr<Properties>();
         DataUtil::parse(
-            R"({"projectPath":".","currentScenePath":"Assets/Scenes/Selected.fbscene","applicationType":"Desktop","archive":true,"packageArchives":["Content_0.fbpak","Content_1.fbpak"]})",
+            R"({"projectPath":".","currentScenePath":"Assets/Scenes/Selected.fbscene","applicationType":"Desktop","archive":true,"packageFormatVersion":2,"packageArchives":["Content_0.fbpak","Content_1.fbpak"]})",
             descriptor.get(), DataFormat::JSON );
         Array<String> archives;
         require( descriptor && descriptor->getPropertyValue( "packageArchives", archives ) &&
                      archives.size() == 2 && archives[0] == "Content_0.fbpak" &&
                      archives[1] == "Content_1.fbpak" &&
+                     descriptor->getPropertyAsInt( "packageFormatVersion" ) == packedContentFormatVersion &&
                      descriptor->getProperty( "currentScenePath" ) == scene,
                  "The game package descriptor did not parse as emitted by the packager" );
         validateRuntimePackageArchives( root, archives );
@@ -284,6 +288,72 @@ namespace
         require( packageRelativeAssetPath( nonAsciiProject, nonAsciiLegacy ) == scene &&
                      packageRelativeAssetPath( nonAsciiProject, nonAsciiCurrent ).empty(),
                  "Legacy package remapping mishandled a UTF-8 parent directory" );
+#ifdef _WIN32
+        const auto source = root / "Source";
+        const auto installed = root / "Installed";
+        fs::create_directories( source / "Assets" );
+        fs::create_directories( source / "Cache" );
+        fs::create_directories( installed / "Assets" );
+        const auto settings = source / "ProjectRuntime.settings";
+        const auto asset = source / "Assets" / "Packed.txt";
+        const auto catalog = source / "Cache" / "asset.db";
+        const auto archive = installed / "Content_1.fbpak";
+        std::ofstream( settings ) << R"({"tasks.threadCount":6})";
+        std::ofstream( asset ) << "from archive";
+        std::string expectedCatalog( 128 * 1024 + 17, 'C' );
+        expectedCatalog[10] = '\0';
+        std::ofstream( catalog, std::ios::binary ).write( expectedCatalog.data(),
+                                                          expectedCatalog.size() );
+        std::ofstream( installed / "Assets" / "Packed.txt" ) << "stale loose output";
+        require( writeGamePackageArchive(
+                     archive.wstring().c_str(),
+                     { settings.wstring().c_str(), asset.wstring().c_str(), catalog.wstring().c_str() },
+                     source.wstring().c_str(), {} ) == 0,
+                 "Unable to create archive fixture for early runtime startup" );
+        std::ofstream( asset, std::ios::trunc ) << "stale source project";
+
+        Fixture fixture;
+        fixture.app->setProjectPath( installed.generic_u8string().c_str() );
+        auto files = dynamic_pointer_cast<FileSystem>( fixture.app->getFileSystem() );
+        files->load( nullptr );
+        require( !fixture.app->getFactoryManager() &&
+                     files->addFileArchive( archive.generic_u8string().c_str(), true, false,
+                                            IFileSystem::ArchiveType::ObfuscatedZip ),
+                 "Runtime could not mount its archive before creating factories" );
+        setPackagePathRemapping( *files, true );
+        setPackageContentOnly( *files, true );
+        loadProjectRuntimeSettings( fixture.app->getProjectPath() );
+        require( fixture.app->getPlayerSettings() && projectWorkerCount( 2 ) == 6,
+                 "Runtime could not read early startup settings from the archive" );
+        require( files->readAllText( ( installed / "Assets" / "Packed.txt" )
+                                         .generic_u8string().c_str() ) == "from archive" &&
+                     files->readAllText( asset.generic_u8string().c_str() ) == "from archive",
+                 "Absolute package reads returned stale loose content" );
+
+        auto stream = files->open( "Cache/asset.db", true, true, false );
+        require( !!stream, "Runtime could not open the archived catalog" );
+        const auto privateCatalog = root / "private.db";
+        copyRuntimePackageCatalog( *stream, privateCatalog );
+        std::ifstream readCatalog( privateCatalog, std::ios::binary );
+        const std::string copiedCatalog( ( std::istreambuf_iterator<char>( readCatalog ) ), {} );
+        require( copiedCatalog == expectedCatalog, "Runtime catalog copy was incomplete" );
+
+        auto factory = make_ptr<FactoryManager>();
+        factory->load( nullptr );
+        fixture.app->setFactoryManager( factory );
+        const auto looseAsset = installed / "Assets" / "LooseOnly.txt";
+        std::ofstream( looseAsset ) << "unpacked content";
+        require( !files->isExistingFile( looseAsset.generic_u8string().c_str() ) &&
+                     files->readAllText( looseAsset.generic_u8string().c_str() ).empty(),
+                 "Archive-only runtime exposed an unpacked asset" );
+        const auto writableCache = root / "UserData" / "Cache";
+        fs::create_directories( writableCache );
+        fixture.app->setCachePath( writableCache.generic_u8string().c_str() );
+        const auto generated = writableCache / "Generated.txt";
+        std::ofstream( generated ) << "runtime data";
+        require( files->readAllText( generated.generic_u8string().c_str() ) == "runtime data",
+                 "Archive-only runtime could not read its private cache data" );
+#endif
     }
 }
 

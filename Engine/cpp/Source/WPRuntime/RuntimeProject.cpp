@@ -130,6 +130,7 @@ namespace workphone
 
         m_packageArchives.clear();
         properties->getPropertyValue( "packageArchives", m_packageArchives );
+        m_packageFormatVersion = properties->getPropertyAsInt( "packageFormatVersion", 1 );
 
         properties->getPropertyValue( "scriptFilePaths", m_scriptFilePaths );
         if( m_scriptFilePaths.empty() )
@@ -163,6 +164,11 @@ namespace workphone
     const Array<String> &RuntimeProject::getPackageArchives() const
     {
         return m_packageArchives;
+    }
+
+    s32 RuntimeProject::getPackageFormatVersion() const
+    {
+        return m_packageFormatVersion;
     }
 
     String RuntimeProject::getApplicationFilePath() const

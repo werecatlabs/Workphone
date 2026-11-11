@@ -5,6 +5,8 @@
 #include <Workphone/Core/PropertiesBinarySerializer.hpp>
 #include <Workphone/Core/StringUtil.hpp>
 #include <Workphone/IO/FileDataStream.hpp>
+#include <Workphone/Interface/IApplicationManager.hpp>
+#include <Workphone/Interface/IO/IFileSystem.hpp>
 #include <Workphone/Math/Transform3.hpp>
 #include <Workphone/ApplicationUtil.hpp>
 #include <Workphone/Mesh/Mesh.hpp>
@@ -46,6 +48,25 @@ namespace workphone::scene
 
         Array<u8> read( const fs::path &path, u64 limit )
         {
+            if( auto application = core::IApplicationManager::instancePtr() )
+            {
+                if( auto fileSystem = application->getFileSystem() )
+                {
+                    auto input = fileSystem->open( String( path.generic_u8string().c_str() ),
+                                                   true, true, false, false, true );
+                    if( !input || input->size() > limit )
+                    {
+                        throw std::runtime_error( "World file missing or exceeds its admission limit" );
+                    }
+                    Array<u8> bytes( input->size() );
+                    if( input->read( bytes.data(), bytes.size() ) != bytes.size() )
+                    {
+                        throw std::runtime_error( "Incomplete world file" );
+                    }
+                    return bytes;
+                }
+            }
+            // Standalone cooking tools can run without an application/VFS.
             std::ifstream input( path, std::ios::binary | std::ios::ate );
             const auto length = input ? input.tellg() : std::streampos( -1 );
             if( length < 0 || static_cast<u64>( length ) > limit )

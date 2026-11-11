@@ -2,18 +2,49 @@
 
 #include <Workphone/Core/Path.hpp>
 #include <Workphone/Core/StringUtil.hpp>
+#include <Workphone/Interface/IO/IStream.hpp>
 #include <Workphone/Interface/IApplicationManager.hpp>
 #include <Workphone/Interface/Scene/IGameManager.hpp>
 #include <Workphone/Interface/Scene/IGameScene.hpp>
 #include <Workphone/Interface/Scene/ICameraManager.hpp>
 #include <algorithm>
+#include <array>
 #include <filesystem>
+#include <fstream>
 #include <set>
 #include <stdexcept>
 
 namespace workphone
 {
     inline constexpr auto runtimePackageProjectName = "Runtime.fbproject";
+    inline constexpr auto packedContentFormatVersion = 2;
+
+    // SQLite requires a native database file. Copy only the requested catalog
+    // from its archive into the private runtime session directory.
+    inline void copyRuntimePackageCatalog( IStream &input, const std::filesystem::path &target )
+    {
+        std::ofstream output( target, std::ios::binary | std::ios::trunc );
+        std::array<char, 64 * 1024> buffer;
+        auto remaining = input.size();
+        if( !output || remaining == 0 )
+        {
+            throw std::runtime_error( "Unable to prepare packaged catalog: " + target.u8string() );
+        }
+        while( remaining > 0 )
+        {
+            const auto count = input.read( buffer.data(), std::min<size_t>( remaining, buffer.size() ) );
+            if( count == 0 || !output.write( buffer.data(), count ) )
+            {
+                throw std::runtime_error( "Unable to read packaged catalog: " + target.u8string() );
+            }
+            remaining -= count;
+        }
+        output.close();
+        if( !output )
+        {
+            throw std::runtime_error( "Unable to save packaged catalog: " + target.u8string() );
+        }
+    }
 
     inline bool isRuntimeSceneExtension( const String &extension )
     {

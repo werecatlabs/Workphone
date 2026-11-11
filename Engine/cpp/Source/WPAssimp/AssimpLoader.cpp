@@ -1190,6 +1190,7 @@ namespace workphone
             auto absolutePath = Path::getAbsolutePath( projectFolder, m_meshPath );
 
             Assimp::Importer importer;
+            importer.SetIOHandler( new IOSystem() );
             setAssimpImportOptions( importer, getMeshDirector() );
             u32 flags = getAssimpImportFlags( getMeshDirector() );
 
@@ -1363,6 +1364,7 @@ namespace workphone
             auto absolutePath = Path::getAbsolutePath( projectFolder, meshName );
 
             Assimp::Importer importer;
+            importer.SetIOHandler( new IOSystem() );
             setAssimpImportOptions( importer, getMeshDirector() );
             u32 flags = getAssimpImportFlags( getMeshDirector() );
             const auto scene = importer.ReadFile( absolutePath.c_str(), flags );

@@ -1,6 +1,5 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Jobs/JobCreatePackage.hpp>
-#include <Workphone/ApplicationUtil.hpp>
 #include <Workphone/Core/DataUtil.hpp>
 #include <Workphone/Core/LogManager.hpp>
 #include <Workphone/Core/Path.hpp>
@@ -204,17 +203,6 @@ namespace workphone
             }
         }
 
-        bool needsLooseAsset( const fs::path &file )
-        {
-            const auto extension = packagePathAsciiLower( toEnginePath( file.extension() ) );
-            // Streaming worlds and some importers open these directly on disk.
-            return extension == ".wpworld" || extension == ".wpcell" || extension == ".bin" ||
-                   extension == ".mtl" || extension == ".ttf" || extension == ".otf" ||
-                   extension == ".font" || extension == ".db" ||
-                   ( extension != ".fbmeshbin" &&
-                     ApplicationUtil::isSupportedMesh( toEnginePath( file ) ) );
-        }
-
         void appendConfiguredPaths( const Properties &settings, const String &key, Array<String> &paths )
         {
             if( auto entries = settings.getChild( key + "Entries" ) )
@@ -295,14 +283,26 @@ namespace workphone
             {
                 throw std::runtime_error( "The SQLite project catalog backend is unavailable" );
             }
+            // SQLite's Windows backend has a shorter filename limit than native
+            // file copies, and backupTo appends another unique suffix. Snapshot
+            // in a short temporary directory before copying to the content tree.
+            BuildStagingDirectory snapshot{
+                fs::temp_directory_path() /
+                fs::u8path( "wp-game-catalog-" + std::string( StringUtil::getUUID().c_str() ) ) };
+            if( !fs::create_directory( snapshot.path ) )
+            {
+                throw std::runtime_error( "Cannot create the catalog snapshot folder" );
+            }
+            const auto snapshotFile = snapshot.path / "catalog.db";
             const auto opened = reader->openReadOnly( toEnginePath( source ), error );
-            const auto copied = opened && backup->backupTo( toEnginePath( destination ), error );
+            const auto copied = opened && backup->backupTo( toEnginePath( snapshotFile ), error );
             database->close();
             if( !copied )
             {
                 throw std::runtime_error( std::string( "Cannot snapshot the project catalog: " ) +
                                           error.c_str() );
             }
+            copyFile( snapshotFile, destination );
         }
 
         void writeDescriptor( const fs::path &file, const fs::path &scene,
@@ -312,6 +312,7 @@ namespace workphone
                                                   { "currentScenePath", scene.generic_u8string() },
                                                   { "applicationType", "Desktop" },
                                                   { "archive", true },
+                                                  { "packageFormatVersion", 2 },
                                                   { "packageArchives", archives } };
             std::ofstream output( file, std::ios::binary );
             output << boost::json::serialize( descriptor ) << '\n';
@@ -482,10 +483,15 @@ namespace workphone
                 throw std::runtime_error( "Cannot create the temporary game build folder" );
             }
             BuildStagingDirectory stage{ temporary };
-            report( "running", "Copying WPRuntime, bundled Media and project settings" );
+            report( "running", "Preparing WPRuntime and bundled content" );
             setProgress( 10 );
             copyRuntime( binaries, stage.path );
-            const auto mediaOutput = stage.path / "Media";
+            // Native source roots can be configured independently of the project. Give
+            // their files the runtime's virtual paths in a private staging tree, then
+            // archive and remove it before publishing. No content tree ships loose.
+            const auto contentInput = stage.path / ".wp-package-input";
+            fs::create_directory( contentInput );
+            const auto mediaOutput = contentInput / "Media";
             visitFiles(
                 media,
                 [&]( const fs::path &file ) {
@@ -495,12 +501,13 @@ namespace workphone
             const auto mediaCatalog = m_mediaCatalogPath.empty()
                                           ? media / ".workphone/media-assets.db"
                                           : fs::u8path( m_mediaCatalogPath.c_str() );
-            copyFile( mediaCatalog, mediaOutput / ".workphone/media-assets.db" );
+            fs::create_directories( mediaOutput / ".workphone" );
+            snapshotCatalog( m_catalog, mediaCatalog, mediaOutput / ".workphone/media-assets.db" );
             for( const auto file : { "GameGraphics.settings", "ProjectRuntime.settings" } )
             {
                 if( fs::is_regular_file( root / file ) )
                 {
-                    copyFile( root / file, stage.path / file );
+                    files.insert( root / file );
                 }
             }
             for( const auto folder : { "Localization", ".workphone/lighting", ".workphone/generated" } )
@@ -514,21 +521,13 @@ namespace workphone
                                                   input.generic_u8string() );
                     }
                     visitFiles(
-                        input,
-                        [&]( const fs::path &file ) {
-                            copyFile( file, stage.path / file.lexically_relative( root ) );
-                            if( file != scene )
-                            {
-                                files.erase( file );
-                            }
-                        },
-                        m_cancelled );
+                        input, [&]( const fs::path &file ) { files.insert( file ); }, m_cancelled );
                 }
             }
 
-            report( "running", "Copying cooked content and taking a project catalog snapshot" );
+            report( "running", "Preparing cooked content and project catalog snapshot" );
             setProgress( 25 );
-            const auto cacheOutput = stage.path / "Cache";
+            const auto cacheOutput = contentInput / "Cache";
             fs::create_directory( cacheOutput );
             visitFiles(
                 cache,
@@ -548,7 +547,7 @@ namespace workphone
             {
                 snapshotCatalog( m_catalog, cache / "asset.db", cacheOutput / "asset.db" );
             }
-            const auto settingsOutput = stage.path / "SettingsCache";
+            const auto settingsOutput = contentInput / "SettingsCache";
             fs::create_directory( settingsOutput );
             visitFiles(
                 settings,
@@ -562,10 +561,27 @@ namespace workphone
                 },
                 m_cancelled );
 
+            std::set<fs::path> stagedFiles;
+            // Unlike source discovery, this tree contains only deliberately selected
+            // runtime files, including the catalog under Media/.workphone.
+            const auto nativeContentInput = nativeWindowsPath( contentInput );
+            for( const auto &entry : fs::recursive_directory_iterator( nativeContentInput ) )
+            {
+                checkCancelled();
+                if( entry.is_regular_file() )
+                {
+                    stagedFiles.insert(
+                        contentInput / entry.path().lexically_relative( nativeContentInput ) );
+                }
+            }
+
             boost::json::array archives;
             Array<StringW> archiveFiles;
             std::uintmax_t bytes = 0;
             size_t completed = 0;
+            const auto totalFiles = files.size() + stagedFiles.size();
+            auto archiveRoot = root;
+            std::set<String> virtualPaths;
             const auto writeArchive = [&] {
                 if( archiveFiles.empty() )
                 {
@@ -575,8 +591,9 @@ namespace workphone
                 const auto archiveName = "Content_" + std::to_string( archives.size() + 1 ) + ".fbpak";
                 report( "running", String( "Packing game assets into " ) + archiveName.c_str() );
                 const auto archivePath = stage.path / archiveName;
-                if( writeGamePackageArchive( archivePath.wstring().c_str(), archiveFiles,
-                                             root.wstring().c_str(),
+                if( writeGamePackageArchive( nativeWindowsPath( archivePath ).wstring().c_str(),
+                                             archiveFiles,
+                                             nativeWindowsPath( archiveRoot ).wstring().c_str(),
                                              [&] { return m_cancelled.load(); } ) != 0 )
                 {
                     checkCancelled();
@@ -586,31 +603,39 @@ namespace workphone
                 archives.emplace_back( archiveName );
                 archiveFiles.clear();
                 bytes = 0;
-                setProgress( 50 + static_cast<u32>( 49 * completed / files.size() ) );
+                setProgress( 50 + static_cast<u32>( 49 * completed / totalFiles ) );
             };
 
             setProgress( 50 );
-            for( const auto &file : files )
-            {
-                checkCancelled();
-                if( needsLooseAsset( file ) )
+            const auto packFiles = [&]( const std::set<fs::path> &sources, const fs::path &sourceRoot ) {
+                archiveRoot = sourceRoot;
+                for( const auto &file : sources )
                 {
-                    copyFile( file, stage.path / file.lexically_relative( root ) );
-                }
-                else
-                {
-                    const auto size = fs::file_size( file );
+                    checkCancelled();
+                    const auto virtualPath = toEnginePath( file.lexically_relative( sourceRoot ) );
+                    if( !virtualPaths.insert( packagePathAsciiLower( virtualPath ) ).second )
+                    {
+                        throw std::runtime_error( std::string( "Duplicate packaged content path: " ) +
+                                                  virtualPath.c_str() );
+                    }
+                    const auto nativeFile = nativeWindowsPath( file );
+                    const auto size = fs::file_size( nativeFile );
                     if( archiveFiles.size() >= archiveTargetEntries ||
                         bytes + size > archiveTargetBytes )
                     {
                         writeArchive();
                     }
-                    archiveFiles.emplace_back( file.wstring().c_str() );
+                    archiveFiles.emplace_back( nativeFile.wstring().c_str() );
                     bytes += size;
+                    ++completed;
                 }
-                ++completed;
-            }
-            writeArchive();
+                writeArchive();
+            };
+            packFiles( files, root );
+            packFiles( stagedFiles, contentInput );
+            // Failure to remove staging is a build failure, so a completed output can
+            // never silently contain unpacked copies of packaged content.
+            fs::remove_all( nativeWindowsPath( contentInput ) );
             writeDescriptor( stage.path / "Runtime.fbproject", scene.lexically_relative( root ),
                              archives );
             checkCancelled();

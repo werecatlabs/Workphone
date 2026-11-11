@@ -4,6 +4,8 @@
 #include <Workphone/Core/DataUtil.hpp>
 #include <Workphone/Core/StringUtil.hpp>
 #include <Workphone/Interface/IApplicationManager.hpp>
+#include <Workphone/Interface/IO/IFileSystem.hpp>
+#include <Workphone/IO/PackagePaths.hpp>
 #include <Workphone/Interface/Net/INetworkManager.hpp>
 #include <Workphone/Interface/System/IFactoryManager.hpp>
 #include <Workphone/Interface/System/IFactory.hpp>
@@ -311,7 +313,21 @@ namespace workphone
                 nextNetwork->load( settings );
                 nextNetwork->setServer( false );
             }
-            const auto directory = ( fs::u8path( projectDirectory.c_str() ) / ".workphone/services" ).u8string();
+            auto serviceRoot = fs::u8path( projectDirectory.c_str() );
+            if( auto files = app ? app->getFileSystem() : nullptr;
+                files && isPackageFileSystem( *files ) )
+            {
+                auto settingsDirectory = fs::u8path( app->getSettingsPath().c_str() ).lexically_normal();
+                if( !settingsDirectory.has_filename() )
+                {
+                    settingsDirectory = settingsDirectory.parent_path();
+                }
+                if( settingsDirectory.has_parent_path() )
+                {
+                    serviceRoot = settingsDirectory.parent_path();
+                }
+            }
+            const auto directory = ( serviceRoot / ".workphone/services" ).u8string();
             if( localProviderRoot != directory.c_str() )
             {
                 localProviders = makeLocalProjectServiceProviders( directory.c_str() );

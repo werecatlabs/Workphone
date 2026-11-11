@@ -22,6 +22,7 @@
 #include <Workphone/Mesh/MeshSerializer.hpp>
 #include <Workphone/ApplicationUtil.hpp>
 #include <Workphone/System/TaskLock.hpp>
+#include <Workphone/IO/PackagePaths.hpp>
 #include <filesystem>
 #include <mutex>
 
@@ -250,13 +251,31 @@ namespace workphone
                 absoluteCachePath = Path::getAbsolutePath( projectPath, absoluteCachePath );
             }
 
-            if( !Path::isExistingFolder( absoluteCachePath ) )
+            auto fileSystem = applicationManager->getFileSystem();
+            const auto packaged = fileSystem && isPackageFileSystem( *fileSystem );
+            if( !packaged && !Path::isExistingFolder( absoluteCachePath ) )
             {
                 return cleanFilePath;
             }
 
             auto prefixLower = StringUtil::make_lower( prefix );
-            auto files = Path::getFilesAsAbsolutePaths( absoluteCachePath, ApplicationUtil::meshbinExt );
+            Array<String> files;
+            if( packaged )
+            {
+                for( const auto &entry : fileSystem->getFilesWithExtension( ApplicationUtil::meshbinExt ) )
+                {
+                    const String path = entry.filePath.c_str();
+                    if( path.rfind( "Cache/", 0 ) == 0 )
+                    {
+                        files.push_back( path );
+                    }
+                }
+                std::sort( files.begin(), files.end() );
+            }
+            else
+            {
+                files = Path::getFilesAsAbsolutePaths( absoluteCachePath, ApplicationUtil::meshbinExt );
+            }
             String bestPath;
             std::filesystem::file_time_type bestWriteTime;
             bool hasBestWriteTime = false;
@@ -278,8 +297,11 @@ namespace workphone
                 }
 
                 std::error_code ec;
-                auto writeTime =
-                    std::filesystem::last_write_time( StringUtil::str( candidatePath ), ec );
+                auto writeTime = std::filesystem::file_time_type{};
+                if( !packaged )
+                {
+                    writeTime = std::filesystem::last_write_time( StringUtil::str( candidatePath ), ec );
+                }
                 if( StringUtil::isNullOrEmpty( bestPath ) ||
                     ( !ec && ( !hasBestWriteTime || writeTime > bestWriteTime ) ) )
                 {
@@ -778,7 +800,10 @@ namespace workphone
                 auto filePathHash = StringUtil::getUUID( sFilePath );
                 auto fileDataPath =
                     settingsCachePath + StringUtil::toString( filePathHash ) + ".resourcedata";
-                fileDataPath = Path::getRelativePath( projectPath, fileDataPath );
+                if( !isPackageFileSystem( *fileSystem ) )
+                {
+                    fileDataPath = Path::getRelativePath( projectPath, fileDataPath );
+                }
 
                 if( fileSystem->isExistingFile( fileDataPath ) )
                 {
