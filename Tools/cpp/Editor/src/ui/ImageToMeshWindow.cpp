@@ -64,7 +64,9 @@ namespace workphone::editor
         m_polycount->setOptions( { "10,000", "30,000", "100,000" } );
         m_polycount->setSelectedOption( 0 );
         window->addChild( m_polycount );
-        m_textured = ui->addElementByType<ui::IUICheckbox>();
+        // The Editor backend implements labelled toggles; IUICheckbox has no
+        // registered ImGui factory and would return a null element here.
+        m_textured = ui->addElementByType<ui::IUILabelTogglePair>();
         m_textured->setLabel( "Generate textures" );
         m_textured->setValue( true );
         window->addChild( m_textured );
@@ -197,7 +199,7 @@ namespace workphone::editor
             return;
         }
         dialog->setDialogMode( INativeFileDialog::DialogMode::Open );
-        dialog->setFileExtension( ".png;.jpg;.jpeg" );
+        dialog->setFileExtension( ".png,.jpg,.jpeg" );
         dialog->setFilePath( app->getProjectPath() );
         const auto selected = dialog->openDialog();
         if( selected == INativeFileDialog::Result::Dialog_Cancel ) return;
@@ -396,6 +398,13 @@ namespace workphone::editor
             {
                 const auto action = button->getElementId();
                 if( action < Browse || action > Cancel ) return {};
+                // Discard must supersede a queued click from before Generate was
+                // disabled; otherwise the user's cancellation could be lost.
+                if( action == Cancel )
+                {
+                    window->m_action.store( Cancel );
+                    return {};
+                }
                 int expected = None;
                 window->m_action.compare_exchange_strong( expected, action );
             }

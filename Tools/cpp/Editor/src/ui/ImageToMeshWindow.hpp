@@ -55,7 +55,7 @@ namespace workphone::editor
         SmartPtr<Listener> m_listener;
         SmartPtr<ui::IUITextEntry> m_imagePath, m_name, m_status;
         SmartPtr<ui::IUIDropdown> m_polycount;
-        SmartPtr<ui::IUICheckbox> m_textured;
+        SmartPtr<ui::IUILabelTogglePair> m_textured;
         SmartPtr<ui::IUIButton> m_browse, m_generate, m_cancel;
         AssetCatalogSession m_session;
         std::chrono::steady_clock::time_point m_nextSessionCheck{};

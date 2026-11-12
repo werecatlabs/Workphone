@@ -26,6 +26,7 @@
 #include <Workphone/Jobs/EventJob.hpp>
 #include <Workphone/Interface/System/IEventListener.hpp>
 #include <Workphone/Interface/UI/IUITreeNode.hpp>
+#include <Workphone/Interface/UI/IUILabelTogglePair.hpp>
 #include <Workphone/Thread/Thread.hpp>
 #include <WorkphoneCore/workphone.h>
 #include <imgui.h>
@@ -860,6 +861,44 @@ namespace
         parent->removeChild( slider );
     }
 
+    void labelledToggleFactoryAndInput( Fixture &fixture )
+    {
+        // Image to Mesh creates this option through the native factory. Using
+        // the unsupported IUICheckbox interface previously crashed on startup.
+        auto manager = fixture.application->getUI();
+        auto toggle = manager->addElementByType<ui::IUILabelTogglePair>();
+        require( toggle != nullptr, "Editor boolean options must have a registered native UI factory" );
+        toggle->setLabel( "Generate textures" );
+        toggle->setValue( true );
+        ui::ImGuiApplication application;
+        auto &io = ImGui::GetIO();
+        const bool trickle = io.ConfigInputTrickleEventQueue;
+        io.ConfigInputTrickleEventQueue = false;
+        ImVec2 input;
+        const auto render = [&] {
+            ImGui::NewFrame();
+            ImGui::SetNextWindowPos( ImVec2( 20, 20 ), ImGuiCond_Always );
+            ImGui::SetNextWindowSize( ImVec2( 500, 200 ), ImGuiCond_Always );
+            ImGui::SetNextWindowFocus();
+            ImGui::Begin( "Editor labelled toggle factory", nullptr, ImGuiWindowFlags_NoSavedSettings );
+            application.createElement( toggle );
+            const auto minimum = ImGui::GetItemRectMin();
+            const auto maximum = ImGui::GetItemRectMax();
+            input = ImVec2( ( minimum.x + maximum.x ) * .5f, ( minimum.y + maximum.y ) * .5f );
+            ImGui::End(); ImGui::EndFrame();
+        };
+        render(); render();
+        require( toggle->getValue(), "rendering must preserve the default textured mesh option" );
+        io.AddMousePosEvent( input.x, input.y );
+        io.AddMouseButtonEvent( 0, true ); render();
+        io.AddMouseButtonEvent( 0, false ); render();
+        require( !toggle->getValue(), "the native labelled toggle must accept mouse input" );
+        render();
+        require( !toggle->getValue(), "idle frames must preserve the selected mesh texture option" );
+        io.ConfigInputTrickleEventQueue = trickle;
+        manager->removeElement( toggle );
+    }
+
     void secureTextEntryEvents( Fixture &fixture )
     {
         class TextEvents : public IEventListener
@@ -1110,13 +1149,14 @@ int main()
         assetTileStartsTreeDrag( fixture );
         preciseFloatSliders();
         preciseSliderEvents();
+        labelledToggleFactoryAndInput( fixture );
         secureTextEntryEvents( fixture );
 #if defined WP_PLATFORM_WIN32
         nativeSystemMenuShortcuts();
 #endif
         displayedImageGeometry( fixture, true, false );
         displayedImageGeometry( fixture, false, true );
-        std::printf( "ImGui theme/text/property-grid/window-placement/button/precise-sliders/secure-text/native-message/viewport input: %u assertions passed\n", assertions );
+        std::printf( "ImGui theme/text/property-grid/window-placement/button/precise-sliders/labelled-toggle/secure-text/native-message/viewport input: %u assertions passed\n", assertions );
         return 0;
     }
     catch( const std::exception &error )

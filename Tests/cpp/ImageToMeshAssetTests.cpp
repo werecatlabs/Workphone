@@ -42,23 +42,33 @@ namespace
     {
         for( int i = 3; i >= 0; --i ) bytes.push_back( static_cast<std::uint8_t>( value >> ( i * 8 ) ) );
     }
+    Bytes sourcePng();
     Bytes triangle()
     {
-        std::string json = R"({"asset":{"version":"2.0"},"scene":0,"scenes":[{"nodes":[0]}],"nodes":[{"mesh":0}],"meshes":[{"primitives":[{"attributes":{"POSITION":0},"mode":4}]}],"buffers":[{"byteLength":36}],"bufferViews":[{"buffer":0,"byteOffset":0,"byteLength":36}],"accessors":[{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3","min":[0,0,0],"max":[1,1,0]}]})";
+        const auto png = sourcePng();
+        const auto bufferSize = 60 + png.size();
+        std::string json = R"({"asset":{"version":"2.0"},"scene":0,"scenes":[{"nodes":[0]}],"nodes":[{"mesh":0}],"meshes":[{"primitives":[{"attributes":{"POSITION":0,"TEXCOORD_0":1},"mode":4,"material":0}]}],"buffers":[{"byteLength":)" +
+            std::to_string( bufferSize ) +
+            R"(}],"bufferViews":[{"buffer":0,"byteOffset":0,"byteLength":36},{"buffer":0,"byteOffset":36,"byteLength":24},{"buffer":0,"byteOffset":60,"byteLength":)" +
+            std::to_string( png.size() ) +
+            R"(}],"accessors":[{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3","min":[0,0,0],"max":[1,1,0]},{"bufferView":1,"componentType":5126,"count":3,"type":"VEC2"}],"images":[{"bufferView":2,"mimeType":"image/png"}],"textures":[{"source":0}],"materials":[{"pbrMetallicRoughness":{"baseColorTexture":{"index":0},"metallicFactor":0,"roughnessFactor":1}}]})";
         while( json.size() % 4 ) json += ' ';
         Bytes bytes;
         le32( bytes, 0x46546c67 ); le32( bytes, 2 );
-        le32( bytes, static_cast<std::uint32_t>( 12 + 8 + json.size() + 8 + 36 ) );
+        const auto binSize = ( bufferSize + 3 ) & ~std::size_t( 3 );
+        le32( bytes, static_cast<std::uint32_t>( 12 + 8 + json.size() + 8 + binSize ) );
         le32( bytes, static_cast<std::uint32_t>( json.size() ) ); le32( bytes, 0x4e4f534a );
         bytes.insert( bytes.end(), json.begin(), json.end() );
-        le32( bytes, 36 ); le32( bytes, 0x004e4942 );
-        const float positions[] = { 0, 0, 0, 1, 0, 0, 0, 1, 0 };
+        le32( bytes, static_cast<std::uint32_t>( binSize ) ); le32( bytes, 0x004e4942 );
+        const float positions[] = { 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1 };
         for( const auto position : positions )
         {
             std::uint32_t bits;
             std::memcpy( &bits, &position, sizeof( bits ) );
             le32( bytes, bits );
         }
+        bytes.insert( bytes.end(), png.begin(), png.end() );
+        while( bytes.size() % 4 ) bytes.push_back( 0 );
         return bytes;
     }
     std::uint32_t crc( const std::uint8_t *bytes, std::size_t size )
@@ -95,6 +105,27 @@ namespace
         chunk( png, "IDAT", zlib ); chunk( png, "IEND", {} );
         return png;
     }
+    Bytes sourceJpeg()
+    {
+        // A real 32x32 baseline JPEG encoded by Windows GDI+, kept inline so
+        // this test has no dependency on project media or external downloads.
+        const std::string encoded =
+            "/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAAgACADASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwD5/ooooAKKKKACiiigAooooA//2Q==";
+        const std::string alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        Bytes result;
+        std::uint32_t bits = 0;
+        unsigned count = 0;
+        for( const auto character : encoded )
+        {
+            if( character == '=' ) break;
+            const auto value = alphabet.find( character );
+            require( value != std::string::npos, "Invalid inline JPEG fixture" );
+            bits = ( bits << 6 ) | static_cast<std::uint32_t>( value );
+            count += 6;
+            if( count >= 8 ) { count -= 8; result.push_back( static_cast<std::uint8_t>( bits >> count ) ); }
+        }
+        return result;
+    }
     void write( const fs::path &path, const Bytes &bytes )
     {
         std::ofstream output( path, std::ios::binary );
@@ -119,6 +150,10 @@ namespace
         std::string mime, error;
         require( assets::readImage( source, loaded, mime, error ), error.c_str() );
         require( loaded == png && mime == "image/png" && error.empty(), "Selected image was altered" );
+        const auto jpeg = sourceJpeg();
+        write( temporary.path / "source.JPEG", jpeg );
+        require( assets::readImage( temporary.path / "source.JPEG", loaded, mime, error ), error.c_str() );
+        require( loaded == jpeg && mime == "image/jpeg" && error.empty(), "Selected JPEG was altered" );
         write( temporary.path / "wrong.jpg", png );
         require( !assets::readImage( temporary.path / "wrong.jpg", loaded, mime, error ) && loaded.empty() && mime.empty(),
                  "Image extension did not match encoded format" );
@@ -175,8 +210,24 @@ namespace
         else std::cout << "INFO: symlink fixture unavailable: " << linkError.message() << '\n';
     }
 }
-int main()
+int main( int argc, char **argv )
 {
-    try { contracts(); std::cout << "PASS: image input and generated GLB publication contracts\n"; return 0; }
+    try
+    {
+        if( argc == 3 && std::string( argv[1] ) == "--export-fixture" )
+        {
+            fs::path output;
+            std::string error;
+            const auto glb = triangle();
+            require( assets::saveGlb( fs::u8path( argv[2] ), "textured-triangle", glb.data(), glb.size(), output, error ),
+                     error.c_str() );
+            std::cout << output.generic_u8string() << '\n';
+            return 0;
+        }
+        require( argc == 1, "Unexpected test arguments" );
+        contracts();
+        std::cout << "PASS: image input and generated GLB publication contracts\n";
+        return 0;
+    }
     catch( const std::exception &error ) { std::cerr << "FAIL: " << error.what() << '\n'; return 1; }
 }

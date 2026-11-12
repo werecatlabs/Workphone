@@ -23,6 +23,7 @@ namespace workphone::mesh_generation
         constexpr auto apiUrl = "https://api.meshy.ai/openapi/v1/image-to-3d";
         constexpr auto assetPrefix = "https://assets.meshy.ai/";
         constexpr auto oversized = "The Meshy response exceeds the supported size limit.";
+        constexpr auto unsupportedPlatform = "Meshy HTTPS transport currently requires Windows.";
 
         struct SecretGuard
         {
@@ -180,19 +181,25 @@ namespace workphone::mesh_generation
                           cancel, response, status, diagnostic ) )
             {
                 if( cancelled() ) return result;
-                result.error = "Could not confirm the Meshy submission. Check your Meshy task history before retrying to avoid duplicate generations.";
+                result.error = diagnostic == unsupportedPlatform ? diagnostic :
+                    "Could not confirm the Meshy submission. Check your Meshy task history before retrying to avoid duplicate generations.";
                 return result;
             }
-            if( cancelled() ) return result;
-            if( status < 200 || status >= 300 ) { result.error = httpError( status ); return result; }
+            if( status < 200 || status >= 300 )
+            {
+                if( !cancelled() ) result.error = httpError( status );
+                return result;
+            }
             detail::json::value created;
             if( !detail::parseJson( reinterpret_cast<const char *>( response.data() ), response.size(), created ) ||
                 !created.is_object() || !safeTaskId( detail::stringField( created.as_object(), "result" ), key ) )
             {
-                result.error = "Meshy returned an invalid task response. Check your Meshy task history before retrying.";
+                if( !cancelled() ) result.error = "Meshy returned an invalid task response. Check your Meshy task history before retrying.";
                 return result;
             }
             result.taskId = detail::stringField( created.as_object(), "result" );
+            // Keep a confirmed submission ID even if Stop was pressed during upload.
+            if( cancelled() ) return result;
             const auto taskUrl = std::string( apiUrl ) + "/" + encodePathSegment( result.taskId );
             report( "Waiting for Meshy", 0 );
             for( unsigned poll = 0; poll < 120 && std::chrono::steady_clock::now() < deadline; ++poll )
@@ -232,7 +239,9 @@ namespace workphone::mesh_generation
                     if( status < 200 || status >= 300 )
                     { result.glbBytes.clear(); result.error = "The generated mesh download failed. Retrieve the result from your Meshy task history."; return result; }
                     if( !validateGeneratedGlb( result.glbBytes.data(), result.glbBytes.size(), result.error ) ) result.glbBytes.clear();
-                    else report( "Mesh ready", 100 );
+                    if( cancelled() ) return result;
+                    if( result.error.empty() ) report( "Mesh ready", 100 );
+                    if( cancelled() ) return result;
                     return result;
                 }
                 if( state == "FAILED" || state == "CANCELED" )
@@ -350,7 +359,7 @@ namespace workphone::mesh_generation
         }
         return false;
 #else
-        error = "Meshy HTTPS transport currently requires Windows.";
+        error = unsupportedPlatform;
         return false;
 #endif
     }

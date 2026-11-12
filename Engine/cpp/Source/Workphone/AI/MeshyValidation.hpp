@@ -1,6 +1,7 @@
 #pragma once
 
 #include <boost/json.hpp>
+#include <boost/json/basic_parser_impl.hpp>
 #include <algorithm>
 #include <cstdint>
 #include <cmath>
