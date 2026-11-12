@@ -10,7 +10,8 @@ IEvent = {UI=1, handleSelection=11, handleValueChanged=12, handlePropertyChanged
 StringUtil = {getHash32=function(value)
     return assert(({projectSettingsAction=12345, createProjectCollisionMatrix=12346,
         createOpenAISettings=12347, refreshOpenAISettings=12348,
-        createMeshySettings=12349, refreshMeshySettings=12350})[value])
+        createMeshySettings=12349, refreshMeshySettings=12350,
+        createTrellis2Settings=12351, refreshTrellis2Settings=12352})[value])
 end}
 Parameters = function()
     return {push_back=function(self, value) table.insert(self, value) end,
@@ -90,6 +91,13 @@ function window:handleEvent(eventType, hash, arguments, sender, request, event)
         else native.meshyRefreshes=(native.meshyRefreshes or 0)+1 end
         return
     end
+    if hash==12351 or hash==12352 then
+        assert(sender.label=="TRELLIS 2 (fal.ai)" and request==nil and #arguments==0,
+            "fal.ai credentials must not enter project properties or Lua event arguments")
+        if hash==12351 then native.trellis2Creates=(native.trellis2Creates or 0)+1
+        else native.trellis2Refreshes=(native.trellis2Refreshes or 0)+1 end
+        return
+    end
     if hash==12346 then
         assert(sender.label=="Collision Matrix" and request==nil)
         local matrix=element()
@@ -156,11 +164,15 @@ assert(native.credentialCreates==1 and editor.openaiSettingsHeader.parent.label=
     "Editor settings must create the native OpenAI credential controls")
 assert(native.meshyCreates==1 and editor.meshySettingsHeader.parent.label=="Editor",
     "Editor settings must create separate native Meshy credential controls")
+assert(native.trellis2Creates==1 and editor.trellis2SettingsHeader.parent.label=="Editor",
+    "Editor settings must create separate native TRELLIS 2 credential controls")
 editor:show()
 assert(native.credentialRefreshes==1 and #native.calls==1,
     "Showing settings must refresh credentials without editing project settings")
 assert(native.meshyRefreshes==1 and #native.calls==1,
     "Showing settings must refresh Meshy credentials without editing project settings")
+assert(native.trellis2Refreshes==1 and #native.calls==1,
+    "Showing settings must refresh fal.ai credentials without editing project settings")
 assert(editor.projectNameControl:getText()=="Stored project")
 assert(editor.companyControl:getText()=="" and editor.startupSceneControl:getText()=="")
 assert(editor.gravityControl:getValue()==-12.25)

@@ -3,6 +3,7 @@
 #include <ui/ImageToMeshAssets.hpp>
 #include <editor/EditorManager.hpp>
 #include <editor/Project.hpp>
+#include <Workphone/AI/Trellis2Client.hpp>
 #include <Workphone/Database/AssetCatalogPath.hpp>
 #include <Workphone/Workphone.hpp>
 #include <filesystem>
@@ -26,7 +27,7 @@ namespace workphone::editor
         m_displayProjectPath = app->getProjectPath();
         auto window = ui->addElementByType<ui::IUIWindow>();
         window->setLabel( "Image to Mesh" );
-        window->setSize( { 720.0f, 570.0f } );
+        window->setSize( { 720.0f, 640.0f } );
         auto placement = window->getProperties();
         placement->setProperty( "initialPlacement", String( "floating" ) );
         window->setProperties( placement );
@@ -34,12 +35,13 @@ namespace workphone::editor
         m_listener = make_ptr<Listener>();
         m_listener->owner = this;
 
-        auto hint = ui->addElementByType<ui::IUIText>();
-        hint->setText( "Generate a 3D object from a PNG or JPEG with Meshy.\n"
-                       "Set a separate Meshy API key in File > Settings > Editor > Meshy.\n"
-                       "Generate Mesh uploads the selected image to Meshy and uses your Meshy credits.\n"
-                       "GLB assets are saved in Assets/Generated without replacing existing files." );
-        window->addChild( hint );
+        m_provider = ui->addElementByType<ui::IUIDropdown>();
+        m_provider->setLabel( "Generation provider" );
+        m_provider->setOptions( { "Meshy", "TRELLIS 2 (fal.ai)" } );
+        m_provider->setSelectedOption( static_cast<u32>( Provider::Meshy ) );
+        window->addChild( m_provider );
+        m_hint = ui->addElementByType<ui::IUIText>();
+        window->addChild( m_hint );
 
         m_imagePath = ui->addElementByType<ui::IUITextEntry>();
         m_imagePath->setLabel( "Source image" );
@@ -64,12 +66,19 @@ namespace workphone::editor
         m_polycount->setOptions( { "10,000", "30,000", "100,000" } );
         m_polycount->setSelectedOption( 0 );
         window->addChild( m_polycount );
+        m_resolution = ui->addElementByType<ui::IUIDropdown>();
+        m_resolution->setLabel( "TRELLIS 2 resolution" );
+        m_resolution->setOptions( { "512", "1024", "1536" } );
+        m_resolution->setSelectedOption( 1 );
+        window->addChild( m_resolution );
         // The Editor backend implements labelled toggles; IUICheckbox has no
         // registered ImGui factory and would return a null element here.
         m_textured = ui->addElementByType<ui::IUILabelTogglePair>();
         m_textured->setLabel( "Generate textures" );
         m_textured->setValue( true );
         window->addChild( m_textured );
+        m_selectedProvider = m_jobProvider = Provider::Meshy;
+        m_meshyTextured = true;
         m_generate = button( "Generate Mesh", Generate );
         m_cancel = button( "Discard Pending Mesh", Cancel );
         m_cancel->setSameLine( true );
@@ -112,8 +121,9 @@ namespace workphone::editor
             setParentWindow( nullptr );
         }
         m_listener = nullptr;
+        m_hint = nullptr;
         m_imagePath = m_name = m_status = nullptr;
-        m_polycount = nullptr;
+        m_provider = m_polycount = m_resolution = nullptr;
         m_textured = nullptr;
         m_browse = m_generate = m_cancel = nullptr;
         m_taskId.clear();
@@ -150,13 +160,15 @@ namespace workphone::editor
         const auto action = static_cast<Action>( m_action.exchange( None ) );
         try
         {
+            refreshProvider();
             if( app->getProjectPath() != m_displayProjectPath )
             {
                 m_displayProjectPath = app->getProjectPath();
                 m_imagePath->setText( "" );
                 m_name->setText( "generated-mesh" );
                 if( m_result )
-                    discardPending( "Project changed. Discarding the mesh locally; the Meshy task may still run and use credits." );
+                    discardPending( String( "Project changed. Discarding the mesh locally; the " ) +
+                        providerName( m_jobProvider ) + " task may still run and use credits." );
                 else
                 {
                     m_message.clear();
@@ -168,10 +180,12 @@ namespace workphone::editor
             {
                 m_nextSessionCheck = now + std::chrono::seconds( 1 );
                 if( !sessionCurrent() )
-                    discardPending( "Project catalog changed. Discarding the mesh locally; the Meshy task may still run and use credits." );
+                    discardPending( String( "Project catalog changed. Discarding the mesh locally; the " ) +
+                        providerName( m_jobProvider ) + " task may still run and use credits." );
             }
             if( action == Cancel && m_result )
-                discardPending( "Stopping local processing. The Meshy task may still run and use credits; no mesh will be saved." );
+                discardPending( String( "Stopping local processing. The " ) + providerName( m_jobProvider ) +
+                    " task may still run and use credits; no mesh will be saved." );
             if( m_result && m_result->ready.load( std::memory_order_acquire ) ) finishGeneration();
             // Ignore a second click queued while controls were becoming disabled,
             // even if a very fast request completed before this tick.
@@ -216,7 +230,8 @@ namespace workphone::editor
             m_name->setText( mesh_assets::sanitizeBasename( stem ).c_str() );
         }
         m_taskId.clear();
-        m_message = "Image selected. Generate Mesh uploads it to Meshy and starts one generation task.";
+        m_message = String( "Image selected. Generate Mesh uploads it to " ) +
+                    providerName( m_selectedProvider ) + " and starts one generation task.";
     }
 
     void ImageToMeshWindow::startGeneration()
@@ -245,15 +260,19 @@ namespace workphone::editor
         auto source = std::filesystem::u8path( input.c_str() );
         if( source.is_relative() ) source = std::filesystem::u8path( m_projectRoot.c_str() ) / source;
         mesh_generation::Request request;
+        const auto provider = m_selectedProvider;
         const std::uint32_t counts[] = { 10000, 30000, 100000 };
         request.targetPolycount = counts[std::min<u32>( m_polycount->getSelectedOption(), 2 )];
-        request.textured = m_textured->getValue();
+        request.textured = provider == Provider::Trellis2 || m_textured->getValue();
+        const std::uint32_t resolutions[] = { 512, 1024, 1536 };
+        const auto resolution = resolutions[std::min<u32>( m_resolution->getSelectedOption(), 2 )];
         m_basename = mesh_assets::sanitizeBasename( m_name->getText().c_str() ).c_str();
         m_name->setText( m_basename );
         if( m_worker.joinable() ) m_worker.join();
         auto result = std::make_shared<ResultState>();
         result->progress.stage = "Reading source image";
-        std::thread worker( [source = std::move( source ), request = std::move( request ), result]() mutable {
+        std::thread worker( [source = std::move( source ), request = std::move( request ),
+                             provider, resolution, result]() mutable {
             Thread::setCurrentTask( TaskId::None );
             try
             {
@@ -261,26 +280,37 @@ namespace workphone::editor
                 else if( mesh_assets::readImage( source, request.imageBytes, request.mimeType,
                                                 result->result.error ) )
                 {
-                    mesh_generation::MeshyClient client;
-                    result->result = client.generate( request, result->cancel,
-                        [result]( const mesh_generation::Progress &progress ) {
-                            std::lock_guard<std::mutex> lock( result->progressMutex );
-                            result->progress = progress;
-                        } );
+                    const auto progress = [result]( const mesh_generation::Progress &value ) {
+                        std::lock_guard<std::mutex> lock( result->progressMutex );
+                        result->progress = value;
+                    };
+                    if( provider == Provider::Trellis2 )
+                    {
+                        mesh_generation::Trellis2Client client;
+                        result->result = client.generate( request, resolution, result->cancel, progress );
+                    }
+                    else
+                    {
+                        mesh_generation::MeshyClient client;
+                        result->result = client.generate( request, result->cancel, progress );
+                    }
                 }
             }
             catch( ... )
             {
-                result->result.error = "Mesh generation failed. Check the image, network and Meshy configuration.";
+                result->result.error = std::string( "Mesh generation failed. Check the image, network and " ) +
+                                       providerName( provider ) + " configuration.";
             }
             result->ready.store( true, std::memory_order_release );
         } );
+        m_jobProvider = provider;
         m_result = result;
         m_worker = std::move( worker );
         m_discard = false;
         m_taskId.clear();
         m_nextSessionCheck = std::chrono::steady_clock::now() + std::chrono::seconds( 1 );
-        m_message = "Preparing image for Meshy... You can continue editing.";
+        m_message = String( "Preparing image for " ) + providerName( provider ) +
+                    "... You can continue editing.";
     }
 
     void ImageToMeshWindow::finishGeneration()
@@ -296,7 +326,8 @@ namespace workphone::editor
         }
         if( m_discard || result.cancelled || !sessionCurrent() )
         {
-            m_message = "Mesh discarded locally. No asset was saved. The Meshy task may still run and use credits.";
+            m_message = String( "Mesh discarded locally. No asset was saved. The " ) +
+                        providerName( m_jobProvider ) + " task may still run and use credits.";
             return;
         }
         if( !result.error.empty() )
@@ -351,16 +382,57 @@ namespace workphone::editor
         }
     }
 
+    const char *ImageToMeshWindow::providerName( Provider provider )
+    {
+        return provider == Provider::Trellis2 ? "TRELLIS 2 (fal.ai)" : "Meshy";
+    }
+
+    void ImageToMeshWindow::refreshProvider()
+    {
+        const auto selected = m_provider->getSelectedOption() == static_cast<u32>( Provider::Trellis2 )
+                                  ? Provider::Trellis2 : Provider::Meshy;
+        const auto provider = m_result ? m_jobProvider : selected;
+        // Keep an active job's options and status tied to the captured provider,
+        // including a selection queued just before the controls were disabled.
+        if( m_result ) m_provider->setSelectedOption( static_cast<u32>( provider ) );
+        if( provider != m_selectedProvider )
+        {
+            if( m_selectedProvider == Provider::Meshy ) m_meshyTextured = m_textured->getValue();
+            m_selectedProvider = provider;
+            m_textured->setValue( provider == Provider::Trellis2 || m_meshyTextured );
+            if( !m_result )
+            {
+                m_message.clear();
+                m_taskId.clear();
+            }
+        }
+        const String countLabel = provider == Provider::Trellis2 ? "Target vertex count" : "Target polygon count";
+        if( m_polycount->getLabel() != countLabel ) m_polycount->setLabel( countLabel );
+        const String hint = provider == Provider::Trellis2
+            ? "Generate a textured 3D object with TRELLIS 2 hosted by fal.ai.\n"
+              "Set a separate fal.ai API key in File > Settings > Editor > TRELLIS 2 (fal.ai).\n"
+              "Generate Mesh uploads the image to fal.ai and uses your fal.ai credits.\n"
+              "GLB assets are saved in Assets/Generated without replacing existing files."
+            : "Generate a 3D object from a PNG or JPEG with Meshy.\n"
+              "Set a separate Meshy API key in File > Settings > Editor > Meshy.\n"
+              "Generate Mesh uploads the image to Meshy and uses your Meshy credits.\n"
+              "GLB assets are saved in Assets/Generated without replacing existing files.";
+        if( m_hint->getText() != hint ) m_hint->setText( hint );
+    }
+
     void ImageToMeshWindow::refreshControls()
     {
+        refreshProvider();
         const bool busy = m_result != nullptr;
         auto editor = EditorManager::getSingletonPtr();
         auto project = editor ? editor->getProject() : nullptr;
         const bool hasProject = project && !project->getFilePath().empty();
         m_imagePath->setReadOnly( busy );
         m_name->setReadOnly( busy );
+        m_provider->setEnabled( !busy );
         m_polycount->setEnabled( !busy );
-        m_textured->setEnabled( !busy );
+        m_resolution->setEnabled( !busy && m_selectedProvider == Provider::Trellis2 );
+        m_textured->setEnabled( !busy && m_selectedProvider == Provider::Meshy );
         m_browse->setEnabled( !busy );
         m_generate->setEnabled( !busy && hasProject &&
             m_imagePath->getText().find_first_not_of( " \t\r\n" ) != String::npos );
@@ -374,14 +446,15 @@ namespace workphone::editor
             if( !m_discard && !progress.stage.empty() )
             {
                 message = progress.stage.c_str();
-                if( !progress.taskId.empty() )
+                if( !progress.taskId.empty() && m_jobProvider == Provider::Meshy )
                     message += " (" + StringUtil::toString( std::min<std::uint32_t>( progress.percent, 100 ) ) + "%)";
-                message += "\nYou can continue editing while Meshy processes the image.";
+                message += String( "\nYou can continue editing while " ) +
+                           providerName( m_jobProvider ) + " processes the image.";
             }
         }
         if( message.empty() ) message = hasProject ? "Choose an image and click Generate Mesh."
                                                   : "Open a saved project to generate meshes.";
-        if( !m_taskId.empty() ) message += "\nMeshy task: " + m_taskId;
+        if( !m_taskId.empty() ) message += String( "\n" ) + providerName( m_jobProvider ) + " task: " + m_taskId;
         if( m_status->getText() != message ) m_status->setText( message );
     }
 

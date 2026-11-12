@@ -214,6 +214,19 @@ int main( int argc, char **argv )
 {
     try
     {
+        if( argc == 3 && std::string( argv[1] ) == "--validate-glb" )
+        {
+            const auto source = fs::u8path( argv[2] );
+            require( fs::is_regular_file( source ) &&
+                         fs::file_size( source ) <= workphone::mesh_generation::maximumGeneratedGlbBytes,
+                     "GLB validation input is missing or too large" );
+            const auto glb = read( source );
+            std::string error;
+            require( workphone::mesh_generation::validateGeneratedGlb( glb.data(), glb.size(), error ),
+                     error.c_str() );
+            std::cout << "PASS: existing GLB admission (" << glb.size() << " bytes)\n";
+            return 0;
+        }
         if( argc == 3 && std::string( argv[1] ) == "--export-fixture" )
         {
             fs::path output;

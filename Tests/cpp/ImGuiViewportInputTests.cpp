@@ -27,6 +27,7 @@
 #include <Workphone/Interface/System/IEventListener.hpp>
 #include <Workphone/Interface/UI/IUITreeNode.hpp>
 #include <Workphone/Interface/UI/IUILabelTogglePair.hpp>
+#include <Workphone/Interface/UI/IUIDropdown.hpp>
 #include <Workphone/Thread/Thread.hpp>
 #include <WorkphoneCore/workphone.h>
 #include <imgui.h>
@@ -889,6 +890,12 @@ namespace
         };
         render(); render();
         require( toggle->getValue(), "rendering must preserve the default textured mesh option" );
+        toggle->setEnabled( false ); render();
+        io.AddMousePosEvent( input.x, input.y );
+        io.AddMouseButtonEvent( 0, true ); render();
+        io.AddMouseButtonEvent( 0, false ); render();
+        require( toggle->getValue(), "disabled generation options must ignore mouse input" );
+        toggle->setEnabled( true ); render();
         io.AddMousePosEvent( input.x, input.y );
         io.AddMouseButtonEvent( 0, true ); render();
         io.AddMouseButtonEvent( 0, false ); render();
@@ -897,6 +904,51 @@ namespace
         require( !toggle->getValue(), "idle frames must preserve the selected mesh texture option" );
         io.ConfigInputTrickleEventQueue = trickle;
         manager->removeElement( toggle );
+    }
+
+    void dropdownEnabledState( Fixture &fixture )
+    {
+        auto manager = fixture.application->getUI();
+        auto dropdown = manager->addElementByType<ui::IUIDropdown>();
+        require( dropdown != nullptr, "mesh provider selection needs a native dropdown factory" );
+        dropdown->setLabel( "Mesh provider" );
+        dropdown->setOptions( { "Meshy", "TRELLIS 2 (fal.ai)" } );
+        dropdown->setSelectedOption( 0 );
+        dropdown->setEnabled( false );
+        ui::ImGuiApplication application;
+        auto &io = ImGui::GetIO();
+        const bool trickle = io.ConfigInputTrickleEventQueue;
+        io.ConfigInputTrickleEventQueue = false;
+        ImVec2 input;
+        const auto render = [&] {
+            ImGui::NewFrame();
+            ImGui::SetNextWindowPos( ImVec2( 20, 20 ), ImGuiCond_Always );
+            ImGui::SetNextWindowSize( ImVec2( 500, 200 ), ImGuiCond_Always );
+            ImGui::Begin( "Mesh provider enabled state", nullptr, ImGuiWindowFlags_NoSavedSettings );
+            application.createElement( dropdown );
+            const auto minimum = ImGui::GetItemRectMin();
+            const auto maximum = ImGui::GetItemRectMax();
+            input = ImVec2( minimum.x + 40, ( minimum.y + maximum.y ) * .5f );
+            ImGui::End(); ImGui::EndFrame();
+        };
+        render(); render();
+        io.AddMousePosEvent( input.x, input.y );
+        io.AddMouseButtonEvent( 0, true ); render();
+        io.AddMouseButtonEvent( 0, false ); render();
+        require( GImGui->OpenPopupStack.empty(), "disabled provider selection must not open a popup" );
+        require( dropdown->getSelectedOption() == 0, "disabled provider selection must keep the current provider" );
+        dropdown->setEnabled( true ); render();
+        io.AddMouseButtonEvent( 0, true ); render();
+        io.AddMouseButtonEvent( 0, false ); render();
+        require( !GImGui->OpenPopupStack.empty(), "provider selection must open again when enabled" );
+        // This fixture intentionally has keyboard navigation disabled. Dismiss
+        // through the mouse path used above, outside the popup on the host title.
+        io.AddMousePosEvent( 25, 25 );
+        io.AddMouseButtonEvent( 0, true ); render();
+        io.AddMouseButtonEvent( 0, false ); render();
+        require( GImGui->OpenPopupStack.empty(), "provider dropdown must close after clicking outside" );
+        io.ConfigInputTrickleEventQueue = trickle;
+        manager->removeElement( dropdown );
     }
 
     void secureTextEntryEvents( Fixture &fixture )
@@ -1150,6 +1202,7 @@ int main()
         preciseFloatSliders();
         preciseSliderEvents();
         labelledToggleFactoryAndInput( fixture );
+        dropdownEnabledState( fixture );
         secureTextEntryEvents( fixture );
 #if defined WP_PLATFORM_WIN32
         nativeSystemMenuShortcuts();

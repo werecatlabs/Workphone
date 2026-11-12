@@ -605,6 +605,7 @@ function ProjectSettings:_clearRefs()
 	self.controlBindings = {};
 	self.openaiSettingsHeader = nil;
 	self.meshySettingsHeader = nil;
+	self.trellis2SettingsHeader = nil;
 
 	-- Element references are cleared by name so Lua GC can release UI wrappers.
 	for key, _ in pairs(ProjectSettingsDefaults) do
@@ -809,6 +810,9 @@ function ProjectSettings:load()
 	self.meshySettingsHeader = self:addHeader(ui, editorTab, "Meshy");
 	self.window:handleEvent(IEvent.UI, StringUtil.getHash32("createMeshySettings"),
 		Parameters(), self.meshySettingsHeader, nil, nil);
+	self.trellis2SettingsHeader = self:addHeader(ui, editorTab, "TRELLIS 2 (fal.ai)");
+	self.window:handleEvent(IEvent.UI, StringUtil.getHash32("createTrellis2Settings"),
+		Parameters(), self.trellis2SettingsHeader, nil, nil);
 
 	-- Application ----------------------------------------------------------
 	local identityHeader = self:addHeader(ui, applicationTab, "Project Identity");
@@ -1378,6 +1382,10 @@ function ProjectSettings:show()
 	if self.meshySettingsHeader then
 		self.window:handleEvent(IEvent.UI, StringUtil.getHash32("refreshMeshySettings"),
 			Parameters(), self.meshySettingsHeader, nil, nil);
+	end
+	if self.trellis2SettingsHeader then
+		self.window:handleEvent(IEvent.UI, StringUtil.getHash32("refreshTrellis2Settings"),
+			Parameters(), self.trellis2SettingsHeader, nil, nil);
 	end
 end
 

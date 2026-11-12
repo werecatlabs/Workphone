@@ -24,6 +24,7 @@ namespace workphone::api_credentials::detail
 
     inline constexpr Provider openAI{ "OpenAI", "OPENAI_API_KEY", L"Workphone/Editor/OpenAI" };
     inline constexpr Provider meshy{ "Meshy", "MESHY_API_KEY", L"Workphone/Editor/Meshy" };
+    inline constexpr Provider trellis2{ "fal.ai", "FAL_KEY", L"Workphone/Editor/Trellis2" };
     constexpr std::size_t maximumKeySize = 2048;
 
     inline void wipeString( std::string &value )

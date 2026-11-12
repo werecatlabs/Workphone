@@ -10,4 +10,6 @@ namespace workphone::editor
     void refreshOpenAISettingsControls( SmartPtr<ui::IUIElement> parent );
     void createMeshySettingsControls( SmartPtr<ui::IUIElement> parent );
     void refreshMeshySettingsControls( SmartPtr<ui::IUIElement> parent );
+    void createTrellis2SettingsControls( SmartPtr<ui::IUIElement> parent );
+    void refreshTrellis2SettingsControls( SmartPtr<ui::IUIElement> parent );
 }

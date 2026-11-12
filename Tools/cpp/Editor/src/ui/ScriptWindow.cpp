@@ -233,6 +233,16 @@ namespace workphone::editor
                 refreshMeshySettingsControls( dynamic_pointer_cast<ui::IUIElement>( sender ) );
                 return {};
             }
+            if( eventValue == static_cast<hash_type>( StringUtil::getHash32( "createTrellis2Settings" ) ) )
+            {
+                createTrellis2SettingsControls( dynamic_pointer_cast<ui::IUIElement>( sender ) );
+                return {};
+            }
+            if( eventValue == static_cast<hash_type>( StringUtil::getHash32( "refreshTrellis2Settings" ) ) )
+            {
+                refreshTrellis2SettingsControls( dynamic_pointer_cast<ui::IUIElement>( sender ) );
+                return {};
+            }
         }
         if(eventType == EventType::UI &&
            eventValue == static_cast<hash_type>(StringUtil::getHash32("materialShaderReloadAction")))

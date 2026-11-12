@@ -1443,12 +1443,14 @@ namespace workphone::ui
                         label = "Untitled";
                     }
 
+                    const bool enabled = element->isEnabled();
+                    ImGui::BeginDisabled( !enabled );
                     ImGui::Text( "%s", label.c_str() );
-
                     ImGui::SameLine( 0, 5 );
+                    const bool changed = ImGuiUtil::ToggleButton( label.c_str(), &value );
+                    ImGui::EndDisabled();
 
-                    if( ImGuiUtil::ToggleButton( label.c_str(), &value ) )
-                    //if( ImGui::Checkbox( label.c_str(), &value ) )
+                    if( changed && enabled )
                     {
                         labelCheckboxPair->setValue( value );
 
@@ -1538,7 +1540,11 @@ namespace workphone::ui
                     auto label = dropdown->getLabel();
                     auto guiLabel = label.empty() ? name : label;
 
-                    if( ImGui::Combo( guiLabel.c_str(), &item_current, &optionsStr[0], strSize ) )
+                    const bool enabled = dropdown->isEnabled();
+                    ImGui::BeginDisabled( !enabled );
+                    const bool changed = ImGui::Combo( guiLabel.c_str(), &item_current, optionsStr.data(), strSize );
+                    ImGui::EndDisabled();
+                    if( changed && enabled )
                     {
                         dropdown->setSelectedOption( static_cast<u32>( item_current ) );
 

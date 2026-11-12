@@ -2,6 +2,7 @@
 #include <editor/OpenAISettingsControls.hpp>
 #include <Workphone/AI/OpenAICredentials.hpp>
 #include <Workphone/AI/MeshyCredentials.hpp>
+#include <Workphone/AI/Trellis2Credentials.hpp>
 #include <Workphone/Workphone.hpp>
 
 namespace workphone::editor
@@ -34,6 +35,12 @@ namespace workphone::editor
             "Meshy API key saved. New Image to Mesh requests will use it.",
             meshy_credentials::hasEditorKey, meshy_credentials::saveEditorKey,
             meshy_credentials::clearEditorKey };
+        const CredentialSettings trellis2Settings{
+            "fal.ai", "FAL_KEY", "EditorTrellis2Key", "EditorTrellis2KeySave",
+            "Save fal.ai Key", "Remove Saved fal.ai Key",
+            "fal.ai API key saved. New TRELLIS 2 requests will use it.",
+            trellis2_credentials::hasEditorKey, trellis2_credentials::saveEditorKey,
+            trellis2_credentials::clearEditorKey };
     }
 
     class ApiKeySettingsListener : public IEventListener
@@ -176,5 +183,15 @@ namespace workphone::editor
     void refreshMeshySettingsControls( SmartPtr<ui::IUIElement> parent )
     {
         refreshCredentialControls( parent, meshySettings );
+    }
+
+    void createTrellis2SettingsControls( SmartPtr<ui::IUIElement> parent )
+    {
+        createCredentialControls( parent, trellis2Settings );
+    }
+
+    void refreshTrellis2SettingsControls( SmartPtr<ui::IUIElement> parent )
+    {
+        refreshCredentialControls( parent, trellis2Settings );
     }
 }

@@ -124,7 +124,7 @@ namespace workphone::mesh_generation
         try
         {
             if( !bytes || size > maximumGeneratedGlbBytes || !detail::glb( bytes, size ) )
-                error = "Meshy returned an invalid or unsupported GLB mesh. A self-contained triangle mesh of at most 128 MiB is required.";
+                error = "The generated GLB mesh is invalid or unsupported. A self-contained triangle mesh of at most 128 MiB is required.";
         }
         catch( ... ) { error = "Could not validate the generated mesh."; }
 #else
