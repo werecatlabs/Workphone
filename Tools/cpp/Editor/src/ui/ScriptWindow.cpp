@@ -223,6 +223,16 @@ namespace workphone::editor
                 refreshOpenAISettingsControls( dynamic_pointer_cast<ui::IUIElement>( sender ) );
                 return {};
             }
+            if( eventValue == static_cast<hash_type>( StringUtil::getHash32( "createMeshySettings" ) ) )
+            {
+                createMeshySettingsControls( dynamic_pointer_cast<ui::IUIElement>( sender ) );
+                return {};
+            }
+            if( eventValue == static_cast<hash_type>( StringUtil::getHash32( "refreshMeshySettings" ) ) )
+            {
+                refreshMeshySettingsControls( dynamic_pointer_cast<ui::IUIElement>( sender ) );
+                return {};
+            }
         }
         if(eventType == EventType::UI &&
            eventValue == static_cast<hash_type>(StringUtil::getHash32("materialShaderReloadAction")))

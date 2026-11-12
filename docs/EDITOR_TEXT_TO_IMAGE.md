@@ -26,6 +26,16 @@ options below. This is independent of the assistant's `OPENAI_MODEL` setting.
 Generation sends the prompt to OpenAI and uses your API account. Your account
 must have access to the selected model and available API quota.
 
+If generation reports an API limit, the message distinguishes depleted credits,
+organization/project spending limits, approved usage limits, and temporary rate
+limits when OpenAI identifies the cause. Check the key's organization and project
+in [API billing](https://platform.openai.com/settings/organization/billing) and
+[API limits](https://platform.openai.com/settings/organization/limits). Waiting or
+repeatedly generating will not resolve exhausted credits or billing limits.
+Unknown HTTP 429 errors are reported without guessing the cause. The Editor does
+not automatically retry a failed generation or display raw provider error text.
+See [OpenAI's error guide](https://developers.openai.com/api/docs/guides/error-codes).
+
 ## Generate an asset
 
 1. Describe the desired image in the prompt field.
@@ -62,5 +72,7 @@ the CTest entries `WPAI.image_generation` and `WPEditor.text_to_image_assets`.
 `OpenAICredentialTests` / `WPAI.editor_credentials` checks credential precedence,
 validation, replacement and removal. Its persistence fixture uses a unique test
 credential and removes it afterward; it never accesses your saved Editor key.
+On Windows it also saves in one subprocess, then reads and removes the credential
+in a separate subprocess to verify that persistence survives process exit.
 
 API contract: [OpenAI Images API reference](https://developers.openai.com/api/reference/python/resources/images/methods/generate).

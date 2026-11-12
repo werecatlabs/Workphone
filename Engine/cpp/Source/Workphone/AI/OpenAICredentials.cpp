@@ -10,7 +10,7 @@ namespace workphone::openai_credentials
     {
         detail::CredentialStore editorStore()
         {
-            return detail::CredentialStore( L"Workphone/Editor/OpenAI" );
+            return detail::CredentialStore( detail::openAI.editorTarget, detail::openAI );
         }
     }
 

@@ -64,6 +64,84 @@ namespace
     }
 
 #ifdef _WIN32
+    std::wstring processTestTarget( const std::string &nonce )
+    {
+        require( !nonce.empty() && nonce.size() <= 100 &&
+                     nonce.find_first_not_of( "0123456789-" ) == std::string::npos,
+                 "Invalid credential subprocess test nonce" );
+        return L"Workphone/Tests/OpenAIKey/Process-" + std::wstring( nonce.begin(), nonce.end() );
+    }
+
+    void credentialProcess( const std::string &operation, const std::string &nonce )
+    {
+        credentials::CredentialStore store( processTestTarget( nonce ) );
+        std::string key, error;
+        if( operation == "--credential-save" )
+        {
+            require( store.read( key, error ) && key.empty(),
+                     "Subprocess credential fixture must initially be absent" );
+            require( store.write( "sk-test-process-persistent", error ),
+                     "First process could not save the test credential" );
+        }
+        else
+        {
+            require( operation == "--credential-read-remove", "Unknown credential test operation" );
+            require( store.read( key, error ) && key == "sk-test-process-persistent" && error.empty(),
+                     "Saved credential did not survive the writing process exiting" );
+            require( store.remove( error ) && store.read( key, error ) && key.empty(),
+                     "Second process could not remove the test credential" );
+        }
+    }
+
+    void runCredentialProcess( const wchar_t *operation, const std::string &nonce )
+    {
+        std::wstring executable( 32768, L'\0' );
+        const auto length = GetModuleFileNameW( nullptr, executable.data(),
+                                              static_cast<DWORD>( executable.size() ) );
+        require( length > 0 && length < executable.size(), "Could not locate credential test executable" );
+        executable.resize( length );
+        auto command = L"\"" + executable + L"\" " + operation + L" " +
+                       std::wstring( nonce.begin(), nonce.end() );
+        STARTUPINFOW startup{};
+        startup.cb = sizeof( startup );
+        PROCESS_INFORMATION process{};
+        require( CreateProcessW( executable.c_str(), command.data(), nullptr, nullptr, FALSE,
+                                 CREATE_NO_WINDOW, nullptr, nullptr, &startup, &process ) != FALSE,
+                 "Could not start credential test subprocess" );
+        struct ProcessCleanup
+        {
+            PROCESS_INFORMATION &process;
+            ~ProcessCleanup() { CloseHandle( process.hThread ); CloseHandle( process.hProcess ); }
+        } cleanup{ process };
+        const auto wait = WaitForSingleObject( process.hProcess, 10000 );
+        if( wait != WAIT_OBJECT_0 )
+        {
+            TerminateProcess( process.hProcess, 1 );
+            WaitForSingleObject( process.hProcess, 1000 );
+            require( false, "Credential test subprocess did not finish" );
+        }
+        DWORD exitCode = 1;
+        require( GetExitCodeProcess( process.hProcess, &exitCode ) && exitCode == 0,
+                 "Credential test subprocess failed" );
+    }
+
+    void processPersistenceContracts()
+    {
+        const auto nonce = std::to_string( GetCurrentProcessId() ) + "-" +
+                           std::to_string( std::chrono::steady_clock::now().time_since_epoch().count() );
+        credentials::CredentialStore store( processTestTarget( nonce ) );
+        struct Cleanup
+        {
+            credentials::CredentialStore &store;
+            ~Cleanup() { std::string ignored; store.remove( ignored ); }
+        } cleanup{ store };
+        runCredentialProcess( L"--credential-save", nonce );
+        runCredentialProcess( L"--credential-read-remove", nonce );
+        std::string key, error;
+        require( store.read( key, error ) && key.empty() && error.empty(),
+                 "Subprocess removal did not persist after the removing process exited" );
+    }
+
     void persistenceContracts()
     {
         const auto nonce = std::chrono::steady_clock::now().time_since_epoch().count();
@@ -102,15 +180,27 @@ namespace
 #endif
 }
 
-int main()
+int main( int argc, char **argv )
 {
     try
     {
+#ifdef _WIN32
+        if( argc == 3 )
+        {
+            credentialProcess( argv[1], argv[2] );
+            return 0;
+        }
+#endif
+        require( argc == 1, "Unexpected credential test arguments" );
         resolutionContracts();
 #ifdef _WIN32
         persistenceContracts();
+        processPersistenceContracts();
 #endif
         std::cout << "PASS: OpenAI credential precedence, validation, persistence and removal\n";
+#ifdef _WIN32
+        std::cout << "PASS: Credential save, read and removal across separate processes\n";
+#endif
         return 0;
     }
     catch( const std::exception &error )

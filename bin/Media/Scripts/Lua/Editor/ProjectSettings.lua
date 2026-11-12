@@ -604,6 +604,7 @@ function ProjectSettings:_clearRefs()
 	self.rendererSummaryText = nil;
 	self.controlBindings = {};
 	self.openaiSettingsHeader = nil;
+	self.meshySettingsHeader = nil;
 
 	-- Element references are cleared by name so Lua GC can release UI wrappers.
 	for key, _ in pairs(ProjectSettingsDefaults) do
@@ -805,6 +806,9 @@ function ProjectSettings:load()
 	self.openaiSettingsHeader = self:addHeader(ui, editorTab, "OpenAI");
 	self.window:handleEvent(IEvent.UI, StringUtil.getHash32("createOpenAISettings"),
 		Parameters(), self.openaiSettingsHeader, nil, nil);
+	self.meshySettingsHeader = self:addHeader(ui, editorTab, "Meshy");
+	self.window:handleEvent(IEvent.UI, StringUtil.getHash32("createMeshySettings"),
+		Parameters(), self.meshySettingsHeader, nil, nil);
 
 	-- Application ----------------------------------------------------------
 	local identityHeader = self:addHeader(ui, applicationTab, "Project Identity");
@@ -1370,6 +1374,10 @@ function ProjectSettings:show()
 	if self.openaiSettingsHeader then
 		self.window:handleEvent(IEvent.UI, StringUtil.getHash32("refreshOpenAISettings"),
 			Parameters(), self.openaiSettingsHeader, nil, nil);
+	end
+	if self.meshySettingsHeader then
+		self.window:handleEvent(IEvent.UI, StringUtil.getHash32("refreshMeshySettings"),
+			Parameters(), self.meshySettingsHeader, nil, nil);
 	end
 end
 

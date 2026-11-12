@@ -2571,7 +2571,7 @@ launchFlightSimulator()
             return responseText;
         }
 
-        String openAIHttpError( u32 statusCode )
+        String openAIHttpError( u32 statusCode, const String &body )
         {
             if( statusCode == 401 || statusCode == 403 )
             {
@@ -2580,7 +2580,46 @@ launchFlightSimulator()
             }
             if( statusCode == 429 )
             {
-                return "OpenAI rate limit or quota reached. Check your API usage and billing.";
+                // Only use recognized error codes/types. Provider messages can contain
+                // credentials or prompt text and must never reach the Editor or logs.
+                json::value value;
+                if( body.size() <= 64 * 1024 &&
+                    parseUniqueJSON( json::string_view( body.data(), body.size() ), value ) &&
+                    value.is_object() )
+                {
+                    const auto failure = value.as_object().if_contains( "error" );
+                    if( failure && failure->is_object() )
+                    {
+                        const auto &error = failure->as_object();
+                        const auto field = [&error]( const char *name ) -> json::string_view {
+                            const auto value = error.if_contains( name );
+                            return value && value->is_string() ? json::string_view( value->as_string() )
+                                                               : json::string_view();
+                        };
+                        const auto code = field( "code" );
+                        const auto type = field( "type" );
+                        if( code == "credit_balance_exhausted" )
+                            return "OpenAI API credits are exhausted. Add credits in your OpenAI "
+                                   "API billing settings before trying again.";
+                        if( code == "organization_spend_limit_exceeded" )
+                            return "OpenAI organization spending limit reached. Review the spending "
+                                   "limit in your OpenAI API organization settings.";
+                        if( code == "project_spend_limit_exceeded" )
+                            return "OpenAI project spending limit reached. Review the spending "
+                                   "limit in your OpenAI API project settings.";
+                        if( code == "organization_usage_limit_exceeded" )
+                            return "OpenAI organization usage limit reached. Request a higher "
+                                   "approved usage limit in your OpenAI API organization settings.";
+                        if( code == "insufficient_quota" || type == "insufficient_quota" )
+                            return "OpenAI API quota is exhausted. Check your API credit balance "
+                                   "and organization/project limits before trying again.";
+                        if( code == "rate_limit_exceeded" || code == "slow_down" ||
+                            type == "rate_limit_error" || type == "rate_limit_exceeded" )
+                            return "OpenAI is rate limiting requests. Wait before trying again.";
+                    }
+                }
+                return "OpenAI request limit reached (HTTP 429). Check your API billing and limits; "
+                       "the specific cause could not be identified.";
             }
             return "OpenAI request failed (HTTP " + StringUtil::toString( statusCode ) +
                    "). Check OPENAI_MODEL and your API account.";
@@ -2934,7 +2973,7 @@ launchFlightSimulator()
                 }
                 if( statusCode < 200 || statusCode >= 300 )
                 {
-                    return openAIHttpError( statusCode );
+                    return openAIHttpError( statusCode, body );
                 }
                 if( body.size() > maximumProviderResponseSize ||
                     !parseOpenAIResponse( body, response, error ) )
@@ -3023,7 +3062,7 @@ launchFlightSimulator()
             if( statusCode < 200 || statusCode >= 300 )
             {
                 if( statusCode == 401 || statusCode == 403 || statusCode == 429 )
-                    result.error = openAIHttpError( statusCode );
+                    result.error = openAIHttpError( statusCode, body );
                 else if( statusCode == 400 )
                     result.error = "OpenAI could not generate this image. Check the prompt, "
                                    "OPENAI_IMAGE_MODEL and your model access.";
@@ -3155,15 +3194,20 @@ launchFlightSimulator()
             return false;
         }
         statusCode = httpStatus;
-        if( statusCode < 200 || statusCode >= 300 )
+        const bool limitError = statusCode == 429;
+        if( ( statusCode < 200 || statusCode >= 300 ) && !limitError )
         {
             return true;
         }
+        // The limit classifier needs error.code/type from the response. Keep this
+        // small and fall back to the HTTP status if the error body is unavailable.
+        if( limitError ) maximumResponseSize = std::min<size_t>( maximumResponseSize, 64 * 1024 );
         for( ;; )
         {
             DWORD available = 0;
             if( !WinHttpQueryDataAvailable( request, &available ) )
             {
+                if( limitError ) { responseBody.clear(); return true; }
                 return false;
             }
             if( available == 0 )
@@ -3172,6 +3216,7 @@ launchFlightSimulator()
             }
             if( available > maximumResponseSize - responseBody.size() )
             {
+                if( limitError ) { responseBody.clear(); return true; }
                 error = "OpenAI response exceeded the size limit.";
                 return false;
             }
@@ -3180,6 +3225,7 @@ launchFlightSimulator()
             DWORD bytesRead = 0;
             if( !WinHttpReadData( request, responseBody.data() + offset, available, &bytesRead ) )
             {
+                if( limitError ) { responseBody.clear(); return true; }
                 return false;
             }
             responseBody.resize( offset + bytesRead );

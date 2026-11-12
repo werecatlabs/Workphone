@@ -129,6 +129,8 @@ namespace
         mutable unsigned imageCalls = 0, textCalls = 0, actionCalls = 0;
         String response = "{}";
         u32 status = 200;
+        u32 textStatus = 200;
+        String textResponse = R"({"status":"completed","output":[{"type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":"{\"message\":\"Ready\",\"actions\":[]}"}]}]})";
         bool connected = true, throwTransport = false;
 
         void image( const Bytes &bytes )
@@ -159,8 +161,8 @@ namespace
         {
             ++textCalls;
             capturedTextRequest = body;
-            code = 200;
-            output = R"({"status":"completed","output":[{"type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":"{\"message\":\"Ready\",\"actions\":[]}"}]}]})";
+            code = textStatus;
+            output = textResponse;
             return true;
         }
     };
@@ -257,6 +259,58 @@ namespace
             manager.response = R"({"error":{"message":"test-secret-never-transmitted"}})";
             checkFailure( manager.generateImage( request ) );
         }
+
+        manager.status = 429;
+        struct LimitCase
+        {
+            const char *code;
+            const char *type;
+            const char *expected;
+        };
+        for( const auto &limit : {
+                 LimitCase{ "credit_balance_exhausted", "insufficient_quota", "credits are exhausted" },
+                 LimitCase{ "organization_spend_limit_exceeded", "insufficient_quota", "organization spending limit" },
+                 LimitCase{ "project_spend_limit_exceeded", "insufficient_quota", "project spending limit" },
+                 LimitCase{ "organization_usage_limit_exceeded", "insufficient_quota", "organization usage limit" },
+                 LimitCase{ "insufficient_quota", "", "quota is exhausted" },
+                 LimitCase{ "", "insufficient_quota", "quota is exhausted" },
+                 LimitCase{ "rate_limit_exceeded", "", "Wait before trying again" },
+                 LimitCase{ "slow_down", "rate_limit_error", "Wait before trying again" },
+                 LimitCase{ "", "rate_limit_error", "Wait before trying again" },
+                 LimitCase{ "", "rate_limit_exceeded", "Wait before trying again" } } )
+        {
+            boost::json::object failure;
+            failure["code"] = limit.code;
+            failure["type"] = limit.type;
+            failure["message"] = "test-secret-never-transmitted sensitive-transport-detail";
+            manager.response = boost::json::serialize( boost::json::object{ { "error", failure } } );
+            const auto before = manager.imageCalls;
+            generated = manager.generateImage( request );
+            checkFailure( generated );
+            require( generated.error.find( limit.expected ) != String::npos,
+                     "Rate limit and billing failures need different recovery guidance" );
+            require( manager.imageCalls == before + 1, "Limit failure was automatically retried" );
+            manager.textStatus = 429;
+            manager.textResponse = manager.response;
+            require( manager.query( "Limit test", IAiManager::Provider::OpenAI ) == generated.error,
+                     "Text and image requests report limits differently" );
+        }
+        require( manager.actionCalls == 0, "Limit errors applied engine actions" );
+        manager.textStatus = 200;
+
+        for( const auto &response : {
+                 String( "not json" ), String( "[]" ), String( "{\"error\":null}" ),
+                 String( R"({"error":{"code":7,"type":[]}})" ),
+                 String( R"({"error":{"code":"sensitive-transport-detail","type":"test-secret-never-transmitted"}})" ),
+                 String( R"({"error":{"code":"insufficient_quota","code":"rate_limit_exceeded"}})" ),
+                 String( R"({"error":{"code":"insufficient_quota"}})" ) + String( 64 * 1024, ' ' ) } )
+        {
+            manager.response = response;
+            generated = manager.generateImage( request );
+            checkFailure( generated );
+            require( generated.error.find( "specific cause could not be identified" ) != String::npos,
+                     "Unknown or malformed error was misclassified" );
+        }
         manager.status = 200;
         manager.connected = false;
         checkFailure( manager.generateImage( request ) );
@@ -300,9 +354,11 @@ namespace
         manager.response = String( 32 * 1024 * 1024 + 1, ' ' );
         checkFailure( manager.generateImage( request ) );
 
+        manager.textResponse = R"({"status":"completed","output":[{"type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":"{\"message\":\"Ready\",\"actions\":[]}"}]}]})";
+        const auto textCalls = manager.textCalls;
         require( manager.query( "Keep existing text flow", IAiManager::Provider::OpenAI ) ==
                      "text actions processed", "Existing text provider seam regressed" );
-        require( manager.textCalls == 1 && manager.actionCalls == 1,
+        require( manager.textCalls == textCalls + 1 && manager.actionCalls == 1,
                  "Text and image provider flows are not independent" );
     }
 }
