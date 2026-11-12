@@ -141,9 +141,18 @@ namespace workphone::scene
     WPCore_API bool applyTerrainAppearance( SmartPtr<TerrainSystem> terrain,
                                             const render::TerrainAppearance &appearance,
                                             SmartPtr<ICommandManager> commands, String &error );
+    WPCore_API bool applyTerrainAutoMaterial( SmartPtr<TerrainSystem> terrain,
+                                              const render::TerrainAutoMaterial &rules,
+                                              SmartPtr<ICommandManager> commands, String &error );
+    /** Explicit sand/grass/rock/soil palette; retains authored texture identifiers and weights. */
+    WPCore_API bool applyTerrainIslandMaterials( SmartPtr<TerrainSystem> terrain,
+                                                 SmartPtr<ICommandManager> commands, String &error );
     WPCore_API bool applyTerrainLayer( SmartPtr<TerrainSystem> terrain, u32 index,
                                        const render::TerrainLayer &layer,
                                        SmartPtr<ICommandManager> commands, String &error );
+    WPCore_API bool applyTerrainLayers( SmartPtr<TerrainSystem> terrain,
+                                         const std::array<render::TerrainLayer, 4> &layers,
+                                         SmartPtr<ICommandManager> commands, String &error );
     WPCore_API bool saveTerrainDataFile( SmartPtr<TerrainSystem> terrain, const String &path,
                                          String &error );
     WPCore_API bool loadTerrainDataFile( SmartPtr<TerrainSystem> terrain, const String &path,

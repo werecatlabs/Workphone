@@ -1,5 +1,7 @@
 #include <WPGraphics/ClawRendererDX11.hpp>
 #include <WPGraphics/ClawRenderTarget.hpp>
+#include <WPGraphics/ClawTexture.hpp>
+#include <WPGraphics/ClawTextureManager.hpp>
 #include <WPGraphics/ClawMesh.hpp>
 #include <WPGraphics/ClawCamera.hpp>
 #include <WPGraphics/ClawDepthReadback.hpp>
@@ -27,6 +29,7 @@
 #include <cstdio>
 #include <cmath>
 #include <cstring>
+#include <new>
 #include <vector>
 
 
@@ -53,6 +56,70 @@ namespace
         if( !value )
             std::fprintf( stderr, "FAIL: %s\n", message );
         return value;
+    }
+
+    // Keep retired texture storage inaccessible until its retained render target
+    // is released. This catches backlinks that inspect freed memory deterministically.
+    class GuardedRenderTexture final : public workphone::render::ClawTexture
+    {
+    public:
+        inline static void *retired = nullptr;
+        inline static bool protectedAfterDelete = false;
+
+        static void *operator new( size_t size )
+        {
+            auto storage = VirtualAlloc( nullptr, size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE );
+            if( !storage ) throw std::bad_alloc();
+            return storage;
+        }
+
+        static void operator delete( void *storage ) noexcept
+        {
+            DWORD previous = 0;
+            retired = storage;
+            protectedAfterDelete =
+                VirtualProtect( storage, sizeof( GuardedRenderTexture ), PAGE_NOACCESS, &previous ) != 0;
+        }
+    };
+
+    bool testRetainedTargetTextureLifetime()
+    {
+        using namespace workphone;
+        using namespace workphone::render;
+        bool ok = true;
+        {
+            auto target = make_ptr<ClawRenderTarget>();
+            SmartPtr<GuardedRenderTexture> texture( new GuardedRenderTexture );
+#if WP_GARBAGE_COLLECTION == 1
+            texture->removeReference();
+#endif
+            texture->setRenderTarget( target );
+            target->setTexture( texture );
+            ok &= check( target->getTexture() == texture,
+                         "retained target resolves its live texture without owning it" );
+            texture = nullptr;
+            ok &= check( GuardedRenderTexture::protectedAfterDelete,
+                         "texture destruction protects its retired storage while target survives" );
+            ok &= check( !target->getTexture(),
+                         "retained target must not read a destroyed texture's storage" );
+            target = nullptr;
+            ok &= check( VirtualFree( GuardedRenderTexture::retired, 0, MEM_RELEASE ) != 0,
+                         "retained target destruction permits guarded fixture cleanup" );
+            GuardedRenderTexture::retired = nullptr;
+        }
+        {
+            auto manager = make_ptr<ClawTextureManager>();
+            auto texture = manager->createRenderTexture();
+            auto target = dynamic_pointer_cast<ClawRenderTarget>( texture->getRenderTarget() );
+            manager->destroyRenderTexture( texture );
+            texture = nullptr;
+            ok &= check( target && !target->getTexture(),
+                         "a frame-retained target expires after manager render-texture destruction" );
+            target = nullptr;
+            manager->unload( nullptr );
+        }
+        if( ok ) std::puts( "Retained render-target texture lifetime: PASS" );
+        return ok;
     }
 
     bool sameStatisticsCounters( const wp_render_statistics_dx11 &actual,
@@ -979,6 +1046,7 @@ int main()
     types.load();
     workphone::TypeManager::setInstance( &types );
     bool ok = true;
+    ok &= testRetainedTargetTextureLifetime();
     {
         workphone::render::ClawMesh mesh;
         auto *first = wp_graphics_object_create();

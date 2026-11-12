@@ -69,6 +69,25 @@ namespace workphone::render
         }
     };
 
+    /** Optional local-metre rules for layers 0..3: sand, grass, rock and soil.
+     * Beach/soil heights are relative to seaLevel; transitions are full blend widths.
+     * Disabled rules retain authored control weights and existing terrain appearance. */
+    struct TerrainAutoMaterial
+    {
+        bool enabled = false;
+        f32 seaLevel = 0, beachHeight = 6, beachTransition = 4;
+        f32 rockSlope = 35, rockTransition = 12;
+        f32 soilHeight = 110, soilTransition = 35;
+
+        bool operator==( const TerrainAutoMaterial &o ) const
+        {
+            return enabled == o.enabled && seaLevel == o.seaLevel && beachHeight == o.beachHeight &&
+                   beachTransition == o.beachTransition && rockSlope == o.rockSlope &&
+                   rockTransition == o.rockTransition && soilHeight == o.soilHeight &&
+                   soilTransition == o.soilTransition;
+        }
+    };
+
     /** Version-three rectangular heightfield. Heights are unscaled row-major samples:
      * index=z*dimensions.x+x; local position=(origin.x+x*spacing.x,
      * heights[index]*heightScale, origin.y+z*spacing.y). New assets use origin
@@ -86,6 +105,7 @@ namespace workphone::render
         // Empty weights mean (1,0,0,0) everywhere. Otherwise one normalized value per sample.
         Array<Vector4F> layerWeights;
         TerrainAppearance appearance;
+        TerrainAutoMaterial autoMaterial;
         // Optional sample-grid wetness/snow masks in [0,1]. Empty means (1,1);
         // global appearance strengths default to zero, preserving earlier assets.
         Array<Vector2F> surfaceMasks;
@@ -107,6 +127,9 @@ namespace workphone::render
 
     WPCore_API bool validateTerrainData( const TerrainData &data, String &error );
     WPCore_API Vector4F normalizeTerrainWeights( const Vector4F &weights );
+    /** Derive normalized sand/grass/rock/soil weights from local height and slope.
+     * Failure leaves data unchanged; disabled rules validate without modifying weights. */
+    WPCore_API bool applyTerrainAutoMaterial( TerrainData &data, String &error );
     WPCore_API bool terrainCellIsHole( const TerrainData &data, s32 x, s32 z );
     WPCore_API String serializeTerrainData( const TerrainData &data );
     /** Transactional parse; v1/v2 migrate with their existing appearance unchanged. */

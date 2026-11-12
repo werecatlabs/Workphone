@@ -169,6 +169,16 @@ namespace workphone::render
         const auto inRange = []( f32 value, f32 low, f32 high ) {
             return std::isfinite( value ) && value >= low && value <= high;
         };
+        const auto &rules = data.autoMaterial;
+        if( !inRange( rules.seaLevel, -1000000, 1000000 ) ||
+            !inRange( rules.beachHeight, 0, 1000000 ) ||
+            !inRange( rules.beachTransition, .001f, 1000000 ) ||
+            !inRange( rules.rockSlope, 0, 90 ) || !inRange( rules.rockTransition, .001f, 90 ) ||
+            !inRange( rules.soilHeight, 0, 1000000 ) ||
+            !inRange( rules.soilTransition, .001f, 1000000 ) )
+        {
+            return fail( error, "Terrain auto material rules exceed their finite supported ranges" );
+        }
         const auto &appearance = data.appearance;
         if( u32( appearance.projection ) > 1 || !inRange( appearance.triplanarSharpness, 1, 16 ) ||
             !inRange( appearance.heightTransition, .001f, 1 ) ||
@@ -673,6 +683,60 @@ namespace workphone::render
         }
     }
 
+    bool applyTerrainAutoMaterial( TerrainData &data, String &error )
+    {
+        if( !validateTerrainData( data, error ) )
+        {
+            return false;
+        }
+        if( !data.autoMaterial.enabled )
+        {
+            return true;
+        }
+        try
+        {
+            const auto &rules = data.autoMaterial;
+            const auto width = data.dimensions.x, depth = data.dimensions.y;
+            const auto transition = []( double value, double centre, double span ) {
+                const auto t = std::clamp( ( value - centre ) / span + .5, 0.0, 1.0 );
+                return t * t * ( 3 - 2 * t );
+            };
+            Array<Vector4F> weights( data.heights.size() );
+            for( s32 z = 0; z < depth; ++z )
+            {
+                for( s32 x = 0; x < width; ++x )
+                {
+                    const auto left = std::max( 0, x - 1 ), right = std::min( width - 1, x + 1 );
+                    const auto down = std::max( 0, z - 1 ), up = std::min( depth - 1, z + 1 );
+                    const auto dx = ( double( data.heights[size_t( z ) * width + right] ) -
+                                      data.heights[size_t( z ) * width + left] ) * data.heightScale /
+                                    ( double( right - left ) * data.spacing.x );
+                    const auto dz = ( double( data.heights[size_t( up ) * width + x] ) -
+                                      data.heights[size_t( down ) * width + x] ) * data.heightScale /
+                                    ( double( up - down ) * data.spacing.y );
+                    const auto slope = std::atan( std::hypot( dx, dz ) ) * 180 / 3.141592653589793;
+                    const auto index = size_t( z ) * width + x;
+                    const auto height = double( data.heights[index] ) * data.heightScale - rules.seaLevel;
+                    const auto rock = transition( slope, rules.rockSlope, rules.rockTransition );
+                    const auto upland = transition( height, rules.beachHeight, rules.beachTransition );
+                    const auto soil = transition( height, rules.soilHeight, rules.soilTransition );
+                    weights[index] = normalizeTerrainWeights(
+                        { f32( ( 1 - rock ) * ( 1 - upland ) ),
+                          f32( ( 1 - rock ) * upland * ( 1 - soil ) ), f32( rock ),
+                          f32( ( 1 - rock ) * upland * soil ) } );
+                }
+            }
+            data.layerWeights = std::move( weights );
+            error.clear();
+            return true;
+        }
+        catch( const std::exception &exception )
+        {
+            error = String( "Unable to prepare terrain auto material: " ) + exception.what();
+            return false;
+        }
+    }
+
     String serializeTerrainData( const TerrainData &value )
     {
         String error;
@@ -738,6 +802,28 @@ namespace workphone::render
         if( !addArray( "surfaceMasks", masks.data(), static_cast<int>( masks.size() ) ) )
         {
             return {};
+        }
+        if( !( data->autoMaterial == TerrainAutoMaterial{} ) )
+        {
+            const auto &rules = data->autoMaterial;
+            auto object = cJSON_AddObjectToObject( root.get(), "autoMaterial" );
+            if( !object || !cJSON_AddBoolToObject( object, "enabled", rules.enabled ) )
+            {
+                return {};
+            }
+            for( const auto &entry : { std::make_pair( "seaLevel", rules.seaLevel ),
+                                       std::make_pair( "beachHeight", rules.beachHeight ),
+                                       std::make_pair( "beachTransition", rules.beachTransition ),
+                                       std::make_pair( "rockSlope", rules.rockSlope ),
+                                       std::make_pair( "rockTransition", rules.rockTransition ),
+                                       std::make_pair( "soilHeight", rules.soilHeight ),
+                                       std::make_pair( "soilTransition", rules.soilTransition ) } )
+            {
+                if( !cJSON_AddNumberToObject( object, entry.first, entry.second ) )
+                {
+                    return {};
+                }
+            }
         }
         auto appearance = cJSON_AddObjectToObject( root.get(), "appearance" );
         const auto &a = data->appearance;
@@ -1023,6 +1109,31 @@ namespace workphone::render
             }
             if( version->valuedouble >= 3 )
             {
+                if( const auto object = field( "autoMaterial" ) )
+                {
+                    auto &rules = data.autoMaterial;
+                    const auto enabled = cJSON_GetObjectItemCaseSensitive( object, "enabled" );
+                    if( !cJSON_IsObject( object ) || !cJSON_IsBool( enabled ) )
+                    {
+                        return fail( error, "Terrain auto material object or enabled flag is invalid" );
+                    }
+                    rules.enabled = cJSON_IsTrue( enabled );
+                    for( const auto &entry : { std::make_pair( "seaLevel", &rules.seaLevel ),
+                                               std::make_pair( "beachHeight", &rules.beachHeight ),
+                                               std::make_pair( "beachTransition", &rules.beachTransition ),
+                                               std::make_pair( "rockSlope", &rules.rockSlope ),
+                                               std::make_pair( "rockTransition", &rules.rockTransition ),
+                                               std::make_pair( "soilHeight", &rules.soilHeight ),
+                                               std::make_pair( "soilTransition", &rules.soilTransition ) } )
+                    {
+                        const auto value = cJSON_GetObjectItemCaseSensitive( object, entry.first );
+                        if( !number( value ) )
+                        {
+                            return fail( error, "Terrain auto material scalar is invalid" );
+                        }
+                        *entry.second = f32( value->valuedouble );
+                    }
+                }
                 const auto appearance = field( "appearance" ), masks = field( "surfaceMasks" );
                 if( !cJSON_IsObject( appearance ) || !cJSON_IsArray( masks ) ||
                     ( cJSON_GetArraySize( masks ) != 0 &&

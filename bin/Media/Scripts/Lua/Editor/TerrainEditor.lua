@@ -4,6 +4,15 @@ TerrainEditorTypes =
 {
 	None = 0,
 
+    LandscapeEnabled=9200, LandscapeSeaLevel=9201, LandscapeBeachHeight=9202,
+    LandscapeBeachTransition=9203, LandscapeRockSlope=9204, LandscapeRockTransition=9205,
+    LandscapeSoilHeight=9206, LandscapeSoilTransition=9207, LandscapeApply=9208,
+    LandscapePalette=9209, LandscapeTextures=9210, LandscapeFoliageEnabled=9211,
+    LandscapeSeed=9212, LandscapeSpacing=9213, LandscapePalms=9214,
+    LandscapeBushes=9215, LandscapeGrass=9216, LandscapeGenerateFoliage=9217,
+    LandscapeOceanEnabled=9218, LandscapeOceanMargin=9219, LandscapeOceanApply=9220,
+    LandscapeFoliageSeaLevel=9221, LandscapeOceanSeaLevel=9222,
+
 	-- Resource slots
 	HeightMap = 101,
 	LayerBaseTexture = 102,
@@ -457,6 +466,32 @@ local TerrainEditorDefaults =
 }
 
 local TerrainHeightmapResolutions = { 256, 512, 1024, 2048, 4096, 8192 };
+
+local LandscapeControls = {
+    {id=9200,key="landscapeEnabled",native="enabled",label="Automatic materials",kind="toggle",default=false},
+    {id=9201,key="landscapeSeaLevel",native="seaLevel",label="Sea level (terrain local metres)",minimum=-4096,maximum=4096,default=0},
+    {id=9202,key="landscapeBeachHeight",native="beachHeight",label="Beach height above sea",minimum=0,maximum=100,default=6},
+    {id=9203,key="landscapeBeachTransition",native="beachTransition",label="Beach blend width",minimum=.1,maximum=100,default=4},
+    {id=9204,key="landscapeRockSlope",native="rockSlope",label="Rock slope (degrees)",minimum=0,maximum=90,default=35},
+    {id=9205,key="landscapeRockTransition",native="rockTransition",label="Rock blend width (degrees)",minimum=.1,maximum=90,default=12},
+    {id=9206,key="landscapeSoilHeight",native="soilHeight",label="Highland soil height above sea",minimum=0,maximum=2048,default=110},
+    {id=9207,key="landscapeSoilTransition",native="soilTransition",label="Soil blend width",minimum=.1,maximum=512,default=35},
+    {id=9211,key="landscapeFoliageEnabled",native="foliageEnabled",label="Procedural vegetation",kind="toggle",default=false},
+    {id=9221,key="landscapeFoliageSeaLevel",native="foliageSeaLevel",label="Vegetation sea level (local metres)",minimum=-4096,maximum=4096,default=0,section="vegetation"},
+    {id=9212,key="landscapeSeed",native="seed",label="Vegetation seed",minimum=0,maximum=100000,default=42,kind="int"},
+    {id=9213,key="landscapeSpacing",native="candidateSpacing",label="Candidate grid spacing (metres)",minimum=1,maximum=64,default=8},
+    {id=9214,key="landscapePalms",native="palmDensity",label="Palms per square metre",minimum=0,maximum=.02,default=.004},
+    {id=9215,key="landscapeBushes",native="bushDensity",label="Bushes per square metre",minimum=0,maximum=.05,default=.006},
+    {id=9216,key="landscapeGrass",native="grassDensity",label="Grass clumps per square metre",minimum=0,maximum=.1,default=.012},
+    {id=9218,key="landscapeOceanEnabled",native="oceanEnabled",label="Ocean plane",kind="toggle",default=false},
+    {id=9222,key="landscapeOceanSeaLevel",native="oceanSeaLevel",label="Ocean height (local metres)",minimum=-4096,maximum=4096,default=0},
+    {id=9219,key="landscapeOceanMargin",native="oceanMargin",label="Ocean extension beyond terrain",minimum=0,maximum=8192,default=512},
+};
+for _, setting in ipairs(LandscapeControls) do TerrainEditorDefaults[setting.key]=setting.default; end
+local function landscapeControlSection(setting)
+    if setting.section then return setting.section; end
+    return setting.id < 9211 and "material" or (setting.id < 9218 and "vegetation" or "ocean");
+end
 local TerrainControlResolutions = { 256, 512, 1024, 2048, 4096 };
 local TerrainChunkSizes = { 16, 32, 64, 128, 256 };
 local TerrainCollisionResolutions = { 128, 256, 512, 1024, 2048, 4096 };
@@ -1056,6 +1091,7 @@ function TerrainEditor:load()
 	self.editorWindow:addChild(self.tabBar);
 
 	local terrainTab = self.tabBar:addTabItem(); terrainTab:setLabel("Terrain");
+	local landscapeTab = self.tabBar:addTabItem(); landscapeTab:setLabel("Landscape");
 	local sculptTab = self.tabBar:addTabItem(); sculptTab:setLabel("Sculpt");
 	local layersTab = self.tabBar:addTabItem(); layersTab:setLabel("Paint/Layers");
 	local proceduralTab = self.tabBar:addTabItem(); proceduralTab:setLabel("Procedural");
@@ -1064,6 +1100,26 @@ function TerrainEditor:load()
 	local lodTab = self.tabBar:addTabItem(); lodTab:setLabel("LOD/Streaming");
 	local collisionTab = self.tabBar:addTabItem(); collisionTab:setLabel("Collision/Nav");
 	local debugTab = self.tabBar:addTabItem(); debugTab:setLabel("Tools/Debug");
+
+    addText(ui, landscapeTab, "Optional landscape setup. Layers are Sand, Grass, Rock and Soil. Existing terrain stays unchanged until you apply an option.", false);
+    local materialHeader=ui:addElement(collapsingHeaderTypeInfo); materialHeader:setLabel("Automatic Materials"); landscapeTab:addChild(materialHeader);
+    local vegetationHeader=ui:addElement(collapsingHeaderTypeInfo); vegetationHeader:setLabel("Procedural Vegetation"); landscapeTab:addChild(vegetationHeader);
+    local oceanHeader=ui:addElement(collapsingHeaderTypeInfo); oceanHeader:setLabel("Ocean"); landscapeTab:addChild(oceanHeader);
+    for _, setting in ipairs(LandscapeControls) do
+        local parent=setting.id < 9211 and materialHeader or ((setting.id < 9218 or setting.section == "vegetation") and vegetationHeader or oceanHeader);
+        local control;
+        if setting.kind == "toggle" then control=addToggle(ui,parent,setting.label,setting.id,self.settings[setting.key]);
+        else control=addSlider(ui,parent,setting.label,setting.id,setting.minimum,setting.maximum,self.settings[setting.key]); end
+        self:bindRef(setting.key .. "Control",control,setting.key,setting.kind or "value");
+    end
+    addText(ui, materialHeader, "Height and slope rules update after sculpting. Disable automatic materials to paint weights manually. Apply rules supports Edit > Undo/Redo.", false);
+    addButton(ui,materialHeader,"Apply Material Rules",TerrainEditorTypes.LandscapeApply,false);
+    addButton(ui,materialHeader,"Use Island Colours",TerrainEditorTypes.LandscapePalette,false);
+    addButton(ui,materialHeader,"Create Sand / Grass / Rock / Soil Textures",TerrainEditorTypes.LandscapeTextures,false);
+    addText(ui,vegetationHeader,"Places procedural palms, bushes and grass above sea level on suitable slopes and material layers. Regeneration also updates existing automatic foliage; manually placed plants are retained. Use a coarser candidate grid for larger terrains.",false);
+    addButton(ui,vegetationHeader,"Apply / Regenerate Vegetation",TerrainEditorTypes.LandscapeGenerateFoliage,false);
+    addText(ui,oceanHeader,"Creates a simple water surface. Match its height to the material and vegetation sea levels. The ocean follows the terrain transform and is saved as an editable child actor.",false);
+    addButton(ui,oceanHeader,"Apply Ocean Plane",TerrainEditorTypes.LandscapeOceanApply,false);
 
 	-- Terrain tab
 	local heightHeader = ui:addElement(collapsingHeaderTypeInfo);
@@ -1640,8 +1696,9 @@ end
 function TerrainEditor:syncMaterialControls()
     self:syncLayerSettings();
     self:syncAppearanceSettings();
+    self:syncLandscapeSettings("material");
     for elementId, binding in pairs(self.controlBindings or {}) do
-        if (TerrainNativeLayerControls[elementId] or TerrainAppearanceControlIds[elementId]) and binding.control then
+        if (TerrainNativeLayerControls[elementId] or TerrainAppearanceControlIds[elementId] or (elementId >= 9200 and elementId <= 9207)) and binding.control then
             self:setControlValue(binding.control, binding.valueType, self.settings[binding.key], binding.key);
         end
     end
@@ -1737,7 +1794,20 @@ function TerrainEditor:updateFoliageControls()
             .. "/" .. tostring(status.policySplits or 0);
     end
     safeCall(self.foliageDiagnosticsText,"setText",summary);
-    local controlKey=tostring(status.revision) .. ":" .. tostring(self.selectedTreeLayerIndex) .. ":" .. tostring(self.selectedGrassLayerIndex) .. ":" .. tostring(self.settings.foliageSpecies);
+    -- Import replaces the authoring object and may reuse its revision. Include
+    -- saved managed settings so reloads still refresh this group's controls.
+    local landscapeParts={tostring(status.revision), tostring(status.seed), tostring(status.candidateSpacing)};
+    for _,rule in ipairs(status.rules or {}) do
+        if rule.id == "landscape/palm" or rule.id == "landscape/bush" or rule.id == "landscape/grass" then
+            landscapeParts[#landscapeParts+1]=table.concat({rule.id, tostring(rule.enabled), tostring(rule.density), tostring(rule.minimumHeight)}, ":");
+        end
+    end
+    local landscapeKey=table.concat(landscapeParts, "|");
+    if not rawequal(self._landscapeFoliageOwner, self.terrain) or self._landscapeFoliageKey ~= landscapeKey then
+        self:syncLandscapeSettings("vegetation", true);
+        self._landscapeFoliageOwner=self.terrain; self._landscapeFoliageKey=landscapeKey;
+    end
+    local controlKey=landscapeKey .. ":" .. tostring(self.selectedTreeLayerIndex) .. ":" .. tostring(self.selectedGrassLayerIndex) .. ":" .. tostring(self.settings.foliageSpecies);
     if rawequal(self._foliageControlOwner, self.terrain) and self._foliageControlKey == controlKey then return; end
     self._foliageControlOwner=self.terrain; self._foliageControlKey=controlKey;
     self.settings.foliageSpacing=status.candidateSpacing;
@@ -1882,6 +1952,36 @@ function TerrainEditor:syncAppearanceSettings()
     end
 end
 
+function TerrainEditor:syncLandscapeSettings(section, updateControls)
+    if not self.terrain then return; end
+    local options={}; local ok,err=safeCall(self.terrain,"editTerrain","landscapeGet",options);
+    if ok and err == "" then
+        for _,setting in ipairs(LandscapeControls) do
+            if (not section or landscapeControlSection(setting) == section) and options[setting.native] ~= nil then
+                self.settings[setting.key]=options[setting.native];
+                local binding=self.controlBindings and self.controlBindings[setting.id];
+                if updateControls and binding and binding.control then
+                    self:setControlValue(binding.control,binding.valueType,self.settings[setting.key],setting.key);
+                end
+            end
+        end
+    end
+end
+
+function TerrainEditor:performLandscapeAction(elementId)
+    local actions={ [9208]="landscapeMaterial", [9209]="landscapePalette", [9210]="landscapeTextures", [9217]="landscapeFoliage", [9220]="landscapeOcean" };
+    local action=actions[elementId]; if not action then return false; end
+    self:syncFromControls();
+    local options={};
+    for _,setting in ipairs(LandscapeControls) do options[setting.native]=self.settings[setting.key]; end
+    if action == "landscapeFoliage" then options.enabled=self.settings.landscapeFoliageEnabled; options.seaLevel=self.settings.landscapeFoliageSeaLevel;
+    elseif action == "landscapeOcean" then options.enabled=self.settings.landscapeOceanEnabled; options.margin=self.settings.landscapeOceanMargin; options.seaLevel=self.settings.landscapeOceanSeaLevel; end
+    local ok=self:runTerrainOperation("editTerrain","Landscape updated.",action,options);
+    local section=action == "landscapeFoliage" and "vegetation" or (action == "landscapeOcean" and "ocean" or "material");
+    self:syncLandscapeSettings(section, true);
+    return ok;
+end
+
 function TerrainEditor:applyAppearanceSettings(changedKey)
     local options={};
     for _, setting in ipairs(TerrainAppearanceControls) do
@@ -1976,6 +2076,7 @@ end
 function TerrainEditor:syncTerrainDataSettings()
 	if self.terrain == nil then return; end
     self:syncAppearanceSettings();
+    self:syncLandscapeSettings();
 	local sizeOk, size = safeCall(self.terrain, "getHeightMapSize");
 	if sizeOk and size then
 		self._terrainWidth, self._terrainDepth = size:X(), size:Y();
@@ -2425,6 +2526,7 @@ function TerrainEditor:performFoliageAction(elementId)
 end
 
 function TerrainEditor:performAction(elementId)
+    if elementId >= 9200 and elementId <= 9220 then return self:performLandscapeAction(elementId); end
     if elementId == TerrainEditorTypes.GenerateBiome then return self:performFoliageAction(TerrainEditorTypes.FoliageMasks); end
     if elementId == TerrainEditorTypes.BakeImpostors or (elementId >= 7500 and elementId <= 7545) then return self:performFoliageAction(elementId); end
 	local actionNames =

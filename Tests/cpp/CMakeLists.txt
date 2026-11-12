@@ -336,6 +336,8 @@ if(WIN32 AND TARGET WPGraphics AND WP_GRAPHICS_SYSTEM_CLAW)
             target_link_libraries(${graphics_target} PRIVATE
                 WPGraphics Workphone WorkphoneGraphics WorkphoneCore WorkphonePlatform d3d11)
             if(graphics_contract STREQUAL "ClawProduction")
+                target_compile_definitions(${graphics_target} PRIVATE
+                    WP_TEST_SOURCE_TEXTURES=$<BOOL:${WP_BUILD_RESOURCE_SYSTEM}>)
                 target_link_libraries(${graphics_target} PRIVATE dbghelp d3dcompiler)
             endif()
             target_link_directories(${graphics_target} PRIVATE
@@ -1015,6 +1017,19 @@ if(WP_BUILD_TESTS AND TARGET Workphone)
 endif()
 
 if(WP_BUILD_TESTS AND TARGET WPProcedural)
+    add_executable(WPLandscapeSetupTests LandscapeSetupTests.cpp)
+    target_compile_definitions(WPLandscapeSetupTests PRIVATE BOOST_ALL_NO_LIB)
+    target_include_directories(WPLandscapeSetupTests PRIVATE
+        ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Dependencies/boost)
+    target_link_libraries(WPLandscapeSetupTests PRIVATE
+        $<TARGET_LINKER_FILE:Workphone> $<TARGET_LINKER_FILE:WPProcedural>)
+    add_dependencies(WPLandscapeSetupTests Workphone WPProcedural)
+    set_target_properties(WPLandscapeSetupTests PROPERTIES FOLDER Tests/Cpp)
+    add_test(NAME WPGraphics.landscape_setup COMMAND WPLandscapeSetupTests)
+    set_tests_properties(WPGraphics.landscape_setup PROPERTIES
+        LABELS "landscape;terrain;foliage;procedural" TIMEOUT 120
+        WORKING_DIRECTORY "$<TARGET_FILE_DIR:WPLandscapeSetupTests>")
+
     add_executable(WPProceduralCityTests
         ProceduralCityTestMain.cpp UnitTests/ProceduralCityTests.cpp)
     target_include_directories(WPProceduralCityTests PRIVATE

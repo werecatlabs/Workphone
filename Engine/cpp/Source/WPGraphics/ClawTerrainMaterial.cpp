@@ -1,10 +1,14 @@
 #include <WPGraphics/WPClawHammerPCH.hpp>
 #include <WPGraphics/ClawTerrainMaterial.hpp>
 #include <WPGraphics/ClawRendererDX11.hpp>
+#include <WPGraphics/ClawTexture.hpp>
+#include <WPGraphics/Resources/FoliageSourceTexture.hpp>
 #include <Workphone/System/ApplicationManager.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
 #include <Workphone/Interface/Database/IResourceDatabase.hpp>
 #include <Workphone/Interface/Graphics/ITexture.hpp>
+#include <Workphone/Interface/Graphics/IGraphicsSystem.hpp>
+#include <Workphone/Interface/Graphics/ITextureManager.hpp>
 #include <workphone_graphics_renderer.h>
 #include <workphone_graphics_renderer_dx11.h>
 #include <d3d11.h>
@@ -69,16 +73,51 @@ namespace workphone::render
                           : nullptr;
         }
 
-        SmartPtr<ITexture> resolveTexture( const String &name, String &error )
+        SmartPtr<ITexture> resolveTexture( const String &name, wp_renderer_dx11 *renderer,
+                                           String &error )
         {
             auto app = core::IApplicationManager::instancePtr();
+            if( name.substr( 0, 7 ) == "data://" )
+            {
+#if WP_FOLIAGE_SOURCE_RESOURCES
+                // Share the strict source-descriptor decoder and budgeted mip upload
+                // used by foliage. Saved authoring IDs remain valid after reopening;
+                // installed terrain continues to supply its captured runtime resolver.
+                return loadFoliageSourceTexture( app ? app->getProjectPath() : String(), name,
+                                                 renderer, error );
+#else
+                error = "Authored terrain texture descriptors require the resource system.";
+                return {};
+#endif
+            }
+            auto graphics = app ? app->getGraphicsSystem() : nullptr;
+            auto manager = graphics ? graphics->getTextureManager() : nullptr;
+            auto texture =
+                manager ? dynamic_pointer_cast<ITexture>( manager->getByName( name ) ) : nullptr;
             auto database = app ? app->getResourceDatabase() : nullptr;
-            auto texture = database ? database->loadResourceByType<ITexture>( name ) : nullptr;
+            if( !texture && database )
+            {
+                texture = database->loadResourceByType<ITexture>( name );
+            }
             if( !texture )
             {
                 error = "Terrain texture is unavailable: " + name;
             }
             return texture;
+        }
+
+        void *textureView( const SmartPtr<ITexture> &texture, wp_renderer_dx11 *renderer )
+        {
+            if( auto claw = dynamic_pointer_cast<ClawTexture>( texture ); claw && !claw->getRenderTarget() )
+            {
+                return claw->getNativeTextureView( renderer );
+            }
+            void *view = nullptr;
+            if( texture )
+            {
+                texture->getTextureFinal( &view );
+            }
+            return view;
         }
     }  // namespace
 
@@ -159,7 +198,9 @@ namespace workphone::render
             c.control_transform.y = 0.5f / depth - snapshot->origin.Y() * c.control_transform.w;
             if( !resolver )
             {
-                resolver = resolveTexture;
+                resolver = [native = nativeRenderer( renderer )]( const String &name, String &error ) {
+                    return resolveTexture( name, native, error );
+                };
             }
             candidate->retainedResolver = resolver;
             for( size_t layer = 0; layer < 4; ++layer )
@@ -188,8 +229,7 @@ namespace workphone::render
                         }
                         return {};
                     }
-                    void *view = nullptr;
-                    texture->getTextureFinal( &view );
+                    auto view = textureView( texture, nativeRenderer( renderer ) );
                     if( !view )
                     {
                         error = "Terrain texture has no uploaded GPU view: " + *names[map];
@@ -214,11 +254,7 @@ namespace workphone::render
             if( !appearance.detailNormal.empty() )
             {
                 auto texture = resolver( appearance.detailNormal, error );
-                void *view = nullptr;
-                if( texture )
-                {
-                    texture->getTextureFinal( &view );
-                }
+                auto view = textureView( texture, nativeRenderer( renderer ) );
                 if( !view )
                 {
                     if( error.empty() )
