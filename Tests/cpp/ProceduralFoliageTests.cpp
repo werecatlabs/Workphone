@@ -1,12 +1,18 @@
 #include <Workphone/Workphone.hpp>
 #include <Workphone/Scene/Components/ProceduralFoliage.hpp>
 #include <Workphone/Scene/Components/Terrain/FoliagePlantGenerator.hpp>
+#include <Workphone/Scene/Components/Terrain/FoliageAuthoring.hpp>
+#include <Workphone/Scene/Components/Terrain/LandscapeFoliage.hpp>
+#include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
+#include <Workphone/Graphics/GeneratedTextureSource.hpp>
 #include <Workphone/Scene/GameManager.hpp>
 #include <Workphone/System/ApplicationManager.hpp>
 #include <Workphone/System/FactoryManager.hpp>
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <filesystem>
+#include <fstream>
 #include <limits>
 #include <stdexcept>
 
@@ -59,7 +65,8 @@ namespace
         render::FoliageSpecies result;
         Array<render::FoliageMaterial> materials( subMeshes.size() );
         String error;
-        const auto imported = scene::importFoliageMesh( mesh, "test/component", materials, result, error );
+        const auto imported =
+            scene::importFoliageMesh( mesh, "test/component", materials, result, error );
         require( imported, error.c_str() );
         const auto &geometry = result.lods[0];
         require( !geometry.positions.empty() && !geometry.indices.empty(),
@@ -70,17 +77,15 @@ namespace
             const auto &normal = geometry.normals[vertex];
             const auto &uv = geometry.uvs[vertex];
             require( std::isfinite( position.x ) && std::isfinite( position.y ) &&
-                         std::isfinite( position.z ) && std::isfinite( uv.x ) &&
-                         std::isfinite( uv.y ) &&
+                         std::isfinite( position.z ) && std::isfinite( uv.x ) && std::isfinite( uv.y ) &&
                          std::abs( normal.lengthSquared() - 1.f ) < .001f,
                      "Foliage conversion produced invalid positions, normals, or UVs" );
         }
         return result;
     }
 
-    void requireSameGeometry( const render::FoliageMeshData &a,
-                              const render::FoliageMeshData &b, s32 preset, u32 lod,
-                              bool serialized = false )
+    void requireSameGeometry( const render::FoliageMeshData &a, const render::FoliageMeshData &b,
+                              s32 preset, u32 lod, bool serialized = false )
     {
         require( a.positions.size() == b.positions.size() && a.indices.size() == b.indices.size() &&
                      a.sections.size() == b.sections.size(),
@@ -92,20 +97,21 @@ namespace
             // Float properties serialize with six significant digits. This
             // permits ten micrometres of position drift after JSON roundtrip;
             // repeated generation without serialization remains bit-for-bit.
-            const bool same = ( serialized ? positionDelta < .00001f && normalDelta < .00001f :
-                                a.positions[vertex] == b.positions[vertex] &&
-                                a.normals[vertex] == b.normals[vertex] ) &&
+            const bool same = ( serialized ? positionDelta < .00001f && normalDelta < .00001f
+                                           : a.positions[vertex] == b.positions[vertex] &&
+                                                 a.normals[vertex] == b.normals[vertex] ) &&
                               a.uvs[vertex] == b.uvs[vertex];
             if( !same )
             {
                 const auto &p = a.positions[vertex], &q = b.positions[vertex];
                 const auto &n = a.normals[vertex], &m = b.normals[vertex];
                 const auto &u = a.uvs[vertex], &v = b.uvs[vertex];
-                std::fprintf( stderr,
+                std::fprintf(
+                    stderr,
                     "preset=%d lod=%u vertex=%zu position=(%.9g,%.9g,%.9g) -> (%.9g,%.9g,%.9g), "
                     "normal=(%.9g,%.9g,%.9g) -> (%.9g,%.9g,%.9g), uv=(%.9g,%.9g) -> (%.9g,%.9g)\n",
-                    preset, lod, vertex, p.x, p.y, p.z, q.x, q.y, q.z,
-                    n.x, n.y, n.z, m.x, m.y, m.z, u.x, u.y, v.x, v.y );
+                    preset, lod, vertex, p.x, p.y, p.z, q.x, q.y, q.z, n.x, n.y, n.z, m.x, m.y, m.z, u.x,
+                    u.y, v.x, v.y );
             }
             require( same, "Foliage component changed seeded vertex attributes" );
         }
@@ -153,9 +159,8 @@ namespace
                     if( position.y < height * .5f )
                     {
                         ++lowerTrunkVertices;
-                        lowerTrunkRadius = std::max(
-                            lowerTrunkRadius,
-                            real_Num( std::hypot( position.x, position.z ) ) );
+                        lowerTrunkRadius = std::max( lowerTrunkRadius,
+                                                     real_Num( std::hypot( position.x, position.z ) ) );
                     }
                 }
             }
@@ -168,16 +173,16 @@ namespace
                  "Palm must have a slender trunk extending to ground level" );
         require( leafMinimumY > height * .5f && leafMaximumY > height * .85f,
                  "Palm fronds must remain in the crown above the exposed lower trunk" );
-        require( leafMaximumX - leafMinimumX > radius * 1.3f &&
-                     leafMaximumZ - leafMinimumZ > radius * 1.3f,
-                 "Palm crown must retain broad radial fronds along both horizontal axes" );
+        require(
+            leafMaximumX - leafMinimumX > radius * 1.3f && leafMaximumZ - leafMinimumZ > radius * 1.3f,
+            "Palm crown must retain broad radial fronds along both horizontal axes" );
     }
 
     void presetContracts()
     {
         using Preset = scene::ProceduralFoliage::Preset;
-        for( const auto preset : { Preset::Oak, Preset::Birch, Preset::Pine, Preset::Bush,
-                                   Preset::Grass, Preset::TallGrass, Preset::Palm } )
+        for( const auto preset : { Preset::Oak, Preset::Birch, Preset::Pine, Preset::Bush, Preset::Grass,
+                                   Preset::TallGrass, Preset::Palm } )
         {
             const bool grass = preset == Preset::Grass || preset == Preset::TallGrass;
             FoliageProbe source;
@@ -187,8 +192,10 @@ namespace
 
             auto input = source.getProperties();
             input->setProperty( "Seed", u32( 7821 ) );
-            input->setProperty( "Height", propertyValue<real_Num>( input, "Height" ) * real_Num( 1.25 ) );
-            input->setProperty( "Radius", propertyValue<real_Num>( input, "Radius" ) * real_Num( 1.125 ) );
+            input->setProperty( "Height",
+                                propertyValue<real_Num>( input, "Height" ) * real_Num( 1.25 ) );
+            input->setProperty( "Radius",
+                                propertyValue<real_Num>( input, "Radius" ) * real_Num( 1.125 ) );
             input->setProperty( "Bark Colour", ColourF( .31f, .17f, .08f, 1 ) );
             input->setProperty( "Leaf Colour", ColourF( .12f, .41f, .09f, 1 ) );
             source.setProperties( input );
@@ -229,18 +236,207 @@ namespace
                                        propertyValue<real_Num>( input, property ) ) < real_Num( .00001 ),
                              "Foliage JSON roundtrip lost authored dimensions" );
                 }
-                require( propertyValue<u32>( output, "Branches" ) ==
-                             propertyValue<u32>( input, "Branches" ),
-                         "Foliage JSON roundtrip lost branch count" );
+                require(
+                    propertyValue<u32>( output, "Branches" ) == propertyValue<u32>( input, "Branches" ),
+                    "Foliage JSON roundtrip lost branch count" );
                 const auto bark = propertyValue<ColourF>( output, "Bark Colour" );
                 const auto leaves = propertyValue<ColourF>( output, "Leaf Colour" );
-                require( std::abs( bark.r - .31f ) < .00001f &&
-                             std::abs( leaves.g - .41f ) < .00001f,
+                require( std::abs( bark.r - .31f ) < .00001f && std::abs( leaves.g - .41f ) < .00001f,
                          "Foliage JSON roundtrip lost authored material colours" );
                 const auto after = readMesh( restored.buildMesh(), grass );
                 requireSameGeometry( before.lods[0], after.lods[0], s32( preset ), lod, true );
             }
         }
+    }
+
+    void landscapeContracts()
+    {
+        namespace fs = std::filesystem;
+        auto app = core::IApplicationManager::instancePtr();
+        const auto previousProject = app->getProjectPath();
+        const auto root = fs::temp_directory_path() / ( "WorkphoneLandscapeFoliage-" +
+                                                        std::string( StringUtil::getUUID().c_str() ) );
+        require( fs::create_directory( root ), "Cannot create landscape foliage test project" );
+
+        struct Cleanup
+        {
+            core::IApplicationManager *app;
+            String previous;
+            fs::path owned;
+
+            ~Cleanup()
+            {
+                app->setProjectPath( previous );
+                std::error_code ignored;
+                fs::remove_all( owned, ignored );
+            }
+        } cleanup{ app, previousProject, root };
+
+        app->setProjectPath( root.u8string().c_str() );
+
+        render::TerrainData ground;
+        ground.dimensions = { 65, 65 };
+        ground.spacing = { 4, 4 };
+        ground.origin = { -128, -128 };
+        ground.heights.resize( 65 * 65 );
+        ground.layerWeights.resize( 65 * 65 );
+        for( int z = 0; z < 65; ++z )
+        {
+            for( int x = 0; x < 65; ++x )
+            {
+                const float px = -128.f + x * 4;
+                const auto index = z * 65 + x;
+                ground.heights[index] =
+                    px < -48 ? -2.f : ( px < 0 ? 3.f : 6.f + std::max( 0.f, px - 64 ) * 2 );
+                ground.layerWeights[index] = px < 0    ? Vector4F( 1, 0, 0, 0 )
+                                             : px < 68 ? Vector4F( 0, 1, 0, 0 )
+                                                       : Vector4F( 0, 0, 1, 0 );
+            }
+        }
+        scene::TerrainSystem terrain;
+        String error;
+        require( terrain.applyTerrainData( ground, error ), error.c_str() );
+
+        // Existing unrelated authored/generated foliage must survive disabling
+        // landscape generation; a failed generation cannot replace either one.
+        auto previous = terrain.getFoliageAuthoring();
+        auto unrelated = std::make_shared<render::FoliageSpecies>();
+        auto plant = scene::foliagePresetRecipe( scene::FoliagePreset::Bush );
+        plant.speciesId = "authored/unrelated";
+        require( scene::generateFoliagePreset( scene::FoliagePreset::Bush, plant, *unrelated, error ),
+                 error.c_str() );
+        require( previous->setSpecies( { unrelated }, error ), error.c_str() );
+        scene::FoliagePlacementRecipe recipe;
+        recipe.candidateSpacing = 8;
+        scene::FoliagePlacementRule rule;
+        rule.species = 0;
+        rule.density = .02f;
+        rule.allowedLayers = 2;
+        rule.minimumLayerWeight = .5f;
+        recipe.rules = { rule };
+        require( previous->configure( recipe, error ) &&
+                     previous->regenerateAll( terrain.getTerrainSnapshot(), error ),
+                 error.c_str() );
+
+        scene::LandscapeFoliageSettings settings;
+        settings.palmDensity = settings.bushDensity = settings.grassDensity = .2f;
+        require( scene::configureLandscapeFoliage( &terrain, settings, error ), error.c_str() );
+        auto author = terrain.getFoliageAuthoring();
+        const auto first = author->getSnapshot();
+        require( first->species.size() == 4,
+                 "Landscape species should append without removing authored species" );
+        std::array<u32, 4> counts{};
+        for( const auto &instance : first->instances )
+        {
+            ++counts[instance.species];
+            if( instance.species )
+            {
+                require( instance.position.y >= .75f && instance.position.x < 68,
+                         "Landscape scatter planted underwater or on the rocky steep slope" );
+                float height = 0;
+                require( render::sampleTerrainHeight( ground, Transform3<real_Num>(), instance.position,
+                                                      height ) &&
+                             std::abs( height - instance.position.y ) < .001f,
+                         "Landscape foliage must use the authoritative terrain surface" );
+            }
+        }
+        require( counts[0] && counts[1] && counts[2] && counts[3],
+                 "Landscape generation must emit palms, bushes, grass and retain unrelated species" );
+        for( size_t species = 1; species < first->species.size(); ++species )
+        {
+            const auto &id = first->species[species]->materials[1].albedo;
+            require( id.substr( 0, 7 ) == "data://",
+                     "Landscape cutout must have a durable texture resource ID" );
+            auto descriptor = root / fs::u8path( id.substr( 7 ).c_str() );
+            require( fs::is_regular_file( descriptor ), "Landscape texture descriptor was not saved" );
+            std::ifstream source( descriptor, std::ios::binary );
+            const std::string text( ( std::istreambuf_iterator<char>( source ) ), {} );
+            require( text.find( "\"mipFilter\":\"cutout\"" ) != std::string::npos,
+                     "Foliage texture descriptor must preserve alpha-aware mip generation" );
+            descriptor.replace_extension( ".png" );
+            std::ifstream image( descriptor, std::ios::binary );
+            unsigned char signature[8]{};
+            image.read( reinterpret_cast<char *>( signature ), 8 );
+            require( image.gcount() == 8 && signature[0] == 137 && signature[1] == 'P' &&
+                         signature[2] == 'N' && signature[3] == 'G',
+                     "Landscape cutout source must be a durable PNG" );
+        }
+        require( scene::configureLandscapeFoliage( &terrain, settings, error ), error.c_str() );
+        author = terrain.getFoliageAuthoring();
+        const auto repeated = author->getSnapshot();
+        require( repeated->instances.size() == first->instances.size(),
+                 "Landscape regeneration must be deterministic" );
+        for( size_t i = 0; i < first->instances.size(); ++i )
+        {
+            require( repeated->instances[i].id == first->instances[i].id &&
+                         repeated->instances[i].position == first->instances[i].position &&
+                         repeated->instances[i].species == first->instances[i].species,
+                     "Landscape regeneration changed seeded placements" );
+        }
+
+        auto invalid = settings;
+        invalid.candidateSpacing = .05f;
+        require( !scene::configureLandscapeFoliage( &terrain, invalid, error ) &&
+                     terrain.getFoliageAuthoring()->getSnapshot() == repeated,
+                 "Over-budget landscape generation must retain the previous population" );
+        invalid = settings;
+        invalid.assetDirectory = "../outside-project";
+        require( !scene::configureLandscapeFoliage( &terrain, invalid, error ) &&
+                     terrain.getFoliageAuthoring()->getSnapshot() == repeated,
+                 "Invalid asset output must retain the previous population" );
+        require( author->paint( terrain.getTerrainSnapshot(), 1, { -24, 10 }, 1, 1, 73, error ),
+                 error.c_str() );
+        const auto beforeDisable = author->getSnapshot();
+        settings.enabled = false;
+        require( scene::configureLandscapeFoliage( &terrain, settings, error ), error.c_str() );
+        const auto disabled = terrain.getFoliageAuthoring()->getSnapshot();
+        size_t retained = 0;
+        for( const auto &instance : beforeDisable->instances )
+        {
+            if( instance.species != 0 && !instance.flags )
+            {
+                continue;
+            }
+            ++retained;
+            const auto found =
+                std::find_if( disabled->instances.begin(), disabled->instances.end(),
+                              [&]( const auto &value ) { return value.id == instance.id; } );
+            require(
+                found != disabled->instances.end() && found->position == instance.position &&
+                    found->flags == instance.flags && found->species == instance.species,
+                "Disabling landscape foliage must preserve unrelated and manually authored instances" );
+        }
+        require( retained == disabled->instances.size(),
+                 "Disabled landscape retained generated plants" );
+        scene::LandscapeFoliageSettings restoredSettings;
+        require( scene::getLandscapeFoliageSettings( &terrain, restoredSettings ) &&
+                     !restoredSettings.enabled && restoredSettings.seed == settings.seed &&
+                     restoredSettings.assetDirectory == settings.assetDirectory,
+                 "Landscape settings must be recoverable from persistent species and rules" );
+        scene::TerrainSystem reopened;
+        require( reopened.applyTerrainData( ground, error ) &&
+                     reopened.importFoliageData( terrain.exportFoliageData(), error ) &&
+                     scene::getLandscapeFoliageSettings( &reopened, restoredSettings ) &&
+                     !restoredSettings.enabled &&
+                     reopened.getFoliageAuthoring()->getSnapshot()->instances.size() == retained,
+                 "Landscape save/reopen must retain settings and manual instances" );
+
+        procedural::TextureBuffer color( 1, 1 );
+        color.pixels = { 255, 0, 0, 255 };
+        String texture, same;
+        require(
+            render::saveGeneratedTextureSource( color, app->getProjectPath(), "Assets/Test", "red",
+                                                render::TextureMipFilter::Colour, texture, error ) &&
+                render::saveGeneratedTextureSource( color, app->getProjectPath(), "Assets/Test", "red",
+                                                    render::TextureMipFilter::Colour, same, error ) &&
+                texture == same,
+            "Identical procedural texture exports must reuse persistent content identities" );
+        color.pixels[1] = 255;
+        require(
+            render::saveGeneratedTextureSource( color, app->getProjectPath(), "Assets/Test", "red",
+                                                render::TextureMipFilter::Colour, same, error ) &&
+                texture != same && fs::exists( root / fs::u8path( texture.substr( 7 ).c_str() ) ),
+            "Changed procedural pixels must create a new identity without replacing the prior asset" );
     }
 }  // namespace
 
@@ -257,7 +453,10 @@ int main()
     try
     {
         presetContracts();
-        std::puts( "Procedural foliage: seven presets, palm silhouette, LOD geometry, materials and JSON persistence PASS" );
+        landscapeContracts();
+        std::puts(
+            "Procedural foliage: seven presets, LOD geometry, JSON persistence, landscape "
+            "scatter, durable cutouts and non-destructive disable PASS" );
     }
     catch( const std::exception &error )
     {

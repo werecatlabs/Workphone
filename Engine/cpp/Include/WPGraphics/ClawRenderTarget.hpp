@@ -3,7 +3,7 @@
 
 #include <WPGraphics/WPClawHammerPrerequisites.hpp>
 #include <Workphone/Interface/Graphics/IRenderTexture.hpp>
-#include <Workphone/Memory/WeakPtr.hpp>
+#include <Workphone/Memory/ObjectObserver.hpp>
 #include <atomic>
 
 struct wp_renderer;
@@ -163,7 +163,9 @@ namespace workphone
             bool m_active = true;                    ///< Whether the target is active.
             std::atomic<bool> m_autoUpdated{ true };
             std::atomic<bool> m_updateRequested{ false };
-            WeakPtr<ITexture> m_texture;
+            // Frame snapshots can retain the target after its texture is destroyed.
+            // Observe an independent lifetime token instead of released texture storage.
+            ObjectObserver<ITexture> m_texture;
             RenderTargetStats m_stats;               ///< Cached rendering statistics.
             Array<SmartPtr<IViewport>> m_viewports;  ///< Attached viewports.
             wp_render_texture_dx11 *m_nativeRenderTexture = nullptr;

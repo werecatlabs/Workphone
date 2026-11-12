@@ -19,6 +19,8 @@
 
 namespace workphone
 {
+    String terrainLandscapeAuthoring( scene::TerrainSystem *, const String &, luabind::object );
+
     String terrainFoliageAuthoring( scene::TerrainSystem *terrain, const String &action,
                                     luabind::object options )
     {
@@ -685,6 +687,10 @@ namespace workphone
         if( action.find( "foliage" ) == 0 )
         {
             return terrainFoliageAuthoring( terrain, action, options );
+        }
+        if( action.find( "landscape" ) == 0 )
+        {
+            return terrainLandscapeAuthoring( terrain, action, options );
         }
         try
         {

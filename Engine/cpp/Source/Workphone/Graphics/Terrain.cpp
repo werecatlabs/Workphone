@@ -342,6 +342,7 @@ namespace workphone::render
                     current->heights == candidate->heights && current->layers == candidate->layers &&
                     current->layerWeights == candidate->layerWeights &&
                     current->holes == candidate->holes && current->appearance == candidate->appearance &&
+                    current->autoMaterial == candidate->autoMaterial &&
                     current->surfaceMasks == candidate->surfaceMasks )
                 {
                     return true;

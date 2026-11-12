@@ -53,12 +53,15 @@ int main()
                 throw std::runtime_error( "Lua state must initialize" );
             auto terrain = make_ptr<scene::TerrainSystem>();
             auto restored = make_ptr<scene::TerrainSystem>();
+            auto landscapeTerrain = make_ptr<scene::TerrainSystem>();
             render::TerrainData data;
             data.dimensions = Vector2I( 3, 5 );
             data.origin = Vector2F( -1, -2 );
             data.heights.assign( 15, 0 );
             String error;
             if( !terrain->applyTerrainData( data, error ) )
+                throw std::runtime_error( error.c_str() );
+            if( !landscapeTerrain->applyTerrainData( data, error ) )
                 throw std::runtime_error( error.c_str() );
 
             auto legacyTerrain = make_ptr<scene::TerrainSystem>();
@@ -87,6 +90,7 @@ int main()
 
             luabind::globals( state )["terrainFixture"] = terrain;
             luabind::globals( state )["restoredTerrainFixture"] = restored;
+            luabind::globals( state )["landscapeTerrainFixture"] = landscapeTerrain;
             luabind::globals( state )["terrainFixturePath"] =
                 String( ( folder / "edited.terrain.json" ).u8string().c_str() );
             const auto scripts = fs::path( WP_TEST_SOURCE_ROOT ) / "bin/Media/Scripts/Lua/Editor";
@@ -379,6 +383,51 @@ int main()
                 assert(not editor:updateBoundSetting(TerrainEditorTypes.LayerRoughness, {getValue=function() return 2 end}))
                 assert(terrainFixture:getTerrainRevision() == materialRevision)
                 assert(editor:updateBoundSetting(TerrainEditorTypes.LayerRoughness, {getValue=function() return priorRoughness end}))
+                -- Landscape UI actions reach the native optional material rules and command history.
+                local landscape = {}
+                assert(terrainFixture:editTerrain('landscapeGet', landscape) == '' and not landscape.enabled)
+                editor.settings.landscapeEnabled=true
+                editor.settings.landscapeSeaLevel=0
+                editor.settings.landscapeBeachHeight=6
+                assert(editor:performAction(TerrainEditorTypes.LandscapeApply))
+                assert(terrainFixture:editTerrain('landscapeGet', landscape) == '' and landscape.enabled)
+                local landscapeRevision=terrainFixture:getTerrainRevision()
+                assert(terrainFixture:editTerrain('landscapeMaterial', {rockSlope=100}) ~= '')
+                assert(terrainFixture:getTerrainRevision() == landscapeRevision)
+                IApplicationManager.instance():getCommandManager():getPreviousCommand():undo()
+                assert(terrainFixture:editTerrain('landscapeGet', landscape) == '' and not landscape.enabled)
+                editor:syncLandscapeSettings()
+                assert(not editor.settings.landscapeEnabled)
+                -- Vegetation retains a separately authored sea level on partial native edits.
+                assert(landscapeTerrainFixture:editTerrain('landscapeMaterial', {seaLevel=2}) == '')
+                assert(landscapeTerrainFixture:editTerrain('landscapeFoliage', {seaLevel=-5, seed=42}) == '')
+                assert(landscapeTerrainFixture:editTerrain('landscapeFoliage', {seed=43}) == '')
+                assert(landscapeTerrainFixture:editTerrain('landscapeGet', landscape) == '')
+                assert(landscape.seaLevel == 2 and landscape.foliageSeaLevel == -5 and landscape.seed == 43)
+                local landscapeEditor=TerrainEditor(nil)
+                landscapeEditor.terrain=landscapeTerrainFixture
+                landscapeEditor.settings.landscapeSeaLevel=313
+                landscapeEditor.settings.landscapeOceanSeaLevel=17
+                local vegetationControl={setValue=function(self, value) self.value=value end, getValue=function(self) return self.value end}
+                landscapeEditor.controlBindings[TerrainEditorTypes.LandscapeFoliageSeaLevel]={key='landscapeFoliageSeaLevel', valueType='value', control=vegetationControl}
+                landscapeEditor:updateFoliageControls()
+                assert(vegetationControl.value == -5 and landscapeEditor.settings.landscapeFoliageSeaLevel == -5)
+                assert(landscapeEditor.settings.landscapeSeaLevel == 313 and landscapeEditor.settings.landscapeOceanSeaLevel == 17)
+                local previousFoliageStatus={}
+                assert(landscapeTerrainFixture:editTerrain('foliageStatus', previousFoliageStatus) == '')
+                assert(landscapeTerrainFixture:editTerrain('landscapeFoliage', {seaLevel=-8}) == '')
+                local replacementFoliageStatus={}
+                assert(landscapeTerrainFixture:editTerrain('foliageStatus', replacementFoliageStatus) == '')
+                assert(replacementFoliageStatus.revision == previousFoliageStatus.revision and replacementFoliageStatus.rules[1].minimumHeight ~= previousFoliageStatus.rules[1].minimumHeight,
+                    'Fixture must cover replacement authoring with equal revisions and changed saved settings')
+                landscapeEditor:updateFoliageControls()
+                assert(vegetationControl.value == -8 and landscapeEditor.settings.landscapeFoliageSeaLevel == -8)
+                assert(landscapeEditor.settings.landscapeSeaLevel == 313 and landscapeEditor.settings.landscapeOceanSeaLevel == 17)
+                assert(landscapeEditor:updateBoundSetting(TerrainEditorTypes.LandscapeFoliageSeaLevel, {getValue=function() return -9 end}))
+                landscapeEditor:updateFoliageControls()
+                assert(landscapeEditor.settings.landscapeFoliageSeaLevel == -9, 'Unchanged native foliage must preserve pending vegetation drafts')
+                landscapeEditor:syncMaterialControls()
+                assert(landscapeEditor.settings.landscapeFoliageSeaLevel == -9 and landscapeEditor.settings.landscapeOceanSeaLevel == 17)
                 -- Global appearance controls use persistent native values, with rejected edits reported.
                 editor.controlBindings[TerrainEditorTypes.Wetness] = {key='wetness', valueType='value'}
                 editor.controlBindings[TerrainEditorTypes.AppearanceProjection] = {key='appearanceProjection', valueType='selected'}

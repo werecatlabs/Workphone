@@ -127,6 +127,11 @@ namespace workphone::scene
             const bool paint = brush.mode == TerrainBrushMode::Paint ||
                                brush.mode == TerrainBrushMode::ClearPaint ||
                                brush.mode == TerrainBrushMode::Normalize;
+            if( paint && source.autoMaterial.enabled )
+            {
+                error = "Disable auto material before painting terrain layers.";
+                return false;
+            }
             const bool masks = brush.mode >= TerrainBrushMode::PaintWetness;
             if( !holes && !paint && !masks && source.heightScale == 0 )
             {
@@ -418,6 +423,10 @@ namespace workphone::scene
         std::map<u32, Change<Vector2F>> masks;
         std::map<u32, Change<render::TerrainLayer>> layers;
         std::optional<Change<render::TerrainAppearance>> appearance;
+        std::optional<Change<render::TerrainAutoMaterial>> autoMaterial;
+        // Rule changes affect an entire bounded terrain, unlike sparse brush patches.
+        // Retain both maps so undoing enable also restores earlier manual painting.
+        std::optional<Change<Array<Vector4F>>> autoMaterialWeights;
         bool implicitWeightsBefore = true, implicitHolesBefore = true, implicitMasksBefore = true;
         bool succeeded = false;
         String error;
@@ -426,11 +435,36 @@ namespace workphone::scene
         bool empty() const
         {
             return heights.empty() && weights.empty() && holes.empty() && masks.empty() &&
-                   layers.empty() && !appearance;
+                   layers.empty() && !appearance && !autoMaterial && !autoMaterialWeights;
         }
 
         bool capture( const render::TerrainData &before, const render::TerrainData &after )
         {
+            const bool rulesChanged = !( before.autoMaterial == after.autoMaterial );
+            if( rulesChanged )
+            {
+                if( !autoMaterial )
+                {
+                    autoMaterial = Change<render::TerrainAutoMaterial>{ before.autoMaterial,
+                                                                       after.autoMaterial };
+                }
+                else
+                {
+                    autoMaterial->after = after.autoMaterial;
+                }
+                if( before.layerWeights != after.layerWeights )
+                {
+                    if( !autoMaterialWeights )
+                    {
+                        autoMaterialWeights =
+                            Change<Array<Vector4F>>{ before.layerWeights, after.layerWeights };
+                    }
+                    else
+                    {
+                        autoMaterialWeights->after = after.layerWeights;
+                    }
+                }
+            }
             if( !( before.appearance == after.appearance ) )
             {
                 if( !appearance )
@@ -473,7 +507,7 @@ namespace workphone::scene
                         found->second.after = after.heights[i];
                     }
                 }
-                if( weightsAt( before, i ) != weightsAt( after, i ) )
+                if( !rulesChanged && weightsAt( before, i ) != weightsAt( after, i ) )
                 {
                     auto found = weights.find( i );
                     if( found == weights.end() )
@@ -544,10 +578,10 @@ namespace workphone::scene
                 error = "Terrain grid changed; undo/redo rejected.";
                 return;
             }
-            const auto expected = [forward]( const auto &change ) {
+            const auto expected = [forward]( const auto &change ) -> const auto & {
                 return forward ? change.before : change.after;
             };
-            const auto replacement = [forward]( const auto &change ) {
+            const auto replacement = [forward]( const auto &change ) -> const auto & {
                 return forward ? change.after : change.before;
             };
             for( const auto &[i, change] : heights )
@@ -595,7 +629,25 @@ namespace workphone::scene
                 error = "Terrain appearance conflicts with a newer edit.";
                 return;
             }
+            if( autoMaterial && !( source->autoMaterial == expected( *autoMaterial ) ) )
+            {
+                error = "Terrain auto material rules conflict with a newer edit.";
+                return;
+            }
+            if( autoMaterialWeights && source->layerWeights != expected( *autoMaterialWeights ) )
+            {
+                error = "Terrain auto material weights conflict with a newer edit.";
+                return;
+            }
             auto candidate = *source;
+            if( autoMaterial )
+            {
+                candidate.autoMaterial = replacement( *autoMaterial );
+            }
+            if( autoMaterialWeights )
+            {
+                candidate.layerWeights = replacement( *autoMaterialWeights );
+            }
             if( appearance )
             {
                 candidate.appearance = replacement( *appearance );
@@ -960,6 +1012,67 @@ namespace workphone::scene
         return commitCandidate( terrain, *source, candidate, commands, error );
     }
 
+    bool applyTerrainAutoMaterial( SmartPtr<TerrainSystem> terrain,
+                                   const render::TerrainAutoMaterial &rules,
+                                   SmartPtr<ICommandManager> commands, String &error )
+    {
+        error.clear();
+        if( !terrain )
+        {
+            error = "No terrain selected.";
+            return false;
+        }
+        const auto source = terrain->getTerrainSnapshot();
+        auto candidate = *source;
+        candidate.autoMaterial = rules;
+        if( !render::validateTerrainData( candidate, error ) )
+        {
+            return false;
+        }
+        if( rules == source->autoMaterial )
+        {
+            return true;
+        }
+        if( !render::applyTerrainAutoMaterial( candidate, error ) )
+        {
+            return false;
+        }
+        return commitCandidate( terrain, *source, candidate, commands, error );
+    }
+
+    bool applyTerrainIslandMaterials( SmartPtr<TerrainSystem> terrain,
+                                      SmartPtr<ICommandManager> commands, String &error )
+    {
+        error.clear();
+        if( !terrain )
+        {
+            error = "No terrain selected.";
+            return false;
+        }
+        const auto source = terrain->getTerrainSnapshot();
+        auto candidate = *source;
+        const Vector4F tints[] = { { .76f, .67f, .44f, 1 }, { .22f, .36f, .11f, 1 },
+                                  { .38f, .37f, .34f, 1 }, { .35f, .25f, .16f, 1 } };
+        for( u32 layer = 0; layer < 4; ++layer )
+        {
+            candidate.layers[layer].tint = tints[layer];
+            candidate.layers[layer].uvScale = { .25f, .25f };
+            candidate.layers[layer].roughness = .9f;
+            candidate.layers[layer].metallic = 0;
+        }
+        candidate.appearance.projection = render::TerrainProjection::Triplanar;
+        candidate.appearance.macroStrength = .12f;
+        if( !render::validateTerrainData( candidate, error ) )
+        {
+            return false;
+        }
+        if( candidate.layers == source->layers && candidate.appearance == source->appearance )
+        {
+            return true;
+        }
+        return commitCandidate( terrain, *source, candidate, commands, error );
+    }
+
     bool applyTerrainLayer( SmartPtr<TerrainSystem> terrain, u32 index,
                             const render::TerrainLayer &layer, SmartPtr<ICommandManager> commands,
                             String &error )
@@ -978,6 +1091,30 @@ namespace workphone::scene
             return false;
         }
         if( candidate.layers[index] == source->layers[index] )
+        {
+            return true;
+        }
+        return commitCandidate( terrain, *source, candidate, commands, error );
+    }
+
+    bool applyTerrainLayers( SmartPtr<TerrainSystem> terrain,
+                             const std::array<render::TerrainLayer, 4> &layers,
+                             SmartPtr<ICommandManager> commands, String &error )
+    {
+        error.clear();
+        if( !terrain )
+        {
+            error = "No terrain selected.";
+            return false;
+        }
+        const auto source = terrain->getTerrainSnapshot();
+        auto candidate = *source;
+        candidate.layers = layers;
+        if( !render::validateTerrainData( candidate, error ) )
+        {
+            return false;
+        }
+        if( candidate.layers == source->layers )
         {
             return true;
         }

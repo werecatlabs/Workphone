@@ -2108,6 +2108,18 @@ namespace workphone::scene
                 error = "Terrain changed while the edit was being prepared.";
                 return false;
             }
+            if( candidate->autoMaterial.enabled &&
+                ( !( candidate->autoMaterial == m_terrainData->autoMaterial ) ||
+                  candidate->dimensions != m_terrainData->dimensions ||
+                  candidate->spacing != m_terrainData->spacing ||
+                  candidate->heightScale != m_terrainData->heightScale ||
+                  candidate->heights != m_terrainData->heights ||
+                  candidate->layerWeights != m_terrainData->layerWeights ||
+                  candidate->layerWeights.empty() ) &&
+                !render::applyTerrainAutoMaterial( *candidate, error ) )
+            {
+                return false;
+            }
             if( candidate->dimensions == m_terrainData->dimensions &&
                 candidate->spacing == m_terrainData->spacing &&
                 candidate->origin == m_terrainData->origin &&
@@ -2116,6 +2128,7 @@ namespace workphone::scene
                 candidate->layers == m_terrainData->layers &&
                 candidate->layerWeights == m_terrainData->layerWeights &&
                 candidate->appearance == m_terrainData->appearance &&
+                candidate->autoMaterial == m_terrainData->autoMaterial &&
                 candidate->surfaceMasks == m_terrainData->surfaceMasks &&
                 candidate->holes == m_terrainData->holes )
             {

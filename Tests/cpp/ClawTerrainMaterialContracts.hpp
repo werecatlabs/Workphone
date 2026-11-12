@@ -2,6 +2,13 @@
 #include "ClawFoliageContracts.hpp"
 #include <WPGraphics/ClawTerrainMaterial.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
+#if WP_TEST_SOURCE_TEXTURES
+#    include <WPGraphics/ClawTexture.hpp>
+#    include <Workphone/Graphics/GeneratedTextureSource.hpp>
+#    include <Workphone/System/ApplicationManager.hpp>
+#    include <Workphone/Core/StringUtil.hpp>
+#    include <filesystem>
+#endif
 
 namespace claw_terrain_material_contracts
 {
@@ -445,6 +452,99 @@ namespace claw_terrain_material_contracts
                 require( scheduler->stats().used[gpu] == before.used[gpu],
                          "last map candidate destruction must return its GPU budget" );
             }
+#if WP_TEST_SOURCE_TEXTURES
+            {
+                namespace fs = std::filesystem;
+                struct SourceProject
+                {
+                    SmartPtr<core::IApplicationManager> application =
+                        core::IApplicationManager::instance();
+                    String previous = application->getProjectPath();
+                    fs::path parent = fs::temp_directory_path();
+                    fs::path root = parent /
+                        ( "wp-terrain-source-" + std::string( StringUtil::getUUID().c_str() ) );
+                    SourceProject()
+                    {
+                        fs::create_directory( root );
+                        application->setProjectPath( root.generic_u8string().c_str() );
+                    }
+                    ~SourceProject()
+                    {
+                        application->setProjectPath( previous );
+                        std::error_code ignored;
+                        const auto resolved = fs::weakly_canonical( root, ignored );
+                        const auto sameParent = !ignored && fs::equivalent( resolved.parent_path(), parent,
+                                                                           ignored );
+                        if( !ignored && sameParent &&
+                            resolved.filename().string().find( "wp-terrain-source-" ) == 0 )
+                            fs::remove_all( root, ignored );
+                    }
+                } project;
+                procedural::TextureBuffer rgba( 4, 4 );
+                for( size_t pixel = 0; pixel < rgba.pixels.size(); pixel += 4 )
+                {
+                    rgba.pixels[pixel] = 255;
+                    rgba.pixels[pixel + 3] = 255;
+                }
+                String sourceId;
+                require( saveGeneratedTextureSource( rgba, project.application->getProjectPath(),
+                             "Assets/Landscape", "red", TextureMipFilter::Colour, sourceId, error ),
+                         "terrain fixture exports a durable PNG and typed source descriptor" );
+                auto authored = std::make_shared<TerrainData>();
+                authored->layers[0].albedo = sourceId;
+                ClawTerrainMaterial authoringOwner;
+                auto sourceCandidate = authoringOwner.stage( renderer, authored, error );
+                require( sourceCandidate && authoringOwner.publish( renderer, sourceCandidate, error ) &&
+                             authoringOwner.bind( renderer, error ),
+                         "default terrain resolver loads data IDs without catalog registration" );
+                const auto renderSource = [&]() {
+                    const auto unlit = material( { 1, 1, 1, 1 } );
+                    wp_renderer_dx11_set_material( native, &unlit );
+                    wp_renderer_dx11_clear( native, WORKPHONE_CLEAR_FLAG_ALL );
+                    wp_renderer_dx11_draw_geometry_pntc( native, mesh.get(), 0, 6, 0 );
+                    return pixels( native );
+                };
+                const auto sourcePixels = renderSource();
+                require( sourcePixels[center] > 250 && sourcePixels[center + 1] < 3 &&
+                             sourcePixels[center + 2] < 3,
+                         "generated RGBA source reaches actual terrain pixels without a red/blue swap" );
+                ClawTerrainMaterial::unbind( renderer );
+                authoringOwner.clear();
+                sourceCandidate.reset();
+                sourceCandidate = authoringOwner.stage( renderer, authored, error );
+                require( sourceCandidate && authoringOwner.publish( renderer, sourceCandidate, error ) &&
+                             authoringOwner.bind( renderer, error ),
+                         "reopening a saved terrain source reconstructs its texture without transient IDs" );
+                equivalent( sourcePixels, renderSource(), "source reload preserves terrain rendering" );
+
+                auto captured = make_ptr<ClawTexture>();
+                TextureMipLevel blue{ 1, 1, { 255, 0, 0, 255 } };
+                require( captured->uploadCookedMips( { blue }, {}, native, error ),
+                         "captured resolver fixture uploads independently of source files" );
+                project.application->setProjectPath( ( project.root / "absent" ).generic_u8string().c_str() );
+                u32 resolutions = 0;
+                auto capturedCandidate = authoringOwner.stage( renderer, authored, error,
+                    [&]( const String &id, String & ) -> SmartPtr<ITexture> {
+                        require( id == sourceId, "captured resolver receives the original durable identity" );
+                        ++resolutions;
+                        return captured;
+                    } );
+                require( capturedCandidate && resolutions == 1 &&
+                             authoringOwner.publish( renderer, capturedCandidate, error ) &&
+                             authoringOwner.bind( renderer, error ),
+                         "a captured runtime resolver bypasses authoring source lookup" );
+                const auto capturedPixels = renderSource();
+                require( capturedPixels[center + 2] > 250 && capturedPixels[center] < 3,
+                         "terrain samples the captured texture when raw project sources are absent" );
+                require( !authoringOwner.stage( renderer, authored, error ) &&
+                             authoringOwner.bind( renderer, error ),
+                         "missing authoring sources retain the complete previously published material" );
+                equivalent( capturedPixels, renderSource(),
+                            "failed source reload preserves captured material pixels" );
+                ClawTerrainMaterial::unbind( renderer );
+                std::puts( "Terrain source texture resolution, durable reload and captured resolver: PASS" );
+            }
+#endif
             ordinary = material( { 0, 0, 1, 1 } );
             wp_renderer_dx11_set_material( native, &ordinary );
             wp_renderer_dx11_clear( native, WORKPHONE_CLEAR_FLAG_ALL );

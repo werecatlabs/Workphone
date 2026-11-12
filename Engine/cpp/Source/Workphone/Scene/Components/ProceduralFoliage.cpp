@@ -21,92 +21,6 @@ namespace workphone::scene
                    preset == ProceduralFoliage::Preset::TallGrass;
         }
 
-        // Compact cutout sprites need no project-specific textures. White shades
-        // retain the inspector's leaf tint; transparent texels preserve silhouette gaps.
-        Array<u8> cutoutPixels( ProceduralFoliage::Preset preset )
-        {
-            constexpr u32 size = 128;
-            auto pixels = makeSourceBudgetSnapshot<u8>();
-            pixels.resize( size * size * 4, 0 );
-            const bool grass = isGrass( preset );
-            const bool pine = preset == ProceduralFoliage::Preset::Pine;
-            const bool palm = preset == ProceduralFoliage::Preset::Palm;
-            for( u32 y = 0; y < size; ++y )
-            {
-                for( u32 x = 0; x < size; ++x )
-                {
-                    const float u = ( x + .5f ) / size, v = ( y + .5f ) / size;
-                    bool covered = false;
-                    if( grass )
-                    {
-                        for( int blade = 0; blade < 7; ++blade )
-                        {
-                            const float top = .04f + .055f * ( ( blade * 3 ) % 5 );
-                            const float t = std::clamp( ( 1 - v ) / ( 1 - top ), 0.f, 1.f );
-                            const float base = .20f + .10f * blade;
-                            const float lean = ( blade - 3 ) * .045f;
-                            const float centre = base + lean * t * t;
-                            covered |= v >= top && v < .99f &&
-                                       std::abs( u - centre ) < .028f * ( 1 - t ) + .0015f;
-                        }
-                    }
-                    else if( palm )
-                    {
-                        // One feathered frond, mapped continuously over its curved
-                        // strip: base at v=1, tip at v=0. Gaps separate the leaflets.
-                        covered = v > .025f && v < .99f && std::abs( u - .5f ) < .012f;
-                        for( int leaf = 0; leaf < 14; ++leaf )
-                        {
-                            const float stem = .10f + leaf * .058f;
-                            const float reach = .12f + .35f * std::sin( 3.14159265f * stem );
-                            const float dx = std::abs( u - .5f );
-                            const float dy = v - ( stem - dx * .22f );
-                            covered |= dx < reach &&
-                                       std::abs( dy ) < .016f * ( 1 - dx / reach ) + .002f;
-                        }
-                    }
-                    else
-                    {
-                        covered = v > .10f && v < .96f && std::abs( u - .5f ) < .009f;
-                        const int pairs = pine ? 12 : 5;
-                        for( int leaf = 0; leaf < pairs; ++leaf )
-                        {
-                            const float stem = .20f + leaf * ( .65f / pairs );
-                            for( int side : { -1, 1 } )
-                            {
-                                const float dx = ( u - .5f ) * side;
-                                const float reach = pine ? .31f : .24f;
-                                const float dy = v - ( stem - dx * .6f );
-                                if( pine )
-                                {
-                                    covered |= dx > .015f && dx < reach &&
-                                               std::abs( dy ) < .007f * ( 1 - dx / reach ) + .002f;
-                                }
-                                else
-                                {
-                                    const float a = ( dx - .14f ) / .15f;
-                                    const float b = dy / .050f;
-                                    covered |= a * a + b * b < 1;
-                                }
-                            }
-                        }
-                        // A terminal leaf closes the tip of the broadleaf spray.
-                        if( !pine )
-                        {
-                            const float dx = ( u - .5f ) / .06f;
-                            const float dy = ( v - .12f ) / .10f;
-                            covered |= dx * dx + dy * dy < 1;
-                        }
-                    }
-                    const auto index = ( size_t( y ) * size + x ) * 4;
-                    const auto shade = u8( 205 + 45 * ( 1 - v ) );
-                    pixels[index] = pixels[index + 1] = pixels[index + 2] = shade;
-                    pixels[index + 3] = covered ? 255 : 0;
-                }
-            }
-            return pixels;
-        }
-
         SmartPtr<render::ITexture> createCutout( ProceduralFoliage::Preset preset )
         {
             auto manager =
@@ -127,7 +41,8 @@ namespace workphone::scene
                 properties->setProperty( "mipmapFilter", s32( render::TextureMipFilter::Cutout ) );
                 texture->setProperties( properties );
                 String error;
-                if( !texture->copyByteData( cutoutPixels( preset ), Vector2I( 128, 128 ), error ) )
+                if( !texture->copyByteData( foliagePresetCutout( preset ),
+                                            Vector2I( foliageCutoutSize, foliageCutoutSize ), error ) )
                 {
                     throw std::runtime_error( error );
                 }
@@ -154,58 +69,7 @@ namespace workphone::scene
     void ProceduralFoliage::setPreset( Preset preset )
     {
         m_preset = static_cast<Preset>( std::clamp( s32( preset ), 0, s32( Preset::Palm ) ) );
-        m_recipe = {};
-        m_recipe.seed = 7919;
-        m_recipe.bark.tint = { .27f, .15f, .065f, 1 };
-        m_recipe.leaves.tint = { .25f, .48f, .12f, 1 };
-        switch( m_preset )
-        {
-        case Preset::Oak:
-            m_recipe.height = 6;
-            m_recipe.radius = 2.3f;
-            m_recipe.trunkRadius = .20f;
-            m_recipe.branches = 28;
-            break;
-        case Preset::Birch:
-            m_recipe.height = 7;
-            m_recipe.radius = 1.35f;
-            m_recipe.trunkRadius = .10f;
-            m_recipe.branches = 20;
-            m_recipe.bark.tint = { .80f, .78f, .70f, 1 };
-            m_recipe.leaves.tint = { .40f, .58f, .16f, 1 };
-            break;
-        case Preset::Pine:
-            m_recipe.height = 8;
-            m_recipe.radius = 2.3f;
-            m_recipe.trunkRadius = .16f;
-            m_recipe.branches = 32;
-            m_recipe.leaves.tint = { .12f, .31f, .16f, 1 };
-            break;
-        case Preset::Bush:
-            m_recipe.kind = render::FoliageKind::Bush;
-            m_recipe.height = 1.3f;
-            m_recipe.radius = 1.0f;
-            m_recipe.trunkRadius = .035f;
-            m_recipe.branches = 16;
-            break;
-        case Preset::Palm:
-            m_recipe.height = 7;
-            m_recipe.radius = 3;
-            m_recipe.trunkRadius = .18f;
-            m_recipe.branches = 12;
-            m_recipe.bark.tint = { .46f, .34f, .20f, 1 };
-            m_recipe.leaves.tint = { .22f, .43f, .10f, 1 };
-            break;
-        case Preset::Grass:
-        case Preset::TallGrass:
-            m_recipe.kind = render::FoliageKind::Grass;
-            m_recipe.height = m_preset == Preset::Grass ? .45f : 1.1f;
-            m_recipe.radius = m_preset == Preset::Grass ? .40f : .55f;
-            m_recipe.trunkRadius = .01f;
-            m_recipe.branches = 16;
-            m_recipe.leaves.tint = { .36f, .52f, .16f, 1 };
-            break;
-        }
+        m_recipe = foliagePresetRecipe( m_preset );
         requestRegeneration();
     }
 
@@ -218,29 +82,11 @@ namespace workphone::scene
     {
         render::FoliageSpecies species;
         String error;
-        const auto shape = m_preset == Preset::Palm ? FoliagePlantShape::Palm :
-                                                    FoliagePlantShape::Broadleaf;
-        if( !generateFoliagePlant( m_recipe, shape, species, error ) )
+        if( !generateFoliagePreset( m_preset, m_recipe, species, error ) )
         {
             throw std::runtime_error( error );
         }
         auto &source = species.lods[std::min( m_lod, 2u )];
-        if( m_preset == Preset::Pine )
-        {
-            // Same conifer taper used by the procedural racing scene. Transform
-            // normals by the inverse transpose so crown lighting follows the shape.
-            for( size_t i = 0; i < source.positions.size(); ++i )
-            {
-                auto &p = source.positions[i];
-                auto &n = source.normals[i];
-                const float k = .68f / m_recipe.height;
-                const float width = .96f - .68f * std::clamp( p.y / m_recipe.height, 0.f, 1.f );
-                n = { n.x / width, n.y + k * ( p.x * n.x + p.z * n.z ) / width, n.z / width };
-                n.normalise();
-                p.x *= width;
-                p.z *= width;
-            }
-        }
         auto mesh = make_ptr<workphone::Mesh>();
         for( const auto &section : source.sections )
         {
@@ -419,8 +265,9 @@ namespace workphone::scene
     SmartPtr<Properties> ProceduralFoliage::getProperties() const
     {
         auto p = ProceduralMesh::getProperties();
-        procedural_properties::setEnum( p, "Preset", s32( m_preset ),
-                                        { "Oak", "Birch", "Pine", "Bush", "Grass", "Tall Grass", "Palm" } );
+        procedural_properties::setEnum(
+            p, "Preset", s32( m_preset ),
+            { "Oak", "Birch", "Pine", "Bush", "Grass", "Tall Grass", "Palm" } );
         p->getPropertyObject( "Preset" ).setReadOnly( true );
         p->setProperty( "Seed", m_recipe.seed );
         p->setProperty( "Height", m_recipe.height );
@@ -457,7 +304,8 @@ namespace workphone::scene
         }
         ProceduralMesh::setProperties( p );
         const auto preset = procedural_properties::getEnum(
-            p, "Preset", s32( m_preset ), { "Oak", "Birch", "Pine", "Bush", "Grass", "Tall Grass", "Palm" } );
+            p, "Preset", s32( m_preset ),
+            { "Oak", "Birch", "Pine", "Bush", "Grass", "Tall Grass", "Palm" } );
         if( preset != s32( m_preset ) )
         {
             setPreset( static_cast<Preset>( preset ) );

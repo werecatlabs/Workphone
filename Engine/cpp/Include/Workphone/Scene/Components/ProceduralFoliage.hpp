@@ -1,6 +1,6 @@
 #pragma once
 #include <Workphone/Scene/Components/ProceduralMesh.hpp>
-#include <Workphone/Scene/Components/Terrain/FoliagePlantGenerator.hpp>
+#include <Workphone/Scene/Components/Terrain/FoliagePresets.hpp>
 
 namespace workphone::scene
 {
@@ -8,7 +8,7 @@ namespace workphone::scene
     class WPCore_API ProceduralFoliage : public ProceduralMesh
     {
     public:
-        enum class Preset { Oak, Birch, Pine, Bush, Grass, TallGrass, Palm };
+        using Preset = FoliagePreset;
 
         ProceduralFoliage();
         ~ProceduralFoliage() override;

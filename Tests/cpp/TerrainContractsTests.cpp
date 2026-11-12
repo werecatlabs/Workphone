@@ -10,6 +10,7 @@
 #include <Workphone/System/TimerMT.hpp>
 #include <Workphone/System/StateManager.hpp>
 #include "TerrainDataContracts.hpp"
+#include "TerrainAutoMaterialContracts.hpp"
 #include "TerrainEditingContracts.hpp"
 #include "TerrainTileContracts.hpp"
 #include "TerrainIntegrationContracts.hpp"
@@ -198,6 +199,7 @@ int main( int argc, char **argv )
         {
         world_streaming_contracts::run();
         terrain_data_contracts::run();
+        terrain_auto_material_contracts::run();
         terrain_tile_contracts::run();
         terrain_integration_contracts::run();
         persistenceContracts();
