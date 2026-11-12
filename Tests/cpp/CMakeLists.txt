@@ -17,6 +17,16 @@ if(WP_BUILD_TESTS)
     add_test(NAME WPAI.editor_credentials COMMAND OpenAICredentialTests)
     set_tests_properties(WPAI.editor_credentials PROPERTIES LABELS "editor;ai;credentials;headless" TIMEOUT 30)
 
+    add_executable(MeshyCredentialTests MeshyCredentialTests.cpp)
+    target_compile_features(MeshyCredentialTests PRIVATE cxx_std_17)
+    target_include_directories(MeshyCredentialTests PRIVATE ${WP_ROOT}/Engine/cpp/Source/Workphone)
+    if(WIN32)
+        target_link_libraries(MeshyCredentialTests PRIVATE advapi32)
+    endif()
+    set_target_properties(MeshyCredentialTests PROPERTIES FOLDER Tests/Cpp)
+    add_test(NAME WPAI.meshy_credentials COMMAND MeshyCredentialTests)
+    set_tests_properties(WPAI.meshy_credentials PROPERTIES LABELS "editor;ai;credentials;headless" TIMEOUT 30)
+
     add_executable(TextToImageAssetTests TextToImageAssetTests.cpp)
     target_compile_features(TextToImageAssetTests PRIVATE cxx_std_17)
     target_include_directories(TextToImageAssetTests PRIVATE ${WP_ROOT}/Tools/cpp/Editor/src)
@@ -91,6 +101,27 @@ if(TARGET Workphone)
         add_test(NAME WPAI.image_generation COMMAND AiImageGenerationTests)
         set_tests_properties(WPAI.image_generation PROPERTIES
             LABELS "ai;images;headless" TIMEOUT 60)
+
+        foreach(_mesh_test IN ITEMS MeshyClientTests ImageToMeshAssetTests)
+            add_executable(${_mesh_test} ${_mesh_test}.cpp)
+            target_compile_features(${_mesh_test} PRIVATE cxx_std_17)
+            target_compile_definitions(${_mesh_test} PRIVATE BOOST_ALL_NO_LIB)
+            target_include_directories(${_mesh_test} PRIVATE
+                ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Dependencies/boost
+                ${WP_ROOT}/Tools/cpp/Editor/src)
+            target_link_libraries(${_mesh_test} PRIVATE Workphone)
+            if(WIN32)
+                target_link_directories(${_mesh_test} PRIVATE
+                    ${WP_ROOT}/Dependencies/lib/windows/boost
+                    ${WP_ROOT}/Dependencies/lib/windows/boost/$<CONFIG>
+                    ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
+            endif()
+            set_target_properties(${_mesh_test} PROPERTIES FOLDER Tests/Cpp)
+        endforeach()
+        add_test(NAME WPAI.image_to_mesh COMMAND MeshyClientTests)
+        add_test(NAME WPEditor.image_to_mesh_assets COMMAND ImageToMeshAssetTests)
+        set_tests_properties(WPAI.image_to_mesh WPEditor.image_to_mesh_assets PROPERTIES
+            LABELS "editor;ai;mesh;headless" TIMEOUT 60)
     endif()
 
     add_executable(RuntimeStartupTests RuntimeStartupTests.cpp)

@@ -47,6 +47,7 @@
 #include <ui/CityRoadWindow.hpp>
 #include <ui/GamePackageWindow.hpp>
 #include <ui/TextToImageWindow.hpp>
+#include <ui/ImageToMeshWindow.hpp>
 #include <Workphone/Workphone.hpp>
 #include <Workphone/Database/ResourceDatabase.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsPipeline.hpp>
@@ -719,6 +720,8 @@ namespace workphone::editor
                                "Draw and edit road splines on terrain", ui::IUIMenuItem::Type::Normal );
             Util::addMenuItem( windowMenu, static_cast<s32>( WidgetId::TextToImageWindowId ), "Text to Image",
                                "Generate image assets from a text prompt", ui::IUIMenuItem::Type::Normal );
+            Util::addMenuItem( windowMenu, static_cast<s32>( WidgetId::ImageToMeshWindowId ), "Image to Mesh",
+                               "Generate a 3D mesh from an image", ui::IUIMenuItem::Type::Normal );
             Util::addMenuItem( windowMenu, static_cast<s32>( WidgetId::SoundWindowId ),
                                ICON_FA_MUSIC " Sound", "Sound", ui::IUIMenuItem::Type::Normal );
             Util::addMenuItem( windowMenu, static_cast<s32>( WidgetId::ParticleWindowId ),
@@ -983,6 +986,8 @@ namespace workphone::editor
 
         m_textToImageWindow = workphone::make_ptr<TextToImageWindow>();
         m_textToImageWindow->load( nullptr );
+        m_imageToMeshWindow = workphone::make_ptr<ImageToMeshWindow>();
+        m_imageToMeshWindow->load( nullptr );
 
         auto proceduralModelEditorWindow = factoryManager->make_ptr<ScriptWindow>();
         proceduralModelEditorWindow->setClassName( "ProceduralModelEditor" );
@@ -1175,6 +1180,11 @@ namespace workphone::editor
         {
             m_textToImageWindow->unload( nullptr );
             m_textToImageWindow = nullptr;
+        }
+        if( m_imageToMeshWindow )
+        {
+            m_imageToMeshWindow->unload( nullptr );
+            m_imageToMeshWindow = nullptr;
         }
 
         if( auto fileWindow = getFileWindow() )
@@ -1461,6 +1471,14 @@ namespace workphone::editor
         if( m_textToImageWindow )
         {
             m_textToImageWindow->update();
+        }
+    }
+
+    void UIManager::updateImageToMeshWindow()
+    {
+        if( m_imageToMeshWindow )
+        {
+            m_imageToMeshWindow->update();
         }
     }
 
@@ -2092,6 +2110,14 @@ namespace workphone::editor
             case WidgetId::TextToImageWindowId:
             {
                 if( auto window = uiManager->m_textToImageWindow )
+                {
+                    window->setWindowVisible( true );
+                }
+            }
+            break;
+            case WidgetId::ImageToMeshWindowId:
+            {
+                if( auto window = uiManager->m_imageToMeshWindow )
                 {
                     window->setWindowVisible( true );
                 }

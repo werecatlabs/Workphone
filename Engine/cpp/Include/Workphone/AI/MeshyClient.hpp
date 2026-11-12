@@ -2,6 +2,7 @@
 
 #include <Workphone/WorkphonePrerequisites.hpp>
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <string>

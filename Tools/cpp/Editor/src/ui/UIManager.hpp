@@ -18,6 +18,7 @@ namespace workphone
         class CityRoadWindow;
         class GamePackageWindow;
         class TextToImageWindow;
+        class ImageToMeshWindow;
 
         /**
          * @file UIManager.hpp
@@ -355,6 +356,7 @@ namespace workphone
                 LuaDebuggerWindowId,
                 BuildGameId,
                 TextToImageWindowId,
+                ImageToMeshWindowId,
             };
 
             /** @brief Default constructor. Sets up internal listeners and state. */
@@ -427,6 +429,7 @@ namespace workphone
             SmartPtr<CityRoadWindow> getCityRoadWindow() const;
             void updateGamePackageWindow();
             void updateTextToImageWindow();
+            void updateImageToMeshWindow();
 
             /**
              * @brief Set the TerrainWindow instance used by the manager.
@@ -867,6 +870,7 @@ namespace workphone
             SmartPtr<CityRoadWindow> m_cityRoadWindow;
             SmartPtr<GamePackageWindow> m_gamePackageWindow;
             SmartPtr<TextToImageWindow> m_textToImageWindow;
+            SmartPtr<ImageToMeshWindow> m_imageToMeshWindow;
             SmartPtr<EditorWindow> m_luaDebuggerWindow;
             SmartPtr<EditorWindow> m_inputManagerWindow;                ///< Input management window.
             SmartPtr<LayerManager> m_layerManager;                      ///< Central actor layer list.

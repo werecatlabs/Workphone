@@ -5,6 +5,8 @@ Workphone is a game engine. It was made to explore procedural rendering and Ai i
 
 The Editor supports [text-to-image asset generation](docs/EDITOR_TEXT_TO_IMAGE.md)
 from **Window > Text to Image**.
+It also supports [image-to-mesh generation](docs/EDITOR_IMAGE_TO_MESH.md) with Meshy
+from **Window > Image to Mesh**.
 
 ## Supported Backends
 * Direct3D 11

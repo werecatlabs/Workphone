@@ -3,6 +3,8 @@
 #include <boost/json.hpp>
 #include <algorithm>
 #include <cstdint>
+#include <cmath>
+#include <cstring>
 #include <limits>
 #include <string>
 #include <unordered_set>
@@ -171,7 +173,7 @@ namespace workphone::mesh_generation::detail
 
     struct Accessor
     {
-        std::uint64_t count = 0, component = 0;
+        std::uint64_t count = 0, component = 0, offset = 0, stride = 0;
         std::string type;
     };
 
@@ -232,14 +234,21 @@ namespace workphone::mesh_generation::detail
                                        info.component == 5125 || info.component == 5126 ? 4 : 0;
             if( !components || !width || offset % width ) return false;
             const auto &view = views->as_array()[static_cast<std::size_t>( viewIndex )].as_object();
+            std::uint64_t viewOffset = 0;
             if( !unsignedValue( view.if_contains( "byteLength" ), length ) ||
+                !optionalUnsigned( view, "byteOffset", viewOffset ) ||
                 !optionalUnsigned( view, "byteStride", stride, components * width ) ||
                 stride < components * width || stride % width || stride > 252 ||
-                offset > length || components * width > length - offset ||
+                ( viewOffset + offset ) % width || offset > length || components * width > length - offset ||
                 info.count - 1 > ( length - offset - components * width ) / stride ) return false;
+            info.offset = viewOffset + offset;
+            info.stride = stride;
             metadata.push_back( info );
         }
         bool triangles = false;
+        std::vector<bool> checkedPositions( metadata.size(), false ), checkedIndices( metadata.size(), false );
+        std::vector<std::uint32_t> largestIndex( metadata.size(), 0 );
+        std::uint64_t scanBudget = 128u * 1024u * 1024u;
         for( const auto &mesh : meshes->as_array() )
         {
             if( !mesh.is_object() ) return false;
@@ -256,12 +265,49 @@ namespace workphone::mesh_generation::detail
                     !optionalUnsigned( fields, "mode", mode, 4 ) || mode != 4 ) return false;
                 const auto &vertices = metadata[static_cast<std::size_t>( position )];
                 if( vertices.type != "VEC3" || vertices.component != 5126 || vertices.count < 3 ) return false;
+                if( !checkedPositions[static_cast<std::size_t>( position )] )
+                {
+                    if( vertices.count > scanBudget / 12 ) return false;
+                    scanBudget -= vertices.count * 12;
+                    for( std::uint64_t vertex = 0; vertex < vertices.count; ++vertex )
+                    {
+                        const auto pointer = bytes + binOffset + 8 + vertices.offset + vertex * vertices.stride;
+                        for( unsigned component = 0; component < 3; ++component )
+                        {
+                            const auto bits = little( pointer + component * 4 );
+                            float coordinate = 0;
+                            std::memcpy( &coordinate, &bits, sizeof( coordinate ) );
+                            if( !std::isfinite( coordinate ) ) return false;
+                        }
+                    }
+                    checkedPositions[static_cast<std::size_t>( position )] = true;
+                }
+                for( const auto &attribute : attributes->as_object() )
+                {
+                    std::uint64_t accessor = 0;
+                    if( !unsignedValue( &attribute.value(), accessor ) || accessor >= metadata.size() ||
+                        metadata[static_cast<std::size_t>( accessor )].count != vertices.count ) return false;
+                }
                 if( const auto indexed = fields.if_contains( "indices" ) )
                 {
                     if( !unsignedValue( indexed, indices ) || indices >= metadata.size() ) return false;
                     const auto &elements = metadata[static_cast<std::size_t>( indices )];
                     if( elements.type != "SCALAR" || ( elements.component != 5121 && elements.component != 5123 && elements.component != 5125 ) ||
                         elements.count < 3 || elements.count % 3 ) return false;
+                    if( !checkedIndices[static_cast<std::size_t>( indices )] )
+                    {
+                        if( elements.count > scanBudget / 4 ) return false;
+                        scanBudget -= elements.count * 4;
+                        for( std::uint64_t index = 0; index < elements.count; ++index )
+                        {
+                            const auto pointer = bytes + binOffset + 8 + elements.offset + index * elements.stride;
+                            const auto value = elements.component == 5121 ? std::uint32_t( pointer[0] ) :
+                                               elements.component == 5123 ? std::uint32_t( pointer[0] ) | ( std::uint32_t( pointer[1] ) << 8 ) : little( pointer );
+                            largestIndex[static_cast<std::size_t>( indices )] = std::max( largestIndex[static_cast<std::size_t>( indices )], value );
+                        }
+                        checkedIndices[static_cast<std::size_t>( indices )] = true;
+                    }
+                    if( largestIndex[static_cast<std::size_t>( indices )] >= vertices.count ) return false;
                 }
                 else if( vertices.count % 3 ) return false;
                 triangles = true;
