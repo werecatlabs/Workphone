@@ -198,7 +198,6 @@ namespace
                 BOOST_REQUIRE( physicsScene );
                 BOOST_REQUIRE_CLOSE( physicsScene->getGravity().Y(), -7.5f, .001f );
 #if WP_BUILD_PHYSICS3
-                BOOST_REQUIRE_EQUAL( project->getProperties()->getProperty( "physics.disabledCollisionPairs" ), "Enemy,Player" );
                 BOOST_REQUIRE_EQUAL( physicsScene->getProperties()->getProperty( "physics.disabledCollisionPairs" ), "Enemy,Player" );
 #endif
                 evidence->setProperty( "startupAudioAndGravityMatchedBeforeUpdate", true );
@@ -212,6 +211,9 @@ namespace
                 }
                 BOOST_REQUIRE( editor->getProject() );
                 BOOST_REQUIRE_EQUAL( fs::u8path( editor->getProject()->getFilePath().c_str() ), projectFile );
+#if WP_BUILD_PHYSICS3
+                BOOST_REQUIRE_EQUAL( editor->getProject()->getProperties()->getProperty( "physics.disabledCollisionPairs" ), "Enemy,Player" );
+#endif
                 evidence->setProperty( "rememberedProjectOpenedByStartupFSM", true );
             }
             else
@@ -1032,7 +1034,7 @@ BOOST_AUTO_TEST_CASE( editor_material_control_events_test )
     auto metallicColour = workphone::dynamic_pointer_cast<ui::IUIColourPicker>( controls[3] );
     BOOST_REQUIRE( albedoColour );
     BOOST_REQUIRE( metallicColour );
-    const auto editColour = []( const SmartPtr<ui::IUIColourPicker> &picker, const ColourF &colour ) {
+    const auto editColour = []( SmartPtr<ui::IUIColourPicker> picker, const ColourF &colour ) {
         picker->setColour( ColourF( colour.r, colour.g, colour.b, picker->getColour().a ) );
         for( auto listener : picker->getObjectListeners() )
         {

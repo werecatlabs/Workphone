@@ -7,6 +7,7 @@
 #include <Workphone/Workphone.hpp>
 #include <Workphone/Scene/Components/CityRoadAuthoring.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
+#include <WPImGui/SceneViewportToolInput.hpp>
 
 #if WP_EDITOR_TESTS
 #include <boost/test/unit_test.hpp>
@@ -38,11 +39,28 @@ namespace
         explicit RoadTaskOwner(SmartPtr<ITask> value):task(value),previous(value->getOwner()){task->setOwner(nullptr);}
         ~RoadTaskOwner(){task->setOwner(previous);}
     };
+    struct RoadEditorRunning
+    {
+        core::IApplicationManager &app;
+        bool previous;
+        explicit RoadEditorRunning( core::IApplicationManager &value )
+            : app( value ), previous( value.isRunning() )
+        {
+            app.setRunning( true );
+        }
+        ~RoadEditorRunning() { app.setRunning( previous ); }
+    };
     class RoadTaskBarrier : public Job
     {
     public:
         bool *complete=nullptr;TaskId *observed=nullptr;
         void execute() override{*observed=Thread::getCurrentTask();*complete=true;}
+    };
+    struct RoadViewportCamera
+    {
+        Matrix4<real_Num> view, projection;
+        const Matrix4<real_Num> &getViewMatrix() const { return view; }
+        const Matrix4<real_Num> &getProjectionMatrix() const { return projection; }
     };
     String roadJSON(const procedural::CityRoadSplineSource &source)
     {SourceBudgetText text;String error;BOOST_REQUIRE_MESSAGE(procedural::serializeCityRoadSplineSource(source,text,error),error);return String(text.data(),text.size());}
@@ -87,6 +105,34 @@ BOOST_AUTO_TEST_CASE(city_road_viewport_authoring_test)
     };
     const auto ray=[&](const char *phase,float x,float z)
     {return window->handleViewport({Parameter(String(phase)),Parameter(f64(x)),Parameter(40.0),Parameter(f64(z)),Parameter(0.0),Parameter(-1.0),Parameter(0.0)});};
+    const auto viewport = app->getSceneRenderWindow();
+    BOOST_REQUIRE( viewport );
+    BOOST_REQUIRE( !viewport->getObjectListeners().empty() );
+    RoadViewportCamera camera;
+    const Vector3<real_Num> eye( 0, 80, 100 );
+    const auto orientation = MathUtil<real_Num>::getOrientationFromDirection(
+        ( -eye ).normaliseCopy(), -Vector3<real_Num>::unitZ(), true, Vector3<real_Num>::unitY() );
+    camera.view.makeViewMatrix( eye, orientation, nullptr );
+    camera.projection.makePerspective( real_Num( 1 ), real_Num( 1.5 ), real_Num( 1 ), real_Num( 1000 ) );
+    const auto clip = camera.projection * camera.view;
+    const auto viewportGesture = [&]( const char *phase, float x, float z,
+                                       Vector2F origin, Vector2F size ) {
+        const auto y = 2.f + .01f * x;
+        const auto project = [&]( u32 row ) {
+            return clip[row][0] * x + clip[row][1] * y + clip[row][2] * z + clip[row][3];
+        };
+        const auto w = project( 3 );
+        const Vector2F point( f32( project( 0 ) / w * .5 + .5 ), f32( .5 - project( 1 ) / w * .5 ) );
+        BOOST_REQUIRE( point.x > 0 && point.x < 1 && point.y > 0 && point.y < 1 );
+        Parameters arguments;
+        BOOST_REQUIRE( ui::makeSceneViewportToolArguments( camera, origin, size, origin + point * size,
+                                                            String( phase ), arguments ) );
+        for( auto listener : viewport->getObjectListeners() )
+        {
+            listener->handleEvent( EventType::UI,
+                StringUtil::getHash( "cityRoadViewportTool" ), arguments, viewport, nullptr, nullptr );
+        }
+    };
     const auto diagnostic=[&]()
     {
         String result=city->getError();
@@ -95,22 +141,62 @@ BOOST_AUTO_TEST_CASE(city_road_viewport_authoring_test)
     };
     {RoadTask render(TaskId::Render);activate("Bind Selected Terrain");}BOOST_CHECK(!city->getTerrain());flush();BOOST_CHECK(city->getTerrain()==terrain);commands->clearAll();
     const auto beforeRender=publications;
-    {RoadTask render(TaskId::Render);activate("Draw Road");ray("begin",-30,-10);ray("commit",-30,-10);ray("begin",30,-10);ray("commit",30,-10);ray("finish",30,-10);}
+    {
+        RoadTask render( TaskId::Render );
+        activate( "Draw Road" );
+        const Vector2F origin( 123.75f, 91.5f ), size( 866.5f, 517.25f );
+        viewportGesture( "begin", -30, -10, origin, size );
+        viewportGesture( "commit", -30, -10, origin, size );
+        viewportGesture( "begin", 30, -10, origin, size );
+        viewportGesture( "commit", 30, -10, origin, size );
+        viewportGesture( "finish", 30, -10, origin, size );
+    }
     BOOST_CHECK(city->getSource().roads.empty());BOOST_CHECK_EQUAL(publications,beforeRender);flush();
     BOOST_REQUIRE_MESSAGE(city->getSource().roads.size()==1u,diagnostic());BOOST_REQUIRE_EQUAL(city->getSource().roads[0].knots.size(),2u);BOOST_CHECK(applicationOnly);
     BOOST_CHECK_SMALL(city->getSource().roads[0].heightOffset-.025f,.0001f);
     BOOST_CHECK_SMALL(city->getBake().roads[0].points.front().position.y-(2-.3f+.025f),.001f);
+    BOOST_CHECK_SMALL( city->getSource().roads[0].knots.front().position.x + 30.f, .001f );
+    BOOST_CHECK_SMALL( city->getSource().roads[0].knots.back().position.x - 30.f, .001f );
+    BOOST_CHECK_SMALL( city->getSource().roads[0].knots.front().position.z + 10.f, .001f );
+    BOOST_CHECK_SMALL( city->getSource().roads[0].knots.back().position.z + 10.f, .001f );
     const auto roadId=city->getSource().roads[0].id,knotId=city->getSource().roads[0].knots[0].id;
-    // A second queued gesture re-arms Draw without invalidating its own batch.
-    {RoadTask render(TaskId::Render);ray("begin",-40,25);ray("commit",-40,25);ray("begin",-10,25);ray("commit",-10,25);ray("finish",-10,25);}flush();
-    BOOST_REQUIRE_MESSAGE(city->getSource().roads.size()==2u,diagnostic());activate("Undo");BOOST_REQUIRE_EQUAL(city->getSource().roads.size(),1u);
+    const auto initialKnotPosition = city->getSource().roads[0].knots[0].position;
+    // Give the scratch scene a filename before testing the normal Save action.
+    const auto saved = temporary.path / "Assets" / "CityRoadTool.scene";
+    const auto savedPath = saved.generic_u8string();
+    scene->saveScene( savedPath );
+    BOOST_REQUIRE( std::filesystem::is_regular_file( saved ) );
+    // A second gesture re-arms Draw and records a manually dragged tangent.
+    const Vector2F secondOrigin( 8, 80 ), secondSize( 384, 300 );
+    const auto secondGesture = [&]( const char *phase, float x, float z ) {
+        viewportGesture( phase, x, z, secondOrigin, secondSize );
+    };
+    {
+        RoadTask render( TaskId::Render );
+        secondGesture( "begin", -40, 25 );
+        secondGesture( "update", -33, 27 );
+        secondGesture( "commit", -33, 27 );
+        secondGesture( "begin", -10, 25 );
+        secondGesture( "commit", -10, 25 );
+        secondGesture( "finish", -10, 25 );
+    }
+    flush();
+    BOOST_REQUIRE_MESSAGE( city->getSource().roads.size() == 2u, diagnostic() );
+    const auto &dragged = city->getSource().roads.back().knots.front();
+    BOOST_CHECK_SMALL( ( dragged.outHandle - Vector3F( 7, .07f, 2 ) ).length(), .001f );
+    BOOST_CHECK( dragged.inHandle == -dragged.outHandle );
+    { RoadTask render( TaskId::Render ); secondGesture( "undo", -10, 25 ); }
+    flush();
+    BOOST_REQUIRE_EQUAL( city->getSource().roads.size(), 1u );
     for(auto &height:data.heights)height+=5;BOOST_REQUIRE_MESSAGE(terrain->applyTerrainData(data,error),error);BOOST_REQUIRE_MESSAGE(city->rebuild(error),error);
     const auto overlay=ray("hover",-30,-10).getArray();BOOST_REQUIRE_EQUAL(overlay.size(),3u);const auto &controls=overlay[2].getArray();BOOST_REQUIRE(!controls.empty());
     BOOST_CHECK_SMALL(controls.front().getVector3().y-(7-.3f+.025f+.035f),.001f);
     activate("Move Knot");ray("begin",-30,-10);ray("update",-25,-15);ray("commit",-25,-15);
     BOOST_CHECK_SMALL(city->getSource().roads[0].knots[0].position.x+25,.0001f);
     {RoadTask render(TaskId::Render);BOOST_REQUIRE_MESSAGE(CityRoadEditCommand::dispatchHistory(commands,false,error),error);}
-    BOOST_CHECK_SMALL(city->getSource().roads[0].knots[0].position.x+25,.0001f);flush();BOOST_CHECK_SMALL(city->getSource().roads[0].knots[0].position.x+30,.0001f);
+    BOOST_CHECK_SMALL(city->getSource().roads[0].knots[0].position.x+25,.0001f);
+    flush();
+    BOOST_CHECK( city->getSource().roads[0].knots[0].position == initialKnotPosition );
     activate("Undo");BOOST_CHECK(city->getSource().roads.empty());
     activate("Redo");activate("Redo");BOOST_REQUIRE_EQUAL(city->getSource().roads.size(),1u);
     BOOST_CHECK(city->getSource().roads[0].id==roadId);BOOST_CHECK(city->getSource().roads[0].knots[0].id==knotId);
@@ -257,16 +343,64 @@ BOOST_AUTO_TEST_CASE(city_road_viewport_authoring_test)
     {RoadTask render(TaskId::Render);ray("begin",-40,25);ray("commit",-40,25);ray("begin",-10,25);ray("commit",-10,25);ray("finish",-10,25);}
     window->setWindowVisible(false);{RoadTask render(TaskId::Render);BOOST_CHECK(ray("begin",0,0).getArray().empty());}flush();BOOST_CHECK_EQUAL(city->getSourceRevision(),beforeHide);
 
-    // Scene serialization contains the same canonical source and stable terrain binding.
-    const auto saved=temporary.path/"Assets"/"CityRoadTool.scene";scene->saveScene(saved.generic_u8string());BOOST_REQUIRE(std::filesystem::is_regular_file(saved));
+    window->setWindowVisible( true );
+    BOOST_REQUIRE( !editor->isEditingPrefab() );
+    BOOST_REQUIRE( !app->getQuit() );
+    BOOST_REQUIRE( app->getJobQueue()->isRunning() );
+    BOOST_REQUIRE( app->getFileSystem()->isExistingFile( scene->getFilePath() ) );
+    {
+        RoadEditorRunning running( *app );
+        { RoadTask render( TaskId::Render ); activate( "Save Scene" ); }
+        flush();
+    }
     std::ifstream file(saved,std::ios::binary);const std::string serialized((std::istreambuf_iterator<char>(file)),std::istreambuf_iterator<char>());
+    file.close();
     BOOST_CHECK(serialized.find(std::string(roadId.data(),roadId.size()))!=std::string::npos);
-    BOOST_CHECK(serialized.find(std::string(insertedId.data(),insertedId.size()))!=std::string::npos);
-    auto restored=make_ptr<scene::CityRoadAuthoring>();restored->setPublishCallback([](const auto &,const auto &,auto,const auto &,String &){return true;});
-    restored->setProperties(city->getProperties());BOOST_REQUIRE_EQUAL(restored->getSource().roads.size(),1u);
-    BOOST_CHECK(restored->getSource().roads[0].id==roadId);BOOST_CHECK_EQUAL(restored->getTerrainBindingUUID(),city->getTerrainBindingUUID());
-    BOOST_REQUIRE_EQUAL(restored->getSource().roads[0].knots.size(),3u);
-    BOOST_CHECK(restored->getSource().roads[0].knots[1].id==insertedId);
-    BOOST_CHECK(applicationOnly);commands->clearAll();selection->clearSelection();manager->destroyActor(cityActor);manager->destroyActor(terrainActor);
+    BOOST_REQUIRE_MESSAGE( serialized.find( std::string( insertedId.data(), insertedId.size() ) ) !=
+        std::string::npos, "City Roads Save Scene must write the inserted knot to disk" );
+    const auto expected = city->getSource().roads.front();
+    const auto expectedBinding = city->getTerrainBindingUUID();
+    BOOST_CHECK( applicationOnly );
+    commands->clearAll();
+    selection->clearSelection();
+    window->setWindowVisible( false );
+    window->updateSelection();
+    scene->clear( true );
+    auto reopened = app->getFactoryManager()->make_ptr<scene::GameScene>();
+    BOOST_REQUIRE( reopened );
+    reopened->load( nullptr );
+    manager->setCurrentScene( reopened );
+    reopened->loadScene( savedPath, false );
+    BOOST_REQUIRE( reopened->getSceneLoadingState() == scene::IGameScene::SceneLoadingState::Loaded );
+    auto restoredActor = reopened->findActorByName( "City tool test source" );
+    auto restoredTerrainActor = reopened->findActorByName( "City tool test terrain" );
+    BOOST_REQUIRE( restoredActor );
+    BOOST_REQUIRE( restoredTerrainActor );
+    auto restored = restoredActor->getComponent<scene::CityRoadAuthoring>();
+    auto restoredTerrain = restoredTerrainActor->getComponent<scene::TerrainSystem>();
+    BOOST_REQUIRE( restored );
+    BOOST_REQUIRE( restoredTerrain );
+    restored->setPublishCallback( []( const auto &, const auto &, auto, const auto &, String & ) {
+        return true;
+    } );
+    if( auto renderer = dynamic_pointer_cast<render::Terrain>( restoredTerrain->getTerrain() ) )
+        renderer->setDeferredTerrainPublication( false );
+    flush();
+    restored->update();
+    BOOST_REQUIRE_MESSAGE( restored->rebuild( error ), error );
+    BOOST_REQUIRE_EQUAL( restored->getSource().roads.size(), 1u );
+    BOOST_CHECK_EQUAL( restored->getTerrainBindingUUID(), expectedBinding );
+    BOOST_CHECK( restored->getTerrain() == restoredTerrain );
+    const auto &actual = restored->getSource().roads.front();
+    BOOST_CHECK( actual.id == roadId );
+    BOOST_REQUIRE_EQUAL( actual.knots.size(), expected.knots.size() );
+    for( size_t i = 0; i < actual.knots.size(); ++i )
+    {
+        BOOST_CHECK( actual.knots[i].id == expected.knots[i].id );
+        BOOST_CHECK( actual.knots[i].position == expected.knots[i].position );
+        BOOST_CHECK( actual.knots[i].inHandle == expected.knots[i].inHandle );
+        BOOST_CHECK( actual.knots[i].outHandle == expected.knots[i].outHandle );
+    }
+    reopened->clear( true );
 }
 #endif

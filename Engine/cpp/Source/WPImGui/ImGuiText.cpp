@@ -90,7 +90,8 @@ namespace workphone::ui
         else
         {
             m_text = text;
-            String{}.swap( m_longText.str() );
+            String previous;
+            m_longText.swap( previous );
         }
     }
 
