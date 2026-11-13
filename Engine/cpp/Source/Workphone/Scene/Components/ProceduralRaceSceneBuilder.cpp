@@ -25,6 +25,7 @@
 #include <Workphone/Graphics/TextureMipGenerator.hpp>
 #include <Workphone/Graphics/ProceduralSurfaceSourceExport.hpp>
 #include <Workphone/System/SourceBudgetContainers.hpp>
+#include "CityBuildingKit.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -57,6 +58,11 @@ namespace workphone::scene::race
         cityAppliedSourceRevision( other.cityAppliedSourceRevision ),
         cityStreetDetail( other.cityStreetDetail ),
         cityStreetDetailCount( other.cityStreetDetailCount ),
+        cityBuildingStyle( other.cityBuildingStyle ),
+        cityBuildingMeshes( other.cityBuildingMeshes ),
+        cityBuildingModuleCount( other.cityBuildingModuleCount ),
+        cityBuildingModulePlacements( other.cityBuildingModulePlacements ),
+        cityBuildingKitDiagnostic( other.cityBuildingKitDiagnostic ),
         foliageTerrain( other.foliageTerrain ),
         cityBlocks( other.cityBlocks ),
         cityRoute( other.cityRoute ),
@@ -116,6 +122,11 @@ namespace workphone::scene::race
         swap( cityAppliedSourceRevision, other.cityAppliedSourceRevision );
         swap( cityStreetDetail, other.cityStreetDetail );
         swap( cityStreetDetailCount, other.cityStreetDetailCount );
+        swap( cityBuildingStyle, other.cityBuildingStyle );
+        swap( cityBuildingMeshes, other.cityBuildingMeshes );
+        swap( cityBuildingModuleCount, other.cityBuildingModuleCount );
+        swap( cityBuildingModulePlacements, other.cityBuildingModulePlacements );
+        swap( cityBuildingKitDiagnostic, other.cityBuildingKitDiagnostic );
         swap( cityBlocks, other.cityBlocks );
         swap( cityRoute, other.cityRoute );
         swap( vehicle, other.vehicle );
@@ -2689,6 +2700,11 @@ namespace workphone::scene::race
             };
 
             SourceBudgetMap<std::pair<int, int>, CityPatch> patches;
+            const auto buildingCount = std::count_if( city.lots.begin(), city.lots.end(),
+                                                      []( const auto &lot ) { return !lot.park; } );
+            CityBuildingKit kit( assets, buildingCount );
+            const bool detailedBuildings = quality != VehicleAppearanceQuality::Preview;
+            const int buildingStyle = std::clamp( assets.cityBuildingStyle, 0, 3 );
             const auto streetDetails = OpenCityStreetDetails::generate(
                 city, seed, quality != VehicleAppearanceQuality::Preview );
             // Match the existing flat physics proxy. Preserve library topology,
@@ -2959,16 +2975,19 @@ namespace workphone::scene::race
                                { lot.parcelWidth - 1, .01f, lot.parcelDepth - 1 } );
                     continue;
                 }
+                kit.beginBuilding();
                 const auto key =
                     std::make_pair( int( std::floor( lot.x / 128 ) ), int( std::floor( lot.z / 128 ) ) );
                 const Vector3F origin( key.first * 128.f + 64, 0, key.second * 128.f + 64 );
                 auto &patch = patches[key];
                 patch.bounds.push_back(
-                    { Vector3F( lot.x, lot.groundHeight + lot.height * .5f, lot.z ) - origin,
-                      std::max( { lot.width, lot.depth, lot.height } ) } );
+                    { Vector3F( lot.x, lot.groundHeight + ( lot.height + 3.f ) * .5f, lot.z ) - origin,
+                      std::max( { lot.width + .5f, lot.depth + .5f, lot.height + 3.f } ) } );
                 const auto volumes = OpenCityLayout::buildingVolumes( lot );
-                const bool office = lot.district == OpenCityLayout::District::Commercial;
-                const bool civic = lot.district == OpenCityLayout::District::Civic;
+                const bool office = buildingStyle == 3 ||
+                                    ( buildingStyle == 0 && lot.district == OpenCityLayout::District::Commercial );
+                const bool civic = buildingStyle == 2 ||
+                                   ( buildingStyle == 0 && lot.district == OpenCityLayout::District::Civic );
                 const int entranceAxis = lot.frontage == OpenCityLayout::Frontage::West ||
                                                  lot.frontage == OpenCityLayout::Frontage::East
                                              ? 1
@@ -2977,14 +2996,15 @@ namespace workphone::scene::race
                                                  lot.frontage == OpenCityLayout::Frontage::North
                                              ? -1
                                              : 1;
-                for( const auto &volume : volumes )
+                for( size_t tier = 0; tier < volumes.size(); ++tier )
                 {
+                    const auto &volume = volumes[tier];
                     const Vector3F centre( volume.x, volume.bottom + volume.height * .5f, volume.z );
                     const Vector3F size( volume.width, volume.height, volume.depth );
                     const bool groundFloor = volume.bottom == lot.groundHeight;
-                    const u32 family = civic    ? 1u
-                                       : office ? ( groundFloor && lot.variant % 3 == 0 ? 1u : 2u )
-                                                : ( lot.variant % 5 == 0 ? 1u : 0u );
+                    const u32 family = civic   ? 1u
+                                       : office ? ( buildingStyle == 0 && groundFloor && lot.variant % 3 == 0 ? 1u : 2u )
+                                                : ( buildingStyle == 0 && lot.variant % 5 == 0 ? 1u : 0u );
                     auto &opaque = patch.walls[family];
                     patch.farWalls[family].box( centre - origin, size );
                     // Geometry and collision consume the identical stepped mass description.
@@ -3008,9 +3028,9 @@ namespace workphone::scene::race
                     const float nominalFloor = office ? 3.6f : civic ? 3.5f : 3.2f;
                     const int floors = std::max( 1, int( std::round( volume.height / nominalFloor ) ) );
                     const float floorHeight = volume.height / floors;
-                    for( int axis = 0; axis < 2; ++axis )
+                    for( int axis : { entranceAxis, 1 - entranceAxis } )
                     {
-                        for( int sign : { -1, 1 } )
+                        for( int sign : { entranceSign, -entranceSign } )
                         {
                             const float span = axis ? volume.depth : volume.width;
                             const bool entrance =
@@ -3018,6 +3038,7 @@ namespace workphone::scene::race
                             const Vector3F normal( axis ? float( sign ) : 0, 0,
                                                    axis ? 0 : float( sign ) );
                             const Vector3F along( axis ? 0 : 1, 0, axis ? 1 : 0 );
+                            const float yaw = axis ? float( sign ) * pi * .5f : sign < 0 ? pi : 0;
                             const auto point = [&]( float s, float y, float inset ) {
                                 return axis
                                            ? Vector3F( cx + sign * ( size.x * .5f - inset ), y, cz + s )
@@ -3032,6 +3053,24 @@ namespace workphone::scene::race
                                 g.quad( point( left, low, inset ), point( right, low, inset ),
                                         point( right, high, inset ), point( left, high, inset ),
                                         normal );
+                            };
+                            const auto module = [&]( CityBuildingPart role, Geometry &geometry,
+                                                     float left, float low, float right, float high,
+                                                     float inset, float thickness ) {
+                                return detailedBuildings && right > left && high > low &&
+                                       kit.append( role, geometry,
+                                                   point( ( left + right ) * .5f,
+                                                          ( low + high ) * .5f, inset ),
+                                                   { right - left, high - low, thickness }, yaw );
+                            };
+                            const auto wallPanel = [&]( float left, float low, float right, float high ) {
+                                if( right - left >= 1.25f && high - low >= .60f &&
+                                    module( CityBuildingPart::Wall, opaque, left, low, right, high,
+                                            .06f, .12f ) )
+                                {
+                                    return;
+                                }
+                                panel( opaque, left, low, right, high );
                             };
                             const auto reveal = [&]( float left, float low, float right, float high,
                                                      float depth ) {
@@ -3068,9 +3107,10 @@ namespace workphone::scene::race
                                 const float high = y1 - ( retail ? .42f : office ? .48f : .62f );
                                 auto &glass =
                                     patch.glass[( lot.variant / 7 + axis + ( sign > 0 ? 1 : 0 ) ) % 2];
+                                bool entranceModule = false;
                                 if( high - low < .45f )
                                 {
-                                    panel( opaque, -span * .5f, y0, span * .5f, y1 );
+                                    wallPanel( -span * .5f, y0, span * .5f, y1 );
                                     continue;
                                 }
                                 if( office )
@@ -3078,13 +3118,43 @@ namespace workphone::scene::race
                                     // Curtain-wall kit: recessed ribbons, substantial spandrels
                                     // and fine mullions rather than hundreds of boxed windows.
                                     const float left = -span * .5f + .38f, right = span * .5f - .38f;
-                                    panel( opaque, -span * .5f, y0, span * .5f, low );
-                                    panel( opaque, -span * .5f, high, span * .5f, y1 );
+                                    const float doorHalfWidth = std::min( .92f, right * .8f );
+                                    const float doorHead = std::min( high, y0 + 2.7f );
+                                    if( entrance && floor == 0 )
+                                    {
+                                        entranceModule = module( CityBuildingPart::Entrance,
+                                                                 patch.accents, -doorHalfWidth, y0 + .16f,
+                                                                 doorHalfWidth, doorHead,
+                                                                 .022f, .14f );
+                                    }
+                                    if( entranceModule )
+                                    {
+                                        wallPanel( -span * .5f, y0, -doorHalfWidth, low );
+                                        panel( opaque, -doorHalfWidth, y0, doorHalfWidth, y0 + .16f );
+                                        wallPanel( doorHalfWidth, y0, span * .5f, low );
+                                        reveal( left, low, -doorHalfWidth, high, .085f );
+                                        reveal( doorHalfWidth, low, right, high, .085f );
+                                        reveal( -doorHalfWidth, y0 + .16f, doorHalfWidth, doorHead,
+                                                .085f );
+                                    }
+                                    else
+                                    {
+                                        wallPanel( -span * .5f, y0, span * .5f, low );
+                                        reveal( left, low, right, high, .085f );
+                                    }
+                                    wallPanel( -span * .5f, high, span * .5f, y1 );
                                     panel( opaque, -span * .5f, low, left, high );
                                     panel( opaque, right, low, span * .5f, high );
-                                    reveal( left, low, right, high, .085f );
+                                    const auto pane = [&]( float paneLeft, float paneRight, int surface ) {
+                                        const bool custom = module( CityBuildingPart::Window, patch.frames,
+                                                                    paneLeft, low, paneRight, high, .050f, .07f );
+                                        panel( patch.glass[surface], paneLeft, low, paneRight, high,
+                                               custom ? .097f : .085f );
+                                        return custom;
+                                    };
                                     // Each pane shares the ribbon aperture but has restrained
                                     // seeded tint/roughness variation, including privacy glass.
+                                    bool previousModule = false, anyWindowModule = false;
                                     for( int bay = 0; bay < bays; ++bay )
                                     {
                                         const float paneLeft =
@@ -3100,16 +3170,30 @@ namespace workphone::scene::race
                                         const int surface = variation % 19 == 0 ? 2
                                                             : variation % 7 < 2 ? 1
                                                                                 : 0;
-                                        panel( patch.glass[surface], paneLeft, low, paneRight, high,
-                                               .085f );
+                                        bool windowModule = false;
+                                        if( entranceModule && paneRight > -doorHalfWidth && paneLeft < doorHalfWidth )
+                                        {
+                                            windowModule = pane( paneLeft, std::min( paneRight, -doorHalfWidth ), surface );
+                                            windowModule |= pane( std::max( paneLeft, doorHalfWidth ), paneRight, surface );
+                                            panel( patch.glass[surface], std::max( paneLeft, -doorHalfWidth ),
+                                                   doorHead, std::min( paneRight, doorHalfWidth ), high, .085f );
+                                        }
+                                        else
+                                        {
+                                            windowModule = pane( paneLeft, paneRight, surface );
+                                        }
+                                        if( bay > 0 && !windowModule && !previousModule )
+                                        {
+                                            const float s = -span * .5f + bay * bayWidth;
+                                            const float mullionBase = entranceModule && std::abs( s ) < doorHalfWidth + .035f
+                                                                          ? doorHead : low;
+                                            panel( patch.frames, s - .035f, mullionBase, s + .035f, high, .045f );
+                                        }
+                                        previousModule = windowModule;
+                                        anyWindowModule |= windowModule;
                                     }
                                     panel( patch.farGlass, left, low, right, high, -.018f );
-                                    for( int bay = 1; bay < bays; ++bay )
-                                    {
-                                        const float s = -span * .5f + bay * bayWidth;
-                                        panel( patch.frames, s - .035f, low, s + .035f, high, .045f );
-                                    }
-                                    if( lot.variant % 3 == 1 )
+                                    if( !entranceModule && !anyWindowModule && lot.variant % 3 == 1 )
                                     {
                                         panel( patch.frames, left, ( low + high ) * .5f - .025f, right,
                                                ( low + high ) * .5f + .025f, .045f );
@@ -3135,15 +3219,24 @@ namespace workphone::scene::race
                                         const float head =
                                             door ? std::min( y1 - .35f, y0 + 2.65f ) : high;
                                         const float depth = civic ? .24f : .16f;
-                                        panel( opaque, s0, y0, s1, bottom );
-                                        panel( opaque, s0, head, s1, y1 );
+                                        wallPanel( s0, y0, s1, bottom );
+                                        wallPanel( s0, head, s1, y1 );
                                         panel( opaque, s0, bottom, left, head );
                                         panel( opaque, right, bottom, s1, head );
                                         reveal( left, bottom, right, head, depth );
-                                        panel( glass, left, bottom, right, head, depth );
+                                        const bool hasModule = module(
+                                            door ? CityBuildingPart::Entrance : CityBuildingPart::Window,
+                                            door ? patch.accents : patch.frames, left, bottom, right, head,
+                                            depth * .45f, depth );
+                                        entranceModule |= door && hasModule;
+                                        if( !door || !hasModule )
+                                            panel( glass, left, bottom, right, head, depth );
+                                        if( !hasModule )
+                                        {
+                                            panel( patch.frames, s - .032f, bottom, s + .032f, head,
+                                                   depth - .025f );
+                                        }
                                         panel( patch.farGlass, left, bottom, right, head, -.018f );
-                                        panel( patch.frames, s - .032f, bottom, s + .032f, head,
-                                               depth - .025f );
                                         if( !retail && !door && axis == entranceAxis &&
                                             sign == entranceSign )
                                         {
@@ -3153,7 +3246,7 @@ namespace workphone::scene::race
                                         }
                                     }
                                 }
-                                if( entrance && floor == 0 )
+                                if( entrance && floor == 0 && !entranceModule )
                                 {
                                     const float doorS =
                                         office ? 0.f : -span * .5f + ( bays / 2 + .5f ) * bayWidth;
@@ -3196,69 +3289,170 @@ namespace workphone::scene::race
                                     }
                                 }
                             }
-                        }
-                    }
-                    // Roof detail has bounded variants, rather than one box repeated
-                    // at every lot centre. The occupied building masses stay unchanged.
-                    const bool finalTier = std::abs( top - lot.height ) < .001f;
-                    if( finalTier )
-                    {
-                        for( int side : { -1, 1 } )
-                        {
-                            patch.roofs.box( { cx, top + .29f, cz + side * ( size.z * .5f - .10f ) },
-                                             { size.x, .34f, .20f } );
-                            patch.roofs.box( { cx + side * ( size.x * .5f - .10f ), top + .29f, cz },
-                                             { .20f, .34f, size.z - .40f } );
-                            patch.farRoofs.box( { cx, top + .29f, cz + side * ( size.z * .5f - .10f ) },
-                                                { size.x, .34f, .20f } );
-                            patch.farRoofs.box( { cx + side * ( size.x * .5f - .10f ), top + .29f, cz },
-                                                { .20f, .34f, size.z - .40f } );
-                        }
-                        if( quality != VehicleAppearanceQuality::Preview )
-                        {
-                            const int requestedUnits =
-                                office ? 2 + int( lot.variant % 3 ) : 1 + int( lot.variant % 2 );
-                            const int units = std::min(
-                                requestedUnits,
-                                std::max( 1, 1 + int( std::floor( ( size.x - 3.22f ) / 2.9f ) ) ) );
-                            for( int unit = 0; unit < units; ++unit )
+                            if( detailedBuildings && ( !office || entrance ) )
                             {
-                                const float x = cx + ( unit - ( units - 1 ) * .5f ) * 2.9f;
-                                const float z = cz + ( lot.variant % 2 ? .17f : -.17f ) * size.z;
-                                const float h = office ? .85f : .60f;
-                                patch.roofs.box( { x, top + .12f + h * .5f, z }, { 2.15f, h, 1.45f } );
-                                for( int fin = 0; fin < 3; ++fin )
+                                // Stone courses frame the elevations without filling an aperture.
+                                const float courseY = civic && entrance
+                                                          ? volume.bottom + floorHeight + .08f
+                                                          : top - .19f;
+                                if( courseY < top - .08f )
                                 {
-                                    patch.frames.box( { x, top + .15f + h + fin * .055f, z },
-                                                      { 2.22f, .025f, 1.48f } );
+                                    faceBox( patch.frames, 0, courseY, span + .08f, .13f, .075f, .17f );
                                 }
                             }
-                            if( lot.variant % 3 == 1 )
+                        }
+                    }
+                    // Corner piers give masonry real depth. Explicit corner modules can also
+                    // dress the primary commercial tier and the simplified preview.
+                    if( groundFloor )
+                    {
+                        const float pierHeight = std::min( volume.height - .25f, floorHeight * 2 );
+                        auto &cornerGeometry = detailedBuildings ? patch.frames : patch.farRoofs;
+                        for( const float xSide : { -1.f, 1.f } )
+                        {
+                            for( const float zSide : { -1.f, 1.f } )
                             {
-                                for( int side : { -1, 1 } )
+                                const Vector3F corner( cx + xSide * ( size.x * .5f - .14f ),
+                                                       volume.bottom + .18f + pierHeight * .5f,
+                                                       cz + zSide * ( size.z * .5f - .14f ) );
+                                const float yaw = zSide > 0 ? xSide * pi * .25f
+                                                           : xSide * pi * .75f;
+                                if( !kit.append( CityBuildingPart::Corner, cornerGeometry, corner,
+                                                 { .50f, pierHeight, .50f }, yaw ) &&
+                                    detailedBuildings && ( civic || ( !office && lot.variant % 3 == 1 ) ) )
                                 {
-                                    patch.accents.box(
-                                        { cx, top + .73f, cz + side * ( size.z * .5f - .40f ) },
-                                        { size.x - .65f, .045f, .045f } );
-                                    patch.accents.box(
-                                        { cx + side * ( size.x * .5f - .40f ), top + .73f, cz },
-                                        { .045f, .045f, size.z - .65f } );
+                                    patch.frames.box( corner, { .39f, pierHeight, .39f } );
+                                    patch.frames.box( corner + Vector3F( 0, -pierHeight * .5f + .14f, 0 ),
+                                                      { .49f, .28f, .49f } );
+                                    patch.frames.box( corner + Vector3F( 0, pierHeight * .5f - .10f, 0 ),
+                                                      { .47f, .20f, .47f } );
                                 }
-                                for( int sx : { -1, 1 } )
-                                {
-                                    for( int sz : { -1, 1 } )
-                                    {
-                                        patch.accents.box(
-                                            { cx + sx * ( size.x * .5f - .40f ), top + .50f,
-                                              cz + sz * ( size.z * .5f - .40f ) },
-                                            { .045f, .46f, .045f } );
-                                    }
-                                }
+                            }
+                        }
+                    }
+                    if( tier + 1 != volumes.size() )
+                    {
+                        continue;
+                    }
+
+                    // Keep the building's occupied tier and collision intact. Each LOD retains
+                    // its roof silhouette, while the street-level kit adds smaller features.
+                    const float deck = top + .12f;
+                    auto &moduleRoof = detailedBuildings ? patch.roofs : patch.farRoofs;
+                    const bool replacedRoof = kit.append( CityBuildingPart::Roof, moduleRoof,
+                                                          { cx, deck + 1.25f, cz },
+                                                          { size.x, 2.5f, size.z }, 0 );
+                    const bool hipped = !office && !civic &&
+                                        ( buildingStyle == 1 || lot.variant % 5 < 2 );
+                    const bool lantern = civic ||
+                                         ( buildingStyle == 0 && office && lot.variant % 4 == 1 );
+                    const bool longX = size.x >= size.z;
+                    const auto roofPoint = [&]( float u, float y, float v ) {
+                        return longX ? Vector3F( cx + u, deck + y, cz + v )
+                                     : Vector3F( cx + v, deck + y, cz + u );
+                    };
+                    const float halfLong = ( longX ? size.x : size.z ) * .5f;
+                    const float halfShort = ( longX ? size.z : size.x ) * .5f;
+                    const float rise = std::clamp( halfShort * .31f, .9f, 2.5f );
+                    const auto roofSilhouette = [&]( Geometry &roof ) {
+                        if( hipped )
+                        {
+                            const float ridge = std::max( .1f, halfLong - halfShort * .75f );
+                            for( float side : { -1.f, 1.f } )
+                            {
+                                const auto a = roofPoint( -halfLong, 0, side * halfShort );
+                                const auto b = roofPoint( halfLong, 0, side * halfShort );
+                                const auto c = roofPoint( ridge, rise, 0 );
+                                const auto d = roofPoint( -ridge, rise, 0 );
+                                auto n = ( b - a ).crossProduct( d - a );
+                                n.normalise();
+                                roof.quad( a, b, c, d, n.y < 0 ? -n : n );
+                                const auto e = roofPoint( side * halfLong, 0, -halfShort );
+                                const auto f = roofPoint( side * halfLong, 0, halfShort );
+                                const auto g = roofPoint( side * ridge, rise, 0 );
+                                auto endNormal = ( f - e ).crossProduct( g - e );
+                                endNormal.normalise();
+                                // Split the triangular hip at its eave midpoint to keep
+                                // indexed quads nondegenerate in the standard mesh stream.
+                                const auto mid = ( e + f ) * .5f;
+                                roof.quad( mid, f, g, e, endNormal.y < 0 ? -endNormal : endNormal );
+                            }
+                            return;
+                        }
+                        const float parapet = office ? .52f : .42f;
+                        for( float side : { -1.f, 1.f } )
+                        {
+                            roof.box( { cx, deck + parapet * .5f, cz + side * ( size.z * .5f - .10f ) },
+                                      { size.x, parapet, .20f } );
+                            roof.box( { cx + side * ( size.x * .5f - .10f ), deck + parapet * .5f, cz },
+                                      { .20f, parapet, size.z - .40f } );
+                        }
+                        if( lantern )
+                        {
+                            const float height = civic ? 1.35f : 1.75f;
+                            roof.box( { cx, deck + height * .5f, cz },
+                                      { size.x * .43f, height, size.z * .36f } );
+                            roof.box( { cx, deck + height + .09f, cz },
+                                      { size.x * .43f + .28f, .18f, size.z * .36f + .28f } );
+                        }
+                    };
+                    if( detailedBuildings && !replacedRoof )
+                    {
+                        roofSilhouette( patch.roofs );
+                    }
+                    if( detailedBuildings || !replacedRoof )
+                    {
+                        roofSilhouette( patch.farRoofs );
+                    }
+                    if( !detailedBuildings || replacedRoof )
+                    {
+                        continue;
+                    }
+                    if( hipped )
+                    {
+                        const float u = halfLong * ( lot.variant % 2 ? .34f : -.34f );
+                        const auto base = roofPoint( u, rise * .63f, halfShort * .20f );
+                        patch.walls[family].box( base + Vector3F( 0, .53f, 0 ), { .54f, 1.24f, .61f } );
+                        patch.frames.box( base + Vector3F( 0, 1.16f, 0 ), { .66f, .12f, .72f } );
+                    }
+                    else if( lantern )
+                    {
+                        const float width = size.x * .43f, depth = size.z * .36f;
+                        const float y = deck + ( civic ? .85f : 1.08f );
+                        for( const float side : { -1.f, 1.f } )
+                        {
+                            patch.glass[1].box( { cx, y, cz + side * ( depth * .5f + .012f ) },
+                                                 { width - .48f, .62f, .024f } );
+                            patch.glass[1].box( { cx + side * ( width * .5f + .012f ), y, cz },
+                                                 { .024f, .62f, depth - .48f } );
+                            for( int post = -1; post <= 1; ++post )
+                            {
+                                patch.frames.box( { cx + post * width * .22f, y,
+                                                    cz + side * ( depth * .5f + .027f ) },
+                                                  { .075f, .66f, .044f } );
+                            }
+                        }
+                    }
+                    else
+                    {
+                        const int requestedUnits = office ? 3 : 1 + int( lot.variant % 2 );
+                        const int units = std::min( requestedUnits, 1 + int( std::max( 0.f, size.x - 2.5f ) / 2.45f ) );
+                        for( int unit = 0; unit < units; ++unit )
+                        {
+                            const float x = cx + ( unit - ( units - 1 ) * .5f ) * 2.45f;
+                            const float z = cz + ( lot.variant % 2 ? .17f : -.17f ) * size.z;
+                            const float h = office ? .82f : .54f;
+                            patch.roofs.box( { x, deck + h * .5f, z }, { 1.95f, h, 1.28f } );
+                            for( int fin = -2; fin <= 2; ++fin )
+                            {
+                                patch.frames.box( { x, deck + h + .025f, z + fin * .21f },
+                                                  { 1.86f, .045f, .082f } );
                             }
                         }
                     }
                 }
             }
+            kit.finish();
             // Contain exploration within the shared collision plane.
             const float boundary = city.extent + 20;
             for( int axis = 0; axis < 2; ++axis )

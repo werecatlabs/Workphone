@@ -62,6 +62,8 @@ namespace workphone
         void setRoadAuthoringShowcase(bool enabled) { m_roadAuthoringShowcase=enabled; }
         void setCityTerrainRoads(bool enabled) { m_cityTerrainRoads=enabled; }
         void setCityStreetDetail( s32 detail ) { m_cityStreetDetail = detail; }
+        void setCityBuildingMeshes( const std::array<String, 5> &meshes ) { m_cityBuildingMeshes = meshes; }
+        void setCityBuildingStyle( s32 style ) { m_cityBuildingStyle = style; }
         void setMaterialExportDirectory( const std::string &path ) { m_materialExportDirectory = path; }
         void setTerrainGameplayOptions( bool enabled, const std::string &packageDirectory,
                                         bool exportOnly = false );
@@ -174,12 +176,16 @@ namespace workphone
         bool m_cityTerrainRoads = false;
         s32 m_cityBlocks = 8, m_cityRoute = 0;
         s32 m_cityStreetDetail = -1;
+        s32 m_cityBuildingStyle = -1;
+        std::array<String, 5> m_cityBuildingMeshes;
         f32 m_cityExtent = 0, m_citySpacing = 0;
         f32 m_cityOverviewExtent = 0;
         Vector3F m_cityOverviewCentre{}, m_cityStreetCentre{};
         Vector3F m_cityJunctionCentre{};
         Vector3F m_cityBoulevardCentre{};
         Vector3F m_cityFrontageEye{}, m_cityFrontageTarget{};
+        Vector3F m_cityFacadeEye{}, m_cityFacadeTarget{};
+        u64 m_cityFacadeLotId = 0;
         Vector3F m_generatedSpawnPosition{0,.42f,0};
         bool m_cityHasJunction = false;
         Vector3F m_cityStreetForward{ 0, 0, -1 };

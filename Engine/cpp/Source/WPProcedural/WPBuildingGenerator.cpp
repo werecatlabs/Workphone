@@ -1,483 +1,580 @@
-// ============================================================================
-// WPBuildingGenerator.cpp - Implementation of the AAA building generator
-// ============================================================================
-
 #include "WPProcedural/WPProceduralPCH.hpp"
 #include "WPProcedural/WPBuildingGenerator.hpp"
-#include <cmath>
 #include <algorithm>
+#include <array>
+#include <cmath>
 
-namespace workphone
+namespace workphone::procedural
 {
-    namespace procedural
+    namespace
     {
-        namespace
-        {
-            inline real_Num clamp01( real_Num v )
-            {
-                return v < 0.0f ? 0.0f : ( v > 1.0f ? 1.0f : v );
-            }
-        }  // namespace
+        constexpr float pi = 3.14159265358979323846f;
+        constexpr s32 maximumFloors = 256;
+        constexpr float slabHeight = .22f;
 
-        WindowState WPBuildingGenerator::pickWindowState( u32 seed, s32 floor, real_Num damage )
+        struct Footprint
         {
-            WPNoise n( seed );
-            real_Num r = n.noise3( floor * 17.0f, seed & 0xFFFF, 0 ) * 0.5f + 0.5f;
-            // Lower floors more likely to be shopfronts; upper floors have varied states.
-            bool upperFloor = floor > 0;
-            if( r < 0.07f + damage * 0.25f )
-            {
-                return WindowState::Boarded;
-            }
-            if( r < 0.20f + damage * 0.5f )
-            {
-                return WindowState::Open;
-            }
-            if( upperFloor && r < 0.42f )
-            {
-                return WindowState::Shuttered;
-            }
-            if( upperFloor && r < 0.52f )
-            {
-                return WindowState::Ajar;
-            }
-            if( r < 0.60f )
-            {
-                return WindowState::Curtain;
-            }
-            if( r < 0.66f )
-            {
-                return WindowState::Lit;
-            }
-            return WindowState::Glazed;
+            float minX, maxX, minZ, maxZ;
+            float width() const { return maxX - minX; }
+            float depth() const { return maxZ - minZ; }
+            float x() const { return ( minX + maxX ) * .5f; }
+            float z() const { return ( minZ + maxZ ) * .5f; }
+        };
+
+        Footprint footprint( const BuildingSpec &spec )
+        {
+            return { -float( spec.width ) * .5f, float( spec.width ) * .5f,
+                     -float( spec.depth ) * .5f, float( spec.depth ) * .5f };
         }
 
-        WPBuildingGenerator::WPBuildingGenerator( u32 seed /*= 0xc0de */ ) : mSeed( seed )
+        bool validSpec( const BuildingSpec &spec )
         {
+            return spec.floors > 0 && spec.floors <= maximumFloors &&
+                   spec.width >= .5f && spec.width <= 1000 && spec.depth >= .5f && spec.depth <= 1000 &&
+                   spec.floorH >= .5f && spec.floorH <= 20 && spec.wallThick >= 0 && spec.wallThick <= 5;
         }
 
-        // ===================================================================
-        // TOP-LEVEL GENERATE
-        // ===================================================================
-        BuildingResult WPBuildingGenerator::generate( const BuildingSpec &spec,
-                                                      const Vector3<real_Num> &origin )
+        bool inset( Footprint &area, const BuildingSpec::Setback &setback )
         {
-            BuildingResult result;
-            result.position = origin;
-
-            u32 seed = spec.seed ? spec.seed : mSeed;
-
-            // Main body
-            result.body = buildBody( spec, seed );
-            // Roof slab + parapet
-            result.roof = buildRoof( spec, seed );
-            // Build windows per floor and per side
-            real_Num totalH = spec.floors * spec.floorH;
-            for( s32 f = 0; f < spec.floors; ++f )
+            const auto d = float( setback.depth );
+            if( !std::isfinite( d ) || d < .01f ) return false;
+            switch( setback.side )
             {
-                real_Num fy = f * spec.floorH + spec.floorH * 0.5f;
-                WindowState ws = pickWindowState( seed, f );
+            case 0: if( d > area.depth() - .5f ) return false; area.maxZ -= d; break;
+            case 1: if( d > area.width() - .5f ) return false; area.maxX -= d; break;
+            case 2: if( d > area.depth() - .5f ) return false; area.minZ += d; break;
+            case 3: if( d > area.width() - .5f ) return false; area.minX += d; break;
+            default: return false;
+            }
+            return true;
+        }
 
-                s32 sides = 4;
-                for( s32 side = 0; side < sides; ++side )
+        s32 setbackFloor( const BuildingSpec::Setback &setback )
+        {
+            return setback.fromFloor >= 0 ? setback.fromFloor : setback.from;
+        }
+
+        Footprint baseFootprint( const BuildingSpec &spec )
+        {
+            auto area = footprint( spec );
+            for( const auto &option : spec.setbacks )
+                if( setbackFloor( option ) == 0 ) inset( area, option );
+            return area;
+        }
+
+        bool same( const Footprint &a, const Footprint &b )
+        {
+            return a.minX == b.minX && a.maxX == b.maxX && a.minZ == b.minZ && a.maxZ == b.maxZ;
+        }
+
+        void surface( ProceduralMesh &mesh, const Vector3F &a, const Vector3F &b,
+                      const Vector3F &c, const Vector3F *d, const Vector3F &mask = {} )
+        {
+            auto n = ( b - a ).crossProduct( c - a );
+            if( n.lengthSquared() == 0 ) return;
+            n.normalise();
+            const auto i = mesh.addVertex( ProceduralVertex{ a, n, { 0, 1 }, mask } );
+            mesh.addVertex( ProceduralVertex{ b, n, { 1, 1 }, mask } );
+            mesh.addVertex( ProceduralVertex{ c, n, { 1, 0 }, mask } );
+            mesh.addTriangle( i, i + 1, i + 2 );
+            if( d )
+            {
+                mesh.addVertex( ProceduralVertex{ *d, n, { 0, 0 }, mask } );
+                mesh.addTriangle( i, i + 2, i + 3 );
+            }
+        }
+
+        void quad( ProceduralMesh &mesh, const Vector3F &a, const Vector3F &b,
+                   const Vector3F &c, const Vector3F &d, const Vector3F &mask = {} )
+        {
+            surface( mesh, a, b, c, &d, mask );
+        }
+
+        void prism( ProceduralMesh &mesh, const Vector3F &centre, float width, float height,
+                    float depth, float bevel = 0, bool bottom = true, bool top = true )
+        {
+            if( width <= 0 || height <= 0 || depth <= 0 ) return;
+            const auto x = width * .5f, z = depth * .5f, y = height * .5f;
+            bevel = std::min( bevel, std::min( x, z ) * .5f );
+            const std::array<Vector2F, 8> ring = bevel > 0
+                ? std::array<Vector2F, 8>{ { { -x + bevel, -z }, { x - bevel, -z }, { x, -z + bevel },
+                    { x, z - bevel }, { x - bevel, z }, { -x + bevel, z }, { -x, z - bevel }, { -x, -z + bevel } } }
+                : std::array<Vector2F, 8>{ { { -x, -z }, { x, -z }, { x, z }, { -x, z } } };
+            const u32 count = bevel > 0 ? 8u : 4u;
+            for( u32 edge = 0; edge < count; ++edge )
+            {
+                const auto a = ring[edge], b = ring[( edge + 1 ) % count];
+                quad( mesh, centre + Vector3F( a.x, -y, a.y ), centre + Vector3F( a.x, y, a.y ),
+                      centre + Vector3F( b.x, y, b.y ), centre + Vector3F( b.x, -y, b.y ) );
+            }
+            // Planar UVs across each complete cap, with no shared side normals.
+            for( auto sign : { -1.f, 1.f } )
+            {
+                if( ( sign < 0 && !bottom ) || ( sign > 0 && !top ) ) continue;
+                const auto i = mesh.addVertex( ProceduralVertex{ centre + Vector3F( 0, sign * y, 0 ),
+                                                                { 0, sign, 0 }, { .5f, .5f }, {} } );
+                for( u32 edge = 0; edge < count; ++edge )
                 {
-                    bool isLength = ( side == 0 || side == 2 );
-                    real_Num sideLen = isLength ? spec.width : spec.depth;
-                    s32 nWindows = std::max( 1, static_cast<s32>( sideLen / 3.0f ) );
-
-                    for( s32 i = 0; i < nWindows; ++i )
-                    {
-                        ProceduralMesh w = buildWindow( ws, seed + f * 4 + side * 32 + i );
-                        // Position window on the wall
-                        real_Num u = -sideLen * 0.5f + ( i + 0.5f ) * ( sideLen / nWindows );
-                        real_Num offset = spec.wallThick * 0.5f + 0.01f;
-                        Vector3<real_Num> p;
-                        real_Num rot = 0;
-                        switch( side )
-                        {
-                        case 0:
-                            p = Vector3<real_Num>( u, fy, spec.depth * 0.5f + offset );
-                            break;
-                        case 1:
-                            p = Vector3<real_Num>( spec.width * 0.5f + offset, fy, u );
-                            rot = -1.5707963f;
-                            break;
-                        case 2:
-                            p = Vector3<real_Num>( u, fy, -spec.depth * 0.5f - offset );
-                            rot = 3.1415927f;
-                            break;
-                        case 3:
-                            p = Vector3<real_Num>( -spec.width * 0.5f - offset, fy, u );
-                            rot = 1.5707963f;
-                            break;
-                        }
-                        for( auto &v : w.vertices )
-                        {
-                            real_Num cs = std::cos( rot ), sn = std::sin( rot );
-                            Vector3<real_Num> q( v.position.x * cs + v.position.z * sn, v.position.y,
-                                                 -v.position.x * sn + v.position.z * cs );
-                            v.position = q + p + origin;
-                        }
-                        result.windows.push_back( w );
-                    }
+                    const auto p = ring[edge];
+                    mesh.addVertex( ProceduralVertex{ centre + Vector3F( p.x, sign * y, p.y ),
+                                                     { 0, sign, 0 }, { .5f + p.x / width, .5f + p.y / depth }, {} } );
+                }
+                for( u32 edge = 0; edge < count; ++edge )
+                {
+                    const u32 a = i + 1 + edge, b = i + 1 + ( edge + 1 ) % count;
+                    mesh.addTriangle( i, sign > 0 ? b : a, sign > 0 ? a : b );
                 }
             }
+        }
 
-            // Roof clutter (AC units) - chance
-            if( ( seed % 7 ) > 2 )
+        void place( ProceduralMesh &mesh, const Vector3F &origin, float yaw = 0 )
+        {
+            const auto c = std::cos( yaw ), s = std::sin( yaw );
+            const auto rotate = [&]( const Vector3F &v ) {
+                return Vector3F( v.x * c + v.z * s, v.y, -v.x * s + v.z * c );
+            };
+            for( auto &v : mesh.vertices )
             {
-                ProceduralMesh ac = buildACUnit( seed );
-                Vector3<real_Num> acPos =
-                    origin + Vector3<real_Num>( spec.width * 0.25f, totalH + 0.5f, spec.depth * 0.25f );
-                for( auto &v : ac.vertices )
+                v.position = rotate( v.position ) + origin;
+                v.normal = rotate( v.normal );
+            }
+            mesh.computeBoundingBox();
+        }
+
+        void panel( ProceduralMesh &mesh, float width, float height, float z,
+                    const Vector3F &mask = {}, float left = 0, float yaw = 0 )
+        {
+            const auto c = std::cos( yaw ), s = std::sin( yaw );
+            const auto a = Vector3F( left, -height * .5f, z );
+            const auto b = a + Vector3F( width * c, 0, -width * s );
+            const auto up = Vector3F( 0, height, 0 );
+            quad( mesh, a, b, b + up, a + up, mask );
+        }
+
+        void rail( ProceduralMesh &mesh, float x, float z, float width, float depth, float base, float height )
+        {
+            prism( mesh, { x, base + height * .5f, z }, width, height, depth );
+            prism( mesh, { x, base + height + .045f, z }, width + .055f, .09f, depth + .055f );
+        }
+
+        void roof( ProceduralMesh &mesh, const Footprint &area, BuildingSpec::Type style )
+        {
+            const float w = area.width(), d = area.depth(), x = area.x(), z = area.z();
+            const float wall = std::min( .18f, std::min( w, d ) * .15f );
+            prism( mesh, { x, slabHeight * .5f, z }, w + .10f, slabHeight, d + .10f, .045f );
+            const float parapet = style == BuildingSpec::Type::Industrial ? .28f :
+                                  style == BuildingSpec::Type::Commercial ? 1.02f : .82f;
+            for( float sign : { -1.f, 1.f } )
+            {
+                rail( mesh, x, z + sign * ( d - wall ) * .5f, w, wall, slabHeight, parapet );
+                rail( mesh, x + sign * ( w - wall ) * .5f, z, wall, d - wall * 2, slabHeight, parapet );
+            }
+            if( style == BuildingSpec::Type::Industrial && w >= 3 && d >= 2 )
+            {
+                // A low monitor roof and raised cap break the long shed silhouette.
+                const float monitorWidth = w * .72f, monitorDepth = d * .30f;
+                prism( mesh, { x, slabHeight + .27f, z }, monitorWidth, .54f, monitorDepth, .035f );
+                prism( mesh, { x, slabHeight + .60f, z }, monitorWidth + .20f, .12f, monitorDepth + .20f, .04f );
+                for( int i = -2; i <= 2; ++i )
+                    prism( mesh, { x + i * monitorWidth / 5, slabHeight + .29f, z + monitorDepth * .5f + .025f },
+                           monitorWidth * .14f, .25f, .055f );
+            }
+        }
+
+        void facadeTrim( ProceduralMesh &mesh, const Footprint &area, float base,
+                         float floorHeight, s32 floor, BuildingSpec::Type style )
+        {
+            const float width = area.width(), depth = area.depth();
+            const float x = area.x(), z = area.z();
+            if( floor == 0 && width >= 2 && floorHeight >= 2.2f )
+            {
+                if( style == BuildingSpec::Type::Commercial || style == BuildingSpec::Type::MixedUse )
                 {
-                    v.position = v.position + acPos;
+                    const float canopy = style == BuildingSpec::Type::Commercial ? width * .88f : width * .62f;
+                    const float y = base + floorHeight * .83f;
+                    prism( mesh, { x, y, area.maxZ + .59f }, canopy, .15f, 1.30f, .045f );
+                    prism( mesh, { x, y - .08f, area.maxZ + 1.18f }, canopy, .11f, .14f );
+                    for( float sign : { -1.f, 1.f } )
+                        prism( mesh, { x + sign * canopy * .38f, y - .15f, area.maxZ + .20f }, .12f, .19f, .46f );
                 }
-                result.details.push_back( ac );
+                else if( style == BuildingSpec::Type::Industrial )
+                {
+                    const float y = base + floorHeight * .75f;
+                    prism( mesh, { x, y, area.maxZ + .43f }, width * .48f, .20f, .94f, .025f );
+                    for( float sign : { -1.f, 1.f } )
+                        prism( mesh, { x + sign * width * .24f, base + floorHeight * .36f, area.maxZ + .15f },
+                               .20f, floorHeight * .72f, .26f );
+                }
+                else
+                {
+                    prism( mesh, { x, base + .075f, area.maxZ + .30f }, 1.45f, .15f, .65f, .025f );
+                }
+            }
+            if( floor == 0 ) return;
+            if( style == BuildingSpec::Type::Commercial )
+            {
+                // Continuous projecting slab bands frame the glazed bays.
+                prism( mesh, { x, base + .10f, area.maxZ + .02f }, width + .12f, .20f, .19f );
+                prism( mesh, { x, base + .10f, area.minZ - .02f }, width + .12f, .20f, .19f );
+                prism( mesh, { area.minX - .02f, base + .10f, z }, .19f, .20f, depth );
+                prism( mesh, { area.maxX + .02f, base + .10f, z }, .19f, .20f, depth );
+            }
+            else if( style != BuildingSpec::Type::Industrial && width >= 3 && floorHeight >= 2.2f && floor % 2 == 1 )
+            {
+                const float span = std::min( 2.6f, width * .62f );
+                const float y = base + floorHeight * .12f;
+                prism( mesh, { x, y, area.maxZ + .50f }, span, .16f, 1.10f, .03f );
+                rail( mesh, x, area.maxZ + .99f, span, .10f, y + .08f, .66f );
+                for( float sign : { -1.f, 1.f } )
+                    rail( mesh, x + sign * ( span - .10f ) * .5f, area.maxZ + .48f,
+                          .10f, .94f, y + .08f, .66f );
+            }
+        }
+
+        void terrace( ProceduralMesh &mesh, const Footprint &strip, s32 side )
+        {
+            const auto w = strip.width(), d = strip.depth();
+            const auto thickness = std::min( .14f, std::min( w, d ) * .35f );
+            prism( mesh, { strip.x(), .075f, strip.z() }, w, .15f, d );
+            if( side == 0 || side == 2 )
+            {
+                rail( mesh, strip.x(), side == 0 ? strip.maxZ - thickness * .5f : strip.minZ + thickness * .5f,
+                      w, thickness, .15f, .88f );
+                for( float sign : { -1.f, 1.f } )
+                    rail( mesh, strip.x() + sign * ( w - thickness ) * .5f, strip.z(),
+                          thickness, d - thickness, .15f, .88f );
+            }
+            else
+            {
+                rail( mesh, side == 1 ? strip.maxX - thickness * .5f : strip.minX + thickness * .5f,
+                      strip.z(), thickness, d, .15f, .88f );
+                for( float sign : { -1.f, 1.f } )
+                    rail( mesh, strip.x(), strip.z() + sign * ( d - thickness ) * .5f,
+                          w - thickness, thickness, .15f, .88f );
+            }
+        }
+
+        void roundPipe( ProceduralMesh &mesh, float y0, float y1, float radius, float x = 0, float z = 0 )
+        {
+            constexpr u32 sides = 12;
+            for( u32 i = 0; i < sides; ++i )
+            {
+                const auto a = 2 * pi * i / sides, b = 2 * pi * ( i + 1 ) / sides;
+                const auto pa = Vector3F( x + std::cos( a ) * radius, y0, z + std::sin( a ) * radius );
+                const auto pb = Vector3F( x + std::cos( b ) * radius, y0, z + std::sin( b ) * radius );
+                const auto up = Vector3F( 0, y1 - y0, 0 );
+                quad( mesh, pa, pa + up, pb + up, pb );
+            }
+        }
+
+        void shell( ProceduralMesh &mesh, const Footprint &area, float y0, float y1, bool top )
+        {
+            prism( mesh, { area.x(), ( y0 + y1 ) * .5f, area.z() }, area.width(), y1 - y0,
+                   area.depth(), .08f, y0 == 0, top );
+        }
+    }
+
+    WindowState WPBuildingGenerator::pickWindowState( u32 seed, s32 floor, real_Num damage )
+    {
+        WPNoise noise( seed );
+        const auto r = noise.noise3( floor * 17.f + .37f, float( seed & 0xffff ) + .61f, .19f ) * .5f + .5f;
+        if( r < .07f + damage * .25f ) return WindowState::Boarded;
+        if( r < .20f + damage * .5f ) return WindowState::Open;
+        if( floor > 0 && r < .42f ) return WindowState::Shuttered;
+        if( floor > 0 && r < .52f ) return WindowState::Ajar;
+        if( r < .60f ) return WindowState::Curtain;
+        if( r < .66f ) return WindowState::Lit;
+        return WindowState::Glazed;
+    }
+
+    WPBuildingGenerator::WPBuildingGenerator( u32 seed ) : mSeed( seed ) {}
+
+    BuildingResult WPBuildingGenerator::generate( const BuildingSpec &spec, const Vector3<real_Num> &origin )
+    {
+        BuildingResult result;
+        result.position = origin;
+        if( !validSpec( spec ) || !std::isfinite( origin.x ) || !std::isfinite( origin.y ) ||
+            !std::isfinite( origin.z ) ) return result;
+
+        const u32 seed = spec.seed ? spec.seed : mSeed;
+        const float floorHeight = float( spec.floorH );
+        const float totalHeight = spec.floors * floorHeight;
+        const auto world = Vector3F( float( origin.x ), float( origin.y ), float( origin.z ) );
+        auto area = baseFootprint( spec );
+        for( s32 floor = 0; floor < spec.floors; ++floor )
+        {
+            for( const auto &option : spec.setbacks )
+            {
+                if( floor == 0 || setbackFloor( option ) != floor ) continue;
+                auto old = area;
+                if( !inset( area, option ) ) continue;
+                auto strip = old;
+                switch( option.side )
+                {
+                case 0: strip.minZ = area.maxZ; break;
+                case 1: strip.minX = area.maxX; break;
+                case 2: strip.maxZ = area.minZ; break;
+                case 3: strip.maxX = area.minX; break;
+                }
+                ProceduralMesh deck;
+                terrace( deck, strip, option.side );
+                place( deck, world + Vector3F( 0, floor * floorHeight, 0 ) );
+                result.details.push_back( std::move( deck ) );
             }
 
-            // Roof access penthouse if high-rise
-            if( spec.floors >= 5 )
+            ProceduralMesh trim;
+            facadeTrim( trim, area, floor * floorHeight, floorHeight, floor, spec.type );
+            if( trim.hasGeometry() )
             {
-                ProceduralMesh penthouse = buildRoofAccess( spec, seed );
-                for( auto &v : penthouse.vertices )
-                {
-                    v.position = v.position + origin + Vector3<real_Num>( 0, totalH, 0 );
-                }
-                result.details.push_back( penthouse );
+                place( trim, world );
+                result.details.push_back( std::move( trim ) );
             }
-
-            // Setback terrace if specified
-            for( const auto &sb : spec.setbacks )
+            const bool ground = floor == 0;
+            const bool retail = ground && ( spec.type == BuildingSpec::Type::Commercial || spec.type == BuildingSpec::Type::MixedUse );
+            const bool industrial = spec.type == BuildingSpec::Type::Industrial;
+            const auto y = ( floor + .5f ) * floorHeight;
+            for( s32 side = 0; side < 4; ++side )
             {
-                if( sb.from < 0 || sb.from >= spec.floors )
+                const bool alongX = side == 0 || side == 2;
+                const auto length = alongX ? area.width() : area.depth();
+                const auto bays = std::clamp( int( length / ( industrial ? 4.f : 3.f ) ), 1, 32 );
+                const auto bay = length / bays;
+                for( s32 index = 0; index < bays; ++index )
                 {
-                    continue;
+                    const u32 detailSeed = seed + u32( floor ) * 997u + u32( side ) * 101u + u32( index ) * 37u;
+                    const bool entry = ground && !industrial && side == 0 && index == bays / 2;
+                    const auto state = retail ? WindowState::Glazed : pickWindowState( detailSeed, floor, spec.generateDamage ? .55f : .20f );
+                    const auto width = std::min( bay * ( retail ? .8f : .58f ), retail ? 3.25f : industrial ? 2.2f : 1.55f );
+                    const auto height = std::min( floorHeight * ( entry ? .75f : retail ? .78f : industrial ? .42f : .60f ),
+                                                  entry || retail ? 2.7f : 1.85f );
+                    auto window = buildWindow( state, detailSeed, width, height );
+                    const auto u = ( index + .5f ) * bay + ( alongX ? area.minX : area.minZ );
+                    const float outward = .052f;
+                    const float cy = entry ? height * .5f + .08f : y;
+                    const Vector3F locations[] = { { u, cy, area.maxZ + outward }, { area.maxX + outward, cy, u },
+                                                   { u, cy, area.minZ - outward }, { area.minX - outward, cy, u } };
+                    const float rotations[] = { 0, pi * .5f, pi, -pi * .5f };
+                    place( window, world + locations[side], rotations[side] );
+                    result.windows.push_back( std::move( window ) );
                 }
-                ProceduralMesh terrace = buildTerrace( spec, seed + sb.from );
-                real_Num y = ( sb.from + 1 ) * spec.floorH;
-                for( auto &v : terrace.vertices )
-                {
-                    v.position = v.position + origin + Vector3<real_Num>( 0, y, 0 );
-                }
-                result.details.push_back( terrace );
             }
-
-            // Drainpipe at one corner
-            {
-                ProceduralMesh drain = buildDrainpipe( totalH + 0.6f, seed );
-                Vector3<real_Num> dp = origin + Vector3<real_Num>( spec.width * 0.5f + 0.04f, 0,
-                                                                   spec.depth * 0.5f + 0.04f );
-                for( auto &v : drain.vertices )
-                {
-                    v.position = v.position + dp;
-                }
-                result.details.push_back( drain );
-            }
-
-            // Optional interior partitions
             if( spec.generateInterior )
             {
-                for( s32 f = 0; f < spec.floors; ++f )
+                BuildingSpec room;
+                room.width = area.width(); room.depth = area.depth(); room.floorH = spec.floorH;
+                room.wallThick = spec.wallThick;
+                auto mesh = buildInterior( room, floor, seed + u32( floor ) );
+                if( mesh.hasGeometry() )
                 {
-                    ProceduralMesh interior = buildInterior( spec, f, seed + f );
-                    for( auto &v : interior.vertices )
-                    {
-                        v.position = v.position + origin + Vector3<real_Num>( 0, f * spec.floorH, 0 );
-                    }
-                    result.interiors.push_back( interior );
+                    place( mesh, world + Vector3F( area.x(), floor * floorHeight, area.z() ) );
+                    result.interiors.push_back( std::move( mesh ) );
                 }
             }
-
-            // Move main body to origin
-            for( auto &v : result.body.vertices )
-            {
-                v.position = v.position + origin;
-            }
-            for( auto &v : result.roof.vertices )
-            {
-                v.position = v.position + origin + Vector3<real_Num>( 0, totalH, 0 );
-            }
-
-            // Wall key variant for tinting
-            result.wallKeyVariant = mNoise.noise3( real_Num( seed ) * 0.01f, 0, 0 ) * 0.5f + 0.5f;
-
-            return result;
         }
 
-        // ===================================================================
-        // BUILD BODY - chamfered box with subtle warp (no perfectly flat walls)
-        // ===================================================================
-        ProceduralMesh WPBuildingGenerator::buildBody( const BuildingSpec &spec, u32 seed )
+        result.body = buildBody( spec, seed );
+        place( result.body, world );
+        roof( result.roof, area, spec.type );
+        place( result.roof, world + Vector3F( 0, totalHeight, 0 ) );
+
+        const auto roofOrigin = world + Vector3F( area.x(), totalHeight + slabHeight, area.z() );
+        const bool hasAccess = spec.floors >= 5 && area.width() >= 3.3f && area.depth() >= 3.3f;
+        if( area.width() >= ( hasAccess ? 5.f : 2.f ) && area.depth() >= 2 &&
+            ( seed % 7 > 2 || spec.type == BuildingSpec::Type::Industrial ) )
         {
-            real_Num totalH = spec.floors * spec.floorH;
-            ProceduralMesh m =
-                WPGeometryKit::chamferedBox( spec.width, totalH, spec.depth, 0.022f, 1, 1, 1 );
-
-            // Subtle warp on the outer faces - nothing perfectly flat
-            WPGeometryKit::warpMesh( m, 0.018f, 0.5f, seed );
-
-            return m;
+            auto unit = buildACUnit( seed );
+            place( unit, roofOrigin + Vector3F( -area.width() * .23f, .31f, area.depth() * .20f ) );
+            result.details.push_back( std::move( unit ) );
         }
-
-        // ===================================================================
-        // BUILD WINDOW - state-dependent geometry
-        // ===================================================================
-        ProceduralMesh WPBuildingGenerator::buildWindow( WindowState state, u32 seed, real_Num width,
-                                                         real_Num height )
+        if( hasAccess )
         {
-            ProceduralMesh m;
-            real_Num fD = 0.15f;
-
-            switch( state )
+            auto access = buildRoofAccess( spec, seed );
+            place( access, roofOrigin + Vector3F( area.width() * .12f, 0, 0 ) );
+            result.details.push_back( std::move( access ) );
+        }
+        const auto base = baseFootprint( spec );
+        auto drainArea = base;
+        float drainHeight = totalHeight + slabHeight;
+        for( s32 floor = 1; floor < spec.floors; ++floor )
+        {
+            for( const auto &option : spec.setbacks )
+                if( setbackFloor( option ) == floor ) inset( drainArea, option );
+            if( drainArea.maxZ != base.maxZ || drainArea.maxX < base.maxX - .30f )
             {
-            case WindowState::Glazed:
-            case WindowState::Lit:
-            case WindowState::Curtain:
-            {
-                // Frame box
-                ProceduralMesh frame =
-                    WPGeometryKit::chamferedBox( width + 0.15f, height + 0.15f, fD, 0.012f, 1, 1, 1 );
-                m.append( frame, Vector3<real_Num>( 0, 0, 0 ) );
-
-                // Glass / curtain pane
-                ProceduralMesh pane = WPGeometryKit::quad( width, height );
-                Vector3<real_Num> pn( 0, 0, fD * 0.5f );
-                m.append( pane, pn );
-
-                // Interior glow for "lit" windows
-                if( state == WindowState::Lit )
-                {
-                    ProceduralMesh glow = WPGeometryKit::quad( width * 0.7f, height * 0.7f );
-                    m.append( glow, Vector3<real_Num>( 0, 0, fD * 0.55f ) );
-                }
+                drainHeight = floor * floorHeight + .15f;
                 break;
             }
-            case WindowState::Open:
-            case WindowState::Ajar:
+        }
+        auto drain = buildDrainpipe( drainHeight, seed );
+        place( drain, world + Vector3F( base.maxX - .30f, 0, base.maxZ + .09f ) );
+        result.details.push_back( std::move( drain ) );
+        result.wallKeyVariant = std::clamp( float( mNoise.noise3( float( seed & 0xffff ) * .0137f, .37f, .19f ) ) * .5f + .5f, 0.f, 1.f );
+        return result;
+    }
+
+    ProceduralMesh WPBuildingGenerator::buildBody( const BuildingSpec &spec, u32 )
+    {
+        ProceduralMesh mesh;
+        if( !validSpec( spec ) ) return mesh;
+        auto area = baseFootprint( spec );
+        s32 start = 0;
+        for( s32 floor = 1; floor < spec.floors; ++floor )
+        {
+            auto next = area;
+            for( const auto &setback : spec.setbacks )
+                if( setbackFloor( setback ) == floor ) inset( next, setback );
+            if( !same( next, area ) )
             {
-                // Just the frame
-                ProceduralMesh frame =
-                    WPGeometryKit::chamferedBox( width + 0.15f, height + 0.15f, fD, 0.012f, 1, 1, 1 );
-                m.append( frame, Vector3<real_Num>( 0, 0, 0 ) );
-
-                if( state == WindowState::Ajar )
-                {
-                    // Pane rotated open
-                    ProceduralMesh pane = WPGeometryKit::quad( width, height );
-                    Vector3<real_Num> pn( width * 0.25f, 0, fD * 0.5f + 0.05f );
-                    for( auto &v : pane.vertices )
-                    {
-                        v.position = v.position + pn;
-                    }
-                    m.append( pane, Vector3<real_Num>( 0, 0, 0 ) );
-                }
-                break;
+                shell( mesh, area, start * float( spec.floorH ), floor * float( spec.floorH ), true );
+                area = next;
+                start = floor;
             }
-            case WindowState::Boarded:
+        }
+        shell( mesh, area, start * float( spec.floorH ), spec.floors * float( spec.floorH ), true );
+        mesh.computeBoundingBox();
+        return mesh;
+    }
+
+    ProceduralMesh WPBuildingGenerator::buildWindow( WindowState state, u32 seed, real_Num w, real_Num h )
+    {
+        ProceduralMesh mesh;
+        const auto width = float( w ), height = float( h );
+        if( !( width >= .08f && width <= 20 && height >= .08f && height <= 20 ) ) return mesh;
+        const auto frame = std::min( .065f, std::min( width, height ) * .16f );
+        for( auto sign : { -1.f, 1.f } )
+        {
+            prism( mesh, { sign * ( width + frame ) * .5f, 0, .014f }, frame, height + frame * 2, .105f );
+            prism( mesh, { 0, sign * ( height + frame ) * .5f, .014f }, width, frame, .105f );
+        }
+        prism( mesh, { 0, -height * .5f - frame, .054f }, width + frame * 3, frame * .65f, .145f, .01f );
+        switch( state )
+        {
+        case WindowState::Glazed:
+        case WindowState::Lit:
+        case WindowState::Curtain:
+            panel( mesh, width, height, .018f,
+                   state == WindowState::Lit ? Vector3F( 0, 0, .05f ) :
+                   state == WindowState::Curtain ? Vector3F( 0, .22f, .28f ) : Vector3F{}, -width * .5f );
+            prism( mesh, { 0, 0, .042f }, frame * .68f, height, .05f );
+            if( state == WindowState::Curtain )
+                for( int fold : { -2, -1, 1, 2 } )
+                    prism( mesh, { fold * width * .19f, 0, .023f }, frame * .22f, height, .018f );
+            break;
+        case WindowState::Ajar:
+            panel( mesh, width, height, .036f, {}, -width * .5f, -.26f - float( seed % 7 ) * .028f );
+            break;
+        case WindowState::Boarded:
+            for( int board = 0; board < 3; ++board )
+                prism( mesh, { 0, ( board - 1 ) * height / 3, .071f }, width + frame, height * .30f, .044f, .008f );
+            break;
+        case WindowState::Shuttered:
+            for( auto side : { -1.f, 1.f } )
             {
-                // Frame outline only
-                ProceduralMesh frame =
-                    WPGeometryKit::chamferedBox( width + 0.15f, height + 0.15f, fD, 0.012f, 1, 1, 1 );
-                m.append( frame, Vector3<real_Num>( 0, 0, 0 ) );
-
-                // Three horizontal boards across the opening
-                real_Num boardH = height / 3.0f - 0.02f;
-                for( s32 i = 0; i < 3; ++i )
-                {
-                    real_Num y = -height * 0.5f + ( i + 0.5f ) * ( height / 3.0f );
-                    ProceduralMesh board =
-                        WPGeometryKit::chamferedBox( width + 0.2f, boardH, 0.04f, 0.008f, 1, 1, 1 );
-                    Vector3<real_Num> bp( 0, y, fD * 0.5f + 0.02f );
-                    m.append( board, bp );
-                }
-                break;
+                const auto x = side * width * .25f;
+                for( auto edge : { -1.f, 1.f } )
+                    prism( mesh, { x + edge * width * .22f, 0, .077f }, frame * .66f, height, .054f );
+                for( int slat = 0; slat < 7; ++slat )
+                    prism( mesh, { x, ( ( slat + .5f ) / 7.f - .5f ) * height, .078f },
+                           width * .43f, height * .101f, .042f );
             }
-            case WindowState::Shuttered:
-            {
-                // Two louvered shutters hinged to each side
-                ProceduralMesh frame =
-                    WPGeometryKit::chamferedBox( width + 0.15f, height + 0.15f, fD, 0.012f, 1, 1, 1 );
-                m.append( frame, Vector3<real_Num>( 0, 0, 0 ) );
-
-                real_Num sh = height * 0.5f - 0.02f;
-                for( s32 i = 0; i < 2; ++i )
-                {
-                    real_Num side = ( i == 0 ) ? 1.0f : -1.0f;
-                    ProceduralMesh shutter =
-                        WPGeometryKit::chamferedBox( width * 0.45f, sh, 0.04f, 0.008f, 1, 1, 1 );
-                    Vector3<real_Num> sp( side * width * 0.27f, 0, fD * 0.5f + 0.02f );
-                    m.append( shutter, sp );
-                }
-                break;
-            }
-            }
-
-            return m;
+            break;
+        case WindowState::Open: break;
         }
+        mesh.computeBoundingBox();
+        return mesh;
+    }
 
-        // ===================================================================
-        // BUILD ROOF - slab + parapet
-        // ===================================================================
-        ProceduralMesh WPBuildingGenerator::buildRoof( const BuildingSpec &spec, u32 seed )
+    ProceduralMesh WPBuildingGenerator::buildRoof( const BuildingSpec &spec, u32 )
+    {
+        ProceduralMesh mesh;
+        if( !validSpec( spec ) ) return mesh;
+        auto area = baseFootprint( spec );
+        for( s32 floor = 1; floor < spec.floors; ++floor )
+            for( const auto &option : spec.setbacks )
+                if( setbackFloor( option ) == floor ) inset( area, option );
+        roof( mesh, area, spec.type );
+        mesh.computeBoundingBox();
+        return mesh;
+    }
+
+    ProceduralMesh WPBuildingGenerator::buildRoofAccess( const BuildingSpec &, u32 seed )
+    {
+        ProceduralMesh mesh;
+        constexpr float w = 2.24f, d = 2.36f, h = 2.44f;
+        prism( mesh, { 0, h * .5f, 0 }, w, h, d, .035f );
+        auto door = buildWindow( WindowState::Glazed, seed, .86f, 2.04f );
+        mesh.append( door, { 0, 1.07f, d * .5f + .052f } );
+        prism( mesh, { 0, h + .08f, 0 }, w + .17f, .16f, d + .17f, .045f );
+        prism( mesh, { 0, 2.21f, d * .5f + .12f }, 1.15f, .085f, .26f );
+        mesh.computeBoundingBox();
+        return mesh;
+    }
+
+    ProceduralMesh WPBuildingGenerator::buildACUnit( u32 seed )
+    {
+        ProceduralMesh mesh;
+        prism( mesh, { 0, .04f, 0 }, 1.0f, .52f, .80f, .045f );
+        for( float sign : { -1.f, 1.f } )
+            prism( mesh, { sign * .32f, -.267f, 0 }, .12f, .086f, .85f );
+        for( int slat = 0; slat < 6; ++slat )
+            prism( mesh, { 0, ( slat - 2.5f ) * .061f, .412f }, .78f, .026f, .037f );
+        roundPipe( mesh, .30f, .35f, .25f, float( seed % 3 ) * .012f, 0 );
+        for( float sign : { -1.f, 1.f } )
+            prism( mesh, { sign * .12f, .344f, 0 }, .034f, .018f, .41f );
+        mesh.computeBoundingBox();
+        return mesh;
+    }
+
+    ProceduralMesh WPBuildingGenerator::buildTerrace( const BuildingSpec &spec, u32 )
+    {
+        ProceduralMesh mesh;
+        if( !validSpec( spec ) ) return mesh;
+        const float w = float( spec.width );
+        terrace( mesh, { -w * .5f, w * .5f, 0, 1.5f }, 0 );
+        mesh.computeBoundingBox();
+        return mesh;
+    }
+
+    ProceduralMesh WPBuildingGenerator::buildDrainpipe( real_Num height, u32 )
+    {
+        ProceduralMesh mesh;
+        if( !( height > 0 && height <= maximumFloors * 20.f + 1 ) ) return mesh;
+        roundPipe( mesh, 0, float( height ), .043f );
+        for( float y = .55f; y < height - .1f; y += 2.6f )
         {
-            ProceduralMesh m;
-
-            // Roof screed slab
-            ProceduralMesh slab = WPGeometryKit::chamferedBox( spec.width + 0.1f, 0.2f,
-                                                               spec.depth + 0.1f, 0.04f, 1, 1, 1 );
-            m.append( slab, Vector3<real_Num>( 0, 0.1f, 0 ) );
-
-            // Coping (raised concrete edge along the parapet top)
-            ProceduralMesh coping =
-                WPGeometryKit::chamferedBox( spec.width + 0.2f, 0.1f, 0.22f, 0.04f, 1, 1, 1 );
-            m.append( coping, Vector3<real_Num>( 0, spec.floors * spec.floorH + 0.2f + 0.05f,
-                                                 spec.depth * 0.5f + 0.05f ) );
-            m.append( coping, Vector3<real_Num>( 0, spec.floors * spec.floorH + 0.2f + 0.05f,
-                                                 -spec.depth * 0.5f - 0.05f ) );
-
-            ProceduralMesh copingX =
-                WPGeometryKit::chamferedBox( 0.22f, 0.1f, spec.depth + 0.2f, 0.04f, 1, 1, 1 );
-            m.append( copingX, Vector3<real_Num>( spec.width * 0.5f + 0.05f,
-                                                  spec.floors * spec.floorH + 0.2f + 0.05f, 0 ) );
-            m.append( copingX, Vector3<real_Num>( -spec.width * 0.5f - 0.05f,
-                                                  spec.floors * spec.floorH + 0.2f + 0.05f, 0 ) );
-
-            // Parapet (4 walls)
-            real_Num ph = 0.92f;
-            real_Num py = spec.floors * spec.floorH + 0.2f + ph * 0.5f;
-            ProceduralMesh pLong =
-                WPGeometryKit::chamferedBox( spec.width + 0.2f, ph, 0.22f, 0.04f, 1, 1, 1 );
-            m.append( pLong, Vector3<real_Num>( 0, py, spec.depth * 0.5f + 0.05f ) );
-            m.append( pLong, Vector3<real_Num>( 0, py, -spec.depth * 0.5f - 0.05f ) );
-
-            ProceduralMesh pShort =
-                WPGeometryKit::chamferedBox( 0.22f, ph, spec.depth + 0.2f, 0.04f, 1, 1, 1 );
-            m.append( pShort, Vector3<real_Num>( spec.width * 0.5f + 0.05f, py, 0 ) );
-            m.append( pShort, Vector3<real_Num>( -spec.width * 0.5f - 0.05f, py, 0 ) );
-
-            return m;
+            roundPipe( mesh, y, y + .045f, .054f );
+            prism( mesh, { 0, y + .023f, -.069f }, .066f, .045f, .077f );
         }
+        mesh.computeBoundingBox();
+        return mesh;
+    }
 
-        // ===================================================================
-        // ROOF ACCESS PENTHOUSE
-        // ===================================================================
-        ProceduralMesh WPBuildingGenerator::buildRoofAccess( const BuildingSpec &spec, u32 seed )
-        {
-            ProceduralMesh m;
-            real_Num w = 2.4f, d = 2.6f, h = 2.5f;
-            ProceduralMesh body = WPGeometryKit::chamferedBox( w, h, d, 0.022f, 1, 1, 1 );
-            m.append( body, Vector3<real_Num>( spec.width * 0.3f, h * 0.5f, 0 ) );
+    ProceduralMesh WPBuildingGenerator::buildInterior( const BuildingSpec &spec, s32 floor, u32 )
+    {
+        ProceduralMesh mesh;
+        if( !validSpec( spec ) ) return mesh;
+        const float t = std::max( .05f, float( spec.wallThick ) );
+        const float w = float( spec.width ) - 2 * t, d = float( spec.depth ) - 2 * t;
+        const float h = float( spec.floorH ) - ( floor == 0 ? .13f : 0 );
+        if( w <= t * 2 || d <= t * 2 ) return mesh;
+        prism( mesh, { -w * .10f, h * .5f, 0 }, t, h, d );
+        prism( mesh, { -w * .30f - t * .25f, h * .5f, d * .10f }, w * .40f - t * .5f, h, t );
+        prism( mesh, { w * .20f + t * .25f, h * .5f, d * .10f }, w * .60f - t * .5f, h, t );
+        mesh.computeBoundingBox();
+        return mesh;
+    }
 
-            // Door opening on +Z face
-            ProceduralMesh door = buildWindow( WindowState::Open, seed, 1.05f, 2.16f );
-            Vector3<real_Num> dp( spec.width * 0.3f, 1.08f, d * 0.5f + 0.05f );
-            m.append( door, dp );
-
-            // Roof slab
-            ProceduralMesh top = WPGeometryKit::chamferedBox( w + 0.1f, 0.2f, d + 0.1f, 0.04f, 1, 1, 1 );
-            m.append( top, Vector3<real_Num>( spec.width * 0.3f, h + 0.1f, 0 ) );
-
-            return m;
-        }
-
-        // ===================================================================
-        // AC UNIT
-        // ===================================================================
-        ProceduralMesh WPBuildingGenerator::buildACUnit( u32 seed )
-        {
-            ProceduralMesh m = WPGeometryKit::chamferedBox( 1.0f, 0.6f, 0.8f, 0.04f, 1, 1, 1 );
-
-            // Fan grille on the side
-            ProceduralMesh grille = WPGeometryKit::quad( 0.6f, 0.4f );
-            m.append( grille, Vector3<real_Num>( 0.5f + 0.01f, 0, 0 ) );
-
-            return m;
-        }
-
-        // ===================================================================
-        // SETBACK TERRACE
-        // ===================================================================
-        ProceduralMesh WPBuildingGenerator::buildTerrace( const BuildingSpec &spec, u32 seed )
-        {
-            ProceduralMesh m;
-
-            // The exposed strip left by the setback: a screed slab + coping + parapet
-            real_Num depth = 1.5f;
-            real_Num sideLen = spec.width;
-            ProceduralMesh screed =
-                WPGeometryKit::chamferedBox( sideLen + 0.08f, 0.26f, depth + 0.08f, 0.04f, 1, 1, 1 );
-            m.append( screed, Vector3<real_Num>( 0, 0.13f, depth * 0.5f ) );
-
-            ProceduralMesh par =
-                WPGeometryKit::chamferedBox( sideLen + 0.2f, 0.92f, 0.22f, 0.04f, 1, 1, 1 );
-            m.append( par, Vector3<real_Num>( 0, 0.59f, depth + 0.06f ) );
-
-            ProceduralMesh coping =
-                WPGeometryKit::chamferedBox( sideLen + 0.2f, 0.1f, 0.22f, 0.04f, 1, 1, 1 );
-            m.append( coping, Vector3<real_Num>( 0, 1.12f, depth + 0.06f ) );
-
-            // Returns at each end of the terrace
-            for( real_Num sign : { -1.0f, 1.0f } )
-            {
-                ProceduralMesh ret = WPGeometryKit::chamferedBox( depth, 0.92f, 0.22f, 0.04f, 1, 1, 1 );
-                m.append( ret,
-                          Vector3<real_Num>( sign * ( sideLen * 0.5f - 0.11f ), 0.59f, depth * 0.5f ) );
-            }
-
-            return m;
-        }
-
-        // ===================================================================
-        // DRAINPIPE
-        // ===================================================================
-        ProceduralMesh WPBuildingGenerator::buildDrainpipe( real_Num height, u32 seed )
-        {
-            // A thin cylinder at the wall corner
-            return WPGeometryKit::cylinder( 0.04f, height, 8, 1, false, 1.0f );
-        }
-
-        // ===================================================================
-        // INTERIOR PARTITIONS
-        // ===================================================================
-        ProceduralMesh WPBuildingGenerator::buildInterior( const BuildingSpec &spec, s32 floor,
-                                                           u32 seed )
-        {
-            ProceduralMesh m;
-            real_Num w = spec.width - spec.wallThick * 2.0f;
-            real_Num d = spec.depth - spec.wallThick * 2.0f;
-            real_Num h = spec.floorH;
-            if( floor == 0 )
-            {
-                h -= 0.13f;
-            }
-
-            // Two simple perpendicular partition walls creating 4 rooms
-            // Wall 1: along Z axis, off-center
-            real_Num wx1 = -w * 0.5f + w * 0.4f;
-            ProceduralMesh p1 =
-                WPGeometryKit::chamferedBox( spec.wallThick, h, d * 0.85f, 0.012f, 1, 1, 1 );
-            m.append( p1, Vector3<real_Num>( wx1, h * 0.5f, d * 0.5f * 0.85f ) );
-
-            // Wall 2: along X axis, off-center
-            real_Num wz2 = -d * 0.5f + d * 0.6f;
-            ProceduralMesh p2 =
-                WPGeometryKit::chamferedBox( w * 0.4f, h, spec.wallThick, 0.012f, 1, 1, 1 );
-            m.append( p2, Vector3<real_Num>( -w * 0.5f + w * 0.2f, h * 0.5f, wz2 ) );
-
-            return m;
-        }
-
-        // ===================================================================
-        // STAIRS
-        // ===================================================================
-        ProceduralMesh WPBuildingGenerator::buildStairs( const BuildingSpec &spec, s32 fromFloor,
-                                                         u32 seed )
-        {
-            real_Num climb = spec.floorH;
-            s32 steps = std::max( 6, static_cast<s32>( climb / 0.19f ) );
-            real_Num run = 0.275f * steps;
-            return WPGeometryKit::stairRun( 1.2f, steps, climb, run, "right" );
-        }
-    }  // namespace procedural
-}  // namespace workphone
+    ProceduralMesh WPBuildingGenerator::buildStairs( const BuildingSpec &spec, s32, u32 )
+    {
+        ProceduralMesh mesh;
+        if( !validSpec( spec ) ) return mesh;
+        const auto steps = std::max( 3, int( std::ceil( spec.floorH / .19f ) ) );
+        const auto rise = float( spec.floorH ) / steps;
+        constexpr float run = .275f;
+        for( int step = 0; step < steps; ++step )
+            prism( mesh, { 0, ( step + 1 ) * rise * .5f, ( step + .5f ) * run },
+                   1.2f, ( step + 1 ) * rise, run );
+        mesh.computeBoundingBox();
+        return mesh;
+    }
+}

@@ -1,5 +1,22 @@
 # WPProcedural implementation status
 
+## Modular city buildings — 13 November 2026
+
+**City Building Style** selects District Mix, Masonry Residential, Civic Stone,
+or Modern Office. Each preset supplies the façade and roof geometry. Five
+independent mesh slots replace the built-in wall, window, entrance, corner,
+or roof modules using a project asset or a static mesh file. Invalid modules
+report a diagnostic and use built-in geometry. The same building masses
+continue to define terrain support and collision. The native sample adds a
+fixed façade view for matched captures. [Building generator workflow](RacingGameOpenCity.md#building-styles-and-mesh-slots)
+
+The four presets passed native capture at the same seed-42 parcel and camera.
+The five-role smoke run placed 4,444 wall, 740 window, 111 entrance, 444 corner
+and 111 roof modules. The wall and window budgets triggered built-in fallback
+for the remaining placements. The generator geometry and budget contracts,
+ImGui viewport test, City Roads regression, scene save/reopen and Lua city
+fixtures passed. [Native evidence](../artifacts/procedural/city-building-kit-20261113/visual-review.md)
+
 ## Street editing and fitted pavement furniture — 8 November 2026
 
 **Window > City Roads** now selects a spline by clicking its carriageway.

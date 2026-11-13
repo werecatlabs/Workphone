@@ -520,6 +520,22 @@ namespace workphone::ui
                     ImGui::EndCombo();
                 }
             }
+            else if( property.getAttribute( "allowResourcePath" ) == "true" )
+            {
+                constexpr auto bufferSize = 4096;
+                char buffer[bufferSize] = {};
+                StringUtil::toBuffer( value, buffer, bufferSize );
+                const auto browseWidth = ImGui::CalcTextSize( "Browse" ).x + 2 * ImGui::GetStyle().FramePadding.x;
+                ImGui::SetNextItemWidth( std::max( 1.f, ImGui::GetContentRegionAvail().x -
+                    browseWidth - ImGui::GetStyle().ItemSpacing.x ) );
+                const auto submitted = ImGui::InputTextWithHint( widgetId, "Built-in", buffer, bufferSize,
+                                                                 ImGuiInputTextFlags_EnterReturnsTrue );
+                if( ( submitted || ImGui::IsItemDeactivatedAfterEdit() ) && value != buffer )
+                    commit( String( buffer ) );
+                ImGui::SameLine();
+                if( ImGui::Button( "Browse" ) )
+                    handlePropertyButtonClicked( propertyGrid, properties, name, value );
+            }
             else if( ImGui::Button( StringUtil::isNullOrEmpty( value ) ? "None" : value.c_str() ) )
             {
                 handlePropertyButtonClicked( propertyGrid, properties, name, value );

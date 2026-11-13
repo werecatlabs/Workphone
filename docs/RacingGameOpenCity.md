@@ -57,6 +57,47 @@ remain close to the contact surface. Natural layouts retain parcel/park details 
 omit grid-derived street decorations. Glazing is an opaque approximation with outdoor
 HDR specular response; transmission and furnished interiors remain open.
 
+## Building styles and mesh slots
+
+In the `ProceduralRaceScene` Inspector, enable **Open City**, select **City
+Building Style**, then press **Regenerate**. The style controls the built-in
+façade modules and roof shapes used on the city's building masses.
+
+| Style | Built-in geometry |
+| --- | --- |
+| District Mix | Residential, civic, and office kits distributed by district |
+| Masonry Residential | Recessed punched windows, corner piers, hipped roofs, and chimneys |
+| Civic Stone | Deep stone surrounds, horizontal courses, and raised roof lanterns |
+| Modern Office | Glazing ribbons, narrow mullions, parapets, and rooftop service equipment |
+
+Assign **City Wall Mesh**, **City Window Mesh**, **City Entrance Mesh**,
+**City Corner Mesh**, or **City Roof Mesh** independently. Use **Browse** to
+select a project mesh asset or enter a project-relative or absolute mesh path.
+Clear a slot to restore the preset geometry. The style and slot selections
+save with the scene. `RacingGameOpenCity` also accepts the style index and mesh
+paths in its Script Inspector, where **Generate** applies them.
+
+Use static triangle meshes with +Y up and +Z facing out on façades. The
+generator fits the mesh bounds to the corresponding panel, aperture, corner,
+or roof. A window module supplies the frame and uses the city's recessed glazing
+behind it. Modules inherit the city's material for that part. The placement
+budget shares custom geometry across buildings, starting at street-facing bays
+on each building. Remaining placements use the built-in geometry.
+Detailed appearance levels use the façade overrides in the near LOD. Preview
+accepts corner and roof overrides. **City Building Kit Status** reports invalid
+files, skipped roles, and placement limits. Failed placements use the preset.
+
+For a native matched comparison, use **facade** with the same city seed and
+layout. This example applies a sample arched window mesh to Civic Stone.
+
+```powershell
+& .\Tools\powershell\CaptureProceduralRacing.ps1 -Configuration Debug -CityTerrainRoads `
+    -CityBlocks 6 -CityLayout grid -CityBuildingStyle civic -Views facade -Seconds 2 `
+    -CityBuildingMeshes @{ window = '.\docs\examples\city-window-arch.obj' }
+```
+
+[Arched window mesh example](examples/city-window-arch.obj)
+
 ## Native city showcase
 
 `SampleVehicleAdvanced` retains its circuit default. Pass `--city`, optionally

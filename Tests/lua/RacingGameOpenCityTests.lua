@@ -81,6 +81,7 @@ assert(not race.cityOptions["City Natural Roads"],"Switching back to grid must c
 -- recreated Lua/component instance. Source payloads live independently of it.
 properties.values["City Terrain Roads"], properties.values["City Road Authoring UUID"] = false, ""
 properties.values["City Street Detail"] = 100
+properties.values["City Building Style"],properties.values["City Window Mesh"] = 0,""
 function properties:getPropertyAsBool(name, default) local value=self.values[name];if value==nil then return default end;return value end
 function properties:getPropertyAsInt(name, default) local value=self.values[name];if value==nil then return default end;return value end
 function properties:getPropertyAsString(name) return self.values[name] end
@@ -156,6 +157,14 @@ assert(game.generatedStreetDetail==0 and race.cityOptions["City Street Detail"]=
 before=generations;properties.values["City Street Detail"]=40;game:startRace()
 assert(generations==before+1 and game.generatedRoot==root and game.generatedStreetDetail==40 and race.liveSource==sources[selectedId],
     "Changing only street detail must refresh the existing native city")
+before=generations
+terrainInspector.values["City Street Detail"]=nil
+terrainInspector.values["City Building Style"]=2
+terrainInspector.values["City Window Mesh"]="Assets/arched-window.glb"
+game:setProperties(fixture.array({terrainInspector}));game:startRace()
+assert(generations==before+1 and game.generatedRoot==root and race.cityOptions["City Building Style"]==2 and
+    race.cityOptions["City Window Mesh"]=="Assets/arched-window.glb",
+    "Building style and mesh changes must refresh the existing native city")
 game.mode="race";game.totalLaps=1;game:startRace()
 app.now=app.now+1;game:update();app.now=app.now+3;game:update()
 for _,index in ipairs({10,20,25,35,45,50,60,70,75,85,95,99,0}) do
@@ -177,6 +186,7 @@ local saved=inspectorValues();game:getProperties(fixture.array({saved}))
 assert(saved.values["City Terrain Roads"] and saved.values["City Road Authoring UUID"]==selectedId,
     "Serialized script properties must retain terrain mode and canonical source UUID")
 assert(saved.values["City Street Detail"]==40)
+assert(saved.values["City Building Style"]==2 and saved.values["City Window Mesh"]=="Assets/arched-window.glb")
 game:shutdown()
 properties.values["City Terrain Roads"],properties.values["City Road Authoring UUID"]=false,""
 local restored=RacingGameOpenCity({getActor=function() return owner end});saved.generate=true
@@ -185,6 +195,7 @@ assert(restored.started and restored.raceScene==race and restored.cityTerrainRoa
 assert(restored.cityRoadAuthoringUUID==selectedId and race.liveSource==sources[selectedId] and race.liveSource.knot==sources[selectedId].knot,
     "A recreated script/native component must bind the edited source instead of creating a new source")
 assert(restored.generatedStreetDetail==40 and race.cityOptions["City Street Detail"]==40)
+assert(restored.generatedBuildingStyle==2 and race.cityOptions["City Window Mesh"]=="Assets/arched-window.glb")
 local restoredRoot=restored.generatedRoot
 local modeOff=inspectorValues({["City Terrain Roads"]=false});modeOff.generate=true
 local disabled,disableError=pcall(restored.setProperties,restored,fixture.array({modeOff}))

@@ -7,6 +7,7 @@ local qualities = {"Preview", "Standard", "High", "Cinematic"}
 local routes = {"Downtown loop", "Crosstown circuit", "City perimeter"}
 local function item(label, callback) return {label, callback} end
 local terrainRecordNotice = "Terrain lap records last for this play session only."
+local buildingMeshSlots = {"City Wall Mesh", "City Window Mesh", "City Entrance Mesh", "City Corner Mesh", "City Roof Mesh"}
 local function streetDetail(p, default)
     return math.max(0, math.min(100, p:getPropertyAsInt("City Street Detail", default)))
 end
@@ -19,6 +20,8 @@ function RacingGameOpenCity:__init(component)
     self.cityNaturalRoads = false
     self.cityTerrainRoads, self.cityRoadAuthoringUUID = false, ""
     self.cityStreetDetail = 100
+    self.cityBuildingStyle, self.cityBuildingMeshes = 0, {}
+    self.generatedBuildingMeshes = {}
     -- Free driving still uses the shared loading/countdown/pause lifecycle, but
     -- never feeds movement into lap timing or awards records for exploration.
     local sample = self.progress.sample
@@ -37,6 +40,14 @@ function RacingGameOpenCity:captureRaceSceneOptions()
     if not self.raceScene then return end
     local previousMode, previousSource = self.cityTerrainRoads, self.cityRoadAuthoringUUID
     local p = self.raceScene:getProperties()
+    if p:hasProperty("City Building Style") and self.cityBuildingStyle == self.generatedBuildingStyle then
+        self.cityBuildingStyle = p:getPropertyAsInt("City Building Style", self.cityBuildingStyle)
+    end
+    for _, name in ipairs(buildingMeshSlots) do
+        if p:hasProperty(name) and (self.cityBuildingMeshes[name] or "") == (self.generatedBuildingMeshes[name] or "") then
+            self.cityBuildingMeshes[name] = p:getPropertyAsString(name) or ""
+        end
+    end
     if not p:hasProperty("City Terrain Roads") then return end
     local terrainMode = p:getPropertyAsBool("City Terrain Roads", false)
     if self.cityTerrainRoads == self.generatedTerrainRoads then self.cityTerrainRoads = terrainMode end
@@ -83,6 +94,12 @@ function RacingGameOpenCity:configureRaceScene(scene)
     p:setPropertyAsBool("Open City", true)
     p:setPropertyAsInt("City Blocks", self.cityBlocks)
     p:setPropertyAsInt("City Route", self.cityRoute)
+    if p:hasProperty("City Building Style") then
+        p:setPropertyAsInt("City Building Style", self.cityBuildingStyle)
+    end
+    for _, name in ipairs(buildingMeshSlots) do
+        if p:hasProperty(name) then p:setPropertyAsString(name, self.cityBuildingMeshes[name] or "") end
+    end
     if p:hasProperty("City Natural Roads") then
         p:setPropertyAsBool("City Natural Roads", self.cityNaturalRoads)
     else
@@ -111,6 +128,10 @@ function RacingGameOpenCity:bindGeneratedScene()
     self.generatedNaturalRoads = self.cityNaturalRoads
     self.generatedTerrainRoads = self.cityTerrainRoads
     self.generatedStreetDetail = self.cityStreetDetail
+    self.generatedBuildingStyle = self.cityBuildingStyle
+    for _, name in ipairs(buildingMeshSlots) do
+        self.generatedBuildingMeshes[name] = self.cityBuildingMeshes[name]
+    end
     if self.cityTerrainRoads then
         local p = self.raceScene:getProperties()
         self.cityRoadAuthoringUUID = p:getPropertyAsString("City Road Authoring UUID") or ""
@@ -172,7 +193,14 @@ end
 
 function RacingGameOpenCity:startRace()
     self:captureRaceSceneOptions()
+    for _, name in ipairs(buildingMeshSlots) do
+        if (self.cityBuildingMeshes[name] or "") ~= (self.generatedBuildingMeshes[name] or "") then
+            self.generatedQuality = nil
+            break
+        end
+    end
     if self.generatedBlocks ~= self.cityBlocks or self.generatedRoute ~= self.cityRoute or
+        self.generatedBuildingStyle ~= self.cityBuildingStyle or
         self.generatedNaturalRoads ~= self.cityNaturalRoads or self.generatedTerrainRoads ~= self.cityTerrainRoads or
         self.generatedRoadAuthoringUUID ~= self.cityRoadAuthoringUUID or
         (self.cityTerrainRoads and self.generatedStreetDetail ~= self.cityStreetDetail) then
@@ -290,6 +318,10 @@ function RacingGameOpenCity:getProperties(parameters)
     p:setPropertyAsBool("City Natural Roads", self.cityNaturalRoads)
     p:setPropertyAsBool("City Terrain Roads", self.cityTerrainRoads)
     p:setPropertyAsInt("City Street Detail", self.cityStreetDetail)
+    p:setPropertyAsInt("City Building Style", self.cityBuildingStyle)
+    for _, name in ipairs(buildingMeshSlots) do
+        p:setPropertyAsString(name, self.cityBuildingMeshes[name] or "")
+    end
     p:setPropertyAsString("City Road Authoring UUID", self.cityRoadAuthoringUUID)
 end
 function RacingGameOpenCity:setProperties(parameters)
@@ -302,6 +334,12 @@ function RacingGameOpenCity:setProperties(parameters)
     end
     if p:hasProperty("City Terrain Roads") then self.cityTerrainRoads = p:getPropertyAsBool("City Terrain Roads", self.cityTerrainRoads) end
     if p:hasProperty("City Street Detail") then self.cityStreetDetail = streetDetail(p, self.cityStreetDetail) end
+    if p:hasProperty("City Building Style") then
+        self.cityBuildingStyle = math.max(0, math.min(3, p:getPropertyAsInt("City Building Style", self.cityBuildingStyle)))
+    end
+    for _, name in ipairs(buildingMeshSlots) do
+        if p:hasProperty(name) then self.cityBuildingMeshes[name] = p:getPropertyAsString(name) or "" end
+    end
     if p:hasProperty("City Road Authoring UUID") then self.cityRoadAuthoringUUID = p:getPropertyAsString("City Road Authoring UUID") or "" end
     if self.gameInitialized and self.cityTerrainRoads and
         (not previousMode or previousSource ~= self.cityRoadAuthoringUUID) then self:resetTerrainRecords() end

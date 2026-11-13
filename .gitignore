@@ -6,6 +6,7 @@
 *.lo
 *.o
 *.obj
+!/docs/examples/city-window-arch.obj
 
 # Precompiled Headers
 *.gch

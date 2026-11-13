@@ -343,6 +343,9 @@ BOOST_AUTO_TEST_CASE( terrain_city_source_anchor_roundtrip_test )
     BOOST_CHECK_EQUAL( vehicle->getProperties()->getPropertyAsInt( "City Street Detail" ), 100 );
     auto properties = vehicle->getProperties(); properties->setProperty( "City Terrain Roads", true );
     properties->setProperty( "City Street Detail", 64 );
+    properties->setProperty( "City Building Style", 2 );
+    properties->setProperty( "City Window Mesh", String( " Assets/architecture/arched-window.glb " ) );
+    properties->setProperty( "City Roof Mesh", String( "56c12775-468d-41fb-936a-a7f932b081f4" ) );
     properties->setProperty( "City Road Authoring UUID", sourceUuid ); properties->setProperty( "Audio Enabled", false );
     properties->setProperty( "Effects Enabled", false ); vehicle->setProperties( properties );
     vehicle->setEnabled( false ); // This gate saves/restores anchors; it does not regenerate a WPVehicle.
@@ -410,6 +413,11 @@ BOOST_AUTO_TEST_CASE( terrain_city_source_anchor_roundtrip_test )
     BOOST_REQUIRE( restoredVehicle->getProperties()->getPropertyValue( "City Road Authoring UUID", vehicleSourceUuid ) );
     BOOST_CHECK( terrainRoads ); BOOST_CHECK_EQUAL( vehicleSourceUuid, restoredSource->getHandle()->getUUIDAsString() );
     BOOST_CHECK_EQUAL( restoredVehicle->getProperties()->getPropertyAsInt( "City Street Detail" ), 64 );
+    const auto building = restoredVehicle->getProperties();
+    BOOST_CHECK_EQUAL( building->getPropertyAsInt( "City Building Style" ), 2 );
+    BOOST_CHECK_EQUAL( building->getProperty( "City Window Mesh" ), "Assets/architecture/arched-window.glb" );
+    BOOST_CHECK_EQUAL( building->getProperty( "City Roof Mesh" ), "56c12775-468d-41fb-936a-a7f932b081f4" );
+    BOOST_CHECK( building->getProperty( "City Corner Mesh" ).empty() );
     BOOST_CHECK( !restoredVehicle->isGenerated() );
 
     // Assert these identities belong to the current live manager/scene registry,

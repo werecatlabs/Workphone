@@ -67,6 +67,13 @@ namespace workphone
         constexpr real_Num vehicleSpawnHeight = static_cast<real_Num>( 0.42 );
         constexpr real_Num cameraDistance = static_cast<real_Num>( 8.0 );
         constexpr real_Num cameraHeight = static_cast<real_Num>( 3.0 );
+        constexpr std::array<std::string_view, 5> cityBuildingMeshRoles = {
+            "wall", "window", "entrance", "corner", "roof"
+        };
+        constexpr std::array<const char *, 5> cityBuildingMeshProperties = {
+            "City Wall Mesh", "City Window Mesh", "City Entrance Mesh", "City Corner Mesh", "City Roof Mesh"
+        };
+        constexpr std::array<const char *, 4> cityBuildingStyles = { "district", "masonry", "civic", "modern" };
 
         advanced::ProductionSceneProfile::Workload describeProfileScene( const advanced::SceneAssets &assets )
         {
@@ -933,6 +940,47 @@ namespace workphone
                              << ",\n  \"terrainGameplaySourceFree\": " << (!m_terrainGameplayPackageDirectory.empty()?"true":"false")
                              << ",\n  \"vehicleRecipeHash\": " << advanced::jsonString(StringUtil::toString(m_assets.vehicle.contentHash));
                 bool cityValid = m_assets.openCity == m_openCity && m_assets.cityRoadShowcase==m_roadAuthoringShowcase && m_assets.cityTerrainRoads==m_cityTerrainRoads;
+                if( m_assets.openCity && !m_assets.cityRoadShowcase )
+                {
+                    const auto style = m_assets.cityBuildingStyle;
+                    const bool styleInRange = style >= 0 && static_cast<size_t>( style ) < cityBuildingStyles.size();
+                    const bool styleApplied = styleInRange && style == std::max( 0, m_cityBuildingStyle );
+                    cityValid = cityValid && styleApplied;
+                    size_t requestedOverrides = 0;
+                    bool overridesApplied = true;
+                    for( size_t role = 0; role < cityBuildingMeshRoles.size(); ++role )
+                    {
+                        if( m_cityBuildingMeshes[role].empty() )
+                            continue;
+                        ++requestedOverrides;
+                        overridesApplied = overridesApplied && m_cityBuildingMeshes[role] == m_assets.cityBuildingMeshes[role] &&
+                            m_assets.cityBuildingModulePlacements[role] > 0;
+                    }
+                    evidence << ",\n  \"cityBuildingKit\": {\"requestedOverrides\":" << requestedOverrides
+                             << ",\"style\":" << advanced::jsonString( styleInRange ? cityBuildingStyles[style] : "unknown" )
+                             << ",\"styleApplied\":" << ( styleApplied ? "true" : "false" )
+                             << ",\"moduleCount\":" << m_assets.cityBuildingModuleCount
+                             << ",\"overridesApplied\":" << ( overridesApplied ? "true" : "false" )
+                             << ",\"diagnostic\":" << advanced::jsonString( m_assets.cityBuildingKitDiagnostic )
+                             << ",\"roles\":{";
+                    for( size_t role = 0; role < cityBuildingMeshRoles.size(); ++role )
+                    {
+                        if( role ) evidence << ',';
+                        evidence << '"' << cityBuildingMeshRoles[role] << "\":{\"path\":"
+                                 << advanced::jsonString( m_assets.cityBuildingMeshes[role] )
+                                 << ",\"placements\":" << m_assets.cityBuildingModulePlacements[role] << '}';
+                    }
+                    evidence << "}}";
+                    if( requestedOverrides && !overridesApplied )
+                        WP_LOG_ERROR( "City building mesh override was not applied. " + m_assets.cityBuildingKitDiagnostic );
+                    if( m_captureView == "facade" )
+                    {
+                        evidence << ",\n  \"cityFacadeCamera\": {\"lotId\":\"" << m_cityFacadeLotId
+                                 << "\",\"eye\":[" << m_cityFacadeEye.x << ',' << m_cityFacadeEye.y << ',' << m_cityFacadeEye.z
+                                 << "],\"target\":[" << m_cityFacadeTarget.x << ',' << m_cityFacadeTarget.y << ','
+                                 << m_cityFacadeTarget.z << "]}";
+                    }
+                }
                 if(m_assets.cityTerrainRoads)
                 {
                     const auto check=checkTerrainCity(m_assets,app->getPhysicsManager()->getPhysicsScene());cityValid=cityValid && check.valid;
@@ -2334,6 +2382,11 @@ namespace workphone
             properties->setProperty( "City Terrain Roads", m_cityTerrainRoads );
             if( m_cityStreetDetail >= 0 )
                 properties->setProperty( "City Street Detail", m_cityStreetDetail );
+            if( m_cityBuildingStyle >= 0 )
+                properties->setProperty( "City Building Style", m_cityBuildingStyle );
+            for( size_t role = 0; role < cityBuildingMeshProperties.size(); ++role )
+                if( !m_cityBuildingMeshes[role].empty() )
+                    properties->setProperty( cityBuildingMeshProperties[role], m_cityBuildingMeshes[role] );
             m_raceScene->setProperties( properties );
         }
         if( !m_raceScene->regenerate() )
@@ -2389,6 +2442,58 @@ namespace workphone
         m_cityOverviewCentre = m_cityStreetCentre = Vector3F::zero();
         m_cityStreetForward = { 0, 0, -1 };
         m_cityHasJunction=false;m_cityJunctionCentre=m_cityBoulevardCentre={};m_generatedSpawnPosition=m_vehicleActor->getPosition();
+        const auto selectFacade = [&]( const procedural::OpenCityLayout &layout ) {
+            if( m_captureView != "facade" )
+                return;
+            const auto anchor = m_cityHasJunction ? m_cityJunctionCentre : m_cityOverviewCentre;
+            const procedural::OpenCityLayout::Lot *selected = nullptr;
+            float nearest = std::numeric_limits<float>::max();
+            for( const auto &lot : layout.lots )
+            {
+                if( lot.park ) continue;
+                const float distance = Vector3F( lot.x - anchor.x, 0, lot.z - anchor.z ).lengthSquared();
+                if( distance < nearest || ( selected && distance == nearest && lot.id < selected->id ) )
+                {
+                    selected = &lot;
+                    nearest = distance;
+                }
+            }
+            if( !selected )
+                throw std::runtime_error( "The facade view needs a generated building parcel." );
+
+            const auto &lot = *selected;
+            const auto volumes = procedural::OpenCityLayout::buildingVolumes( lot );
+            if( volumes.empty() )
+                throw std::runtime_error( "The selected facade parcel has no building volume." );
+            const auto &volume = volumes.front();
+            using Frontage = procedural::OpenCityLayout::Frontage;
+            Vector3F outward( 0, 0, -1 );
+            switch( lot.frontage )
+            {
+            case Frontage::West: outward = { -1, 0, 0 }; break;
+            case Frontage::East: outward = { 1, 0, 0 }; break;
+            case Frontage::North: outward = { 0, 0, -1 }; break;
+            case Frontage::South: outward = { 0, 0, 1 }; break;
+            }
+            const bool facesX = outward.x != 0;
+            const float span = facesX ? volume.depth : volume.width;
+            const float setback = ( facesX ? volume.width : volume.depth ) * .5f;
+            const Vector3F along( -outward.z, 0, outward.x );
+            const auto face = Vector3F( volume.x, volume.bottom, volume.z ) + outward * setback;
+            m_cityFacadeLotId = lot.id;
+            m_cityFacadeEye = face + outward * std::clamp( span * .48f, 14.f, 23.f ) +
+                              along * std::min( span * .16f, 7.f );
+            m_cityFacadeEye.y += 2.8f;
+            if( m_assets.roadAuthoring )
+            {
+                const auto terrain = m_assets.roadAuthoring->getTerrainSnapshot();
+                float terrainHeight = 0;
+                if( terrain && render::sampleTerrainHeight( *terrain, m_assets.roadAuthoring->getTerrainPlacement(),
+                                                            m_cityFacadeEye, terrainHeight ) )
+                    m_cityFacadeEye.y = std::max( m_cityFacadeEye.y, terrainHeight + 2.8f );
+            }
+            m_cityFacadeTarget = face + Vector3F( 0, std::min( 5.5f, volume.height * .47f ), 0 );
+        };
         if(m_assets.cityTerrainRoads && m_assets.roadAuthoring && m_assets.roadTerrain)
         {
             const auto &layout=m_assets.cityLayout;const auto &bake=m_assets.roadAuthoring->getBake();const auto &source=m_assets.roadAuthoring->getSource();
@@ -2448,6 +2553,7 @@ namespace workphone
                 m_cityFrontageEye.y += 1.87f;
                 m_cityFrontageTarget.y += .97f;
             }
+            selectFacade( layout );
         }
         else if( m_assets.cityRoadShowcase )
         {
@@ -2496,6 +2602,7 @@ namespace workphone
                     }
                 }
             }
+            selectFacade( city );
         }
 #if WP_GRAPHICS_SYSTEM_CLAW
         if( auto scene = dynamic_pointer_cast<render::ClawScene>(
@@ -2623,6 +2730,11 @@ namespace workphone
                             m_cameraActor->setPosition( Vector3F( 75, 480, -30 ) );
                             m_cameraActor->lookAt( Vector3F( 75, 0, -30 ), Vector3F::unitZ() );
                         }
+                    }
+                    else if( m_captureView == "facade" )
+                    {
+                        m_cameraActor->setPosition( m_cityFacadeEye );
+                        m_cameraActor->lookAt( m_cityFacadeTarget, Vector3F::unitY() );
                     }
                     else if( m_captureView == "frontage" && m_cityHasJunction )
                     {
@@ -2790,7 +2902,7 @@ int main( int argc, char **argv )
                    "  --track-smoke-test            Drive one full lap through the physics controller\n"
                    "  --collision-smoke-test        Verify native boxes; circuit garage impact or city road/sidewalk grades\n"
                    "  --validate-circuit           Validate 100 generated closed circuits\n"
-                   "  --capture PATH.bmp --view follow|car|track|corner|street|boulevard|frontage   Save a rendered view and "
+                   "  --capture PATH.bmp --view follow|car|track|corner|street|boulevard|frontage|facade   Save a rendered view and "
                    "exit\n"
                    "  --no-hud --force-lod auto|0|1  Clean captures and tree LOD comparisons\n"
                    "  --force-vehicle-lod auto|0|1|2  Override the vehicle level (clamped for low)\n"
@@ -2807,8 +2919,11 @@ int main( int argc, char **argv )
                    "  --road-authoring-showcase       Terrain-fitted editable roads and roundabout (implies --city)\n"
                    "  --city-terrain-roads            Editable generated city roads fitted to terrain (implies --city)\n"
                    "  --city-street-detail 0..100     Roadside detail density (requires --city-terrain-roads, default 100)\n"
+                   "  --city-building-style district|masonry|civic|modern  Generated city facade preset\n"
+                   "  --city-building-mesh ROLE PATH  Replace a wall, window, entrance, corner or roof module (repeatable)\n"
                    "  --view street|boulevard       Opposite street-level city inspections; track is the overview\n"
                    "  --view frontage               Close sidewalk inspection (requires --city-terrain-roads)\n"
+                   "  --view facade                 Inspect a generated building facade from a fixed parcel camera\n"
                    "  --export-materials NEW_DIR    Bake asphalt maps and resource source descriptors\n"
                    "  --terrain-gameplay            Native representative terrain and existing vehicle\n"
                    "  --export-terrain-gameplay NEW_DIR  Export its source-free asset closure, then exit\n"
@@ -2850,6 +2965,9 @@ int main( int argc, char **argv )
     bool cityTerrainRoads = false;
     s32 cityBlocks = 8, cityRoute = 0;
     s32 cityStreetDetail = -1;
+    s32 cityBuildingStyle = -1;
+    std::array<String, 5> cityBuildingMeshes;
+    bool cityBuildingMeshOverride = false;
     s32 forcedLOD = -1;
     s32 forcedVehicleLOD = -1;
     f64 benchmarkSeconds = 0;
@@ -2897,6 +3015,28 @@ int main( int argc, char **argv )
                 const auto parsed = std::from_chars( value.data(), end, cityStreetDetail );
                 if( parsed.ec != std::errc{} || parsed.ptr != end || cityStreetDetail < 0 || cityStreetDetail > 100 )
                     throw std::runtime_error( "City street detail must be an integer from 0 to 100." );
+            }
+            else if( String( argv[i] ) == "--city-building-style" && i + 1 < argc )
+            {
+                const std::string_view value = argv[++i];
+                const auto found = std::find( cityBuildingStyles.begin(), cityBuildingStyles.end(), value );
+                if( found == cityBuildingStyles.end() )
+                    throw std::runtime_error( "City building style must be district, masonry, civic, or modern." );
+                cityBuildingStyle = static_cast<s32>( found - cityBuildingStyles.begin() );
+            }
+            else if( String( argv[i] ) == "--city-building-mesh" && i + 2 < argc )
+            {
+                const std::string_view role = argv[++i];
+                const auto found = std::find( cityBuildingMeshRoles.begin(), cityBuildingMeshRoles.end(), role );
+                if( found == cityBuildingMeshRoles.end() )
+                    throw std::runtime_error( "City building mesh role must be wall, window, entrance, corner, or roof." );
+                auto &mesh = cityBuildingMeshes[found - cityBuildingMeshRoles.begin()];
+                const std::string_view path = argv[++i];
+                if( !mesh.empty() || path.empty() || path.rfind( "--", 0 ) == 0 )
+                    throw std::runtime_error( "Specify one nonempty mesh path for each city building role." );
+                const auto absolutePath = std::filesystem::absolute( std::filesystem::path( path ) ).lexically_normal();
+                mesh = absolutePath.string();
+                cityBuildingMeshOverride = true;
             }
             else if( String( argv[i] ) == "--city-blocks" && i + 1 < argc )
             {
@@ -3024,8 +3164,8 @@ int main( int argc, char **argv )
         }
         if( captureView != "follow" && captureView != "car" && captureView != "track" &&
             captureView != "corner" && captureView != "street" && captureView != "boulevard" &&
-            captureView != "frontage" )
-            throw std::runtime_error( "View must be follow, car, track, corner, street, boulevard, or frontage." );
+            captureView != "frontage" && captureView != "facade" )
+            throw std::runtime_error( "View must be follow, car, track, corner, street, boulevard, frontage, or facade." );
         if( ( cityOptionsExplicit || captureView == "street" || captureView == "boulevard" ) && !openCity )
             throw std::runtime_error( "City options and street-level views require --city." );
         if(roadAuthoringShowcase && foliageWorld)throw std::runtime_error("Road authoring showcase does not provide foliage-world generation.");
@@ -3034,6 +3174,9 @@ int main( int argc, char **argv )
             throw std::runtime_error( "--city-street-detail requires --city-terrain-roads." );
         if( captureView == "frontage" && !cityTerrainRoads )
             throw std::runtime_error( "--view frontage requires --city-terrain-roads." );
+        if( (cityBuildingMeshOverride || cityBuildingStyle >= 0 || captureView == "facade") &&
+            (!openCity || roadAuthoringShowcase) )
+            throw std::runtime_error( "City building mesh overrides, styles, and the facade view require a generated city." );
         if(cityTerrainRoads && !materialExportDirectory.empty())throw std::runtime_error("Terrain-city source material export is unavailable.");
         if( int(smokeTest) + int(trackSmokeTest) + int(collisionSmokeTest) + int(audioSmokeTest) + int(effectsSmokeTest) > 1 ||
             ( ( !capturePath.empty() || benchmarkSeconds > 0 ) && ( smokeTest || trackSmokeTest || collisionSmokeTest || audioSmokeTest || effectsSmokeTest ) ) )
@@ -3048,6 +3191,12 @@ int main( int argc, char **argv )
         if( advanced::reviewPathsAlias( evidencePath, capturePath ) || advanced::reviewPathsAlias( evidencePath, replayPath ) ||
             advanced::reviewPathsAlias( capturePath, replayPath ) )
             throw std::runtime_error( "Evidence output must differ from capture and replay paths." );
+        for( const auto &mesh : cityBuildingMeshes )
+        {
+            for( const auto &output : { capturePath, evidencePath, effectsCapture, sceneProfilePath } )
+                if( advanced::reviewPathsAlias( mesh.c_str(), output ) )
+                    throw std::runtime_error( "Capture outputs must differ from city building mesh inputs." );
+        }
         if( sceneProfileModeExplicit && sceneProfilePath.empty() )
             throw std::runtime_error( "--scene-profile-mode requires --scene-profile." );
         if( !sceneProfilePath.empty() )
@@ -3140,6 +3289,8 @@ int main( int argc, char **argv )
         app->setRoadAuthoringShowcase( roadAuthoringShowcase );
         app->setCityTerrainRoads( cityTerrainRoads );
         app->setCityStreetDetail( cityStreetDetail );
+        app->setCityBuildingMeshes( cityBuildingMeshes );
+        app->setCityBuildingStyle( cityBuildingStyle );
         app->setMaterialExportDirectory( materialExportDirectory );
         app->setTerrainGameplayOptions(terrainGameplay,terrainGameplayPackageDirectory,!terrainGameplayExportDirectory.empty());
         if( !pluginsConfig.empty() )

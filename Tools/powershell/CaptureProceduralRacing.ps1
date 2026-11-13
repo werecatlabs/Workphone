@@ -11,7 +11,7 @@ param(
     [ValidateSet('grid', 'lsystem')][string]$CityLayout = 'grid',
     [ValidatePattern('^\d+x\d+$')][string]$Resolution = '1280x720',
     [ValidateRange(0.1, 3600)][double]$Seconds = 10,
-    [ValidateSet('follow', 'car', 'track', 'corner', 'street', 'boulevard', 'frontage')][string[]]$Views = @('car', 'track', 'corner', 'follow'),
+    [ValidateSet('follow', 'car', 'track', 'corner', 'street', 'boulevard', 'frontage', 'facade')][string[]]$Views = @('car', 'track', 'corner', 'follow'),
     [string]$Replay,
     [switch]$NoEffects,
     [switch]$FoliageWorld,
@@ -19,7 +19,9 @@ param(
     [switch]$CityTerrainRoads,
     [switch]$ExportMaterials,
     [ValidateRange(30, 7200)][int]$TimeoutSeconds = 600,
-    [ValidateRange(0, 100)][int]$CityStreetDetail = 100
+    [ValidateRange(0, 100)][int]$CityStreetDetail = 100,
+    [ValidateSet('district', 'masonry', 'civic', 'modern')][string]$CityBuildingStyle,
+    [hashtable]$CityBuildingMeshes = @{}
 )
 $ErrorActionPreference = 'Stop'
 $streetDetailExplicit = $PSBoundParameters.ContainsKey('CityStreetDetail')
@@ -27,6 +29,8 @@ if ($RoadAuthoringShowcase) { $Scene = 'city' }
 if ($CityTerrainRoads) { $Scene = 'city' }
 if ($streetDetailExplicit -and !$CityTerrainRoads) { throw '-CityStreetDetail requires -CityTerrainRoads.' }
 if ($Views -contains 'frontage' -and !$CityTerrainRoads) { throw '-Views frontage requires -CityTerrainRoads.' }
+if (($CityBuildingStyle -or $CityBuildingMeshes.Count -or $Views -contains 'facade') -and
+    ($Scene -ne 'city' -or $RoadAuthoringShowcase)) { throw 'Building styles, mesh overrides, and the facade view require a generated city.' }
 if ($RoadAuthoringShowcase -and $CityTerrainRoads) { throw 'Choose -RoadAuthoringShowcase or -CityTerrainRoads.' }
 if ($CityTerrainRoads -and $ExportMaterials) { throw 'Terrain-city source material export is unavailable.' }
 if ($RoadAuthoringShowcase -and $FoliageWorld) { throw 'Road authoring showcase does not provide foliage-world generation.' }
@@ -36,6 +40,17 @@ if ($Scene -ne 'city' -and ($Views -contains 'street' -or $Views -contains 'boul
     throw 'Street-level views and city layout options require -Scene city.'
 }
 $repoRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
+$buildingMeshRoles = @('wall', 'window', 'entrance', 'corner', 'roof')
+$buildingMeshPaths = [ordered]@{}
+foreach ($entry in $CityBuildingMeshes.GetEnumerator()) {
+    if ($entry.Key -isnot [string] -or $entry.Key -notin $buildingMeshRoles -or $entry.Value -isnot [string] -or
+        [string]::IsNullOrWhiteSpace($entry.Value)) {
+        throw '-CityBuildingMeshes requires wall, window, entrance, corner, or roof keys and nonempty file paths.'
+    }
+    $role = $entry.Key.ToLowerInvariant()
+    if ($buildingMeshPaths.Contains($role)) { throw "Duplicate city building mesh role: $role" }
+    $buildingMeshPaths[$role] = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($entry.Value)
+}
 $sampleWorkingDirectory = Join-Path $repoRoot "bin/windows/v145/x64/MD/$Configuration"
 $binaryRoot = $sampleWorkingDirectory
 if ($BinaryDirectory) {
@@ -90,10 +105,18 @@ $manifest = [ordered]@{
     roadAuthoringShowcase = [bool]$RoadAuthoringShowcase
     cityTerrainRoads = [bool]$CityTerrainRoads
     cityStreetDetail = $(if ($streetDetailExplicit) { $CityStreetDetail } else { $null })
+    cityBuildingStyle = $(if ($CityBuildingStyle) { $CityBuildingStyle.ToLowerInvariant() } else { $null })
+    cityBuildingMeshes = $buildingMeshPaths
+    cityBuildingMeshInputs = [ordered]@{}
     requestedResolution = $Resolution; benchmarkSeconds = $Seconds; visualAcceptance = 'unreviewed'
     diff = Get-Identity (Join-Path $output 'working-tree.patch'); sources = $sources; binaries = $binaries
     plugins = Get-Identity $plugins; assets = $assets; replay = $null; runs = @()
     limitations = @('Fresh build must be performed separately; hashes identify artifacts, not freshness.', 'Control replay applies one row per physics-task tick; the task targets 120 Hz but physics uses measured deltas.', 'Asset hashes inventory the media tree; they are not a runtime dependency trace.', 'No blind comparison or visual acceptance is implied.')
+}
+foreach ($role in $buildingMeshRoles) {
+    if ($buildingMeshPaths.Contains($role) -and (Test-Path -LiteralPath $buildingMeshPaths[$role] -PathType Leaf)) {
+        $manifest.cityBuildingMeshInputs[$role] = Get-Identity $buildingMeshPaths[$role]
+    }
 }
 if ($Replay) { $manifest.replay = Get-Identity $Replay }
 $failed = $false
@@ -106,6 +129,12 @@ try {
         if ($RoadAuthoringShowcase) { $arguments += '--road-authoring-showcase' }
         if ($CityTerrainRoads) { $arguments += '--city-terrain-roads' }
         if ($streetDetailExplicit) { $arguments += @('--city-street-detail', "$CityStreetDetail") }
+        if ($CityBuildingStyle) { $arguments += @('--city-building-style', $CityBuildingStyle.ToLowerInvariant()) }
+        foreach ($role in $buildingMeshRoles) {
+            if ($buildingMeshPaths.Contains($role)) {
+                $arguments += @('--city-building-mesh', $role, (Quote-ProcessArgument $buildingMeshPaths[$role]))
+            }
+        }
         if ($Replay) { $arguments += @('--replay', (Quote-ProcessArgument $Replay)) }
         if ($NoEffects) { $arguments += '--no-effects' }
         if ($FoliageWorld) { $arguments += '--foliage-world' }
@@ -124,6 +153,19 @@ try {
                 $street = $run.evidence.terrainCity
                 $run.passed = $run.passed -and $null -ne $street -and $street.streetDetailValid -eq $true -and
                     $null -ne $street.cityStreetDetailCount -and $street.cityStreetDetail -eq $CityStreetDetail
+            }
+            $kit = $run.evidence.cityBuildingKit
+            if ($CityBuildingStyle) {
+                $run.passed = $run.passed -and $null -ne $kit -and $kit.styleApplied -eq $true -and $kit.style -ieq $CityBuildingStyle
+            }
+            if ($buildingMeshPaths.Count) {
+                $run.passed = $run.passed -and $null -ne $kit -and $kit.overridesApplied -eq $true -and
+                    $kit.requestedOverrides -eq $buildingMeshPaths.Count -and $kit.moduleCount -gt 0
+                foreach ($role in $buildingMeshPaths.Keys) {
+                    $appliedRole = $kit.roles.$role
+                    $run.passed = $run.passed -and $null -ne $appliedRole -and
+                        $appliedRole.path -ieq $buildingMeshPaths[$role] -and $appliedRole.placements -gt 0
+                }
             }
         }
         $manifest.runs += $run

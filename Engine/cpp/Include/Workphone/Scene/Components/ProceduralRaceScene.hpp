@@ -103,6 +103,11 @@ namespace workphone::scene::race
         u64 cityAppliedSourceRevision = 0;
         int cityStreetDetail = 100;
         u32 cityStreetDetailCount = 0;
+        int cityBuildingStyle = 0;
+        std::array<String, 5> cityBuildingMeshes;
+        u32 cityBuildingModuleCount = 0;
+        std::array<u32, 5> cityBuildingModulePlacements{};
+        String cityBuildingKitDiagnostic;
         SmartPtr<render::Terrain> foliageTerrain;
         int cityBlocks = 8, cityRoute = 0;
         procedural::GeneratedVehicle vehicle;
@@ -373,6 +378,8 @@ namespace workphone::scene
         s32 m_cityBlocks = 8;
         s32 m_cityRoute = 0;
         s32 m_cityStreetDetail = 100;
+        s32 m_cityBuildingStyle = 0;
+        std::array<String, 5> m_cityBuildingMeshes;
 
         /** Last generation error message, empty when generation succeeded. */
         String m_generationError;

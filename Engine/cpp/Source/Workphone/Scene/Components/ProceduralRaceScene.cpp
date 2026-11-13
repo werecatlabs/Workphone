@@ -16,6 +16,13 @@
 
 namespace workphone::scene
 {
+    namespace
+    {
+        constexpr std::array cityBuildingMeshProperties{
+            "City Wall Mesh", "City Window Mesh", "City Entrance Mesh", "City Corner Mesh", "City Roof Mesh"
+        };
+    }
+
     namespace race
     {
         // Module-private declaration; no public/PCH API or layout change.
@@ -270,6 +277,8 @@ namespace workphone::scene
             m_assets.cityBlocks = m_cityBlocks;
             m_assets.cityRoute = m_cityRoute;
             m_assets.cityStreetDetail = m_cityStreetDetail;
+            m_assets.cityBuildingStyle = m_cityBuildingStyle;
+            m_assets.cityBuildingMeshes = m_cityBuildingMeshes;
 
             race::buildScene( m_assets, actor, m_seed, m_quality );
             if( m_cityTerrainRoads )
@@ -1012,6 +1021,20 @@ namespace workphone::scene
         p->setProperty( "Road Authoring Showcase", m_cityRoadShowcase );
         p->setProperty( "City Terrain Roads", m_cityTerrainRoads );
         p->setProperty( "City Street Detail", m_cityStreetDetail );
+        p->setProperty( "City Building Style", m_cityBuildingStyle );
+        auto &buildingStyle = p->getPropertyObject( "City Building Style" );
+        buildingStyle.setTypeName( Properties::enumTypeStr );
+        buildingStyle.setAttribute( Properties::enumTypeStr, "District Mix;Masonry Residential;Civic Stone;Modern Office;" );
+        for( size_t i = 0; i < cityBuildingMeshProperties.size(); ++i )
+        {
+            const auto name = cityBuildingMeshProperties[i];
+            p->setProperty( name, m_cityBuildingMeshes[i], Properties::resourceStr );
+            auto &property = p->getPropertyObject( name );
+            property.setAttribute( Properties::resourceTypeStr, "Mesh" );
+            property.setAttribute( "allowResourcePath", "true" );
+            property.setAttribute( "description", "Choose a mesh asset, or enter a file path. Clear to use the built-in module." );
+        }
+        p->setProperty( "City Building Kit Status", m_assets.cityBuildingKitDiagnostic, true );
         p->setProperty( "City Road Authoring UUID", m_cityRoadAuthoringUUID );
         p->setProperty( "Generation Error", m_generationError );
         p->setButtonPressed( "Regenerate", false );
@@ -1075,6 +1098,15 @@ namespace workphone::scene
         if( p->getPropertyValue( "City Street Detail", streetDetail ) )
         {
             m_cityStreetDetail = std::clamp( streetDetail, 0, 100 );
+        }
+        s32 buildingStyle = m_cityBuildingStyle;
+        if( p->getPropertyValue( "City Building Style", buildingStyle ) )
+            m_cityBuildingStyle = std::clamp( buildingStyle, 0, 3 );
+        for( size_t i = 0; i < cityBuildingMeshProperties.size(); ++i )
+        {
+            String path;
+            if( p->getPropertyValue( cityBuildingMeshProperties[i], path ) )
+                m_cityBuildingMeshes[i] = StringUtil::trim( path );
         }
 
         if( p->isButtonPressed( "Regenerate" ) )
