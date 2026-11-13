@@ -56,6 +56,14 @@ namespace workphone
     }
 
     template <class T>
+    void AtomicString<T>::lock_shared() const
+    {
+        // For simplicity, we use the same lock for shared access.
+        // In a more advanced implementation, you could implement a read-write lock.
+        lock();
+    }
+
+    template <class T>
     bool AtomicString<T>::try_lock() const
     {
         return m_lockState.exchange( 1, std::memory_order_acquire ) == 0;
@@ -65,6 +73,35 @@ namespace workphone
     void AtomicString<T>::unlock() const
     {
         m_lockState.store( 0, std::memory_order_release );
+    }
+
+    template <class T>
+    void AtomicString<T>::unlock_shared() const
+    {
+        // For simplicity, we use the same lock for shared access.
+        // In a more advanced implementation, you could implement a read-write lock.
+        unlock();
+    }
+
+    template <class T>
+    bool AtomicString<T>::empty() const
+    {
+        ScopedLock lock( this );
+        return m_string.empty();
+    }
+
+    template <class T>
+    void AtomicString<T>::swap( BaseString<T> &other )
+    {
+        ScopedLock lock( this );
+        m_string.swap( other );
+    }
+
+    template <class T>
+    const T *AtomicString<T>::c_str() const
+    {
+        ScopedLock lock( this );
+        return m_string.c_str();
     }
 
     // Explicit instantiation for the engine's default character type.

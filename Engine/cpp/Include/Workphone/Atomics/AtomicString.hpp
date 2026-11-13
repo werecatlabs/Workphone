@@ -57,8 +57,18 @@ namespace workphone
          */
         bool try_lock() const;
 
+        void lock_shared() const;
+
         /** @brief Releases the lock. */
         void unlock() const;
+
+        void unlock_shared() const;
+
+        bool empty() const;
+
+        void swap( BaseString<T> &other );
+
+        const T *c_str() const;
 
     protected:
         /** The underlying string being managed. */

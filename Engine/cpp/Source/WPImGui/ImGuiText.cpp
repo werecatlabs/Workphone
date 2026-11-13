@@ -82,7 +82,7 @@ namespace workphone::ui
         else
         {
             m_text = text;
-            String{}.swap( m_longText );
+            String{}.swap( m_longText.str() );
         }
     }
 

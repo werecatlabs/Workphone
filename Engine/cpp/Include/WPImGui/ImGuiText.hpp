@@ -3,13 +3,16 @@
 
 #include <WPImGui/WPImGuiPrerequisites.hpp>
 #include <WPImGui/ImGuiElement.hpp>
+#include <Workphone/Atomics/AtomicString.hpp>
 #include <Workphone/UI/UIText.hpp>
 
 namespace workphone
 {
     namespace ui
     {
+
         class ImGuiRuntimeFont;
+
         class ImGuiText : public ImGuiElement<IUIText>
         {
         public:
@@ -63,7 +66,7 @@ namespace workphone
             FixedString<128> m_text;
 
             /** Long text string for texts exceeding the fixed buffer size. */
-            String m_longText;
+            atomic_string m_longText;
             atomic_bool m_runtimeLiteralText=false;
             std::shared_ptr<ImGuiRuntimeFont> m_runtimeFont;
         };
