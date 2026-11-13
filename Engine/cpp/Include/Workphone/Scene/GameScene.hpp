@@ -77,6 +77,10 @@ namespace workphone
              */
             ~GameScene() override;
 
+            // Ephemeral editor document mode, deliberately absent from scene serialization.
+            bool isEditorPrefabScene() const { return m_editorPrefabScene; }
+            void setEditorPrefabScene( bool enabled ) { m_editorPrefabScene = enabled; }
+
 #ifdef _DEBUG
             s32 addReference();
             bool removeReference();
@@ -511,6 +515,7 @@ namespace workphone
             using UpdateTasks = ConcurrentArray<UpdateActors>;
             using UpdateTable = ConcurrentArray<UpdateTasks>;
             UpdateTable m_updateObjects{ GrowthPolicy::Default, 1, Allocator<UpdateTasks>( sourceBudget ) };
+            atomic_bool m_editorPrefabScene = false;
         };
     }  // namespace scene
 }  // namespace workphone

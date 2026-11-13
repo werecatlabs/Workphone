@@ -32,6 +32,13 @@ namespace workphone::editor
         auto editorManager = EditorManager::getSingletonPtr();
         WP_ASSERT( editorManager );
 
+        if( editorManager->isEditingPrefab() )
+        {
+            String error;
+            if( !editorManager->savePrefab( error ) ) WP_LOG_ERROR( error );
+            return;
+        }
+
         auto sceneManager = applicationManager->getGameManagerPtr();
         WP_ASSERT( sceneManager );
 

@@ -1,6 +1,7 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Scene/Components/Script.hpp>
 #include <Workphone/Scene/GameManager.hpp>
+#include <Workphone/Scene/GameScene.hpp>
 #include <Workphone/Script/ScriptInvoker.hpp>
 #include <Workphone/Script/ScriptEvent.hpp>
 #include <Workphone/Script/ProjectScriptPolicy.hpp>
@@ -168,6 +169,16 @@ namespace workphone::scene
 
     void Script::update()
     {
+        // Inspector callbacks remain usable, but autonomous template callbacks
+        // must not modify the user's game. Scene state also covers newly added roots.
+        if( auto actor = getActor() )
+        {
+            if( auto scene = dynamic_pointer_cast<GameScene>( actor->getScene() );
+                scene && scene->isEditorPrefabScene() ) return;
+            // Transaction validation also creates detached, tagged actor graphs.
+            for( auto ancestor = actor; ancestor; ancestor = ancestor->getParent() )
+                if( ancestor->hasTag( "__WorkphonePrefabEditing" ) ) return;
+        }
         if( !m_runtimeAssetsMode && !projectScriptExecutionEnabled() ) return;
         if( !getScriptData() ) createScriptData();
         auto state = getState();

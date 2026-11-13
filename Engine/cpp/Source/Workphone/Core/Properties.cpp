@@ -128,7 +128,11 @@ namespace workphone
         const auto sUUID = getPropertyObject( name ).getValue();
         if( StringUtil::isNullOrEmpty( sUUID ) )
         {
-            return false;
+            // An absent property preserves an existing value, but a serialized
+            // empty reference explicitly clears it (including prefab resets).
+            value = nullptr;
+            assignValue = true;
+            return true;
         }
 
         const auto uuid = StringUtil::parseUUID( sUUID );
@@ -172,6 +176,13 @@ namespace workphone
                         break;
                     }
                 }
+                assignValue = true;
+            }
+            else
+            {
+                // A source component can retain its UUID while changing type.
+                // Never retain the old incompatible object behind that UUID.
+                value = nullptr;
                 assignValue = true;
             }
             if( !allowObjectDatabaseFallback && ( !assignValue || !value ) )

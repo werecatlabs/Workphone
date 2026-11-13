@@ -1,4 +1,5 @@
 #include <Workphone/WorkphonePCH.hpp>
+#include <Workphone/Scene/Components/PrefabInstance.hpp>
 #include <Workphone/Memory/TypeManager.hpp>
 #include <Workphone/Core/StringUtil.hpp>
 #include <Workphone/Memory/BaseObjectData.hpp>
@@ -883,6 +884,7 @@ namespace workphone
         scene::CameraFollow::setupTypeInfo();
         scene::CameraManager::setupTypeInfo();
         scene::CameraTarget::setupTypeInfo();
+        scene::PrefabInstance::setupTypeInfo();
         scene::CarController::setupTypeInfo();
         scene::CharacterController::setupTypeInfo();
         scene::Collision::setupTypeInfo();

@@ -5,6 +5,10 @@
 #include <Workphone/System/ResourceSystem.hpp>
 #include <Workphone/System/ResourceCompilerRegistry.hpp>
 #include <Workphone/System/ResourcePayloadStream.hpp>
+#include <Workphone/System/SceneResourceCompiler.hpp>
+#include <Workphone/Core/Properties.hpp>
+#include <Workphone/Core/PropertiesBinarySerializer.hpp>
+#include <Workphone/Memory/TypeManager.hpp>
 #include <WPSQLite/ResourceCompilationDatabase.hpp>
 
 #include <algorithm>
@@ -15,6 +19,7 @@
 #include <iterator>
 #include <memory>
 #include <set>
+#include <sstream>
 #include <thread>
 #if WP_RESOURCE_AUDIO_CONTRACTS
 #include <WPAudio/AudioResourceCompiler.hpp>
@@ -76,6 +81,61 @@ namespace
         std::ofstream stream( path, std::ios::binary | std::ios::trunc );
         stream.write( contents.data(), static_cast<std::streamsize>( contents.size() ) );
         require( stream.good(), "Failed to write test input" );
+    }
+
+    void prefabAuthoringMetadataContracts(const fs::path &root)
+    {
+        struct NativeTypes {
+            std::unique_ptr<TypeManager> value=std::make_unique<TypeManager>();
+            NativeTypes(){value->load();}
+            ~NativeTypes(){value->unload();}
+        } nativeTypes;
+        fs::create_directories(root);
+        const String actorId="357261b5-3e87-48d2-a3c1-2ba952c53df1";
+        const String cameraId="357261b5-3e87-48d2-a3c1-2ba952c53df2";
+        const String childId="357261b5-3e87-48d2-a3c1-2ba952c53df3";
+        SceneResourceCompiler compiler;
+        for(const auto &type:Array<String>{"PrefabInstance","workphone::scene::PrefabInstance","fb::scene::PrefabInstance"})
+        for(bool grouped:{false,true})for(bool scene:{false,true})
+        {
+            // Deliberately reuse an actor UUID in authoring-only data. Neither
+            // that identity nor the unbound source asset belongs to the runtime graph.
+            const String metadata="{\"handle_name\":\"component\",\"componentType\":\""+type+
+                "\",\"uuid\":\""+actorId+"\",\"sourcePath\":\"Assets/EditorOnly.prefab\","
+                "\"sourceAssetUuid\":\"357261b5-3e87-48d2-a3c1-2ba952c53df9\",\"children\":["
+                "{\"handle_name\":\"identity\",\"sourceUuid\":\""+actorId+"\",\"instanceUuid\":\""+actorId+"\",\"children\":[]}]}";
+            const String camera="{\"handle_name\":\"component\",\"componentType\":\"Camera\",\"uuid\":\""+cameraId+
+                "\",\"nearClip\":\"0.25\",\"children\":[]}";
+            const String components=grouped?"{\"handle_name\":\"components\",\"children\":["+metadata+","+camera+"]}":metadata+","+camera;
+            const String actor="{\"handle_name\":\"actors\",\"uuid\":\""+actorId+"\",\"label\":\"KeepActor\",\"children\":["+
+                components+",{\"handle_name\":\"child\",\"uuid\":\""+childId+"\",\"label\":\"KeepChild\",\"children\":["+metadata+"]}]}";
+            const String document=scene?"{\"children\":["+actor+"]}":actor;
+            const auto path=root/(scene?"linked.fbscene":"linked.prefab");
+            writeFile(path,document.c_str());
+            CompileContext context;context.resourceId=ResourceID(scene?"data://linked.fbscene":"data://linked.prefab");
+            context.sourceRoot=root.generic_u8string().c_str();context.sourcePath=path.generic_u8string().c_str();context.packagedBuild=true;
+            String error;DependencySet dependencies;
+            require(compiler.getDependencies(context,dependencies,error),error.c_str());
+            require(dependencies.compileDependencies.empty()&&dependencies.installDependencies.empty(),"Prefab provenance must not create runtime dependencies");
+            std::ostringstream output(std::ios::binary);Array<String> messages;
+            const auto status=compiler.compile(context,output,messages);
+            require(status==CompilationStatus::Success,messages.empty()?"Linked actor graph failed to compile":messages.front().c_str());
+            const auto bytes=output.str();Array<u8> binary(bytes.begin(),bytes.end());auto decoded=make_ptr<Properties>();
+            require(PropertiesBinarySerializer::deserialize(binary,*decoded,&error),error.c_str());
+            require(validateCookedActorGraphData(decoded,scene,nullptr,error),error.c_str());
+            auto cookedActor=scene?decoded->getChildren().front():decoded;
+            require(cookedActor->getProperty("uuid")==actorId&&cookedActor->getProperty("label")=="KeepActor","Cooking must preserve linked actor identity and properties");
+            const auto children=cookedActor->getChildrenByName("child");
+            require(children.size()==1&&children.front()->getProperty("uuid")==childId&&children.front()->getChildren().empty(),"Cooking must preserve descendants while removing their provenance");
+            const auto holder=grouped?cookedActor->getChildrenByName("components").front():cookedActor;
+            const auto componentsOut=holder->getChildrenByName("component");
+            require(componentsOut.size()==1&&componentsOut.front()->getProperty("componentType")=="workphone::scene::Camera"&&
+                componentsOut.front()->getProperty("uuid")==cameraId&&componentsOut.front()->getProperty("nearClip")=="0.25","Cooking must preserve runtime sibling components");
+            require(bytes.find("PrefabInstance")==std::string::npos&&bytes.find("sourceUuid")==std::string::npos&&bytes.find("EditorOnly.prefab")==std::string::npos,"Cooked payload must omit the complete provenance subtree");
+            auto injected=make_ptr<Properties>();injected->setName("component");injected->setProperty("componentType",type);injected->setProperty("uuid",actorId);
+            cookedActor->addChild(injected);
+            require(!validateCookedActorGraphData(decoded,scene,nullptr,error)&&error.find("Unsupported cooked component type")!=String::npos,"Cooked runtime validation must reject injected authoring metadata");
+        }
     }
 
     void containerPinContracts(const fs::path &root)
@@ -871,6 +931,13 @@ int main(int argc, char **argv)
         const fs::path compiled = root / "compiled";
         fs::create_directories( source / "data" );
         fs::create_directories( compiled );
+        prefabAuthoringMetadataContracts(root/"prefab-authoring-metadata");
+        if(argc==2&&std::string(argv[1])=="--prefab-authoring-metadata-only")
+        {
+            fs::remove_all(root);
+            std::cout << "Prefab authoring metadata cook contracts passed (12 scene/prefab layouts)" << std::endl;
+            return 0;
+        }
         variantDatabaseContracts(root / "variant-contracts.sqlite");
         batchDatabaseContracts(root / "batch-contracts.sqlite");
         containerPinContracts(root);

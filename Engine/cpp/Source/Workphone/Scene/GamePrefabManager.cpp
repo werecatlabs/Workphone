@@ -4,6 +4,8 @@
 #include <Workphone/Scene/GamePrefab.hpp>
 #include <Workphone/Scene/GameActor.hpp>
 #include <Workphone/Scene/GameActorUtil.hpp>
+#include <Workphone/Scene/PrefabInstanceService.hpp>
+#include <Workphone/Scene/Components/PrefabInstance.hpp>
 #include <Workphone/Scene/Components/Mesh.hpp>
 #include <Workphone/Scene/Components/MeshRenderer.hpp>
 #include <Workphone/Scene/Components/Material.hpp>
@@ -193,6 +195,7 @@ namespace workphone::scene
 
         auto prefabResource = create( uuid );
         auto prefab = workphone::static_pointer_cast<IGamePrefab>( prefabResource );
+        prefab->setFilePath( filePath );
 
         auto ext = Path::getFileExtension( filePath );
         ext = StringUtil::make_lower( ext );
@@ -342,6 +345,7 @@ namespace workphone::scene
 
             auto prefabResource = create( uuid );
             auto prefab = workphone::static_pointer_cast<IGamePrefab>( prefabResource );
+            prefab->setFilePath( name );
 
             auto ext = Path::getFileExtension( name );
             ext = StringUtil::make_lower( ext );
@@ -545,14 +549,37 @@ namespace workphone::scene
             WP_ASSERT( fileSystem );
 
             const bool streamingWrapper = isStreamingWorldOwner( prefab );
+            struct SaveFlagsRollback
+            {
+                Array<Pair<SmartPtr<IGameActor>, u32>> actors;
+                bool published = false;
+                ~SaveFlagsRollback()
+                {
+                    if( !published )
+                        for( auto &entry : actors )
+                            entry.first->setFlags( entry.second );
+                }
+            } flags;
+            const auto captureFlags = [&]( auto &&self, SmartPtr<IGameActor> actor ) -> void {
+                flags.actors.emplace_back( actor, actor->getFlags() );
+                if( !isStreamingWorldOwner( actor ) )
+                    for( auto child : actor->getChildren() ) self( self, child );
+            };
+            captureFlags( captureFlags, prefab );
             // Resident cell roots belong to their world generation and remain
             // excluded when saving its live prefab owner. Clearing their flags
             // would embed one neighborhood alongside the streaming reference.
             preparePrefabSave( prefab );
 
-            const auto fmt = getDataFormat();
+            auto fmt = getDataFormat();
+            if( fileSystem->isExistingFile( filePath ) )
+            {
+                const auto previous = fileSystem->readAllText( filePath );
+                const auto first = previous.find_first_not_of( " \t\r\n" );
+                if( first != String::npos ) fmt = previous[first] == '<' ? DataFormat::XML : DataFormat::JSON;
+            }
 
-            auto data = prefab->toData();
+            auto data = PrefabInstanceService::makeTemplateData( prefab );
             if( streamingWrapper )
             {
                 if( auto properties = dynamic_pointer_cast<Properties>( data ) )
@@ -562,11 +589,44 @@ namespace workphone::scene
             }
             auto dataStr = DataUtil::toString( data.get(), true, fmt );
 
+            // A newly saved source actor is also an instance of the asset. Link
+            // it before publication, and restore its unlinked state on failure.
+            struct AdoptionRollback
+            {
+                SmartPtr<IGameActor> actor;
+                SmartPtr<PrefabInstance> added;
+                bool published = false;
+                ~AdoptionRollback()
+                {
+                    if( added && !published )
+                    {
+                        try
+                        {
+                            auto manager = core::IApplicationManager::instancePtr()->getGameManager();
+                            manager->unregisterAllComponent( added );
+                            actor->removeComponentInstance( added );
+                        }
+                        catch( const std::exception &e )
+                        {
+                            WP_LOG_ERROR( String( "Could not remove failed prefab source link: " ) + e.what() );
+                        }
+                    }
+                }
+            } adoption{ prefab };
+            if( applicationManager->isEditor() && !applicationManager->isPlaying() &&
+                !prefab->getComponent<PrefabInstance>() )
+            {
+                PrefabInstanceService::adopt( prefab, data, filePath );
+                adoption.added = prefab->getComponent<PrefabInstance>();
+            }
+
             if( !saveAssetDocumentText( filePath, dynamic_pointer_cast<Properties>( data ), dataStr,
                                         error ) )
             {
                 return false;
             }
+            adoption.published = true;
+            flags.published = true;
             return true;
         }
         catch( const std::exception &e )

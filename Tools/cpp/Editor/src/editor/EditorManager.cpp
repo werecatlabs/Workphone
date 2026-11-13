@@ -1,5 +1,6 @@
 #include <EditorPCH.hpp>
 #include <editor/EditorManager.hpp>
+#include <editor/PrefabEditSession.hpp>
 #include <editor/Project.hpp>
 #include <editor/ProjectSettingsRuntime.hpp>
 #include <editor/ProjectSettingsActions.hpp>
@@ -34,6 +35,12 @@ namespace workphone::editor
 
     void EditorManager::unload( SmartPtr<ISharedObject> data )
     {
+        if( isEditingPrefab() )
+        {
+            String error;
+            if( !m_prefabEditSession->close( error ) ) WP_LOG_ERROR( error );
+        }
+        m_prefabEditSession.reset();
         clearPlayModeScene();
 
         if( auto ui = getUI() )
@@ -67,6 +74,11 @@ namespace workphone::editor
 
     void EditorManager::loadProject( const String &filePath )
     {
+        if( isEditingPrefab() )
+        {
+            WP_LOG_ERROR( "Return from prefab editing before opening another project." );
+            return;
+        }
         WP_ASSERT( Path::isExistingFile( filePath ) );
 
         if( Path::isExistingFile( filePath ) )
@@ -162,7 +174,80 @@ namespace workphone::editor
 
     void EditorManager::setProject( SmartPtr<Project> project )
     {
+        if( isEditingPrefab() && project != m_project )
+        {
+            WP_LOG_ERROR( "Return from prefab editing before changing the project." );
+            return;
+        }
         m_project = project;
+    }
+
+    bool EditorManager::openPrefab( const String &path, String &error )
+    {
+        if( !m_prefabEditSession ) m_prefabEditSession = std::make_unique<PrefabEditSession>();
+        const auto saved = getFileSaved();
+        const bool result = m_prefabEditSession->open( path, error );
+        if( result ) { m_prefabOriginalFileSaved = saved; setFileSaved( false ); }
+        if( auto ui = getUI() )
+        {
+            if( result ) { ui->rebuildSceneTree(); ui->updateSelection(); }
+            ui->updatePrefabEditingUI( error );
+        }
+        return result;
+    }
+
+    bool EditorManager::savePrefab( String &error, size_t *updatedInstances )
+    {
+        size_t count = 0;
+        const bool result = m_prefabEditSession && m_prefabEditSession->save( error, &count );
+        if( !m_prefabEditSession ) error = "No prefab is being edited.";
+        if( result )
+        {
+            setFileSaved( true );
+            if( count ) m_prefabOriginalFileSaved = false;
+        }
+        if( updatedInstances ) *updatedInstances = count;
+        if( auto ui = getUI() )
+            ui->updatePrefabEditingUI( !error.empty() ? error : result ?
+                "Prefab saved; updated " + StringUtil::toString( static_cast<u64>( count ) ) + " placed instances." : String() );
+        return result;
+    }
+
+    bool EditorManager::closePrefab( String &error )
+    {
+        const bool wasEditing = isEditingPrefab();
+        const bool result = !m_prefabEditSession || m_prefabEditSession->close( error );
+        if( result && wasEditing ) setFileSaved( m_prefabOriginalFileSaved );
+        if( auto ui = getUI() )
+        {
+            if( result ) { ui->rebuildSceneTree(); ui->updateSelection(); }
+            ui->updatePrefabEditingUI( error );
+        }
+        return result;
+    }
+
+    bool EditorManager::isEditingPrefab() const
+    { return m_prefabEditSession && m_prefabEditSession->active(); }
+
+    String EditorManager::getEditingPrefabPath() const
+    { return m_prefabEditSession ? m_prefabEditSession->path() : String(); }
+
+    SmartPtr<scene::IGameActor> EditorManager::getPrefabEditRoot() const
+    { return m_prefabEditSession ? m_prefabEditSession->root() : nullptr; }
+
+    SmartPtr<scene::IGameScene> EditorManager::getAuthoringScene() const
+    {
+        if( isEditingPrefab() ) return m_prefabEditSession->authoringScene();
+        auto app = core::IApplicationManager::instancePtr();
+        auto manager = app ? app->getGameManager() : nullptr;
+        return manager ? manager->getCurrentScene() : nullptr;
+    }
+
+    SmartPtr<ISharedObject> EditorManager::getAuthoringSceneData() const
+    {
+        if( isEditingPrefab() ) return m_prefabEditSession->authoringData();
+        auto scene = getAuthoringScene();
+        return scene ? scene->toData() : nullptr;
     }
 
     SmartPtr<UIManager> EditorManager::getUI() const

@@ -22,6 +22,13 @@ namespace workphone::editor
 
         auto editorManager = EditorManager::getSingletonPtr();
         WP_ASSERT( editorManager );
+        if( editorManager->isEditingPrefab() )
+        {
+            WP_LOG_ERROR( "Return from prefab editing before opening another scene." );
+            if( auto ui = editorManager->getUI() )
+                ui->updatePrefabEditingUI( "Save & Return or Discard & Return before opening a scene." );
+            return;
+        }
 
         auto uiManager = editorManager->getUI();
         WP_ASSERT( uiManager );

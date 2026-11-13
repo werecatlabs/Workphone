@@ -31,6 +31,7 @@ namespace workphone
                 Remove,
                 Import,
                 Reimport,
+                EditPrefab,
                 Refresh,
                 NavigateBack,
                 NavigateForward,

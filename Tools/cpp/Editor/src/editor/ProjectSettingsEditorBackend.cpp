@@ -170,12 +170,11 @@ namespace workphone::editor
         {
             auto recovery = project->getProperties();
             recovery->setProperty( "recoverySourceProject", project->getFilePath() );
-            auto scenes = app->getGameManager();
-            auto scene = scenes ? scenes->getCurrentScene() : nullptr;
+            auto scene = editor->getAuthoringScene();
             if( scene )
             {
                 const String scenePath = "Cache/Autosave/scene.fbscene";
-                auto data = dynamic_pointer_cast<Properties>( scene->toData() );
+                auto data = dynamic_pointer_cast<Properties>( editor->getAuthoringSceneData() );
                 if( !data ) throw std::runtime_error( "Scene could not be serialized for autosave" );
                 writeRecovery( root / std::filesystem::u8path( scenePath.c_str() ),
                                DataUtil::toString( data.get(), true ) );

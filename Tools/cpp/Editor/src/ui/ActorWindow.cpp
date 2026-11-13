@@ -1026,6 +1026,8 @@ namespace workphone::editor
 
     void ActorWindow::clearInspector( const String &message )
     {
+        m_selectedObject = nullptr;
+        m_selectedEntity = nullptr;
         setActorControlsEnabled( false );
         if( m_propertiesWindow )
         {
@@ -1035,7 +1037,12 @@ namespace workphone::editor
             {
                 grid->setProperties( nullptr );
             }
+            m_propertiesWindow->setWindowVisible( false );
         }
+        if( m_eventsWindow ) m_eventsWindow->setWindowVisible( false );
+        if( m_materialWindow ) m_materialWindow->setWindowVisible( false );
+        if( m_terrainWindow ) m_terrainWindow->setWindowVisible( false );
+        if( m_particleSystemWindow ) m_particleSystemWindow->setWindowVisible( false );
 
         if( m_transformWindow )
         {
@@ -1375,6 +1382,7 @@ namespace workphone::editor
                 applicationManager ? applicationManager->getSelectionManagerPtr() : nullptr;
             if( !selectionManager )
             {
+                clearInspector( "No selection service available" );
                 return;
             }
 
@@ -1397,6 +1405,7 @@ namespace workphone::editor
 
             auto object = selection.front();
             auto actor = getActorFromSelection( object );
+            if( !actor ) return; // buildTree has cleared the previous actor Inspector.
             if( actor && m_transformWindow )
             {
                 m_transformWindow->setTransform( actor->getTransform() );

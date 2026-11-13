@@ -7,7 +7,10 @@
 
 namespace workphone::editor
 {
-    FileSelectedJob::FileSelectedJob() = default;
+    FileSelectedJob::FileSelectedJob()
+    {
+        setPrimary( true );
+    }
 
     FileSelectedJob::~FileSelectedJob() = default;
 
@@ -19,11 +22,33 @@ namespace workphone::editor
         const auto sceneXmlExt = ".fbscenexml";
         const auto sceneBinaryExt = ".fbscenebin";
 
-        auto ext = Path::getFileExtension( path );
+        auto ext = StringUtil::make_lower( Path::getFileExtension( path ) );
+        auto editorManager = EditorManager::getSingletonPtr();
+        if( !editorManager )
+        {
+            return;
+        }
+        if( ext == ".prefab" || ext == ".fbprefab" )
+        {
+            String error;
+            editorManager->openPrefab( path, error );
+            if( auto ui = editorManager->getUI() )
+            {
+                ui->updatePrefabEditingUI( error );
+            }
+            return;
+        }
 
         if( StringUtil::isEqual( ext, sceneExt ) || StringUtil::isEqual( ext, sceneXmlExt ) ||
             StringUtil::isEqual( ext, sceneBinaryExt ) )
         {
+            if( editorManager->isEditingPrefab() )
+            {
+                if( auto ui = editorManager->getUI() )
+                    ui->updatePrefabEditingUI(
+                        "Save & Return or Discard & Return before opening a scene." );
+                return;
+            }
             auto applicationManager = core::IApplicationManager::instance();
             WP_ASSERT( applicationManager );
 

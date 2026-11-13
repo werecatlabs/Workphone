@@ -50,11 +50,102 @@
 #include <ui/ImageToMeshWindow.hpp>
 #include <Workphone/Workphone.hpp>
 #include <Workphone/Database/ResourceDatabase.hpp>
+#include <Workphone/System/TaskLock.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsPipeline.hpp>
 #include <WPImGui/WPImGui.hpp>
 
 namespace workphone::editor
 {
+    namespace
+    {
+        class FinishPrefabEditJob : public Job
+        {
+        public:
+            explicit FinishPrefabEditJob( bool save ) : m_save( save ) { setPrimary( true ); }
+            void execute() override
+            {
+                auto app = core::IApplicationManager::instancePtr();
+                if( !app || app->getQuit() ) return;
+                auto manager = EditorManager::getSingletonPtr();
+                if( !manager || !manager->isEditingPrefab() ) return;
+                auto ui = manager->getUI();
+                if( !ui ) return;
+                String error;
+                size_t count = 0;
+                if( m_save && !manager->savePrefab( error, &count ) )
+                {
+                    ui->updatePrefabEditingUI( error );
+                    return;
+                }
+                const auto saveWarning = error;
+                if( !manager->closePrefab( error ) )
+                {
+                    ui->updatePrefabEditingUI( error );
+                    return;
+                }
+                ui->updatePrefabEditingUI( m_save ?
+                    "Prefab saved. Updated " + StringUtil::toString( count ) +
+                    " instance(s). Save the scene to keep these instance changes." +
+                    ( saveWarning.empty() ? String() : "\n" + saveWarning ) : String() );
+            }
+        private:
+            bool m_save;
+        };
+    }
+
+    void UIManager::updatePrefabEditingUI( const String &message )
+    {
+        auto manager = EditorManager::getSingletonPtr();
+        const bool editing = manager && manager->isEditingPrefab();
+        if( auto app = core::IApplicationManager::instancePtr(); app && m_playmodeToggle )
+            m_playmodeToggle->setValue( app->isPlaying() );
+        // Toolbar toggles are drawn directly by ImGui and do not honor element
+        // visibility. Change the child list so inactive controls cannot render.
+        if( m_toolbar && editing != m_prefabToolbarActive )
+        {
+            auto app = core::IApplicationManager::instancePtr();
+            auto tasks = app ? app->getTaskManager() : nullptr;
+            auto task = tasks ? tasks->getTask( TaskId::Render ) : nullptr;
+            TaskLock renderLock( task && task->isLoaded() ? task : nullptr );
+            m_toolbar->removeAllChildren();
+            for( auto element : m_regularToolbarChildren )
+            {
+                const auto id = static_cast<WidgetId>( element->getElementId() );
+                if( editing && ( id == WidgetId::RunId || id == WidgetId::ShowDebugId ||
+                    id == WidgetId::ShowSceneDebugId || id == WidgetId::ShowUiDebugId ||
+                    id == WidgetId::StatsId || id == WidgetId::ReloadScriptsId ) ) continue;
+                m_toolbar->addChild( element );
+            }
+            if( editing )
+            {
+                m_toolbar->addChild( m_prefabLabel );
+                m_toolbar->addChild( m_savePrefabButton );
+                m_toolbar->addChild( m_discardPrefabButton );
+            }
+            m_prefabToolbarActive = editing;
+        }
+        for( auto element : Array<SmartPtr<ui::IUIElement>>{
+                 m_playmodeToggle, m_toolbarShowDebugButton, m_toolbarShowSceneDebugButton,
+                 m_toolbarShowUiDebugButton, m_toolbarStatsButton, m_toolbarReloadButton } )
+        {
+            if( element ) element->setVisible( !editing );
+        }
+        if( m_savePrefabButton ) m_savePrefabButton->setVisible( editing );
+        if( m_discardPrefabButton ) m_discardPrefabButton->setVisible( editing );
+        if( m_prefabLabel )
+        {
+            m_prefabLabel->setVisible( editing );
+            if( editing ) m_prefabLabel->setText( "Prefab: " + Path::getFileName( manager->getEditingPrefabPath() ) );
+        }
+        if( !message.empty() )
+        {
+            WP_LOG( message );
+            if( m_prefabStatusText ) m_prefabStatusText->setText( message );
+            if( m_prefabStatusWindow ) m_prefabStatusWindow->setVisible( true );
+        }
+        else if( m_prefabStatusWindow ) m_prefabStatusWindow->setVisible( false );
+    }
+
     SmartPtr<EditorWindow> UIManager::getLuaDebuggerWindow() const
     {
         return m_luaDebuggerWindow;
@@ -853,11 +944,38 @@ namespace workphone::editor
             toolbarStatsButton->setElementId( static_cast<s32>( WidgetId::StatsId ) );
             toolbarStatsButton->setLabel( ICON_FA_CHART_BAR " Stats" );
             toolbar->addChild( toolbarStatsButton );
+            m_toolbarStatsButton = toolbarStatsButton;
 
             auto reloadScriptsButton = ui->addElementByType<ui::IUIButton>();
             reloadScriptsButton->setElementId( static_cast<s32>( WidgetId::ReloadScriptsId ) );
             reloadScriptsButton->setLabel( ICON_FA_CHART_BAR " Reload" );
             toolbar->addChild( reloadScriptsButton );
+            m_toolbarReloadButton = reloadScriptsButton;
+            m_regularToolbarChildren = toolbar->getChildren();
+
+            m_prefabLabel = ui->addElementByType<ui::IUIText>();
+            m_prefabLabel->setVisible( false );
+            toolbar->addChild( m_prefabLabel );
+            m_savePrefabButton = ui->addElementByType<ui::IUIButton>();
+            m_savePrefabButton->setElementId( static_cast<s32>( WidgetId::SavePrefabAndReturnId ) );
+            m_savePrefabButton->setLabel( "Save & Return" );
+            m_savePrefabButton->setVisible( false );
+            toolbar->addChild( m_savePrefabButton );
+            m_discardPrefabButton = ui->addElementByType<ui::IUIButton>();
+            m_discardPrefabButton->setElementId( static_cast<s32>( WidgetId::DiscardPrefabAndReturnId ) );
+            m_discardPrefabButton->setLabel( "Discard & Return" );
+            m_discardPrefabButton->setVisible( false );
+            toolbar->addChild( m_discardPrefabButton );
+
+            m_prefabStatusWindow = ui->addElementByType<ui::IUIWindow>();
+            m_prefabStatusWindow->setLabel( "Prefab editing" );
+            m_prefabStatusWindow->setSize( Vector2F( 640.0f, 160.0f ) );
+            m_prefabStatusWindow->setVisible( false );
+            m_prefabStatusText = ui->addElementByType<ui::IUIText>();
+            auto prefabStatusProperties = workphone::make_ptr<Properties>();
+            prefabStatusProperties->setProperty( ui::IUIText::textWrapStr, true );
+            m_prefabStatusText->setProperties( prefabStatusProperties );
+            m_prefabStatusWindow->addChild( m_prefabStatusText );
 
             setToolbar( toolbar );
         }
@@ -1318,6 +1436,16 @@ namespace workphone::editor
         m_toolbarTranslateManipulatorButton = nullptr;
         m_toolbarRotateManipulatorButton = nullptr;
         m_toolbarScaleManipulatorButton = nullptr;
+        m_toolbarStatsButton = nullptr;
+        m_toolbarReloadButton = nullptr;
+        m_savePrefabButton = nullptr;
+        m_discardPrefabButton = nullptr;
+        m_prefabLabel = nullptr;
+        if( m_prefabStatusWindow ) ui->removeElement( m_prefabStatusWindow );
+        m_prefabStatusWindow = nullptr;
+        m_prefabStatusText = nullptr;
+        m_regularToolbarChildren.clear();
+        m_prefabToolbarActive = false;
         m_editorCameraToggle = nullptr;
         m_playmodeToggle = nullptr;
         m_scriptClass = nullptr;
@@ -1392,14 +1520,10 @@ namespace workphone::editor
 
     void UIManager::updateSelection()
     {
-        //if( m_updateSelectionJob->isFinished() )
-        //{
-        //    auto applicationManager = core::IApplicationManager::instance();
-        //    auto jobQueue = applicationManager->getJobQueue();
-
-        //    jobQueue->addJob( m_updateSelectionJob );
-        //    //m_updateSelectionJob->execute();
-        //}
+        // Scene/prefab transitions must replace the Inspector's actor and
+        // transform immediately, before another edit can target the old scene.
+        // This stateless job also refreshes the other selection-specific panes.
+        if( auto selectionJob = m_updateSelectionJob ) selectionJob->execute();
     }
 
     void UIManager::updateActorSelection()
@@ -1705,6 +1829,13 @@ namespace workphone::editor
             break;
             case WidgetId::SaveAllId:
             {
+                if( editorManager->isEditingPrefab() )
+                {
+                    auto job = workphone::make_ptr<SaveSceneJob>();
+                    job->setPrimary( true );
+                    jobQueue->addJob( job );
+                    break;
+                }
                 if( auto scene = sceneManager->getCurrentScene() )
                 {
                     scene->saveScene();
@@ -2722,6 +2853,14 @@ namespace workphone::editor
             case WidgetId::ReloadScriptsId:
             {
                 auto job = workphone::make_ptr<ReloadScriptsJob>();
+                jobQueue->addJob( job );
+            }
+            break;
+
+            case WidgetId::SavePrefabAndReturnId:
+            case WidgetId::DiscardPrefabAndReturnId:
+            {
+                auto job = workphone::make_ptr<FinishPrefabEditJob>( id == WidgetId::SavePrefabAndReturnId );
                 jobQueue->addJob( job );
             }
             break;

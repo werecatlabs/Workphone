@@ -1212,3 +1212,17 @@ if (WP_EDITOR_TESTS)
         WORKING_DIRECTORY "$<TARGET_FILE_DIR:Editor>" RUN_SERIAL TRUE TIMEOUT 900
         LABELS "editor;lifecycle")
 endif()
+
+if(WP_EDITOR_TESTS)
+    foreach(prefab_edit_case IN ITEMS
+            prefab_edit_open_discard_and_undo_preserve_authoring_objects
+            prefab_edit_save_updates_instances_and_marks_original_scene_unsaved
+            prefab_edit_failed_open_preserves_scene_selection_and_history)
+        add_test(NAME "Editor.${prefab_edit_case}" COMMAND Editor
+            "--run_test=${prefab_edit_case}" "--log_level=error"
+            "--report_level=detailed" "--catch_system_errors=yes" CONFIGURATIONS Debug)
+        set_tests_properties("Editor.${prefab_edit_case}" PROPERTIES
+            WORKING_DIRECTORY "$<TARGET_FILE_DIR:Editor>" RUN_SERIAL TRUE
+            TIMEOUT 90 LABELS "editor;prefab;authoring")
+    endforeach()
+endif()

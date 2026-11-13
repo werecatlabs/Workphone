@@ -850,3 +850,13 @@ set_target_properties(WPScriptDiscoveryTests PROPERTIES FOLDER Tests/Cpp)
 add_test(NAME Workphone.script_discovery_policy COMMAND WPScriptDiscoveryTests)
 set_tests_properties(Workphone.script_discovery_policy PROPERTIES
     TIMEOUT 30 LABELS "script;filesystem;headless")
+
+target_sources(WPActorSceneTests PRIVATE PrefabInstanceTests.cpp PrefabTests.cpp)
+add_test(NAME Workphone.prefab_instance_reconcile COMMAND WPActorSceneTests
+    --run_test=PrefabInstanceTests --report_level=detailed)
+set_tests_properties(Workphone.prefab_instance_reconcile PROPERTIES TIMEOUT 90
+    WORKING_DIRECTORY "$<TARGET_FILE_DIR:WPActorSceneTests>" LABELS "scene;prefab;native")
+add_test(NAME Workphone.prefab_existing_contracts COMMAND WPActorSceneTests
+    --run_test=prefab_* --report_level=detailed)
+set_tests_properties(Workphone.prefab_existing_contracts PROPERTIES TIMEOUT 90
+    WORKING_DIRECTORY "$<TARGET_FILE_DIR:WPActorSceneTests>" LABELS "scene;prefab;native")

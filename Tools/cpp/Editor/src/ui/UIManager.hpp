@@ -321,6 +321,8 @@ namespace workphone
                 ShowUiDebugId,
                 LocalTransformId,
                 ReloadScriptsId,
+                SavePrefabAndReturnId,
+                DiscardPrefabAndReturnId,
                 ToggleEditorCameraId,
 
                 TranslateEditorCameraId,
@@ -716,6 +718,8 @@ namespace workphone
              */
             SmartPtr<ui::IUIToolbar> getToolbar() const;
 
+            void updatePrefabEditingUI( const String &message = String() );
+
             /**
              * @brief Set the main toolbar UI interface.
              * @param toolbar Smart pointer to toolbar.
@@ -894,6 +898,15 @@ namespace workphone
 
             SmartPtr<IEventListener> m_menubarListener;             ///< Menu bar event listener.
             SmartPtr<ui::IUIToolbar> m_toolbar;                     ///< Main toolbar interface.
+            SmartPtr<ui::IUIButton> m_toolbarStatsButton;
+            SmartPtr<ui::IUIButton> m_toolbarReloadButton;
+            SmartPtr<ui::IUIButton> m_savePrefabButton;
+            SmartPtr<ui::IUIButton> m_discardPrefabButton;
+            SmartPtr<ui::IUIText> m_prefabLabel;
+            SmartPtr<ui::IUIWindow> m_prefabStatusWindow;
+            SmartPtr<ui::IUIText> m_prefabStatusText;
+            Array<SmartPtr<ui::IUIElement>> m_regularToolbarChildren;
+            bool m_prefabToolbarActive = false;
             SmartPtr<ui::IUILabelTogglePair> m_playmodeToggle;      ///< Play mode toggle control.
             SmartPtr<ui::IUILabelTogglePair> m_editorCameraToggle;  ///< Editor camera toggle control.
             SmartPtr<ui::IUILabelTogglePair>

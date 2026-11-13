@@ -41,6 +41,17 @@ namespace workphone::editor
         auto editorManager = EditorManager::getSingletonPtr();
         WP_ASSERT( editorManager );
 
+        const auto item = getItemId();
+        if( editorManager->isEditingPrefab() &&
+            ( item == UIManager::WidgetId::NewProjectId || item == UIManager::WidgetId::OpenProjectId ||
+              item == UIManager::WidgetId::NewSceneId || item == UIManager::WidgetId::OpenSceneId ) )
+        {
+            WP_LOG_ERROR( "Save or discard the prefab and return before opening another scene or project." );
+            if( auto ui = editorManager->getUI() )
+                ui->updatePrefabEditingUI( "Save & Return or Discard & Return before opening a scene or project." );
+            return;
+        }
+
         auto uiManager = editorManager->getUI();
         WP_ASSERT( uiManager );
 

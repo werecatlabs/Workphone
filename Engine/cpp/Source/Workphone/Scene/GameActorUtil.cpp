@@ -486,6 +486,13 @@ namespace workphone::scene
             result->setName( source->getName() );
             for( auto property : source->getPropertiesAsArray() )
             {
+                // Prefab provenance names the immutable template node. Only its
+                // instanceUuid is a reference into the graph being cloned.
+                if( source->getName() == "identity" && property.getName() == "sourceUuid" )
+                {
+                    result->setProperty( property );
+                    continue;
+                }
                 auto found = identities.find( property.getValue() );
                 if( found != identities.end() )
                 {

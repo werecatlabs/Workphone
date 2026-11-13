@@ -26,6 +26,14 @@ namespace workphone::editor
                 return;
             }
 
+            if( editorManager->isEditingPrefab() )
+            {
+                WP_LOG_ERROR( "Return from prefab editing before entering Play." );
+                if( auto ui = editorManager->getUI() )
+                    ui->updatePrefabEditingUI( "Save & Return or Discard & Return before entering Play." );
+                return;
+            }
+
             auto taskManager = applicationManager->getTaskManager();
             auto gameManager = applicationManager->getGameManager();
             auto scene = gameManager ? gameManager->getCurrentScene() : nullptr;

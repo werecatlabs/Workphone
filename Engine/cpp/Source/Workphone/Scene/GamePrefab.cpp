@@ -5,6 +5,8 @@
 #include <Workphone/Core/Path.hpp>
 #include <stdexcept>
 #include <Workphone/Scene/GameActorUtil.hpp>
+#include <Workphone/Scene/PrefabInstanceService.hpp>
+#include <Workphone/Interface/IO/IFileSystem.hpp>
 #include <Workphone/System/RuntimeAssetContext.hpp>
 #include <Workphone/System/SceneResourceCompiler.hpp>
 #include <Workphone/System/TaskLock.hpp>
@@ -35,6 +37,21 @@ namespace workphone::scene
         TaskLock renderPause(renderTask);
         ScopedLock managerLock(sceneManager);
 
+        // Authoring resources can outlive a save in the prefab editor. Read the
+        // current asset before each new instance; cooked runtime data is sealed.
+        const auto sourcePath = getFilePath();
+        const bool linkedAuthoring = !m_runtimeAssets && applicationManager->isEditor() && !applicationManager->isPlaying() &&
+            StringUtil::make_lower( Path::getFileExtension( sourcePath ) ) == ".prefab";
+        if( linkedAuthoring )
+        {
+            auto files = applicationManager->getFileSystem();
+            const auto text = files->readAllText( sourcePath );
+            auto first = text.find_first_not_of( " \t\r\n" );
+            if( first == String::npos ) throw std::runtime_error( "Prefab source is empty or missing: " + sourcePath );
+            auto fresh = make_ptr<Properties>();
+            DataUtil::parse( text, fresh.get(), text[first] == '<' ? DataFormat::XML : DataFormat::JSON );
+            setData( fresh );
+        }
         auto data = workphone::dynamic_pointer_cast<Properties>( getData() );
         if( !data )
         {
@@ -51,7 +68,10 @@ namespace workphone::scene
             }
             ~ResolutionScope(){if(active){Properties::exchangeObjectResolver(std::move(previous));Properties::exchangeObjectResolverFallback(fallback);}}
         } resolution(m_runtimeAssets);
-        auto instanceData = GameActorUtil::createInstanceData( data );
+        auto instanceData = linkedAuthoring
+            ? PrefabInstanceService::createLinkedInstanceData( data, sourcePath,
+                  getHandle()->getUUIDAsString() )
+            : GameActorUtil::createInstanceData( data );
         auto graphics=applicationManager->getGraphicsSystem();ScopedLock graphicsLock(graphics);
         auto actors = GameActorUtil::loadSceneActors( { instanceData },nullptr,m_runtimeAssets );
         return actors.empty() ? nullptr : actors.front();
@@ -62,8 +82,14 @@ namespace workphone::scene
         auto properties = dynamic_pointer_cast<Properties>( getData() );
         const auto path = getFilePath();
         String error;
-        const auto format =
+        auto format =
             Path::getFileExtension( path ) == ".fbscenexml" ? DataFormat::XML : DataFormat::JSON;
+        if( auto files = core::IApplicationManager::instancePtr()->getFileSystem(); files && files->isExistingFile( path ) )
+        {
+            const auto previous = files->readAllText( path );
+            const auto first = previous.find_first_not_of( " \t\r\n" );
+            if( first != String::npos ) format = previous[first] == '<' ? DataFormat::XML : DataFormat::JSON;
+        }
         if( !saveAssetDocumentText( path, properties,
                                     DataUtil::toString( properties.get(), true, format ), error ) )
         {

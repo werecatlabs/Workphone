@@ -4,11 +4,13 @@
 #include <EditorPrerequisites.hpp>
 #include <Workphone/Interface/System/IEditorManager.hpp>
 #include <Workphone/Core/HashMap.hpp>
+#include <memory>
 
 namespace workphone
 {
     namespace editor
     {
+        class PrefabEditSession;
         /**
          * @brief Central coordinator for editor state, project management, and editing tools.
          *
@@ -101,6 +103,15 @@ namespace workphone
             SmartPtr<scene::IGameScene> restorePlayModeScene();
             /** @brief Clears any recorded play mode scene state. */
             void clearPlayModeScene();
+
+            bool openPrefab( const String &path, String &error );
+            bool savePrefab( String &error, size_t *updatedInstances = nullptr );
+            bool closePrefab( String &error );
+            bool isEditingPrefab() const;
+            String getEditingPrefabPath() const;
+            SmartPtr<scene::IGameActor> getPrefabEditRoot() const;
+            SmartPtr<scene::IGameScene> getAuthoringScene() const;
+            SmartPtr<ISharedObject> getAuthoringSceneData() const;
 
             /** @brief Previews an asset in the editor from the given path. */
             void previewAsset( const String &path );
@@ -218,6 +229,8 @@ namespace workphone
             String m_playModeSceneLabel;
             /** @brief True if the captured play mode scene has been saved. */
             bool m_playModeFileSaved = false;
+            std::unique_ptr<PrefabEditSession> m_prefabEditSession;
+            bool m_prefabOriginalFileSaved = false;
 
             /** @brief Singleton instance of the editor manager. */
             static SmartPtr<EditorManager> m_singleton;

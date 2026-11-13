@@ -207,6 +207,13 @@ namespace workphone::editor
                 deleteProperties->setProperty( "requiresContextTarget", true );
                 deleteItem->setProperties( deleteProperties );
                 Util::addMenuSeparator( m_applicationMenu );
+                auto editPrefab = Util::addMenuItem(
+                    m_applicationMenu, static_cast<s32>( MenuId::EditPrefab ), "Edit Prefab",
+                    "Edit this prefab in isolation and update its scene instances" );
+                auto editProperties = workphone::make_ptr<Properties>();
+                editProperties->setProperty( "requiresContextTarget", true );
+                editPrefab->setProperties( editProperties );
+
                 Util::addMenuItem( m_applicationMenu, static_cast<s32>( MenuId::Import ), "Import",
                                    "Import" );
                 Util::addMenuItem( m_applicationMenu, static_cast<s32>( MenuId::Reimport ), "Reimport",
@@ -1976,6 +1983,23 @@ namespace workphone::editor
         auto fileSystem = applicationManager->getFileSystem();
         auto selectedPath = owner->getSelectedPath();
         auto targetFolder = owner->getSelectedFolderPath();
+
+        if( menuId == MenuId::EditPrefab )
+        {
+            const auto extension = StringUtil::make_lower( Path::getFileExtension( selectedPath ) );
+            if( extension == ".prefab" || extension == ".fbprefab" )
+            {
+                auto job = workphone::make_ptr<FileSelectedJob>();
+                job->setFilePath( selectedPath );
+                jobQueue->addJob( job );
+            }
+            else if( auto manager = EditorManager::getSingletonPtr() )
+            {
+                if( auto ui = manager->getUI() )
+                    ui->updatePrefabEditingUI( "Select a .prefab or .fbprefab asset to edit." );
+            }
+            return {};
+        }
 
         if( menuId == MenuId::Refresh )
         {

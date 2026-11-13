@@ -1,4 +1,5 @@
 #include <Workphone/WorkphonePCH.hpp>
+#include <Workphone/Scene/Components/PrefabInstance.hpp>
 #include <Workphone/WorkphonePlugin.hpp>
 #include <Workphone/Scene/Components/Script.hpp>
 #include <Workphone/Scene/Components/CityRoadAuthoring.hpp>
@@ -114,6 +115,7 @@ namespace workphone
         FactoryUtil::addFactory<scene::CameraController::EventListener>();
         FactoryUtil::addFactory<scene::CameraFollow>();
         FactoryUtil::addFactory<scene::CameraTarget>();
+        FactoryUtil::addFactory<scene::PrefabInstance>();
         FactoryUtil::addFactory<scene::EditorCameraController>();
         FactoryUtil::addFactory<scene::FpsCameraController>();
         FactoryUtil::addFactory<scene::SphericalCameraController>();
@@ -405,6 +407,7 @@ namespace workphone
         factoryManager->setPoolSizeByType<scene::CameraController::EventListener>( size );
         factoryManager->setPoolSizeByType<scene::CameraFollow>( 2 );
         factoryManager->setPoolSizeByType<scene::CameraTarget>( 2 );
+        factoryManager->setPoolSizeByType<scene::PrefabInstance>( 128 );
         factoryManager->setPoolSizeByType<scene::EditorCameraController>( size );
         factoryManager->setPoolSizeByType<scene::FpsCameraController>( size );
         factoryManager->setPoolSizeByType<scene::SphericalCameraController>( size );
@@ -683,6 +686,7 @@ namespace workphone
 
         FactoryUtil::removeFactory<scene::CameraFollow>();
         FactoryUtil::removeFactory<scene::CameraTarget>();
+        FactoryUtil::removeFactory<scene::PrefabInstance>();
         FactoryUtil::removeFactory<scene::EditorCameraController>();
         FactoryUtil::removeFactory<scene::FpsCameraController>();
         FactoryUtil::removeFactory<scene::SphericalCameraController>();

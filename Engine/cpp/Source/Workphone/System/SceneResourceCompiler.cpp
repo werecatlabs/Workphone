@@ -336,6 +336,13 @@ namespace workphone::resource
                 } else if(role==Role::Component&&component=="LODGroup") {
                     require(name=="lodLevel"||name=="detailBound","Unsupported cooked LOD child");childRole=name=="lodLevel"?Role::LODLevel:Role::DetailBound;
                 } else require(false,"Transform cannot contain child groups");
+                if(!cooked&&childRole==Role::Component) {
+                    const auto type=text(child["componentType"]);
+                    // Prefab links and their identity map exist only for authoring.
+                    // Skip the complete subtree before collecting runtime identities
+                    // or dependencies; cooked input must still reject this metadata.
+                    if(type=="PrefabInstance"||type=="workphone::scene::PrefabInstance"||type=="fb::scene::PrefabInstance")continue;
+                }
                 result->addChild(parseNode(child,childRole,depth+1,nodes,identities,lease,cooked));
             }
             return result;
