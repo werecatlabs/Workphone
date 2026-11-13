@@ -832,8 +832,8 @@ namespace workphone::scene
                                     fsmManager->update();
                                 }
 
-                                auto &components =
-                                    getRegisteredComponents( Thread::UpdateState::PreUpdate, task );
+                                auto components =
+                                    getRegisteredComponents( Thread::UpdateState::PreUpdate, task ).snapshot();
                                 for( auto &component : components )
                                 {
                                     if( component )
@@ -849,7 +849,7 @@ namespace workphone::scene
                         }
                     }
 
-                    auto &components = getRegisteredComponents( Thread::UpdateState::Transform, task );
+                    auto components = getRegisteredComponents( Thread::UpdateState::Transform, task ).snapshot();
                     if( task == getSceneTask() )
                     {
                         auto actors = scene->getActors();
@@ -980,7 +980,7 @@ namespace workphone::scene
                 }
             }
 
-            auto &components = getRegisteredComponents( Thread::UpdateState::Update, task );
+            auto components = getRegisteredComponents( Thread::UpdateState::Update, task ).snapshot();
             for( auto component : components )
             {
                 if( component )
@@ -1038,7 +1038,7 @@ namespace workphone::scene
                         }
                     }
 
-                    auto &components = getRegisteredComponents( Thread::UpdateState::PostUpdate, task );
+                    auto components = getRegisteredComponents( Thread::UpdateState::PostUpdate, task ).snapshot();
                     for( auto component : components )
                     {
                         if( component )
@@ -2580,19 +2580,23 @@ namespace workphone::scene
                                                SmartPtr<IComponent> component )
     {
         auto &updateObjects = getRegisteredComponents( state, task );
+        // Iterator acquisition is synchronized, but ConcurrentArray iterators do
+        // not retain a lock. Keep the membership check and insertion atomic.
+        ScopedLock lock( &updateObjects, true );
         auto it = std::find( updateObjects.begin(), updateObjects.end(), component );
         if( it == updateObjects.end() )
         {
             updateObjects.push_back( component );
         }
 
-        WP_ASSERT( std::unique( updateObjects.begin(), updateObjects.end() ) == updateObjects.end() );
+        WP_ASSERT( std::count( updateObjects.begin(), updateObjects.end(), component ) == 1 );
     }
 
     void GameManager::unregisterComponentUpdate( TaskId task, Thread::UpdateState state,
                                                  SmartPtr<IComponent> component )
     {
         auto &updateObjects = getRegisteredComponents( state, task );
+        ScopedLock lock( &updateObjects, true );
         updateObjects.erase( std::remove( updateObjects.begin(), updateObjects.end(), component ),
                              updateObjects.end() );
     }
