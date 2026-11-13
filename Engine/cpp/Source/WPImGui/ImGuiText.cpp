@@ -16,12 +16,20 @@ namespace workphone::ui
     {
         unload( nullptr );
     }
-    void ImGuiText::unload(SmartPtr<ISharedObject> data)
-    {m_runtimeFont.reset();ImGuiElement<IUIText>::unload(data);}
+
+    void ImGuiText::unload( SmartPtr<ISharedObject> data )
+    {
+        m_runtimeFont.reset();
+        ImGuiElement<IUIText>::unload( data );
+    }
 
     void ImGuiText::update()
     {
-        ImGuiRuntimeFontScope runtimeFont(m_runtimeFont);if(!runtimeFont.valid())return;
+        ImGuiRuntimeFontScope runtimeFont( m_runtimeFont );
+        if( !runtimeFont.valid() )
+        {
+            return;
+        }
         if( !m_longText.empty() )
         {
             // Apply text size if different from default
@@ -90,9 +98,28 @@ namespace workphone::ui
     {
         m_textSize = textSize;
     }
-    bool ImGuiText::setRuntimeFont(SmartPtr<render::IFont> font)
-    {if(!font){m_runtimeFont.reset();return true;}String error;auto candidate=ImGuiRuntimeFont::create(std::move(font),error);if(!candidate)return false;m_runtimeFont=std::move(candidate);return true;}
-    SmartPtr<render::IFont> ImGuiText::getRuntimeFont() const{return m_runtimeFont?m_runtimeFont->source():nullptr;}
+
+    bool ImGuiText::setRuntimeFont( SmartPtr<render::IFont> font )
+    {
+        if( !font )
+        {
+            m_runtimeFont.reset();
+            return true;
+        }
+        String error;
+        auto candidate = ImGuiRuntimeFont::create( std::move( font ), error );
+        if( !candidate )
+        {
+            return false;
+        }
+        m_runtimeFont = std::move( candidate );
+        return true;
+    }
+
+    SmartPtr<render::IFont> ImGuiText::getRuntimeFont() const
+    {
+        return m_runtimeFont ? m_runtimeFont->source() : nullptr;
+    }
 
     f32 ImGuiText::getTextSize() const
     {
@@ -136,7 +163,7 @@ namespace workphone::ui
 
     void ImGuiText::renderTextWithAlignment( const String &sourceText )
     {
-        const auto text = m_runtimeLiteralText?sourceText:localizeProjectText( sourceText );
+        const auto text = m_runtimeLiteralText ? sourceText : localizeProjectText( sourceText );
         if( m_horizontalAlignment == static_cast<u8>( HorizontalAlignment::LEFT ) &&
             m_verticalAlignment == static_cast<u8>( VerticalAlignment::TOP ) )
         {
