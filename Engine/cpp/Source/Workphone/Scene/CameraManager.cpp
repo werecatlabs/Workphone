@@ -211,6 +211,7 @@ namespace workphone::scene
 
         const auto useEditorCamera = applicationManager->isEditorCamera();
         const auto editorTarget = getEditorRTT();
+        bool hasGameView = false;
         for( auto &camera : scene->getComponents<Camera>() )
         {
             auto actor = camera->getActor();
@@ -230,14 +231,21 @@ namespace workphone::scene
                                 actor->isEnabledInScene() &&
                                 ( !useEditorCamera || camera->getOutputRenderTexture() );
             camera->setActive( active );
+            hasGameView = hasGameView || ( active && !camera->getOutputRenderTexture() );
         }
 
         if( auto editorCamera = getEditorCamera() )
         {
+            // Menu/loading scenes may intentionally contain only UI. Keep their
+            // viewport rendering until an eligible game camera takes over. This
+            // is a render fallback, not the user's Editor Camera override: leave
+            // that flag and the editor camera controller's input routing alone.
+            const bool renderEditorCamera = useEditorCamera ||
+                ( applicationManager->isEditor() && !hasGameView );
             auto components = editorCamera->getAllComponentsAndInChildren<Camera>();
             for( auto &camera : components )
             {
-                camera->setActive( useEditorCamera && camera == components.front() &&
+                camera->setActive( renderEditorCamera && camera == components.front() &&
                                    camera->allowsActivation() );
             }
 

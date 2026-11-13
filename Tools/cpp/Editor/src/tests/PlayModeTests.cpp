@@ -307,7 +307,7 @@ namespace
             {
                 BOOST_CHECK( actor->getState() == scene::IGameActor::State::Play );
             }
-            checkEditorCamera( false );
+            checkEditorCamera( !hasGameCamera );
             if( hasGameCamera )
             {
                 auto camera = gameCamera();
@@ -551,6 +551,19 @@ BOOST_FIXTURE_TEST_CASE( play_mode_no_game_camera, PlayModeFixture )
 {
     BOOST_REQUIRE( scene->getComponents<scene::Camera>().empty() );
     enter( false );
+    // Menu-only startup scenes must keep a live viewport before the mission
+    // creates its own camera, without selecting the editor camera controls.
+    BOOST_CHECK( !applicationManager->isEditorCamera() );
+    auto missionCamera = addCamera();
+    cameraManager->reset();
+    settle();
+    checkEditorCamera( false );
+    checkRenderedCamera( missionCamera, true );
+    scene->clear( false );
+    cameraManager->reset();
+    settle();
+    checkEditorCamera( true );
+    BOOST_CHECK( !applicationManager->isEditorCamera() );
     stop();
     BOOST_CHECK( scene->getComponents<scene::Camera>().empty() );
 }

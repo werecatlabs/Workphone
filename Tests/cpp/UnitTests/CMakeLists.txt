@@ -798,7 +798,7 @@ endif()
 add_executable(WPActorSceneTests main.cpp UnitTests.cpp UnitTestsFixture.cpp
     TypeManagerFixture.cpp GameTestFixture.cpp GraphicsTestFixture.cpp TestGuard.cpp
     SceneWorldStreamingTests.cpp ActorTransformTests.cpp ActorSmoothMotionTests.cpp ComponentTestsMeshRenderer.cpp
-    GameManagerRegistrationTests.cpp
+    GameManagerRegistrationTests.cpp CameraManagerFallbackTests.cpp
     GraphicsSceneNodeTests.cpp GameSceneAsyncLoadingTests.cpp GameSceneLoadingTests.cpp MeshTest.cpp
     MeshAssetBudgetTests.cpp
     ProgressiveMeshOptionsTests.cpp
@@ -826,6 +826,10 @@ add_test(NAME Workphone.component_update_registration COMMAND WPActorSceneTests
     --run_test=GameManagerRegistrationTests)
 set_tests_properties(Workphone.component_update_registration PROPERTIES TIMEOUT 60
     WORKING_DIRECTORY "$<TARGET_FILE_DIR:WPActorSceneTests>" LABELS "scene;concurrency;headless")
+add_test(NAME Workphone.camera_manager_fallback COMMAND WPActorSceneTests
+    --run_test=CameraManagerFallbackTests)
+set_tests_properties(Workphone.camera_manager_fallback PROPERTIES TIMEOUT 60
+    WORKING_DIRECTORY "$<TARGET_FILE_DIR:WPActorSceneTests>" LABELS "scene;camera;headless")
 add_test(NAME Workphone.mesh_import_streaming COMMAND WPActorSceneTests
     --run_test=MeshImportStreamingTests,MeshImportStreamingIntegrationTests,SceneWorldIdentityTests,SceneWorldStreamingPrefabTests,ResourceDatabaseLifetimeTests)
 set_tests_properties(Workphone.mesh_import_streaming PROPERTIES TIMEOUT 120
@@ -835,3 +839,14 @@ add_test(NAME Workphone.mesh_material_import COMMAND WPActorSceneTests
     --run_test=mesh_material_import_*)
 set_tests_properties(Workphone.mesh_material_import PROPERTIES TIMEOUT 120
     WORKING_DIRECTORY "$<TARGET_FILE_DIR:WPActorSceneTests>" LABELS "asset;material;import;headless")
+
+# Pure path-policy regression: no scene fixture, graphics device or project writes.
+add_executable(WPScriptDiscoveryTests ScriptDiscoveryTests.cpp)
+target_compile_features(WPScriptDiscoveryTests PRIVATE cxx_std_17)
+target_compile_definitions(WPScriptDiscoveryTests PRIVATE
+    BOOST_ALL_NO_LIB WP_SCRIPT_DISCOVERY_TEST_STANDALONE=1)
+target_link_libraries(WPScriptDiscoveryTests PRIVATE Workphone)
+set_target_properties(WPScriptDiscoveryTests PROPERTIES FOLDER Tests/Cpp)
+add_test(NAME Workphone.script_discovery_policy COMMAND WPScriptDiscoveryTests)
+set_tests_properties(Workphone.script_discovery_policy PROPERTIES
+    TIMEOUT 30 LABELS "script;filesystem;headless")

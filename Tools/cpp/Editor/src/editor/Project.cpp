@@ -3,6 +3,7 @@
 #include <editor/EditorManager.hpp>
 #include <ui/UIManager.hpp>
 #include <Workphone/Workphone.hpp>
+#include <Workphone/Script/ScriptDiscoveryPolicy.hpp>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -519,6 +520,7 @@ namespace workphone::editor
 #elif WP_ENABLE_PYTHON
                     files = fileSystem->getFileNamesWithExtension( ".py" );
 #endif
+                    filterAutoDiscoveredScripts( files, m_projectDirectory );
                 }
                 if( !files.empty() )
                 {

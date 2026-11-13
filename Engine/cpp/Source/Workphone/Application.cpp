@@ -6,6 +6,7 @@
 #include <Workphone/System/InteractionBackendProviders.hpp>
 #include <Workphone/System/ProjectServices.hpp>
 #include <Workphone/System/BundledMediaPaths.hpp>
+#include <Workphone/Script/ScriptDiscoveryPolicy.hpp>
 #include <Workphone/Graphics/ProjectIrradiance.hpp>
 #include <Workphone/Interface/Net/INetworkManager.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsPipeline.hpp>
@@ -2365,6 +2366,7 @@ namespace workphone::core
                 for( const auto &scriptExt : supportedExtensions )
                 {
                     auto scripts = fileSystem->getFileNamesWithExtension( scriptExt );
+                    filterAutoDiscoveredScripts( scripts, applicationManager->getProjectPath() );
                     Util::sort( scripts.begin(), scripts.end() );
                     scriptManager->loadScripts( scripts );
                 }
