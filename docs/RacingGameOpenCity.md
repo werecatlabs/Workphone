@@ -18,7 +18,8 @@ apply when starting the next drive. Retries reuse generated assets.
 
 Inspector options: Seed, Appearance Quality (0-3), Laps (1-10), City Blocks
 (6, 8 or 10 per side), City Route (0-2), City Natural Roads, City Terrain Roads,
-City Street Detail (0-100), and Generate. Grid streets are 88-104 metres
+City Street Detail (0-100), City Building Style (0-9), five building mesh slots,
+and Generate. Grid streets are 88-104 metres
 apart according to seed. Dense central buildings, quieter outer districts and
 park lots use the same deterministic CPU layout. Layout revision 2 gives parcels
 stable IDs, street frontages and coherent commercial, residential and civic
@@ -63,12 +64,34 @@ In the `ProceduralRaceScene` Inspector, enable **Open City**, select **City
 Building Style**, then press **Regenerate**. The style controls the built-in
 façade modules and roof shapes used on the city's building masses.
 
-| Style | Built-in geometry |
-| --- | --- |
-| District Mix | Residential, civic, and office kits distributed by district |
-| Masonry Residential | Recessed punched windows, corner piers, hipped roofs, and chimneys |
-| Civic Stone | Deep stone surrounds, horizontal courses, and raised roof lanterns |
-| Modern Office | Glazing ribbons, narrow mullions, parapets, and rooftop service equipment |
+| Index | Style | Capture/CLI name | Built-in geometry |
+| --- | --- | --- | --- |
+| 0 | District Mix | `district` | Seeded building families distributed by district |
+| 1 | Masonry Residential | `masonry` | Recessed punched windows, corner piers, hipped roofs, and chimneys |
+| 2 | Civic Stone | `civic` | Deep stone surrounds, horizontal courses, and raised roof lanterns |
+| 3 | Modern Office | `modern` | Glazing ribbons, narrow mullions, parapets, and rooftop service equipment |
+| 4 | European Terrace | `terrace` | Projecting bay windows, framed entrances, canopies, and chimneys |
+| 5 | Parisian Mansard | `parisian` | Mansard roof, dormers, cornices, and balconies |
+| 6 | Warehouse Loft | `warehouse` | Brick pilasters, industrial glazing, loading entrance, and sawtooth skylight roof |
+| 7 | Mediterranean | `mediterranean` | Plaster façades, shutters, hipped roof, and entrance pergola canopy |
+| 8 | Art Deco | `artdeco` | Vertical piers, entrance fins, and stepped roof crown |
+| 9 | Timber Gabled | `timber` | Timber framing and braces, gabled roof, and porch canopy |
+
+Choose **District Mix** for variation within one city or a named preset for a
+consistent architectural family. Existing saved style indices 0–3 retain their
+names. The new styles use built-in meshes and need no imported architecture
+assets. Appearance quality and distance control the finer façade details;
+roof silhouettes remain visible in the far LOD. Changes retain the same
+building masses, terrain support, and collision footprint.
+
+Small details such as balcony bars, shutter slats, and raised window frames
+share a fixed allowance across the city. Larger cities also space window bays
+and mansard dormers more widely, with more detail retained on street-facing
+elevations. Above 256 building lots, the fine-detail allowance is halved and
+shared façade, paving, and soil textures use 256-pixel maps. Vehicle and
+carriageway textures retain their own quality settings. Window sizes, storey
+heights, and the main roof silhouettes remain unchanged. These limits keep
+larger scenes within the existing memory budget.
 
 Assign **City Wall Mesh**, **City Window Mesh**, **City Entrance Mesh**,
 **City Corner Mesh**, or **City Roof Mesh** independently. Use **Browse** to
@@ -97,6 +120,18 @@ layout. This example applies a sample arched window mesh to Civic Stone.
 ```
 
 [Arched window mesh example](examples/city-window-arch.obj)
+
+To compare the new built-in styles, clear the mesh slots and capture a named
+preset without mesh overrides. The **building** view frames the façade and
+roof of a representative low-rise residential parcel from above; **facade**
+inspects street-level details. Each view keeps its parcel and camera fixed across
+styles; the two views can select different parcels. The sample accepts the same names with
+`--city-building-style`, for example `--city-building-style parisian`.
+
+```powershell
+& .\Tools\powershell\CaptureProceduralRacing.ps1 -Configuration Debug -CityTerrainRoads `
+    -CityBlocks 6 -CityLayout grid -CityBuildingStyle parisian -Views building -Seconds 2
+```
 
 ## Native city showcase
 

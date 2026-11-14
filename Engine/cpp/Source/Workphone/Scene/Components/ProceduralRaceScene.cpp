@@ -3,6 +3,7 @@
 #include <Workphone/Mesh/MeshManager.hpp>
 #include <Workphone/Physics/RaycastHit.hpp>
 #include <Workphone/Scene/Components/ProceduralRaceScene.hpp>
+#include <Workphone/Scene/Components/CityBuildingStyles.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
 #include <Workphone/Scene/Components/Terrain/CollisionTerrain.hpp>
 #include <Workphone/Scene/Components/CityRoadAuthoring.hpp>
@@ -1024,7 +1025,7 @@ namespace workphone::scene
         p->setProperty( "City Building Style", m_cityBuildingStyle );
         auto &buildingStyle = p->getPropertyObject( "City Building Style" );
         buildingStyle.setTypeName( Properties::enumTypeStr );
-        buildingStyle.setAttribute( Properties::enumTypeStr, "District Mix;Masonry Residential;Civic Stone;Modern Office;" );
+        buildingStyle.setAttribute( Properties::enumTypeStr, race::cityBuildingStyleLabels );
         for( size_t i = 0; i < cityBuildingMeshProperties.size(); ++i )
         {
             const auto name = cityBuildingMeshProperties[i];
@@ -1101,7 +1102,7 @@ namespace workphone::scene
         }
         s32 buildingStyle = m_cityBuildingStyle;
         if( p->getPropertyValue( "City Building Style", buildingStyle ) )
-            m_cityBuildingStyle = std::clamp( buildingStyle, 0, 3 );
+            m_cityBuildingStyle = std::clamp( buildingStyle, 0, race::cityBuildingStyleMax );
         for( size_t i = 0; i < cityBuildingMeshProperties.size(); ++i )
         {
             String path;

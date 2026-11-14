@@ -8,6 +8,8 @@ local routes = {"Downtown loop", "Crosstown circuit", "City perimeter"}
 local function item(label, callback) return {label, callback} end
 local terrainRecordNotice = "Terrain lap records last for this play session only."
 local buildingMeshSlots = {"City Wall Mesh", "City Window Mesh", "City Entrance Mesh", "City Corner Mesh", "City Roof Mesh"}
+-- Appended preset IDs match CityBuildingStyles.hpp and remain stable in saved scenes.
+local maximumBuildingStyle = 9
 local function streetDetail(p, default)
     return math.max(0, math.min(100, p:getPropertyAsInt("City Street Detail", default)))
 end
@@ -335,7 +337,7 @@ function RacingGameOpenCity:setProperties(parameters)
     if p:hasProperty("City Terrain Roads") then self.cityTerrainRoads = p:getPropertyAsBool("City Terrain Roads", self.cityTerrainRoads) end
     if p:hasProperty("City Street Detail") then self.cityStreetDetail = streetDetail(p, self.cityStreetDetail) end
     if p:hasProperty("City Building Style") then
-        self.cityBuildingStyle = math.max(0, math.min(3, p:getPropertyAsInt("City Building Style", self.cityBuildingStyle)))
+        self.cityBuildingStyle = math.max(0, math.min(maximumBuildingStyle, p:getPropertyAsInt("City Building Style", self.cityBuildingStyle)))
     end
     for _, name in ipairs(buildingMeshSlots) do
         if p:hasProperty(name) then self.cityBuildingMeshes[name] = p:getPropertyAsString(name) or "" end

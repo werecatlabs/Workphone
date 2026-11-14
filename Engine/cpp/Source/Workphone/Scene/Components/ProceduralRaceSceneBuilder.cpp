@@ -1,5 +1,6 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Scene/Components/ProceduralRaceScene.hpp>
+#include <Workphone/Scene/Components/CityBuildingStyles.hpp>
 #include <Workphone/Scene/Components/Terrain/FoliagePlantGenerator.hpp>
 #include <Workphone/Workphone.hpp>
 #include <Workphone/Interface/Mesh/IMeshResource.hpp>
@@ -2663,6 +2664,8 @@ namespace workphone::scene::race
             {
                 fittedRoute = prepareTerrainCity( assets, city, vehicle, seed );
             }
+            const auto buildingCount = std::count_if( city.lots.begin(), city.lots.end(),
+                                                      []( const auto &lot ) { return !lot.park; } );
             auto app = core::IApplicationManager::instance();
             auto roads = app->getFactoryManager()->createObjectFromType<IRoadSystem>( "IRoadSystem" );
             if( !roads )
@@ -2678,11 +2681,16 @@ namespace workphone::scene::race
             }
             forge->setSeed( seed );
             SurfaceBakeParams surfaceParams;
-            surfaceParams.size = quality == VehicleAppearanceQuality::Preview ? 256 : 512;
+            // Shared tiled facade, paving and soil maps retain their world scale;
+            // only the largest cities use smaller source images. Vehicle and
+            // carriageway bakes keep their independent quality settings.
+            surfaceParams.size = quality == VehicleAppearanceQuality::Preview || buildingCount > 256 ? 256 : 512;
             SmartPtr<render::IMaterial> cityAsphalt;
             if( !assets.cityTerrainRoads )
             {
-                cityAsphalt = raceAsphalt( assets, forge, surfaceParams, seed );
+                auto asphaltParams = surfaceParams;
+                asphaltParams.size = quality == VehicleAppearanceQuality::Preview ? 256 : 512;
+                cityAsphalt = raceAsphalt( assets, forge, asphaltParams, seed );
             }
             // World projection gives segments and intersections the same physical texture scale.
             if( cityAsphalt )
@@ -2696,15 +2704,15 @@ namespace workphone::scene::race
             struct CityPatch
             {
                 Geometry walls[3], farWalls[3], glass[3], farGlass, roofs, farRoofs, frames, accents;
+                Geometry timber, tiles, farTiles;
                 Array<LODDetailBound> bounds{ Allocator<LODDetailBound>( sourceBudget ) };
             };
 
             SourceBudgetMap<std::pair<int, int>, CityPatch> patches;
-            const auto buildingCount = std::count_if( city.lots.begin(), city.lots.end(),
-                                                      []( const auto &lot ) { return !lot.park; } );
+            size_t nominalMansardSilhouettes = 0, emittedMansardSilhouettes = 0;
             CityBuildingKit kit( assets, buildingCount );
             const bool detailedBuildings = quality != VehicleAppearanceQuality::Preview;
-            const int buildingStyle = std::clamp( assets.cityBuildingStyle, 0, 3 );
+            const int buildingStyle = std::clamp( assets.cityBuildingStyle, 0, cityBuildingStyleMax );
             const auto streetDetails = OpenCityStreetDetails::generate(
                 city, seed, quality != VehicleAppearanceQuality::Preview );
             // Match the existing flat physics proxy. Preserve library topology,
@@ -2981,13 +2989,42 @@ namespace workphone::scene::race
                 const Vector3F origin( key.first * 128.f + 64, 0, key.second * 128.f + 64 );
                 auto &patch = patches[key];
                 patch.bounds.push_back(
-                    { Vector3F( lot.x, lot.groundHeight + ( lot.height + 3.f ) * .5f, lot.z ) - origin,
-                      std::max( { lot.width + .5f, lot.depth + .5f, lot.height + 3.f } ) } );
+                    { Vector3F( lot.x, lot.groundHeight + ( lot.height + 6.f ) * .5f, lot.z ) - origin,
+                      std::max( { lot.width + 2.5f, lot.depth + 2.5f, lot.height + 6.f } ) } );
                 const auto volumes = OpenCityLayout::buildingVolumes( lot );
-                const bool office = buildingStyle == 3 ||
-                                    ( buildingStyle == 0 && lot.district == OpenCityLayout::District::Commercial );
-                const bool civic = buildingStyle == 2 ||
-                                   ( buildingStyle == 0 && lot.district == OpenCityLayout::District::Civic );
+                // One stable kit per parcel, shared by every occupied tier. District mix
+                // retains neighbourhood character while varying both roofline and frontage.
+                const int residentialStyles[] = { 1, 4, 4, 5, 7, 9 };
+                const int commercialStyles[] = { 3, 3, 6, 6, 8 };
+                const int civicStyles[] = { 2, 2, 5, 8 };
+                const int style = buildingStyle ? buildingStyle
+                    : lot.district == OpenCityLayout::District::Commercial
+                        ? commercialStyles[lot.variant % 5]
+                    : lot.district == OpenCityLayout::District::Civic
+                        ? civicStyles[lot.variant % 4]
+                        : residentialStyles[lot.variant % 6];
+                const bool office = style == 3, civic = style == 2;
+                const bool terrace = style == 4, parisian = style == 5, warehouse = style == 6;
+                const bool mediterranean = style == 7, artdeco = style == 8, timber = style == 9;
+                // Fine ornaments share a fixed city-wide allowance, divided fairly
+                // before emission. Roof forms, occupied shells and glazing never
+                // depend on this optional-detail budget. Dense ten-block cities
+                // therefore cannot multiply railings or sash bars without bound.
+                size_t facadeDetailVertices = 0, roofDetailVertices = 0;
+                const size_t facadeDetailLimit = ( buildingCount > 256 ? 110000u : 220000u ) /
+                                                 std::max<size_t>( 1, buildingCount );
+                const size_t roofDetailLimit = ( buildingCount > 256 ? 50000u : 100000u ) /
+                                               std::max<size_t>( 1, buildingCount );
+                const auto admitFacadeDetail = [&]( size_t vertices ) {
+                    if( vertices > facadeDetailLimit - facadeDetailVertices ) return false;
+                    facadeDetailVertices += vertices;
+                    return true;
+                };
+                const auto admitRoofDetail = [&]( size_t vertices ) {
+                    if( vertices > roofDetailLimit - roofDetailVertices ) return false;
+                    roofDetailVertices += vertices;
+                    return true;
+                };
                 const int entranceAxis = lot.frontage == OpenCityLayout::Frontage::West ||
                                                  lot.frontage == OpenCityLayout::Frontage::East
                                              ? 1
@@ -3002,7 +3039,7 @@ namespace workphone::scene::race
                     const Vector3F centre( volume.x, volume.bottom + volume.height * .5f, volume.z );
                     const Vector3F size( volume.width, volume.height, volume.depth );
                     const bool groundFloor = volume.bottom == lot.groundHeight;
-                    const u32 family = civic   ? 1u
+                    const u32 family = civic || parisian || mediterranean || artdeco || timber ? 1u
                                        : office ? ( buildingStyle == 0 && groundFloor && lot.variant % 3 == 0 ? 1u : 2u )
                                                 : ( buildingStyle == 0 && lot.variant % 5 == 0 ? 1u : 0u );
                     auto &opaque = patch.walls[family];
@@ -3025,7 +3062,7 @@ namespace workphone::scene::race
                                      { volume.width + .12f, .12f, volume.depth + .12f } );
                     patch.farRoofs.box( { cx, top + .06f, cz },
                                         { volume.width + .12f, .12f, volume.depth + .12f } );
-                    const float nominalFloor = office ? 3.6f : civic ? 3.5f : 3.2f;
+                    const float nominalFloor = warehouse ? 4.1f : office ? 3.6f : civic || parisian ? 3.5f : 3.2f;
                     const int floors = std::max( 1, int( std::round( volume.height / nominalFloor ) ) );
                     const float floorHeight = volume.height / floors;
                     for( int axis : { entranceAxis, 1 - entranceAxis } )
@@ -3033,8 +3070,8 @@ namespace workphone::scene::race
                         for( int sign : { entranceSign, -entranceSign } )
                         {
                             const float span = axis ? volume.depth : volume.width;
-                            const bool entrance =
-                                groundFloor && axis == entranceAxis && sign == entranceSign;
+                            const bool streetFace = axis == entranceAxis && sign == entranceSign;
+                            const bool entrance = groundFloor && streetFace;
                             const Vector3F normal( axis ? float( sign ) : 0, 0,
                                                    axis ? 0 : float( sign ) );
                             const Vector3F along( axis ? 0 : 1, 0, axis ? 1 : 0 );
@@ -3092,17 +3129,30 @@ namespace workphone::scene::race
                                        axis ? Vector3F( thickness, height, width )
                                             : Vector3F( width, height, thickness ) );
                             };
-                            const float desiredBay = office  ? 3.8f
+                            const float desiredBay = terrace || parisian || timber ? 4.2f
+                                                     : warehouse ? 4.2f
+                                                     : artdeco ? 4.2f
+                                                     : office ? 3.8f
                                                      : civic ? 4.6f
                                                              : 4.4f + ( lot.variant % 3 ) * .45f;
-                            const int bays = std::max( 1, int( std::floor( span / desiredBay ) ) );
+                            const int nominalBays = std::max( 1, int( std::floor( span / desiredBay ) ) );
+                            const bool denseFacade = !office && buildingCount > 128;
+                            const float density = denseFacade ? 128.f / float( buildingCount ) : 1.f;
+                            // Preserve the six-block frontage exactly. Larger cities use
+                            // fewer, normally sized apertures, with priority given to the
+                            // street elevation. Storey heights and roof forms stay intact.
+                            const int bays = denseFacade
+                                ? std::max( 1, int( std::floor( nominalBays * ( streetFace ? std::sqrt( density ) : density ) ) ) )
+                                : nominalBays;
                             const float bayWidth = span / bays;
+                            const float windowBayWidth = denseFacade ? span / nominalBays : bayWidth;
                             for( int floor = 0; floor < floors; ++floor )
                             {
                                 const float y0 = volume.bottom + floor * floorHeight;
                                 const float y1 = floor + 1 == floors ? top : y0 + floorHeight;
                                 const bool retail = entrance && floor == 0 &&
-                                                    ( office || civic || lot.variant % 3 != 0 );
+                                                    ( office || civic || warehouse || parisian || artdeco ||
+                                                      ( !terrace && !timber && !mediterranean && lot.variant % 3 != 0 ) );
                                 const float low = y0 + ( retail ? .28f : office ? .62f : .78f );
                                 const float high = y1 - ( retail ? .42f : office ? .48f : .62f );
                                 auto &glass =
@@ -3209,11 +3259,14 @@ namespace workphone::scene::race
                                                     s1 = s0 + bayWidth;
                                         const float s = ( s0 + s1 ) * .5f;
                                         const bool door = entrance && floor == 0 && bay == bays / 2;
-                                        const float ratio = retail  ? .79f
+                                        const float ratio = warehouse ? .74f
+                                                            : artdeco ? .52f
+                                                            : timber ? .50f
+                                                            : retail ? .79f
                                                             : civic ? .56f
                                                                     : .48f + ( lot.variant % 3 ) * .05f;
                                         const float width =
-                                            door ? std::min( 2.05f, bayWidth * .72f ) : bayWidth * ratio;
+                                            door ? std::min( 2.05f, bayWidth * .72f ) : windowBayWidth * ratio;
                                         const float left = s - width * .5f, right = s + width * .5f;
                                         const float bottom = door ? y0 + .16f : low;
                                         const float head =
@@ -3229,7 +3282,10 @@ namespace workphone::scene::race
                                             door ? patch.accents : patch.frames, left, bottom, right, head,
                                             depth * .45f, depth );
                                         entranceModule |= door && hasModule;
-                                        if( !door || !hasModule )
+                                        const bool bayWindow = terrace && streetFace && !door && !hasModule &&
+                                                               floor < 2 && ( bay + lot.variant ) % 2 == 0 &&
+                                                               admitFacadeDetail( 132 );
+                                        if( ( !door || !hasModule ) && !bayWindow )
                                             panel( glass, left, bottom, right, head, depth );
                                         if( !hasModule )
                                         {
@@ -3244,7 +3300,103 @@ namespace workphone::scene::race
                                             faceBox( patch.frames, s, bottom - .035f, width + .18f, .07f,
                                                      .05f, .20f );
                                         }
+                                        if( detailedBuildings && !hasModule && !door )
+                                        {
+                                            if( bayWindow )
+                                            {
+                                                // Three glazed faces form a shallow oriel. The
+                                                // occupied wall aperture remains open behind it.
+                                                const float projection = .42f, shoulder = width * .12f;
+                                                panel( glass, left + shoulder, bottom, right - shoulder, head, -projection );
+                                                glass.quad( point( left, bottom, 0 ), point( left + shoulder, bottom, -projection ),
+                                                            point( left + shoulder, head, -projection ), point( left, head, 0 ),
+                                                            ( normal * shoulder - along * projection ).normaliseCopy() );
+                                                glass.quad( point( right - shoulder, bottom, -projection ), point( right, bottom, 0 ),
+                                                            point( right, head, 0 ), point( right - shoulder, head, -projection ),
+                                                            ( normal * shoulder + along * projection ).normaliseCopy() );
+                                                for( float jamb : { left + shoulder, s, right - shoulder } )
+                                                    faceBox( patch.frames, jamb, ( bottom + head ) * .5f, .055f,
+                                                             head - bottom, projection + .015f, .065f );
+                                                faceBox( patch.frames, s, bottom - .075f, width + .12f, .15f, projection * .5f, projection + .14f );
+                                                faceBox( patch.frames, s, head + .06f, width + .14f, .12f, projection * .5f, projection + .16f );
+                                            }
+                                            if( warehouse && admitFacadeDetail( 120 ) )
+                                            {
+                                                // Tall steel factory sash with an actual multi-pane grid.
+                                                for( int pane = 1; pane < 3; ++pane )
+                                                    faceBox( patch.accents, left + width * pane / 3.f,
+                                                             ( bottom + head ) * .5f, .045f, head - bottom,
+                                                             -depth + .035f, .055f );
+                                                for( int pane = 1; pane < 3; ++pane )
+                                                    faceBox( patch.accents, s, bottom + ( head - bottom ) * pane / 3.f,
+                                                             width, .045f, -depth + .035f, .055f );
+                                                faceBox( patch.frames, s, head + .07f, width + .22f, .14f, .06f, .20f );
+                                            }
+                                            if( mediterranean && admitFacadeDetail( 240 ) )
+                                            {
+                                                const float shutter = std::min( .48f, ( bayWidth - width ) * .34f );
+                                                for( float side : { -1.f, 1.f } )
+                                                {
+                                                    const float shutterS = s + side * ( width * .5f + shutter * .55f + .05f );
+                                                    faceBox( patch.accents, shutterS, ( bottom + head ) * .5f,
+                                                             shutter, head - bottom, .07f, .08f );
+                                                    for( int slat = 1; slat <= 4; ++slat )
+                                                        faceBox( patch.timber, shutterS, bottom + ( head - bottom ) * slat / 5.f,
+                                                                 shutter * .86f, .045f, .12f, .035f );
+                                                }
+                                            }
+                                            if( ( parisian || mediterranean ) && streetFace && floor > 0 &&
+                                                ( parisian ? floor == 1 || floor + 1 == floors
+                                                           : ( bay + floor + lot.variant ) % 3 == 0 ) &&
+                                                admitFacadeDetail( 216 ) )
+                                            {
+                                                // Balconettes alternate with deeper slabs; rail spacing
+                                                // stays capped independently of parcel dimensions.
+                                                const float balconyWidth = width + .42f;
+                                                const float projection = parisian ? .46f : .60f;
+                                                faceBox( patch.frames, s, bottom - .16f, balconyWidth, .14f,
+                                                         projection * .5f, projection + .12f );
+                                                faceBox( patch.accents, s, bottom + .65f, balconyWidth, .055f,
+                                                         projection, .055f );
+                                                for( int rail = 0; rail <= 4; ++rail )
+                                                    faceBox( patch.accents, s + balconyWidth * ( rail / 4.f - .5f ),
+                                                             bottom + .25f, .035f, .80f, projection, .035f );
+                                                for( float side : { -1.f, 1.f } )
+                                                    faceBox( patch.accents, s + side * balconyWidth * .5f, bottom + .65f,
+                                                             .045f, .055f, projection * .5f, projection );
+                                            }
+                                        }
                                     }
+                                }
+                                if( detailedBuildings && ( warehouse || artdeco || timber ) )
+                                {
+                                    for( int bay = 0; bay <= bays; ++bay )
+                                    {
+                                        const float s = std::clamp( -span * .5f + bay * bayWidth,
+                                                                    -span * .5f + .16f, span * .5f - .16f );
+                                        if( timber )
+                                        {
+                                            if( floor == 0 && admitFacadeDetail( 24 ) )
+                                                faceBox( patch.timber, s, volume.bottom + volume.height * .5f, .15f,
+                                                         volume.height, .065f, .16f );
+                                            if( bay < bays && floor > 0 && admitFacadeDetail( 24 ) )
+                                                patch.timber.beam( point( s + .16f, y0 + .14f, -.10f ),
+                                                                    point( s + std::min( bayWidth * .28f, .9f ), low - .08f, -.10f ), .05f );
+                                        }
+                                        else if( warehouse && floor == 0 && admitFacadeDetail( 48 ) )
+                                        {
+                                            faceBox( opaque, s, volume.bottom + volume.height * .5f, .32f, volume.height, .11f, .24f );
+                                            faceBox( patch.frames, s, top - .12f, .46f, .16f, .12f, .28f );
+                                        }
+                                        else if( artdeco && floor == 0 && admitFacadeDetail( 72 ) )
+                                        {
+                                            for( int flute = -1; flute <= 1; ++flute )
+                                                faceBox( patch.frames, s + flute * .095f, volume.bottom + volume.height * .5f,
+                                                         .055f, volume.height, .13f + ( flute == 0 ? .04f : 0 ), .13f );
+                                        }
+                                    }
+                                    if( timber && admitFacadeDetail( 24 ) )
+                                        faceBox( patch.timber, 0, y1 - .10f, span, .20f, .055f, .16f );
                                 }
                                 if( entrance && floor == 0 && !entranceModule )
                                 {
@@ -3266,10 +3418,19 @@ namespace workphone::scene::race
                                     faceBox( patch.frames, doorS + .16f, y0 + 1.3f, .025f, .40f,
                                              -depth + .015f, .025f );
                                     const float canopyWidth =
-                                        std::min( span * .60f, civic ? 11.f : 7.f );
-                                    const float canopyDepth = civic ? 1.05f : .70f;
-                                    faceBox( patch.accents, doorS, y1 - .08f, canopyWidth, .16f,
-                                             canopyDepth * .5f, canopyDepth );
+                                        std::min( span * .60f, civic ? 11.f : terrace || timber ? 3.2f : 7.f );
+                                    const float canopyDepth = civic ? 1.05f : timber ? .95f : .70f;
+                                    if( mediterranean && admitFacadeDetail( 168 ) )
+                                    {
+                                        for( int rafter = 0; rafter <= 5; ++rafter )
+                                            faceBox( patch.timber, doorS + canopyWidth * ( rafter / 5.f - .5f ),
+                                                     y1 - .08f, .10f, .14f, canopyDepth * .5f, canopyDepth );
+                                        faceBox( patch.timber, doorS, y1 - .18f, canopyWidth + .16f, .16f,
+                                                 canopyDepth * .82f, .13f );
+                                    }
+                                    else
+                                        faceBox( timber ? patch.timber : patch.accents, doorS, y1 - .08f, canopyWidth, .16f,
+                                                 canopyDepth * .5f, canopyDepth );
                                     faceBox( patch.frames, doorS, y1 + .10f, canopyWidth * .82f, .20f,
                                              .045f, .10f );
                                     if( civic )
@@ -3287,6 +3448,32 @@ namespace workphone::scene::race
                                                      .46f );
                                         }
                                     }
+                                    if( ( artdeco || warehouse || terrace || timber ) &&
+                                        admitFacadeDetail( artdeco ? 192 : warehouse ? 168 : terrace ? 72 : 48 ) )
+                                    {
+                                        for( float side : { -1.f, 1.f } )
+                                        {
+                                            const float jamb = doorS + side * ( doorHalfWidth + .18f );
+                                            faceBox( timber ? patch.timber : patch.frames, jamb,
+                                                     ( y0 + head ) * .5f, timber ? .17f : .23f,
+                                                     head - y0, .13f, .24f );
+                                            if( artdeco )
+                                            {
+                                                for( int step = 0; step < 3; ++step )
+                                                    faceBox( patch.frames, jamb + side * step * .18f,
+                                                             y0 + ( head - y0 + .55f - step * .20f ) * .5f,
+                                                             .10f, head - y0 + .55f - step * .20f,
+                                                             .22f - step * .035f, .16f );
+                                            }
+                                        }
+                                        if( warehouse )
+                                            for( int rib = 0; rib < 5; ++rib )
+                                                faceBox( patch.accents, doorS, y0 + .42f + rib * .39f,
+                                                         doorHalfWidth * 1.8f, .055f, -depth + .025f, .045f );
+                                        if( terrace )
+                                            faceBox( patch.frames, doorS, head + .13f, doorHalfWidth * 2 + .68f,
+                                                     .20f, .15f, .34f );
+                                    }
                                 }
                             }
                             if( detailedBuildings && ( !office || entrance ) )
@@ -3298,6 +3485,16 @@ namespace workphone::scene::race
                                 if( courseY < top - .08f )
                                 {
                                     faceBox( patch.frames, 0, courseY, span + .08f, .13f, .075f, .17f );
+                                }
+                                if( parisian && admitFacadeDetail( floors > 1 ? 96 : 72 ) )
+                                {
+                                    for( int course = 0; course < 3; ++course )
+                                        faceBox( patch.frames, 0, top - .35f + course * .12f,
+                                                 span + .10f + course * .09f, .10f,
+                                                 .08f + course * .04f, .22f + course * .08f );
+                                    if( floors > 1 )
+                                        faceBox( patch.frames, 0, volume.bottom + floorHeight + .10f,
+                                                 span + .14f, .20f, .08f, .24f );
                                 }
                             }
                         }
@@ -3342,19 +3539,149 @@ namespace workphone::scene::race
                     const bool replacedRoof = kit.append( CityBuildingPart::Roof, moduleRoof,
                                                           { cx, deck + 1.25f, cz },
                                                           { size.x, 2.5f, size.z }, 0 );
-                    const bool hipped = !office && !civic &&
-                                        ( buildingStyle == 1 || lot.variant % 5 < 2 );
-                    const bool lantern = civic ||
-                                         ( buildingStyle == 0 && office && lot.variant % 4 == 1 );
-                    const bool longX = size.x >= size.z;
+                    const bool hipped = style == 1 || mediterranean;
+                    const bool gabled = terrace || timber;
+                    const bool lantern = civic || ( office && lot.variant % 4 == 1 );
+                    // Timber houses present their gable to the street. Other pitched
+                    // roofs keep a ridge along the longer occupied dimension.
+                    const bool longX = timber ? entranceAxis == 1 : size.x >= size.z;
                     const auto roofPoint = [&]( float u, float y, float v ) {
                         return longX ? Vector3F( cx + u, deck + y, cz + v )
                                      : Vector3F( cx + v, deck + y, cz + u );
                     };
                     const float halfLong = ( longX ? size.x : size.z ) * .5f;
                     const float halfShort = ( longX ? size.z : size.x ) * .5f;
-                    const float rise = std::clamp( halfShort * .31f, .9f, 2.5f );
+                    const float rise = parisian ? 2.65f
+                        : timber ? std::clamp( halfShort * .55f, 1.8f, 3.8f )
+                        : terrace ? std::clamp( halfShort * .43f, 1.5f, 3.0f )
+                        : std::clamp( halfShort * .31f, .9f, 2.5f );
+                    const auto roofBox = [&]( Geometry &g, float u, float y, float v,
+                                              float width, float height, float depth ) {
+                        g.box( roofPoint( u, y, v ), longX ? Vector3F( width, height, depth )
+                                                                         : Vector3F( depth, height, width ) );
+                    };
+                    const auto slope = [&]( Geometry &g, Vector3F a, Vector3F b,
+                                            Vector3F c, Vector3F d ) {
+                        auto normal = ( b - a ).crossProduct( d - a ).normaliseCopy();
+                        g.quad( a, b, c, d, normal.y < 0 ? -normal : normal );
+                    };
+                    const int roofBays = std::clamp( int( halfLong * 2 / 4.2f ), 2, 6 );
+                    const int longRoofDormers = std::clamp( int( ( halfLong * 2 - 3.f ) / 3.2f ), 1, 6 );
+                    const int endRoofBays = std::clamp( int( ( halfShort * 2 - 3.f ) / 3.2f ), 1, 4 );
+                    const int sawTeeth = std::clamp( int( halfShort * 2 / 4.f ), 2, 4 );
+                    const auto mansardDormers = [&]( auto visit, bool countSilhouettes = false ) {
+                        const bool frontageEnd = entranceAxis == ( longX ? 1 : 0 );
+                        // Visit the actual street frontage first so the finite raised
+                        // sash budget is useful even when the street meets a short end.
+                        for( bool endFace : { frontageEnd, !frontageEnd } )
+                        {
+                            const int nominalCount = endFace ? endRoofBays : longRoofDormers;
+                            const float available = std::max( 0.f, ( endFace ? halfShort : halfLong ) - 1.5f );
+                            for( float side : { float( entranceSign ), float( -entranceSign ) } )
+                            {
+                                const bool streetFace = endFace == frontageEnd && side == float( entranceSign );
+                                const int minimum = std::min( nominalCount, streetFace ? 2 : 1 );
+                                const int count = buildingCount > 128
+                                    ? std::clamp( int( std::floor( nominalCount * ( 128.f / float( buildingCount ) ) ) ),
+                                                  minimum, nominalCount ) : nominalCount;
+                                if( countSilhouettes )
+                                {
+                                    nominalMansardSilhouettes += nominalCount;
+                                    emittedMansardSilhouettes += count;
+                                }
+                                for( int bay = 0; bay < count; ++bay )
+                                    visit( endFace, ( bay + .5f ) * ( 2 * available / count ) - available, side );
+                            }
+                        }
+                    };
+                    const auto dormerPoint = [&]( bool endFace, float along, float y, float side, float inset ) {
+                        return endFace ? roofPoint( side * ( halfLong - inset ), y, along )
+                                       : roofPoint( along, y, side * ( halfShort - inset ) );
+                    };
+                    const auto dormerBox = [&]( Geometry &g, bool endFace, float along, float y, float side,
+                                               float inset, float width, float height, float depth ) {
+                        if( endFace )
+                            roofBox( g, side * ( halfLong - inset ), y, along, depth, height, width );
+                        else
+                            roofBox( g, along, y, side * ( halfShort - inset ), width, height, depth );
+                    };
                     const auto roofSilhouette = [&]( Geometry &roof ) {
+                        if( parisian )
+                        {
+                            // A steep lower skirt and a shallow capped upper deck give a
+                            // mansard an unmistakable silhouette at both render distances.
+                            const float inset = std::min( 1.35f, halfShort * .28f );
+                            for( float side : { -1.f, 1.f } )
+                            {
+                                slope( roof, roofPoint( -halfLong, 0, side * halfShort ),
+                                       roofPoint( halfLong, 0, side * halfShort ),
+                                       roofPoint( halfLong - inset, rise, side * ( halfShort - inset ) ),
+                                       roofPoint( -halfLong + inset, rise, side * ( halfShort - inset ) ) );
+                                slope( roof, roofPoint( side * halfLong, 0, -halfShort ),
+                                       roofPoint( side * halfLong, 0, halfShort ),
+                                       roofPoint( side * ( halfLong - inset ), rise, halfShort - inset ),
+                                       roofPoint( side * ( halfLong - inset ), rise, -halfShort + inset ) );
+                            }
+                            mansardDormers( [&]( bool endFace, float along, float side ) {
+                                dormerBox( roof, endFace, along, 1.18f, side, .43f, 1.26f, 1.66f, .76f );
+                                dormerBox( roof, endFace, along, 2.07f, side, .43f, 1.44f, .12f, .92f );
+                            }, true );
+                            roofBox( roof, 0, rise + .04f, 0, ( halfLong - inset ) * 2,
+                                     .08f, ( halfShort - inset ) * 2 );
+                            return;
+                        }
+                        if( warehouse )
+                        {
+                            const float toothWidth = 2 * halfShort / sawTeeth;
+                            for( int tooth = 0; tooth < sawTeeth; ++tooth )
+                            {
+                                const float v0 = -halfShort + tooth * toothWidth, v1 = v0 + toothWidth;
+                                slope( roof, roofPoint( -halfLong, .08f, v0 ), roofPoint( halfLong, .08f, v0 ),
+                                       roofPoint( halfLong, 1.45f, v1 ), roofPoint( -halfLong, 1.45f, v1 ) );
+                                const Vector3F faceNormal = longX ? Vector3F( 0, 0, 1 ) : Vector3F( 1, 0, 0 );
+                                roof.quad( roofPoint( -halfLong, .08f, v1 ), roofPoint( halfLong, .08f, v1 ),
+                                           roofPoint( halfLong, 1.45f, v1 ), roofPoint( -halfLong, 1.45f, v1 ), faceNormal );
+                                for( float side : { -1.f, 1.f } )
+                                {
+                                    const auto a = roofPoint( side * halfLong, .08f, v0 );
+                                    const auto b = roofPoint( side * halfLong, .08f, v1 );
+                                    const auto c = roofPoint( side * halfLong, 1.45f, v1 );
+                                    roof.quad( ( a + b ) * .5f, b, c, a,
+                                               longX ? Vector3F( side, 0, 0 ) : Vector3F( 0, 0, side ) );
+                                }
+                            }
+                            return;
+                        }
+                        if( artdeco )
+                        {
+                            float bottom = 0;
+                            for( int step = 0; step < 3; ++step )
+                            {
+                                const float fraction = .78f - step * .20f;
+                                const float height = .85f + step * .10f;
+                                roof.box( { cx, deck + bottom + height * .5f, cz },
+                                          { size.x * fraction, height, size.z * fraction } );
+                                roof.box( { cx, deck + bottom + height + .04f, cz },
+                                          { size.x * fraction + .14f, .08f, size.z * fraction + .14f } );
+                                bottom += height;
+                            }
+                            return;
+                        }
+                        if( gabled )
+                        {
+                            for( float side : { -1.f, 1.f } )
+                            {
+                                slope( roof, roofPoint( -halfLong, 0, side * halfShort ),
+                                       roofPoint( halfLong, 0, side * halfShort ),
+                                       roofPoint( halfLong, rise, 0 ), roofPoint( -halfLong, rise, 0 ) );
+                                const auto a = roofPoint( side * halfLong, 0, -halfShort );
+                                const auto b = roofPoint( side * halfLong, 0, halfShort );
+                                const auto c = roofPoint( side * halfLong, rise, 0 );
+                                roof.quad( ( a + b ) * .5f, b, c, a,
+                                           longX ? Vector3F( side, 0, 0 ) : Vector3F( 0, 0, side ) );
+                            }
+                            return;
+                        }
                         if( hipped )
                         {
                             const float ridge = std::max( .1f, halfLong - halfShort * .75f );
@@ -3398,22 +3725,120 @@ namespace workphone::scene::race
                     };
                     if( detailedBuildings && !replacedRoof )
                     {
-                        roofSilhouette( patch.roofs );
+                        roofSilhouette( mediterranean ? patch.tiles : artdeco ? patch.walls[family] : patch.roofs );
                     }
                     if( detailedBuildings || !replacedRoof )
                     {
-                        roofSilhouette( patch.farRoofs );
+                        roofSilhouette( mediterranean ? patch.farTiles : artdeco ? patch.farWalls[family] : patch.farRoofs );
                     }
                     if( !detailedBuildings || replacedRoof )
                     {
                         continue;
                     }
-                    if( hipped )
+                    if( parisian )
+                    {
+                        mansardDormers( [&]( bool endFace, float along, float side ) {
+                            // Every elevation has glazing. Only the optional raised
+                            // sash consumes the existing per-building trim allowance.
+                            const Vector3F normal = endFace == longX ? Vector3F( side, 0, 0 )
+                                                                                    : Vector3F( 0, 0, side );
+                            patch.glass[1].quad( dormerPoint( endFace, along - .46f, .62f, side, .035f ),
+                                                 dormerPoint( endFace, along + .46f, .62f, side, .035f ),
+                                                 dormerPoint( endFace, along + .46f, 1.82f, side, .035f ),
+                                                 dormerPoint( endFace, along - .46f, 1.82f, side, .035f ), normal );
+                            if( !admitRoofDetail( 120 ) ) return;
+                            dormerBox( patch.frames, endFace, along, .59f, side, .035f, 1.12f, .10f, .12f );
+                            dormerBox( patch.frames, endFace, along, 1.85f, side, .035f, 1.14f, .10f, .12f );
+                            for( float jamb : { -.5f, 0.f, .5f } )
+                                dormerBox( patch.frames, endFace, along + jamb, 1.22f, side, .015f, .065f, 1.30f, .07f );
+                        } );
+                    }
+                    else if( warehouse )
+                    {
+                        const float toothWidth = 2 * halfShort / sawTeeth;
+                        for( int tooth = 1; tooth <= sawTeeth; ++tooth )
+                        {
+                            const float v = -halfShort + tooth * toothWidth + .018f;
+                            patch.glass[1].quad( roofPoint( -halfLong + .12f, .31f, v ), roofPoint( halfLong - .12f, .31f, v ),
+                                                 roofPoint( halfLong - .12f, 1.35f, v ), roofPoint( -halfLong + .12f, 1.35f, v ),
+                                                 longX ? Vector3F( 0, 0, 1 ) : Vector3F( 1, 0, 0 ) );
+                            if( !admitRoofDetail( 24 * ( roofBays + 2 ) ) ) continue;
+                            roofBox( patch.frames, 0, 1.44f, v, halfLong * 2 + .06f, .08f, .12f );
+                            for( int post = 0; post <= roofBays; ++post )
+                                roofBox( patch.accents, -halfLong + .14f + post * ( 2 * halfLong - .28f ) / roofBays,
+                                         .82f, v + .025f, .055f, 1.12f, .065f );
+                        }
+                    }
+                    else if( artdeco )
+                    {
+                        if( !admitRoofDetail( 240 ) ) continue;
+                        for( int flute = -2; flute <= 2; ++flute )
+                        {
+                            const float height = 3.08f - std::abs( flute ) * .20f;
+                            for( float side : { -1.f, 1.f } )
+                                patch.frames.box( { cx + flute * .24f, deck + height * .5f,
+                                                     cz + side * ( size.z * .39f + .03f ) },
+                                                   { .10f, height, .10f } );
+                        }
+                    }
+                    else if( gabled )
+                    {
+                        for( float side : { -1.f, 1.f } )
+                        {
+                            const float u = side * ( halfLong + .015f );
+                            const auto a = roofPoint( u, 0, -halfShort ), b = roofPoint( u, 0, halfShort ),
+                                       c = roofPoint( u, rise, 0 );
+                            opaque.quad( ( a + b ) * .5f, b, c, a,
+                                         longX ? Vector3F( side, 0, 0 ) : Vector3F( 0, 0, side ) );
+                            if( !admitRoofDetail( timber ? 144 : 48 ) ) continue;
+                            auto &verge = timber ? patch.timber : patch.frames;
+                            verge.beam( a, c, timber ? .09f : .075f );
+                            verge.beam( b, c, timber ? .09f : .075f );
+                            if( timber )
+                            {
+                                verge.beam( roofPoint( u + side * .02f, .04f, 0 ),
+                                            roofPoint( u + side * .02f, rise, 0 ), .07f );
+                                verge.beam( a, b, .08f );
+                                for( float brace : { -.5f, .5f } )
+                                    verge.beam( roofPoint( u + side * .02f, .08f, brace * halfShort ),
+                                                roofPoint( u + side * .02f, rise * .48f, 0 ), .055f );
+                            }
+                        }
+                        const int chimneys = terrace ? std::clamp( roofBays / 2, 1, 3 ) : 1;
+                        for( int chimney = 0; chimney < chimneys; ++chimney )
+                        {
+                            if( !admitRoofDetail( 96 ) ) break;
+                            const float u = ( chimney + .5f ) * ( 2 * halfLong / chimneys ) - halfLong;
+                            roofBox( opaque, u, rise + .45f, 0, .62f, 1.05f, .72f );
+                            roofBox( patch.frames, u, rise + .96f, 0, .78f, .14f, .86f );
+                            for( float pot : { -.16f, .16f } )
+                                roofBox( patch.tiles, u + pot, rise + 1.14f, 0, .16f, .26f, .18f );
+                        }
+                    }
+                    else if( hipped )
                     {
                         const float u = halfLong * ( lot.variant % 2 ? .34f : -.34f );
                         const auto base = roofPoint( u, rise * .63f, halfShort * .20f );
                         patch.walls[family].box( base + Vector3F( 0, .53f, 0 ), { .54f, 1.24f, .61f } );
                         patch.frames.box( base + Vector3F( 0, 1.16f, 0 ), { .66f, .12f, .72f } );
+                        if( mediterranean && admitRoofDetail( 408 ) )
+                        {
+                            const float ridge = std::max( .1f, halfLong - halfShort * .75f );
+                            patch.tiles.beam( roofPoint( -ridge, rise + .045f, 0 ),
+                                              roofPoint( ridge, rise + .045f, 0 ), .085f );
+                            // Bounded raised tile courses catch grazing light without
+                            // allocating one mesh or actor for each roof tile.
+                            for( float side : { -1.f, 1.f } )
+                            {
+                                for( int course = 1; course <= 8; ++course )
+                                {
+                                    const float t = course / 9.f;
+                                    const float u = ridge + ( halfLong - ridge ) * t;
+                                    const float y = rise * ( 1 - t ) + .035f, v = side * halfShort * t;
+                                    patch.tiles.beam( roofPoint( -u, y, v ), roofPoint( u, y, v ), .035f );
+                                }
+                            }
+                        }
                     }
                     else if( lantern )
                     {
@@ -3451,6 +3876,14 @@ namespace workphone::scene::race
                         }
                     }
                 }
+            }
+            if( nominalMansardSilhouettes != emittedMansardSilhouettes )
+            {
+                WP_LOG( String( "City mansard density: buildings=" ) + StringUtil::toString( u64( buildingCount ) ) +
+                        " emitted/nominal dormers across LODs=" + StringUtil::toString( u64( emittedMansardSilhouettes ) ) +
+                        "/" + StringUtil::toString( u64( nominalMansardSilhouettes ) ) +
+                        " silhouette triangles avoided=" +
+                        StringUtil::toString( u64( nominalMansardSilhouettes - emittedMansardSilhouettes ) * 24 ) );
             }
             kit.finish();
             // Contain exploration within the shared collision plane.
@@ -3553,12 +3986,14 @@ namespace workphone::scene::race
             const auto roofMaterial = material( assets, { .18f, .21f, .23f, 1 }, .78f );
             const auto frameMaterial = material( assets, { .68f, .67f, .61f, 1 }, .8f );
             const auto accentMaterial = material( assets, { .18f, .28f, .30f, 1 }, .55f );
+            const auto timberMaterial = material( assets, { .24f, .15f, .085f, 1 }, .83f );
+            const auto tileMaterial = material( assets, { .57f, .24f, .13f, 1 }, .82f );
             const std::array<SmartPtr<render::IMaterial>, 3> glassMaterials = {
                 material( assets, { .12f, .18f, .23f, 1 }, .12f, 0 ),
                 material( assets, { .18f, .23f, .27f, 1 }, .22f, 0 ),
                 material( assets, { .36f, .40f, .41f, 1 }, .52f, 0 )
             };
-            for( const auto &[key, patch] : patches )
+            for( auto &[key, patch] : patches )
             {
                 reserveOwnerSlot( assets.actors );
                 auto root = app->getGameManager()->createActor();
@@ -3572,12 +4007,16 @@ namespace workphone::scene::race
                 app->getGameManager()->getCurrentScene()->addActor( root );
                 auto nearRenderers = makeSourceBudgetSnapshot<SmartPtr<scene::Renderer>>();
                 auto farRenderers = makeSourceBudgetSnapshot<SmartPtr<scene::Renderer>>();
-                const auto add = [&]( const String &name, const Geometry &geometry,
+                const auto add = [&]( const String &name, Geometry &geometry,
                                       SmartPtr<render::IMaterial> surface, auto &renderers ) {
                     if( auto actor = mesh( assets, name, geometry, surface, root ) )
                     {
                         renderers.push_back( actor->getComponent<scene::MeshRenderer>() );
                     }
+                    // MeshUtil owns a packed copy now. Release grown staging arrays
+                    // before publishing the next patch instead of doubling all city
+                    // vertex/index storage until the end of this function.
+                    geometry = Geometry{};
                 };
                 if( quality != VehicleAppearanceQuality::Preview )
                 {
@@ -3593,12 +4032,15 @@ namespace workphone::scene::race
                     add( "LOD0 city roof detail", patch.roofs, roofMaterial, nearRenderers );
                     add( "LOD0 city facade frames", patch.frames, frameMaterial, nearRenderers );
                     add( "LOD0 city entrance fascia", patch.accents, accentMaterial, nearRenderers );
+                    add( "LOD0 city timber details", patch.timber, timberMaterial, nearRenderers );
+                    add( "LOD0 city terracotta roofs", patch.tiles, tileMaterial, nearRenderers );
                 }
                 for( int family = 0; family < 3; ++family )
                 {
                     add( "LOD1 city massing", patch.farWalls[family], facades[family], farRenderers );
                 }
                 add( "LOD1 city roof silhouette", patch.farRoofs, roofMaterial, farRenderers );
+                add( "LOD1 city terracotta silhouette", patch.farTiles, tileMaterial, farRenderers );
                 add( "LOD1 city glazing ribbons", patch.farGlass, glassMaterials[0], farRenderers );
                 auto lod = root->addComponent<scene::LODGroup>();
                 lod->setSize( 128 );

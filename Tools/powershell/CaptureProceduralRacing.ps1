@@ -11,7 +11,7 @@ param(
     [ValidateSet('grid', 'lsystem')][string]$CityLayout = 'grid',
     [ValidatePattern('^\d+x\d+$')][string]$Resolution = '1280x720',
     [ValidateRange(0.1, 3600)][double]$Seconds = 10,
-    [ValidateSet('follow', 'car', 'track', 'corner', 'street', 'boulevard', 'frontage', 'facade')][string[]]$Views = @('car', 'track', 'corner', 'follow'),
+    [ValidateSet('follow', 'car', 'track', 'corner', 'street', 'boulevard', 'frontage', 'facade', 'building')][string[]]$Views = @('car', 'track', 'corner', 'follow'),
     [string]$Replay,
     [switch]$NoEffects,
     [switch]$FoliageWorld,
@@ -20,7 +20,7 @@ param(
     [switch]$ExportMaterials,
     [ValidateRange(30, 7200)][int]$TimeoutSeconds = 600,
     [ValidateRange(0, 100)][int]$CityStreetDetail = 100,
-    [ValidateSet('district', 'masonry', 'civic', 'modern')][string]$CityBuildingStyle,
+    [ValidateSet('district', 'masonry', 'civic', 'modern', 'terrace', 'parisian', 'warehouse', 'mediterranean', 'artdeco', 'timber')][string]$CityBuildingStyle,
     [hashtable]$CityBuildingMeshes = @{}
 )
 $ErrorActionPreference = 'Stop'
@@ -29,8 +29,8 @@ if ($RoadAuthoringShowcase) { $Scene = 'city' }
 if ($CityTerrainRoads) { $Scene = 'city' }
 if ($streetDetailExplicit -and !$CityTerrainRoads) { throw '-CityStreetDetail requires -CityTerrainRoads.' }
 if ($Views -contains 'frontage' -and !$CityTerrainRoads) { throw '-Views frontage requires -CityTerrainRoads.' }
-if (($CityBuildingStyle -or $CityBuildingMeshes.Count -or $Views -contains 'facade') -and
-    ($Scene -ne 'city' -or $RoadAuthoringShowcase)) { throw 'Building styles, mesh overrides, and the facade view require a generated city.' }
+if (($CityBuildingStyle -or $CityBuildingMeshes.Count -or $Views -contains 'facade' -or $Views -contains 'building') -and
+    ($Scene -ne 'city' -or $RoadAuthoringShowcase)) { throw 'Building styles, mesh overrides, and the facade/building views require a generated city.' }
 if ($RoadAuthoringShowcase -and $CityTerrainRoads) { throw 'Choose -RoadAuthoringShowcase or -CityTerrainRoads.' }
 if ($CityTerrainRoads -and $ExportMaterials) { throw 'Terrain-city source material export is unavailable.' }
 if ($RoadAuthoringShowcase -and $FoliageWorld) { throw 'Road authoring showcase does not provide foliage-world generation.' }
@@ -149,6 +149,11 @@ try {
         if (Test-Path -LiteralPath $evidence) {
             $run.evidence = Get-Content -LiteralPath $evidence -Raw | ConvertFrom-Json
             $run.passed = !$timedOut -and $process.ExitCode -eq 0 -and $null -ne $run.capture -and $run.evidence.validationPassed
+            if ($Scene -eq 'city' -and !$RoadAuthoringShowcase) {
+                $buildings = $run.evidence.cityBuildingGeometry
+                $run.passed = $run.passed -and $null -ne $buildings -and $buildings.ready -eq $true -and
+                    $buildings.meshes -gt 0 -and $buildings.readyMeshes -eq $buildings.meshes
+            }
             if ($streetDetailExplicit) {
                 $street = $run.evidence.terrainCity
                 $run.passed = $run.passed -and $null -ne $street -and $street.streetDetailValid -eq $true -and

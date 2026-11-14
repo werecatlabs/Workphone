@@ -341,14 +341,35 @@ BOOST_AUTO_TEST_CASE( terrain_city_source_anchor_roundtrip_test )
     BOOST_CHECK_EQUAL( vehicle->getProperties()->getPropertyAsInt( "City Street Detail" ), 0 );
     streetEdit->setProperty( "City Street Detail", 140 ); vehicle->setProperties( streetEdit );
     BOOST_CHECK_EQUAL( vehicle->getProperties()->getPropertyAsInt( "City Street Detail" ), 100 );
+    auto styleEdit = vehicle->getProperties();
+    styleEdit->setProperty( "City Building Style", -10 ); vehicle->setProperties( styleEdit );
+    BOOST_CHECK_EQUAL( vehicle->getProperties()->getPropertyAsInt( "City Building Style" ), 0 );
+    styleEdit->setProperty( "City Building Style", 99 ); vehicle->setProperties( styleEdit );
+    BOOST_CHECK_EQUAL( vehicle->getProperties()->getPropertyAsInt( "City Building Style" ), 9 );
+    const String expectedStyleLabels = "District Mix;Masonry Residential;Civic Stone;Modern Office;"
+        "European Terrace;Parisian Mansard;Warehouse Loft;Mediterranean;Art Deco;Timber Gabled;";
+    BOOST_CHECK_EQUAL( vehicle->getProperties()->getPropertyObject( "City Building Style" )
+        .getAttribute( Properties::enumTypeStr ), expectedStyleLabels );
     auto properties = vehicle->getProperties(); properties->setProperty( "City Terrain Roads", true );
     properties->setProperty( "City Street Detail", 64 );
-    properties->setProperty( "City Building Style", 2 );
+    properties->setProperty( "City Building Style", 9 );
     properties->setProperty( "City Window Mesh", String( " Assets/architecture/arched-window.glb " ) );
     properties->setProperty( "City Roof Mesh", String( "56c12775-468d-41fb-936a-a7f932b081f4" ) );
     properties->setProperty( "City Road Authoring UUID", sourceUuid ); properties->setProperty( "Audio Enabled", false );
     properties->setProperty( "Effects Enabled", false ); vehicle->setProperties( properties );
     vehicle->setEnabled( false ); // This gate saves/restores anchors; it does not regenerate a WPVehicle.
+    // Save all earlier preset IDs through the actual scene serializer as well.
+    // Disabled preview components share the existing source; they never generate a city.
+    for( int style = 0; style < 9; ++style )
+    {
+        auto styleActor = manager->createActor(); BOOST_REQUIRE( styleActor );
+        styleActor->setName( "Persisted building style " + StringUtil::toString( style ) );
+        auto styleComponent = styleActor->addComponent<scene::ProceduralRaceScene>(); BOOST_REQUIRE( styleComponent );
+        originalScene->addActor( styleActor );
+        auto preset = vehicle->getProperties(); preset->setProperty( "City Building Style", style );
+        styleComponent->setProperties( preset ); styleComponent->setEnabled( false );
+        BOOST_CHECK_EQUAL( styleComponent->getProperties()->getPropertyAsInt( "City Building Style" ), style );
+    }
     flush();
     const auto path = temporary.path / "Assets" / "TerrainCityAnchors.scene";
     BOOST_REQUIRE_MESSAGE(source->getSource().roads.size()==1u,"Manual source was lost before scene save: "+source->getError());
@@ -414,14 +435,26 @@ BOOST_AUTO_TEST_CASE( terrain_city_source_anchor_roundtrip_test )
     BOOST_CHECK( terrainRoads ); BOOST_CHECK_EQUAL( vehicleSourceUuid, restoredSource->getHandle()->getUUIDAsString() );
     BOOST_CHECK_EQUAL( restoredVehicle->getProperties()->getPropertyAsInt( "City Street Detail" ), 64 );
     const auto building = restoredVehicle->getProperties();
-    BOOST_CHECK_EQUAL( building->getPropertyAsInt( "City Building Style" ), 2 );
+    BOOST_CHECK_EQUAL( building->getPropertyAsInt( "City Building Style" ), 9 );
     BOOST_CHECK_EQUAL( building->getProperty( "City Window Mesh" ), "Assets/architecture/arched-window.glb" );
     BOOST_CHECK_EQUAL( building->getProperty( "City Roof Mesh" ), "56c12775-468d-41fb-936a-a7f932b081f4" );
     BOOST_CHECK( building->getProperty( "City Corner Mesh" ).empty() );
     BOOST_CHECK( !restoredVehicle->isGenerated() );
+    for( int style = 0; style < 9; ++style )
+    {
+        auto styleActor = reopenedScene->findActorByName( "Persisted building style " + StringUtil::toString( style ) );
+        BOOST_REQUIRE( styleActor );
+        auto preset = styleActor->getComponent<scene::ProceduralRaceScene>(); BOOST_REQUIRE( preset );
+        const auto restoredPreset = preset->getProperties();
+        BOOST_CHECK_EQUAL( restoredPreset->getPropertyAsInt( "City Building Style" ), style );
+        BOOST_CHECK_EQUAL( restoredPreset->getProperty( "City Road Authoring UUID" ), sourceUuid );
+        BOOST_CHECK_EQUAL( restoredPreset->getProperty( "City Window Mesh" ), "Assets/architecture/arched-window.glb" );
+        BOOST_CHECK_EQUAL( restoredPreset->getProperty( "City Roof Mesh" ), "56c12775-468d-41fb-936a-a7f932b081f4" );
+        BOOST_CHECK( !preset->isGenerated() );
+    }
 
     // Assert these identities belong to the current live manager/scene registry,
-    // with exactly one terrain/source/vehicle anchor and no constructor-ID clone.
+    // with one terrain/source, ten saved preset components and no constructor-ID clone.
     std::set<String> liveIds; unsigned liveSources = 0, liveTerrains = 0, liveVehicles = 0;
     for( auto actor : manager->getActors() ) if( actor && actor->getScene() == reopenedScene )
     {
@@ -432,7 +465,7 @@ BOOST_AUTO_TEST_CASE( terrain_city_source_anchor_roundtrip_test )
         if( actor->getComponent<scene::TerrainSystem>() ) ++liveTerrains;
         if( actor->getComponent<scene::ProceduralRaceScene>() ) ++liveVehicles;
     }
-    BOOST_CHECK_EQUAL( liveSources, 1u ); BOOST_CHECK_EQUAL( liveTerrains, 1u ); BOOST_CHECK_EQUAL( liveVehicles, 1u );
+    BOOST_CHECK_EQUAL( liveSources, 1u ); BOOST_CHECK_EQUAL( liveTerrains, 1u ); BOOST_CHECK_EQUAL( liveVehicles, 10u );
     BOOST_CHECK( liveIds.count( sourceUuid ) == 1 ); BOOST_CHECK( liveIds.count( terrainUuid ) == 1 );
     BOOST_CHECK( publications > 0 );
     reopenedScene->clear( true );

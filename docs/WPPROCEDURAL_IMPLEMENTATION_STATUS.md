@@ -1,9 +1,48 @@
 # WPProcedural implementation status
 
+## Expanded built-in building styles — 14 November 2026
+
+The built-in selector adds **European Terrace**, **Parisian Mansard**,
+**Warehouse Loft**, **Mediterranean**, **Art Deco**, and **Timber Gabled** at
+indices 4–9. The original indices remain stable. The native Inspector, Lua
+Script Inspector, sample command line and capture harness accept the expanded
+set. Mesh overrides remain independent of the preset; clear a slot to restore
+that preset's built-in part. [Preset names and workflow](RacingGameOpenCity.md#building-styles-and-mesh-slots)
+
+District Mix chooses the expanded families by neighbourhood and stable parcel
+variant. New geometry includes projecting bays, mansard dormers on all four
+elevations, sawtooth skylights, terracotta tile courses, stepped crowns, and
+timber gables. Both LODs retain the main roof forms. Optional ornaments share
+a city-wide vertex allowance, divided per building; mesh staging is released
+after publication. Above 128 building lots, window and mansard-dormer spacing
+increases, prioritizing street elevations. Above 256 building lots, the fine
+ornament allowance is halved and shared façade, paving, and soil maps use
+256-pixel sources. Vehicle and carriageway maps keep their independent quality
+settings. Existing memory limits are unchanged.
+
+The Lua fixture passed after exercising all ten style indices, generation-cache
+invalidation, bounds clamping, retention of the edited terrain-road source and
+custom mesh slots, and saving/restoring the final preset. The native scene
+round-trip fixture now saves all ten presets through the real scene file and
+checks the source binding and module paths after reopening. Workphone,
+SampleVehicleAdvanced, and Editor Debug builds succeeded. The procedural block,
+ImGui viewport, City Roads authoring, and native scene round-trip CTests passed
+(4/4), and the Lua open-city fixture passed.
+
+Seven matched seed-42 six-block High captures cover all six new styles and
+District Mix. All generated building meshes uploaded with zero rejected
+Source CPU, Working CPU, or GPU reservations. The final larger-city revision
+also passed Parisian captures at six, eight, and ten blocks; the ten-block city
+loaded 576/576 building meshes with a 499.9 MiB Source CPU peak under the existing
+512 MiB limit. These are DX11 software-renderer captures, not physical-GPU
+performance certification. Dark glazing, coarse surfaces, sparse upper-floor
+ornament, and empty streets remain visible; the commercial-game visual target
+is still open. [Native captures and review](../artifacts/procedural/city-building-variation-20261113/visual-review.md)
+
 ## Modular city buildings — 13 November 2026
 
-**City Building Style** selects District Mix, Masonry Residential, Civic Stone,
-or Modern Office. Each preset supplies the façade and roof geometry. Five
+The initial **City Building Style** kit introduced District Mix, Masonry
+Residential, Civic Stone, and Modern Office. Each supplies façade and roof geometry. Five
 independent mesh slots replace the built-in wall, window, entrance, corner,
 or roof modules using a project asset or a static mesh file. Invalid modules
 report a diagnostic and use built-in geometry. The same building masses
