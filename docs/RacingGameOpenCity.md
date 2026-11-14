@@ -49,8 +49,34 @@ rejects cramped or acute junctions, and closes nearby dead ends where there is r
 Generated roads remain within the editable source's 128-road limit. Route selection
 does not reshuffle the graph or parcels. Revision-3 pinned route coordinates remain
 unchanged; natural-city lap records use a new revision namespace because road
-widths changed. Historical files are preserved. Buildings remain axis aligned
-and streets use straight spans between junctions.
+widths changed. Historical files are preserved. Buildings remain axis aligned.
+The flat preview renders straight graph spans; terrain cities promote that graph
+into editable curved roads.
+
+With **City Terrain Roads** enabled, natural streets use cubic Bezier splines.
+Safe two-road corners share a tangent, while crossings and roundabout approaches
+retain their attachment points. Bounded lateral alternatives are evaluated against
+terrain grade, crossfall and profile smoothness. Main roads retain tight detour
+limits so the approaches into the centre stay direct. Generated natural terrain
+has a graded central junction district blending into broad rolling relief;
+a supplied terrain is sampled without being reshaped and must satisfy the
+roundabout solver's existing planar-approach fit requirements.
+Roads, sidewalks, collision and the race route follow the canonical curved source.
+Unsupported terrain or invalid geometry still fails validation.
+
+Ordinary terrain-road T/X contacts are fitted as shared connection surfaces.
+Approaches stop at matching ports; rounded corners use their actual road widths,
+and pavement and edge markings follow the same boundary. Centre dashes stop at
+the junction mouth. Moving the editable splines rebuilds these derived connections
+without changing their saved knots. The C++ junction policy controls corner radius,
+corner subdivision and maximum approach trimming; it does not add separate saved
+intersection handles or a custom connection-mesh importer.
+These connection surfaces rebuild on reload or regeneration from the retained
+road source; existing authored roads do not need to be replaced.
+
+Use **Window > City Roads** to select a generated spline, move its knots or
+handles, insert knots, and apply width changes. Undo/redo and scene saving retain
+the authored controls. Generation does not overwrite an existing road source.
 
 To see the new layout, enable **City Natural Roads** on a new **ProceduralCityScene**
 actor and press **Regenerate**. Enable **City Terrain Roads** for terrain fitting

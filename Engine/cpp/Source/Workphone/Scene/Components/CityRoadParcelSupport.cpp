@@ -291,7 +291,7 @@ namespace workphone::scene
                 CityRoadTerrainMesh surface;
                 if( !procedural::sampleCityRoadSplines( rectangle, {}, sampler, rectangleBake, error ) ||
                     !buildCityRoadTerrainMesh( rectangle, rectangleBake, terrain, placement, surface,
-                                               error ) )
+                                               error, false ) )
                 {
                     if( !unsupportedTerrain( error, denialBefore ) )
                     {

@@ -4,6 +4,7 @@
 #include <Workphone/Scene/Components/CityRoadTerrainMesh.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <iostream>
 #include <limits>
@@ -14,6 +15,9 @@ using namespace workphone;
 using namespace workphone::procedural;
 namespace
 {
+    using ProgressClock = std::chrono::steady_clock;
+    long long elapsedMilliseconds( ProgressClock::time_point start )
+    { return std::chrono::duration_cast<std::chrono::milliseconds>( ProgressClock::now() - start ).count(); }
     void need( bool value, const char *message ) { if( !value ) throw std::runtime_error( message ); }
     void check( bool value, const String &error ) { if( !value ) throw std::runtime_error( error.c_str() ); }
     const auto plane = []( const Vector3F &p, float &height ) { height = 2 + .005f * p.x + .003f * p.z; return true; };
@@ -80,6 +84,14 @@ namespace
             const auto xz = []( Vector3F p, Vector3F q ) { return std::hypot( p.x - q.x, p.z - q.z ); };
             need( std::min( xz( a, expected ), xz( b, expected ) ) <= .001f,
                   "Generated approach and source road use different endpoint trims" );
+            const auto tangent = xz( a, expected ) <= .001f ? found->knots.front().outHandle
+                                                          : found->knots.back().inHandle;
+            const float tangentRun = std::hypot( tangent.x, tangent.z );
+            need( tangentRun > .001f &&
+                      std::abs( tangent.x * port.outward.z - tangent.z * port.outward.x ) <=
+                          .0001f * tangentRun * direction &&
+                      tangent.x * port.outward.x + tangent.z * port.outward.z > 0,
+                  "Generated curve no longer meets its roundabout approach tangentially" );
             need( xz( a, b ) >= 4, "Longer approaches consumed the remaining source road" );
             for( const auto &neighbor : source.roundabouts ) if( neighbor.junctionId != junction.junctionId )
                 for( const auto &other : neighbor.ports ) if( other.approachId == port.approachId )
@@ -95,10 +107,15 @@ namespace
     }
     void generated( bool natural, int blocks, u32 seed, bool meshCheck )
     {
+        const auto started = ProgressClock::now();
+        std::cout << "BEGIN generated " << ( natural ? "natural" : "grid" ) << " seed=" << seed <<
+            " blocks=" << blocks << " mesh=" << meshCheck << '\n';
         const auto city = OpenCityLayout::generate( seed, blocks, 0, natural );
         auto policy = options( seed ); if( !meshCheck ) policy.maximumRoundabouts = 2;
         OpenCityRoadSourceResult converted; String error;
+        const auto conversionStarted = ProgressClock::now();
         check( buildOpenCityRoadSource( city, policy, plane, converted, error ), error );
+        std::cout << "  source built ms=" << elapsedMilliseconds( conversionStarted ) << '\n';
         uniqueIds( converted.source );
         const auto longApproaches = approachContracts( converted.source );
         for( const auto &road : converted.source.roads )
@@ -119,9 +136,11 @@ namespace
               "Generated source lost a real junction or exceeded the source codec budget" );
         routeContracts( converted );
         SourceBudgetVector<Vector3F> reused;
+        std::cout << "  refitting saved route\n";
         check( fitOpenCityRoadRoute( city, converted.source, plane, reused, error ), error ); sameRoute( converted.route, reused );
         if( meshCheck )
         {
+            std::cout << "  alternate route source\n";
             const auto alternate = OpenCityLayout::generate( seed, blocks, 2, natural ); OpenCityRoadSourceResult other;
             check( buildOpenCityRoadSource( alternate, policy, plane, other, error ), error );
             need( encoded( converted.source ) == encoded( other.source ), "Route choice reshuffled generated source GUIDs, roads or junctions" );
@@ -133,6 +152,7 @@ namespace
                 plane( { -640.f + x * 4, 0, -640.f + z * 4 }, terrain->heights[size_t( z ) * 321 + x] );
             CityRoadSplineBake sampled; check( sampleCityRoadSplines( converted.source, {}, plane, sampled, error ), error );
             scene::CityRoadTerrainMesh mesh;
+            std::cout << "  building shared terrain mesh\n";
             check( scene::buildCityRoadTerrainMesh( converted.source, sampled, terrain, {}, mesh, error ), error );
             need( !mesh.indices.empty(), "Generated editable source produced no shared terrain mesh/collision" );
             std::cout << "base mesh " << ( natural ? "natural" : "grid" ) << " blocks=" << blocks <<
@@ -155,6 +175,7 @@ namespace
             if( !natural && blocks == 6 && seed == 42 )
                 for( const int diagnosticBlocks : { 6, 10 } )
                 {
+                    std::cout << "  diagnostic grid blocks=" << diagnosticBlocks << " source and mesh\n";
                     auto diagnosticPolicy = options( seed ); diagnosticPolicy.maximumRoundabouts = 4;
                     OpenCityRoadSourceResult diagnostic;
                     check( buildOpenCityRoadSource( OpenCityLayout::generate( seed, diagnosticBlocks, 0, false ),
@@ -174,7 +195,8 @@ namespace
         }
         std::cout << ( natural ? "natural" : "grid" ) << " seed=" << seed << " blocks=" << blocks <<
             " roads=" << converted.source.roads.size() << " junctions=" << converted.source.roundabouts.size() <<
-            " longApproaches=" << longApproaches << " route=" << converted.route.size() << " merged=" << converted.mergedChains << '\n';
+            " longApproaches=" << longApproaches << " route=" << converted.route.size() << " merged=" << converted.mergedChains <<
+            " ms=" << elapsedMilliseconds( started ) << '\n';
     }
     void naturalJunctionCorpus()
     {
@@ -186,6 +208,8 @@ namespace
                 SourceBudgetText firstSource;
                 for( int route = 0; route < 3; ++route )
                 {
+                    const auto started = ProgressClock::now();
+                    std::cout << "BEGIN natural corpus seed=" << seed << " blocks=" << blocks << " route=" << route << '\n';
                     OpenCityLayout city;
                     city.naturalRoads = true;
                     city.roads = OpenCityRoadNetwork::generate( seed, blocks, route );
@@ -204,6 +228,7 @@ namespace
                     const auto serialized = encoded( result.source );
                     if( route == 0 ) firstSource = serialized;
                     else need( firstSource == serialized, "Route selection changed natural editable roads" );
+                    std::cout << "PASS natural corpus ms=" << elapsedMilliseconds( started ) << '\n';
                 }
             }
         std::cout << "Natural editable-source corpus: 72 seed/size/route conversions PASS\n";
@@ -271,6 +296,237 @@ namespace
                     "Saving hierarchical roads lost a hand-edited width or identity" );
             }
         }
+    }
+    float horizontalDistance( Vector3F a, Vector3F b )
+    { return std::hypot( a.x - b.x, a.z - b.z ); }
+    const CityRoadSpline &horizontalRoad( const CityRoadSplineSource &source, float z )
+    {
+        const auto found = std::find_if( source.roads.begin(), source.roads.end(), [&]( const auto &road ) {
+            return std::abs( road.knots.front().position.x + 120 ) < .001f &&
+                   std::abs( road.knots.back().position.x - 120 ) < .001f &&
+                   std::abs( road.knots.front().position.z - z ) < .001f &&
+                   std::abs( road.knots.back().position.z - z ) < .001f;
+        } );
+        need( found != source.roads.end(), "Terrain routing lost an anchored local or arterial street" );
+        return *found;
+    }
+    const CityRoadSplineSamples &samplesFor( const CityRoadSplineBake &bake, const SourceBudgetText &id )
+    {
+        const auto found = std::find_if( bake.roads.begin(), bake.roads.end(),
+            [&]( const auto &road ) { return road.roadId == id; } );
+        need( found != bake.roads.end(), "Generated editable road has no sampled carriageway" );
+        return *found;
+    }
+    bool hasCurvedSpan( const CityRoadSpline &road )
+    {
+        for( size_t i = 1; i < road.knots.size(); ++i )
+        {
+            const auto &a = road.knots[i - 1], &b = road.knots[i];
+            const auto chord = b.position - a.position;
+            const auto sideways = [&]( Vector3F handle ) {
+                return std::abs( handle.x * chord.z - handle.z * chord.x ) /
+                       std::max( .001f, std::hypot( chord.x, chord.z ) );
+            };
+            if( std::max( sideways( a.outHandle ), sideways( b.inHandle ) ) > .05f ) return true;
+        }
+        return false;
+    }
+    OpenCityLayout curveFixture( bool crossing = false )
+    {
+        using Class = OpenCityRoadNetwork::RoadClass;
+        OpenCityLayout city; city.naturalRoads = true;
+        // Keep the race loop separate from two long routing probes. The arterial
+        // probe merges through a T (or X) junction with an attached local street.
+        city.roads.nodes = { { 0, 0 }, { 0, -100 }, { 100, -100 }, { 100, 0 },
+                             { -120, -180 }, { 120, -180 }, { -120, -300 },
+                             { 0, -300 }, { 120, -300 }, { 0, -360 } };
+        city.roads.edges = { { 0, 1, Class::Arterial }, { 1, 2, Class::Arterial },
+                             { 2, 3, Class::Arterial }, { 3, 0, Class::Arterial },
+                             { 4, 5, Class::Local }, { 6, 7, Class::Arterial },
+                             { 7, 8, Class::Arterial }, { 7, 9, Class::Local } };
+        if( crossing )
+        {
+            city.roads.nodes.push_back( { 0, -240 } );
+            city.roads.edges.push_back( { 7, 10, Class::Local } );
+        }
+        city.route = { { 0, 0 }, { 0, -100 }, { 100, -100 }, { 100, 0 } };
+        return city;
+    }
+    void fittedProfileContracts( const CityRoadSplineSource &source, const CityRoadSplineBake &bake,
+                                 const CityRoadHeightSampler &terrain )
+    {
+        for( const auto &road : source.roads )
+        {
+            const auto &samples = samplesFor( bake, road.id ).points;
+            need( samples.size() >= 2, "Terrain curve lost its sampled profile" );
+            const auto grade = [&]( Vector3F a, Vector3F b ) {
+                need( std::abs( b.y - a.y ) <= road.maxGrade * horizontalDistance( a, b ) + .00002f,
+                      "Terrain routing exceeded its authored grade or crossfall" );
+            };
+            float length = 0;
+            for( size_t i = 0; i < samples.size(); ++i )
+            {
+                const auto &p = samples[i];
+                for( auto point : { p.position, p.left, p.right } )
+                {
+                    float ground = 0;
+                    need( terrain( point, ground ) && std::abs( point.y - ground - road.heightOffset ) < .00002f,
+                          "Generated curved carriageway stopped following its terrain" );
+                }
+                grade( p.left, p.position ); grade( p.position, p.right );
+                if( i )
+                {
+                    const auto &a = samples[i - 1];
+                    grade( a.position, p.position ); grade( a.left, p.left ); grade( a.right, p.right );
+                    length += horizontalDistance( a.position, p.position );
+                }
+            }
+            if( road.width == 12 )
+                need( length <= horizontalDistance( samples.front().position, samples.back().position ) * 1.08f,
+                      "Terrain curves turned a direct arterial into a winding detour" );
+        }
+    }
+    void terrainAwareCurves()
+    {
+        const CityRoadHeightSampler flat = []( const Vector3F &, float &h ) { h = 2; return true; };
+        const auto ridge = []( float side ) -> CityRoadHeightSampler {
+            return [side]( const Vector3F &p, float &h ) {
+                // Smooth off-centre ridges: below 7% maximum terrain gradient,
+                // including the road edges, with room to bend around either side.
+                const float x = p.x / 50;
+                const float local = ( p.z + 180 - side * 8 ) / 25;
+                const float arterial = ( p.z + 300 - side * 8 ) / 25;
+                h = 2 + 2 * ( std::exp( -x * x - local * local ) +
+                              std::exp( -x * x - arterial * arterial ) );
+                return true;
+            };
+        };
+        auto policy = options( 42 ); policy.maximumRoundabouts = 0;
+        const auto city = curveFixture();
+        OpenCityRoadSourceResult base, positive, negative, repeated; String error;
+        check( buildOpenCityRoadSource( city, policy, flat, base, error ), error );
+        check( buildOpenCityRoadSource( city, policy, ridge( 1 ), positive, error ), error );
+        check( buildOpenCityRoadSource( city, policy, ridge( -1 ), negative, error ), error );
+        check( buildOpenCityRoadSource( city, policy, ridge( 1 ), repeated, error ), error );
+        need( encoded( positive.source ) == encoded( repeated.source ),
+              "Repeated terrain routing changed editable identities or curve geometry" );
+        sameRoute( positive.route, repeated.route );
+        need( hasCurvedSpan( horizontalRoad( positive.source, -180 ) ) &&
+                  hasCurvedSpan( horizontalRoad( negative.source, -180 ) ),
+              "Terrain routing did not produce actual editable cubic curves" );
+        // A degree-two corner needs one shared tangent even on flat terrain;
+        // the isolated straight probe has no geometric reason to meander.
+        SourceBudgetVector<Vector3F> cornerTangents;
+        for( const auto &road : base.source.roads )
+        {
+            const Vector3F corner{ 0, 0, -100 };
+            if( horizontalDistance( road.knots.front().position, corner ) < .001f )
+                cornerTangents.push_back( road.knots.front().outHandle );
+            else if( horizontalDistance( road.knots.back().position, corner ) < .001f )
+                cornerTangents.push_back( road.knots.back().inHandle );
+            else continue;
+            need( hasCurvedSpan( road ), "Flat degree-two corner remained an angular straight segment" );
+        }
+        need( cornerTangents.size() == 2, "Degree-two smoothing changed the anchored street topology" );
+        const auto a = cornerTangents[0], b = cornerTangents[1];
+        const float runs = std::hypot( a.x, a.z ) * std::hypot( b.x, b.z );
+        need( runs > .001f && ( a.x * b.x + a.z * b.z ) / runs < -.9999f,
+              "Degree-two road curves do not share a continuous tangent" );
+        const auto averageOffset = [&]( const OpenCityRoadSourceResult &result,
+                                        const CityRoadHeightSampler &terrain ) {
+            uniqueIds( result.source );
+            CityRoadSplineBake bake; check( sampleCityRoadSplines( result.source, {}, terrain, bake, error ), error );
+            fittedProfileContracts( result.source, bake, terrain );
+            const auto &local = horizontalRoad( result.source, -180 );
+            const auto &arterial = horizontalRoad( result.source, -300 );
+            const auto &reference = horizontalRoad( base.source, -180 );
+            need( local.id == reference.id && local.knots.front().id == reference.knots.front().id &&
+                      local.knots.back().id == reference.knots.back().id,
+                  "Terrain response replaced road or endpoint authoring identities" );
+            const auto &arterialSamples = samplesFor( bake, arterial.id ).points;
+            need( std::any_of( arterialSamples.begin(), arterialSamples.end(), []( const auto &p ) {
+                return horizontalDistance( p.position, { 0, 0, -300 } ) < .001f;
+            } ), "Curving a merged arterial detached its local T-junction" );
+            float weightedOffset = 0, length = 0;
+            const auto &samples = samplesFor( bake, local.id ).points;
+            for( size_t i = 1; i < samples.size(); ++i )
+            {
+                const float step = horizontalDistance( samples[i - 1].position, samples[i].position );
+                weightedOffset += ( ( samples[i - 1].position.z + samples[i].position.z ) * .5f + 180 ) * step;
+                length += step;
+            }
+            return weightedOffset / length;
+        };
+        const float positiveOffset = averageOffset( positive, ridge( 1 ) );
+        const float negativeOffset = averageOffset( negative, ridge( -1 ) );
+        need( positiveOffset < -.1f && negativeOffset > .1f,
+              "Mirroring the terrain ridge did not move the street to the gentler side" );
+        // Roundtrip a real user curve edit, then fit the existing race route. None
+        // of these operations may rerun generation or replace the saved handles.
+        auto authored = positive.source;
+        const auto localId = horizontalRoad( authored, -180 ).id;
+        auto edit = std::find_if( authored.roads.begin(), authored.roads.end(),
+            [&]( const auto &road ) { return road.id == localId; } );
+        need( edit->knots.size() > 2, "Generated terrain curve has no editable interior knot" );
+        auto &editedKnot = edit->knots[edit->knots.size() / 2];
+        editedKnot.position.z += .35f; editedKnot.outHandle.z += .2f; ++authored.revision;
+        const auto saved = encoded( authored ); CityRoadSplineSource reopened;
+        check( deserializeCityRoadSplineSource( std::string_view( saved.data(), saved.size() ), reopened, error ), error );
+        SourceBudgetVector<Vector3F> route;
+        check( fitOpenCityRoadRoute( city, reopened, ridge( 1 ), route, error ), error );
+        need( encoded( reopened ) == saved, "Loading or fitting regenerated a hand-edited terrain road" );
+
+        const auto crossing = curveFixture( true ); OpenCityRoadSourceResult junction;
+        check( buildOpenCityRoadSource( crossing, policy, flat, junction, error ), error );
+        CityRoadSplineBake bake; check( sampleCityRoadSplines( junction.source, {}, flat, bake, error ), error );
+        unsigned attached = 0;
+        for( const auto &road : bake.roads )
+            if( std::any_of( road.points.begin(), road.points.end(), []( const auto &p ) {
+                return horizontalDistance( p.position, { 0, 0, -300 } ) < .001f;
+            } ) ) ++attached;
+        need( attached == 2, "Merged X-junction curves lost their shared internal attachment" );
+        policy.terrainCurves = false;
+        OpenCityRoadSourceResult straight; check( buildOpenCityRoadSource( city, policy, flat, straight, error ), error );
+        for( const auto &road : straight.source.roads )
+            need( road.knots.size() == 2 && !hasCurvedSpan( road ),
+                  "Disabling terrain curves changed the original straight-source contract" );
+        const auto oldSource = encoded( straight.source );
+        check( fitOpenCityRoadRoute( city, straight.source, flat, route, error ), error );
+        need( encoded( straight.source ) == oldSource, "New route fitting rewrote an older straight source" );
+        std::cout << "Terrain curves: mirrored offsets=" << positiveOffset << ',' << negativeOffset <<
+            " deterministic edits, T/X attachments and arterial grades PASS\n";
+    }
+    void asymmetricCornerFallback()
+    {
+        auto city = curveFixture();
+        for( size_t i = 0; i < 4; ++i ) city.roads.edges[i].roadClass = OpenCityRoadNetwork::RoadClass::Local;
+        // The parallel street leaves carriageway clearance but not enough room
+        // for the first leg's curved-road/footway reserve. Its continuation has
+        // ample room: fallback must nevertheless restore their shared policy.
+        city.roads.nodes.push_back( { 10, -20 } );
+        city.roads.nodes.push_back( { 10, -60 } );
+        city.roads.edges.push_back( { 10, 11, OpenCityRoadNetwork::RoadClass::Local } );
+        const CityRoadHeightSampler flat = []( const Vector3F &, float &h ) { h = 2; return true; };
+        auto policy = options( 42 ); policy.maximumRoundabouts = 0;
+        OpenCityRoadSourceResult result; String error;
+        check( buildOpenCityRoadSource( city, policy, flat, result, error ), error );
+        unsigned joined = 0;
+        for( const auto &road : result.source.roads )
+        {
+            const Vector3F corner{ 0, 0, -100 };
+            Vector3F away, other;
+            if( horizontalDistance( road.knots.front().position, corner ) < .001f )
+            { away = road.knots.front().outHandle; other = road.knots.back().position; }
+            else if( horizontalDistance( road.knots.back().position, corner ) < .001f )
+            { away = road.knots.back().inHandle; other = road.knots.front().position; }
+            else continue;
+            ++joined;
+            const auto original = other - corner;
+            const float runs = std::hypot( away.x, away.z ) * std::hypot( original.x, original.z );
+            need( runs > .001f && ( away.x * original.x + away.z * original.z ) / runs > .9999f,
+                  "One-sided curve fallback left mismatched continuation endpoint tangents" );
+        }
+        need( joined == 2, "Asymmetric fallback lost a connected road instead of preserving the junction" );
     }
     void failures()
     {
@@ -346,7 +602,7 @@ namespace
             legacy.roads.edges.push_back( { u32( i ), u32( ( i + 1 ) % oldCorners.size() ),
                                            OpenCityRoadNetwork::RoadClass::Arterial } );
         }
-        auto policy = options( 42 ); policy.maximumRoundabouts = 0;
+        auto policy = options( 42 ); policy.maximumRoundabouts = 0; policy.terrainCurves = false;
         OpenCityRoadSourceResult saved; String error;
         check( buildOpenCityRoadSource( legacy, policy, plane, saved, error ), error );
         saved.source.roads.front().width = 11.75f; // An authored edit must survive the fallback.
@@ -419,13 +675,28 @@ namespace
 }
 int main()
 {
+    std::cout << std::unitbuf;
+    std::cerr << std::unitbuf;
     int result = 0;
     try
     {
-        sharedEndpointIdentity(); generated( false, 6, 42, true ); generated( true, 6, 42, true );
+        const auto stage = []( const char *name, const auto &run ) {
+            const auto started = ProgressClock::now();
+            std::cout << "BEGIN " << name << '\n';
+            run();
+            std::cout << "PASS " << name << " ms=" << elapsedMilliseconds( started ) << '\n';
+        };
+        stage( "shared endpoint identity", sharedEndpointIdentity );
+        generated( false, 6, 42, true ); generated( true, 6, 42, true );
         for( bool natural : { false, true } ) for( int blocks : { 6, 8, 10 } ) for( u32 seed : { 0u, 7u, 42u, 4294967295u } )
             generated( natural, blocks, seed, false );
-        naturalJunctionCorpus(); hierarchicalWidths(); legacyNaturalRouteCompatibility(); failures(); editedRouteContinuity();
+        stage( "natural junction corpus", naturalJunctionCorpus );
+        stage( "hierarchical widths", hierarchicalWidths );
+        stage( "terrain-aware curves", terrainAwareCurves );
+        stage( "asymmetric corner fallback", asymmetricCornerFallback );
+        stage( "legacy natural route compatibility", legacyNaturalRouteCompatibility );
+        stage( "transactional failures", failures );
+        stage( "edited route continuity and budget denial", editedRouteContinuity );
         std::cout << "Open city editable source and island-avoiding pinned route PASS\n";
     }
     catch( const std::exception &e ) { std::cerr << "Open city road source: " << e.what() << '\n'; result = 1; }

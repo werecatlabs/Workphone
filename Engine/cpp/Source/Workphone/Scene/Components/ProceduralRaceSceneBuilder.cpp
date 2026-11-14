@@ -2501,6 +2501,16 @@ namespace workphone::scene::race
                 return actor;
             };
             String error;
+            const bool newSource = !assets.roadAuthoring;
+            if( newSource )
+            {
+                assets.roadAuthoring = persistentActor( "Editable generated city roads" )
+                                           ->addComponent<CityRoadAuthoring>();
+            }
+            if( !assets.roadAuthoring )
+            {
+                throw std::runtime_error( "Terrain city requires a canonical road source." );
+            }
             if( !assets.roadTerrain )
             {
                 auto actor = persistentActor( "Generated city terrain" );
@@ -2531,6 +2541,50 @@ namespace workphone::scene::race
                 data.appearance.macroStrength = .3f;
                 data.appearance.macroSeed = seed;
                 data.appearance.macroTint = { .29f, .35f, .19f, 1 };
+                const float terrainPhase = float( seed % 997 ) * ( 6.28318530718f / 997.f );
+                float junctionDistrictRadius = 0;
+                if( city.naturalRoads )
+                {
+                    // Locate the same junctions before creating the new terrain.
+                    // Their whole footprints share a graded district plane so
+                    // draped approach caps meet the junctions without height steps.
+                    procedural::OpenCityRoadSourceOptions previewOptions;
+                    previewOptions.sourceId = assets.roadAuthoring->getSource().id;
+                    previewOptions.terrainResourceUuid = "00000000-0000-4000-8000-000000000001";
+                    previewOptions.seed = seed;
+                    previewOptions.maximumRoundabouts = 4;
+                    previewOptions.terrainCurves = false;
+                    procedural::OpenCityRoadSourceResult preview;
+                    if( !procedural::buildOpenCityRoadSource( city, previewOptions,
+                            []( const Vector3F &p, float &h ) { h = 2 + .005f * p.x + .003f * p.z; return true; },
+                            preview, error ) )
+                        throw std::runtime_error( error.c_str() );
+                    for( const auto &junction : preview.source.roundabouts )
+                    {
+                        float reach = junction.outerRadius;
+                        for( const auto &port : junction.ports )
+                            reach = std::max( reach, junction.outerRadius + port.length + port.width * .5f );
+                        // Eight metres keeps every covering 4 m terrain cell planar.
+                        junctionDistrictRadius = std::max( junctionDistrictRadius,
+                            std::hypot( junction.center.x, junction.center.z ) + reach + 8.f );
+                    }
+                }
+                const auto cityRelief = [&]( float x, float z ) {
+                    // The central tangent plane flows into broad outer relief.
+                    // This grades only newly generated terrain, never a bound
+                    // user terrain. The origin remains at its original height.
+                    const float rolling = 3.2f * ( std::sin( x / 320.f + terrainPhase ) *
+                                        std::cos( z / 420.f - terrainPhase ) -
+                                    std::sin( terrainPhase ) * std::cos( terrainPhase ) ) +
+                           1.6f * ( std::sin( ( x + z ) / 280.f + terrainPhase ) -
+                                    std::sin( terrainPhase ) );
+                    const float sine = std::sin( terrainPhase ), cosine = std::cos( terrainPhase );
+                    const float tangent = x * ( 3.2f / 320.f * cosine * cosine + 1.6f / 280.f * cosine ) +
+                                          z * ( 3.2f / 420.f * sine * sine + 1.6f / 280.f * cosine );
+                    const float t = std::clamp( ( std::hypot( x, z ) - junctionDistrictRadius ) /
+                        std::max( 96.f, junctionDistrictRadius * .65f ), 0.f, 1.f );
+                    return tangent + ( rolling - tangent ) * t * t * ( 3 - 2 * t );
+                };
                 for( u32 z = 0; z < side; ++z )
                 {
                     for( u32 x = 0; x < side; ++x )
@@ -2541,6 +2595,7 @@ namespace workphone::scene::race
                             1.f );
                         data.heights[size_t( z ) * side + x] =
                             2 + .005f * px + .003f * pz +
+                            ( city.naturalRoads ? cityRelief( px, pz ) : 0.f ) +
                             outside * outside * 3 * std::sin( px * .019f ) * std::cos( pz * .017f );
                         data.layerWeights[size_t( z ) * side + x] = { 1 - outside * .4f, outside * .4f,
                                                                       0, 0 };
@@ -2562,16 +2617,6 @@ namespace workphone::scene::race
                 {
                     throw std::runtime_error( error.c_str() );
                 }
-            }
-            const bool newSource = !assets.roadAuthoring;
-            if( newSource )
-            {
-                assets.roadAuthoring = persistentActor( "Editable generated city roads" )
-                                           ->addComponent<CityRoadAuthoring>();
-            }
-            if( !assets.roadAuthoring )
-            {
-                throw std::runtime_error( "Terrain city requires a canonical road source." );
             }
             if( assets.roadAuthoring->getTerrain() != assets.roadTerrain &&
                 !assets.roadAuthoring->bindTerrain( assets.roadTerrain, error ) )

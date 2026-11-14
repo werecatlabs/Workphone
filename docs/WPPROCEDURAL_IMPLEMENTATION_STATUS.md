@@ -1,5 +1,131 @@
 # WPProcedural implementation status
 
+## Shared road connection geometry — 14 November 2026
+
+This iteration follows the dynamic connection approach described in the
+[EasyRoads3D intersection documentation](https://www.easyroads3d.com/v3/html/intersections.html):
+matching road ports, a shared intersection surface and continuous corner pavements.
+It is an independent implementation for Workphone's editable terrain roads.
+
+Ordinary draped T/X contacts derive a shared junction bake from the canonical
+splines. Trimmed approaches retain their original arc distances, while rounded
+corners respect each road's width. Asphalt and collision use the joined footprint;
+footways and edge markings consume the same corner boundaries. Centre dashes
+stop at the connection ports. Source knots, handles, identities and saving remain
+unchanged. Roundabouts retain their existing explicit source and fitting contract.
+
+The C++ policy bounds corner radius, subdivision and trimming. This does not yet
+provide independent intersection gizmos, saved per-corner radius controls or
+custom connector mesh assets. Unsupported terrain and geometry retain the last
+published result. Synthetic footway terrain-fitting batches explicitly bypass
+junction solving so their already-defined footprints stay unchanged.
+
+The sample adds a `junction` inspection view and native collision probes at
+connection centres and rounded corners. The existing `corner` view remains
+available for a matching camera comparison with the previous curved-road build.
+
+Workphone, SampleVehicleAdvanced and Editor Debug builds pass. All ten focused
+checks pass: the terrain mesh, source conversion and footway suites in 159.76 s,
+and the remaining five geometry/authoring suites plus two Editor tests in
+170.20 s. Viewport editing passes in 14.53 s; source-anchor save/reload passes in
+140.45 s. Coverage includes unequal-width T/X connections, curved/oblique
+approaches, translated corners, overlapping surfaces, terrain holes, unrelated
+roads, roundabout conflicts, malformed samples and allocation rollback.
+[Geometry tests](../artifacts/procedural/city-road-connections-20261114/tests-geometry-05-full.log)
+[Editor and integration tests](../artifacts/procedural/city-road-connections-20261114/tests-integration-05-full.log)
+
+The first validation exposed curved-cap clearance and large-coordinate pavement
+stitching failures. Bounded trim refitting resolves the former. Pavement skirts
+now follow only the outlines of successfully fitted pieces, with opposite-side
+intervals cancelling shared caps; terrain-cell diagonals cannot become internal
+kerbs. Tests require both unobstructed walking arcs and retained real kerbs.
+Exact top-surface render/collision triangles remain intact. Sharing vertices
+within each clipped terrain-cell polygon reduces the initial junction candidate's
+ten-block grid from 354,516 to 276,001 road vertices without changing its 118,172 triangles. The
+existing 350,000-vertex regression limit and terrain coverage checks are unchanged.
+
+All three final native captures pass and exit 0: overview, matching bend view
+and close junction inspection. The city has 21 ordinary connections (17 T and
+four X), 56 rounded corners and 77/77 native connection collision probes.
+All 279 building meshes are ready, the 762-sample route remains driveable, and
+no memory reservations are rejected. The matching bend view visibly replaces
+the pointed junction mouth with continuous rounded pavement corners and stops
+centre markings before the crossing.
+
+Capture integrity verifies 1,354 current source files and 11 binaries, all image
+hashes, unchanged road/roundabout controls and the identical bend-camera pose.
+The new junction camera is a separate inspection. Runtime road triangles rise
+from 103,426 to 106,819; overview peak Source CPU is 322.26 MiB versus 322.63 MiB
+in the baseline. Microsoft Basic Render Driver captures do not establish
+physical-GPU performance. Existing roundabout pavement corners, building
+materials and lighting remain outside this ordinary-junction geometry pass.
+[Final visual review](../artifacts/procedural/city-road-connections-20261114/visual-review.md)
+[Capture integrity](../artifacts/procedural/city-road-connections-20261114/capture-integrity.json)
+[Native junction capture](../artifacts/procedural/city-road-connections-20261114/after/junction.bmp)
+
+## Terrain-aware editable road curves — 14 November 2026
+
+Natural terrain cities promote the centre-led road graph into genuine cubic
+splines. Safe degree-two corners share tangents; T/X attachments and roundabout
+ports remain pinned with straight approach collars. Terrain-scored lateral
+alternatives consider grade, crossfall and elevation-profile variation. Arterial
+spans permit at most 3.5% additional horizontal length; collectors/local roads
+permit at most 14%. Existing 12/9/7 m widths and all branches remain intact.
+When one half of a shared corner cannot fit safely, both sides are refitted
+with matching original directions rather than publishing mismatched caps.
+
+The source retains editable knots, handles and stable road/endpoint identities.
+Route fitting follows the current monotonic curve within the original corridor,
+including sparse pinned routes, and retains continuous surface/island checks.
+It does not rewrite the canonical source. Existing straight saved sources and
+the explicit C++ `terrainCurves=false` compatibility policy remain supported.
+
+New natural-city terrain grades the selected central junction district to one
+tangent plane, then blends into broad rolling relief. The whole approach pads
+and covering terrain cells meet the existing 1 mm seam contract. This shaping
+applies only when creating terrain; a retained user terrain remains unchanged
+and must meet existing support/grade/roundabout fit requirements. Flat previews
+retain the original straight graph renderer. This is bounded corridor fitting,
+not a global path planner around cliffs, waterways or missing terrain.
+
+Capture evidence now includes the canonical editable source, curved spans,
+centreline deviation/grade, road height range and arterial length ratio. The
+native road ray probes the most curved sample with a 1 cm height tolerance, so
+the terrain 2.5 cm below it cannot masquerade as road collision. The city corner
+camera stays by the road and clears building sight lines.
+
+Workphone, SampleVehicleAdvanced and Editor Debug builds pass. Ten focused tests
+pass: road-source conversion in 72.17 s, plus seven geometry/authoring suites and
+two Editor integration tests in 233.20 s. The source suite covers 72 additional
+seed/size/route conversions, mirrored terrain response, grade/detour limits,
+T/X pins, paired corner fallback, saved edits, legacy sources and admission
+rollback. Mirroring the test ridge changes the local road's mean lateral offset
+from -5.503 m to +5.503 m. Editor viewport authoring and source-anchor save/reload
+both pass. [Source tests](../artifacts/procedural/city-terrain-curves-20261114/tests-road-source-02.log)
+[Integration tests](../artifacts/procedural/city-terrain-curves-20261114/tests-integration.log)
+
+The first source suite hit its unchanged 180 s limit. Precomputed obstacle bounds
+and shared-attachment lists remove redundant curve-clearance work; duplicate
+short-span candidates are skipped, and wholly straight sources retain their
+original route sampling. Exact geometric checks and time limits were not relaxed.
+Fresh native overview and bend captures pass validation and exit cleanly. The
+seed-42 six-block city has 42 editable roads, 252 knots and ten curved spans;
+maximum lateral bow is 4.376 m, centreline grade 2.293%, and road height range
+10.144 m. Main approaches remain direct (maximum arterial length/chord ratio
+1.0000006). All 279 building meshes are ready, all four native collision probes
+pass, and no memory reservation is rejected. The final captures match 1,352
+current source files and 11 binaries by SHA-256.
+
+The close inspection shows road edges, markings and pavements following an
+actual bend continuously. Short constrained junctions remain angular; dark
+facades, simple grass areas and subdued lighting still limit visual realism.
+The captures use Microsoft Basic Render Driver and do not certify physical-GPU
+performance or commercial-game visual parity. The bend camera is a candidate
+inspection, not an identical world-space before/after comparison.
+[Capture review and iteration history](../artifacts/procedural/city-terrain-curves-20261114/visual-review.md)
+[Final capture integrity](../artifacts/procedural/city-terrain-curves-20261114/capture-integrity.json)
+[Editable source diagram](../artifacts/procedural/city-terrain-curves-20261114/native-spline-plan.png)
+
 ## City centre and road hierarchy — 14 November 2026
 
 Natural layout revision 4 adds four direct main approaches into the city centre
@@ -57,8 +183,8 @@ visible. Captures use the Microsoft Basic Render Driver; geometry-dependent
 camera framing and concurrent Editor validation prevent performance comparisons.
 [Native captures and visual review](../artifacts/procedural/city-centre-roads-20261114/visual-review.md)
 
-Smooth curves, terrain-cost routing, traffic control and speed-limit enforcement
-remain outside this change. [Usage and editing](RacingGameOpenCity.md)
+This checkpoint did not yet include smooth curves, terrain-cost routing, traffic
+control or speed-limit enforcement. [Usage and editing](RacingGameOpenCity.md)
 
 ## Natural road districts — 14 November 2026
 

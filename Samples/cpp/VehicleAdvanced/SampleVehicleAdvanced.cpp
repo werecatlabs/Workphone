@@ -18,6 +18,7 @@
 #include <Workphone/Physics/RaycastHit.hpp>
 #include <Workphone/Core/Properties.hpp>
 #include <Workphone/Scene/Components/CityRoadAuthoring.hpp>
+#include <Workphone/Scene/Components/CityRoadJunctions.hpp>
 #include <Workphone/Scene/Components/CityBuildingStyles.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
@@ -94,6 +95,181 @@ namespace workphone
                        << ",\"rejectedReservations\":" << stats.rejectedReservations[index] << '}';
             }
             output << '}';
+        }
+
+        float chordDeviation( Vector3F point, Vector3F a, Vector3F b )
+        {
+            const float dx = b.x - a.x, dz = b.z - a.z;
+            const float length = std::hypot( dx, dz );
+            return length > .00001f ? std::abs( dx * ( point.z - a.z ) - dz * ( point.x - a.x ) ) / length : 0.f;
+        }
+
+        bool writeCityRoadGeometry( std::ostream &output, const scene::CityRoadAuthoring &authoring )
+        {
+            const auto &source = authoring.getSource();
+            const auto &bake = authoring.getBake();
+            size_t knots = 0, curvedSpans = 0, curvedRoads = 0;
+            float maximumDeviation = 0, maximumGrade = 0, maximumArterialDetour = 1;
+            float minHeight = std::numeric_limits<float>::max(), maxHeight = -minHeight;
+            bool valid = !source.roads.empty() && source.roads.size() == bake.roads.size();
+            for( size_t r = 0; r < source.roads.size(); ++r )
+            {
+                const auto &road = source.roads[r];
+                knots += road.knots.size();
+                bool curved = false;
+                for( size_t k = 1; k < road.knots.size(); ++k )
+                {
+                    const auto &a = road.knots[k - 1], &b = road.knots[k];
+                    if( std::max( chordDeviation( a.position + a.outHandle, a.position, b.position ),
+                                  chordDeviation( b.position + b.inHandle, a.position, b.position ) ) > .05f )
+                    { ++curvedSpans; curved = true; }
+                }
+                curvedRoads += curved;
+                if( r >= bake.roads.size() || bake.roads[r].points.size() < 2 ) { valid = false; continue; }
+                const auto &samples = bake.roads[r].points;
+                valid = valid && bake.roads[r].roadId == road.id;
+                const auto first = samples.front().position, last = samples.back().position;
+                float horizontalLength = 0;
+                for( size_t i = 0; i < samples.size(); ++i )
+                {
+                    const auto p = samples[i].position;
+                    valid = valid && p.isFinite();
+                    minHeight = std::min( minHeight, p.y ); maxHeight = std::max( maxHeight, p.y );
+                    maximumDeviation = std::max( maximumDeviation, chordDeviation( p, first, last ) );
+                    if( i )
+                    {
+                        const auto previous = samples[i - 1].position;
+                        const float run = std::hypot( p.x - previous.x, p.z - previous.z );
+                        horizontalLength += run;
+                        if( run > .00001f ) maximumGrade = std::max( maximumGrade, std::abs( p.y - previous.y ) / run );
+                    }
+                }
+                const float chord = std::hypot( last.x - first.x, last.z - first.z );
+                if( road.width >= 11.99f && chord > .00001f )
+                    maximumArterialDetour = std::max( maximumArterialDetour, horizontalLength / chord );
+            }
+            const auto json = authoring.getSourceJSON();
+            valid = valid && !json.empty() && minHeight <= maxHeight;
+            output << ",\n  \"roadGeometry\": {\"editableKnots\":" << knots << ",\"curvedRoads\":" << curvedRoads
+                   << ",\"curvedSpans\":" << curvedSpans << ",\"maximumCentrelineDeviationMetres\":" << maximumDeviation
+                   << ",\"maximumCentrelineGrade\":" << maximumGrade << ",\"maximumArterialLengthRatio\":" << maximumArterialDetour
+                   << ",\"heightRangeMetres\":" << ( minHeight <= maxHeight ? maxHeight - minHeight : 0 )
+                   << ",\"valid\":" << ( valid ? "true" : "false" ) << '}'
+                   << ",\n  \"editableRoadSource\": " << ( json.empty() ? String( "null" ) : json );
+            return valid;
+        }
+
+        scene::CityRoadJunctionBake cityConnections( const scene::CityRoadAuthoring &authoring )
+        {
+            scene::CityRoadJunctionBake connections;
+            const auto terrain = authoring.getTerrainSnapshot();
+            const auto placement = authoring.getTerrainPlacement();
+            String error;
+            if( !terrain || !scene::buildCityRoadJunctions( authoring.getSource(), authoring.getBake(),
+                [terrain, placement]( const Vector3F &p, float &height ) {
+                    return render::sampleTerrainHeight( *terrain, placement, p, height );
+                }, {}, connections, error ) )
+                throw std::runtime_error( ( "Cannot inspect city connections: " + error ).c_str() );
+            return connections;
+        }
+
+        bool writeCityConnections( std::ostream &output, const scene::CityRoadAuthoring &authoring,
+                                   SmartPtr<physics::IPhysicsScene3> physics )
+        {
+            const auto connections = cityConnections( authoring );
+            size_t ports = 0, rounded = 0, boundaryVertices = 0, probes = 0, passed = 0;
+            const auto probe = [&]( Vector3F p ) {
+                ++probes;
+                f32 height = 0; bool driveable = false;
+                Vector3F hit, normal; SmartPtr<ISharedObject> object;
+                if( authoring.getRuntimeSurface( p.x, p.z, height, driveable ) && driveable && physics &&
+                    physics->intersects( { p.x, height + .25f, p.z }, { p.x, height - .25f, p.z }, hit, normal, object ) &&
+                    object && std::isfinite( hit.y ) && std::abs( hit.y - height ) < .01f && normal.y > .5f ) ++passed;
+            };
+            output << ",\n  \"roadConnections\": {\"junctions\":" << connections.junctions.size()
+                   << ",\"retainedRuns\":" << connections.roadRuns.size() << ",\"patches\":[";
+            for( size_t j = 0; j < connections.junctions.size(); ++j )
+            {
+                const auto &connection = connections.junctions[j];
+                ports += connection.ports.size(); boundaryVertices += connection.boundary.size();
+                probe( connection.center );
+                if( j ) output << ',';
+                output << "{\"center\":[" << connection.center.x << ',' << connection.center.y << ',' << connection.center.z
+                       << "],\"ports\":" << connection.ports.size() << ",\"boundary\":[";
+                for( size_t i = 0; i < connection.boundary.size(); ++i )
+                {
+                    if( i ) output << ',';
+                    const auto p = connection.boundary[i]; output << '[' << p.x << ',' << p.y << ',' << p.z << ']';
+                }
+                output << "]}";
+                for( const auto &corner : connection.corners ) if( corner.points.size() > 2 )
+                {
+                    ++rounded;
+                    const size_t middle = corner.points.size() / 2;
+                    probe( corner.points[middle] - corner.outward[middle] * .4f );
+                }
+            }
+            const bool valid = probes == passed;
+            output << "],\"ports\":" << ports << ",\"roundedCorners\":" << rounded
+                   << ",\"boundaryVertices\":" << boundaryVertices << ",\"nativeCollisionProbes\":" << probes
+                   << ",\"nativeCollisionProbesPassed\":" << passed << ",\"valid\":" << ( valid ? "true" : "false" ) << '}';
+            return valid;
+        }
+
+        std::array<Vector3F, 2> cityRoadInspectionView( const advanced::SceneAssets &assets )
+        {
+            const auto &samples = assets.circuit.samples;
+            const size_t corner = samples.size() / 4;
+            const auto &behind = samples[( corner + samples.size() - std::min<size_t>( 12, corner ) ) % samples.size()];
+            auto target = samples[( corner + std::min<size_t>( 20, samples.size() / 8 ) ) % samples.size()].position + Vector3F( 0, .4f, 0 );
+            auto eye = behind.position + behind.right * 3.f;
+            // Inspect an actual bend when the editable source has one. A fixed
+            // race-route fraction can select a deliberately straight T-junction.
+            float strongest = .05f;
+            if( assets.roadAuthoring ) for( const auto &road : assets.roadAuthoring->getBake().roads )
+            {
+                if( road.points.size() < 3 ) continue;
+                for( size_t i = 1; i + 1 < road.points.size(); ++i )
+                {
+                    const float bend = chordDeviation( road.points[i].position,
+                        road.points.front().position, road.points.back().position );
+                    if( bend <= strongest ) continue;
+                    strongest = bend;
+                    const auto &start = road.points[i > 8 ? i - 8 : 0];
+                    auto side = start.right - start.position; side.y = 0;
+                    if( side.lengthSquared() > .00001f ) side.normalise();
+                    eye = start.position + side * 3.f;
+                    target = road.points[std::min( i + 16, road.points.size() - 1 )].position + Vector3F( 0, .4f, 0 );
+                }
+            }
+            const float roadHeight = eye.y;
+            // Keep the inspection camera beside the road and lift it only when
+            // the sight line intersects a building. The old 22 m side offset
+            // placed the camera inside dense city frontages.
+            for( const float height : { 16.f, 24.f, 36.f, 52.f, 72.f } )
+            {
+                eye.y = roadHeight + height;
+                bool blocked = false;
+                for( const auto &lot : assets.cityLayout.lots )
+                {
+                    if( lot.park ) continue;
+                    float first = 0, last = 1;
+                    const auto axis = [&]( float a, float b, float minimum, float maximum ) {
+                        const float delta = b - a;
+                        if( std::abs( delta ) < .00001f ) return a >= minimum && a <= maximum;
+                        float low = ( minimum - a ) / delta, high = ( maximum - a ) / delta;
+                        if( low > high ) std::swap( low, high );
+                        first = std::max( first, low ); last = std::min( last, high );
+                        return first <= last;
+                    };
+                    if( axis( eye.x, target.x, lot.x - lot.width * .5f - 1, lot.x + lot.width * .5f + 1 ) &&
+                        axis( eye.z, target.z, lot.z - lot.depth * .5f - 1, lot.z + lot.depth * .5f + 1 ) &&
+                        axis( eye.y, target.y, lot.groundMinimumHeight - 1, lot.groundHeight + lot.height + 6 ) )
+                    { blocked = true; break; }
+                }
+                if( !blocked ) break;
+            }
+            return { eye, target };
         }
 
         struct CityBuildingGeometryCheck
@@ -293,7 +469,7 @@ namespace workphone
             u32 footwayActors=0,footwayNativeRayProbes=0,footwayRayCandidates=0;
             f32 footwayRayHeightError=-1;
             size_t roads=0,junctions=0,triangles=0,routePoints=0,islandsChecked=0,rayProbes=0,buildingBodies=0,expectedBuildingBodies=0;
-            f32 routeHeightError=0;
+            f32 routeHeightError=0, roadRayCurveDeviation=0;
         };
         TerrainCityCheck checkTerrainCity(const advanced::SceneAssets &assets,SmartPtr<physics::IPhysicsScene3> physics)
         {
@@ -318,15 +494,29 @@ namespace workphone
             result.islands=!source.roundabouts.empty();
             for(const auto &junction:source.roundabouts)
             {f32 height=0;bool driveable=true;const bool valid=authoring->getRuntimeSurface(junction.center.x,junction.center.z,height,driveable) && !driveable;if(valid)++result.islandsChecked;result.islands=result.islands && valid;}
-            const auto ray=[&](Vector3F p,bool driveable,bool ground=false)
+            const auto ray=[&](Vector3F p,bool driveable,bool ground=false,float tolerance=.035f)
             {
                 f32 height=0;bool actualDriveable=false;
                 bool valid=ground?render::sampleTerrainHeight(*sourceTerrain,authoring->getTerrainPlacement(),p,height):authoring->getRuntimeSurface(p.x,p.z,height,actualDriveable);
                 valid=valid && (ground || actualDriveable==driveable);Vector3F hit,normal;SmartPtr<ISharedObject> object;
-                valid=valid && physics->intersects({p.x,height+.25f,p.z},{p.x,height-.25f,p.z},hit,normal,object) && object && std::isfinite(hit.y) && std::abs(hit.y-height)<.035f && normal.y>.5f;
+                valid=valid && physics->intersects({p.x,height+.25f,p.z},{p.x,height-.25f,p.z},hit,normal,object) && object && std::isfinite(hit.y) && std::abs(hit.y-height)<tolerance && normal.y>.5f;
                 if(valid)++result.rayProbes;
             };
-            for(const auto &road:bake.roads)if(!road.points.empty()){ray(road.points[road.points.size()/2].position,true);break;}
+            // Probe the most laterally curved sampled point, instead of always
+            // choosing the first straight carriageway. Keep a flat-source fallback.
+            Vector3F roadProbe; bool haveRoadProbe=false;
+            for(const auto &road:bake.roads)if(road.points.size()>=2)
+            {
+                if(!haveRoadProbe){roadProbe=road.points[road.points.size()/2].position;haveRoadProbe=true;}
+                for(const auto &point:road.points)
+                {
+                    const float deviation=chordDeviation(point.position,road.points.front().position,road.points.back().position);
+                    if(deviation>result.roadRayCurveDeviation){result.roadRayCurveDeviation=deviation;roadProbe=point.position;}
+                }
+            }
+            // The draped road is 25 mm above the terrain; terrain collision alone
+            // must not satisfy this carriageway probe.
+            if(haveRoadProbe)ray(roadProbe,true,false,.01f);
             if(!source.roundabouts.empty())
             {const auto &j=source.roundabouts.front();const float radius=(j.outerRadius+j.islandRadius)*.5f;ray(j.center+Vector3F(radius*.70710678f,0,radius*.70710678f),true);ray(j.center,false);}
             bool terrainProbe=false;const auto placement=authoring->getTerrainPlacement().getTransformationMatrix();
@@ -1111,6 +1301,17 @@ namespace workphone
                                  << "],\"target\":[" << m_cityFacadeTarget.x << ',' << m_cityFacadeTarget.y << ','
                                  << m_cityFacadeTarget.z << "]}";
                     }
+                    if( m_captureView == "corner" && !m_assets.circuit.samples.empty() )
+                    {
+                        const auto pose = cityRoadInspectionView( m_assets );
+                        evidence << ",\n  \"cityRoadInspectionCamera\": {\"eye\":[" << pose[0].x << ',' << pose[0].y << ',' << pose[0].z
+                                 << "],\"target\":[" << pose[1].x << ',' << pose[1].y << ',' << pose[1].z << "]}";
+                    }
+                    if( m_captureView == "junction" )
+                    {
+                        evidence << ",\n  \"cityConnectionCamera\": {\"eye\":[" << m_cityConnectionEye.x << ',' << m_cityConnectionEye.y << ',' << m_cityConnectionEye.z
+                                 << "],\"target\":[" << m_cityConnectionTarget.x << ',' << m_cityConnectionTarget.y << ',' << m_cityConnectionTarget.z << "]}";
+                    }
                 }
                 if(m_assets.cityTerrainRoads)
                 {
@@ -1136,6 +1337,8 @@ namespace workphone
                     if( !streetDetailValid )
                         WP_LOG_ERROR( "Terrain city street detail does not match the requested setting or fixture." );
                     auto authoring=m_assets.roadAuthoring;const auto snapshot=m_assets.roadTerrain?m_assets.roadTerrain->getTerrainSnapshot():nullptr;
+                    if(authoring)cityValid=writeCityRoadGeometry(evidence,*authoring) && cityValid;
+                    if(authoring)cityValid=writeCityConnections(evidence,*authoring,app->getPhysicsManager()->getPhysicsScene()) && cityValid;
                     const auto &layout=m_assets.cityLayout;size_t parks=0;for(const auto &lot:layout.lots)parks+=lot.park?1:0;
                     evidence<<",\n  \"terrainCity\": {\"sourceId\":"<<advanced::jsonString(authoring?String(authoring->getSource().id.data(),authoring->getSource().id.size()):String())
                         <<",\"terrainBindingUUID\":"<<advanced::jsonString(authoring?authoring->getTerrainBindingUUID():String())
@@ -1151,6 +1354,7 @@ namespace workphone
                         <<",\"raceRouteAvailable\":"<<(m_assets.cityRaceRouteAvailable?"true":"false")<<",\"raceRouteError\":"<<advanced::jsonString(m_assets.cityRaceRouteError)
                         <<",\"islandCentresChecked\":"<<check.islandsChecked<<",\"islandsExcluded\":"<<(check.islands?"true":"false")
                         <<",\"nativeRayProbesPassed\":"<<check.rayProbes<<",\"flatFallbackAbsent\":"<<(check.flatFallbackAbsent?"true":"false")
+                        <<",\"roadRayCurveDeviationMetres\":"<<check.roadRayCurveDeviation
                         <<",\"lots\":"<<layout.lots.size()<<",\"buildingLots\":"<<layout.lots.size()-parks<<",\"parkLots\":"<<parks
                         <<",\"buildingCollisionActors\":"<<check.buildingBodies<<",\"expectedBuildingCollisionActors\":"<<check.expectedBuildingBodies
                         <<",\"buildingSupportChecks\":"<<m_assets.cityBuildingSupportChecks<<",\"culledParcels\":"<<m_assets.cityCulledParcels
@@ -2745,6 +2949,26 @@ namespace workphone
                 m_cityFrontageTarget.y += .97f;
             }
             selectFacade( layout );
+            if( m_captureView == "junction" )
+            {
+                const auto connections = cityConnections( *m_assets.roadAuthoring );
+                if( connections.junctions.empty() ) throw std::runtime_error( "Junction view requires a fitted ordinary road connection." );
+                const scene::CityRoadJunction *selected = nullptr;
+                float best = std::numeric_limits<float>::max();
+                const auto desired = m_cityOverviewCentre + Vector3F( m_cityOverviewExtent * .45f, 0, m_cityOverviewExtent * .45f );
+                for( const auto &connection : connections.junctions )
+                {
+                    const float dx = connection.center.x - desired.x, dz = connection.center.z - desired.z;
+                    const float score = dx * dx + dz * dz + ( connection.ports.size() == 3 ? 0.f : 10000.f );
+                    if( score < best ) { best = score; selected = &connection; }
+                }
+                const auto port = std::min_element( selected->ports.begin(), selected->ports.end(), [&]( const auto &a, const auto &b ) {
+                    return source.roads[a.roadIndex].width < source.roads[b.roadIndex].width;
+                } );
+                auto outward = port->boundary.position - selected->center; outward.y = 0; outward.normalise();
+                m_cityConnectionTarget = selected->center + Vector3F( 0, .3f, 0 );
+                m_cityConnectionEye = selected->center + outward * 31.f + Vector3F( -outward.z * 5.f, 26.f, outward.x * 5.f );
+            }
         }
         else if( m_assets.cityRoadShowcase )
         {
@@ -2889,11 +3113,23 @@ namespace workphone
                     }
                     else if( m_captureView == "corner" && !m_assets.circuit.samples.empty() )
                     {
-                        const auto &point =
-                            m_assets.circuit.samples[m_assets.circuit.samples.size() / 4];
-                        m_cameraActor->setPosition( point.position + point.right * 22.f +
-                                                    Vector3F( 0, 10, 0 ) );
-                        m_cameraActor->lookAt( point.position, Vector3F::unitY() );
+                        if( m_assets.openCity && !m_assets.cityRoadShowcase )
+                        {
+                            const auto pose = cityRoadInspectionView( m_assets );
+                            m_cameraActor->setPosition( pose[0] );
+                            m_cameraActor->lookAt( pose[1], Vector3F::unitY() );
+                        }
+                        else
+                        {
+                            const auto &point = m_assets.circuit.samples[m_assets.circuit.samples.size() / 4];
+                            m_cameraActor->setPosition( point.position + point.right * 22.f + Vector3F( 0, 10, 0 ) );
+                            m_cameraActor->lookAt( point.position, Vector3F::unitY() );
+                        }
+                    }
+                    else if( m_captureView == "junction" )
+                    {
+                        m_cameraActor->setPosition( m_cityConnectionEye );
+                        m_cameraActor->lookAt( m_cityConnectionTarget, Vector3F::unitY() );
                     }
                     else if( m_captureView == "track" )
                     {
@@ -3091,7 +3327,7 @@ int main( int argc, char **argv )
                    "  --track-smoke-test            Drive one full lap through the physics controller\n"
                    "  --collision-smoke-test        Verify native boxes; circuit garage impact or city road/sidewalk grades\n"
                    "  --validate-circuit           Validate 100 generated closed circuits\n"
-                   "  --capture PATH.bmp --view follow|car|track|corner|street|boulevard|frontage|facade|building   Save a rendered view and "
+                   "  --capture PATH.bmp --view follow|car|track|corner|junction|street|boulevard|frontage|facade|building   Save a rendered view and "
                    "exit\n"
                    "  --no-hud --force-lod auto|0|1  Clean captures and tree LOD comparisons\n"
                    "  --force-vehicle-lod auto|0|1|2  Override the vehicle level (clamped for low)\n"
@@ -3354,9 +3590,9 @@ int main( int argc, char **argv )
             { audioEnabled = false; hud = false; }
         }
         if( captureView != "follow" && captureView != "car" && captureView != "track" &&
-            captureView != "corner" && captureView != "street" && captureView != "boulevard" &&
+            captureView != "corner" && captureView != "junction" && captureView != "street" && captureView != "boulevard" &&
             captureView != "frontage" && captureView != "facade" && captureView != "building" )
-            throw std::runtime_error( "View must be follow, car, track, corner, street, boulevard, frontage, facade, or building." );
+            throw std::runtime_error( "View must be follow, car, track, corner, junction, street, boulevard, frontage, facade, or building." );
         if( ( cityOptionsExplicit || captureView == "street" || captureView == "boulevard" ) && !openCity )
             throw std::runtime_error( "City options and street-level views require --city." );
         if(roadAuthoringShowcase && foliageWorld)throw std::runtime_error("Road authoring showcase does not provide foliage-world generation.");
@@ -3365,6 +3601,8 @@ int main( int argc, char **argv )
             throw std::runtime_error( "--city-street-detail requires --city-terrain-roads." );
         if( captureView == "frontage" && !cityTerrainRoads )
             throw std::runtime_error( "--view frontage requires --city-terrain-roads." );
+        if( captureView == "junction" && !cityTerrainRoads )
+            throw std::runtime_error( "--view junction requires --city-terrain-roads." );
         if( (cityBuildingMeshOverride || cityBuildingStyle >= 0 || captureView == "facade" || captureView == "building") &&
             (!openCity || roadAuthoringShowcase) )
             throw std::runtime_error( "City building mesh overrides, styles, and the facade/building views require a generated city." );

@@ -1,6 +1,7 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Scene/Components/CityRoadAuthoring.hpp>
 #include <Workphone/Scene/Components/CityRoadTerrainMesh.hpp>
+#include <Workphone/Scene/Components/CityRoadJunctions.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
 #include <Workphone/Scene/Components/Mesh.hpp>
 #include <Workphone/Scene/Components/MeshRenderer.hpp>
@@ -378,8 +379,18 @@ namespace workphone::scene
         }
 
         void roadMarkings( CityRoadTerrainMesh &mesh, const procedural::CityRoadSplineSource &source,
-                           const procedural::CityRoadSplineBake &bake )
+                           const procedural::CityRoadSplineBake &bake, render::TerrainSnapshot terrain,
+                           const Transform3<real_Num> &placement )
         {
+            CityRoadJunctionBake connections;
+            String connectionError;
+            const auto sampler = [terrain, placement]( const Vector3F &p, float &height ) {
+                return render::sampleTerrainHeight( *terrain, placement, p, height );
+            };
+            if( !buildCityRoadJunctions( source, bake, sampler, {}, connections, connectionError ) )
+            {
+                throw std::runtime_error( connectionError.c_str() );
+            }
             const auto straightRunEnd =
                 []( const SourceBudgetVector<procedural::CityRoadSplineSample> &points, size_t first ) {
                     auto direction = points[first + 1].position - points[first].position;
@@ -670,10 +681,10 @@ namespace workphone::scene
                 triangle( points[0], points[1], points[2] );
                 triangle( points[0], points[2], points[3] );
             };
-            for( size_t road = 0; road < source.roads.size(); ++road )
+            for( const auto &run : connections.roadRuns )
             {
-                const auto &recipe = source.roads[road];
-                const auto &points = bake.roads[road].points;
+                const auto &recipe = source.roads[run.roadIndex];
+                const auto &points = run.points;
                 for( size_t first = 0; first + 1 < points.size(); )
                 {
                     // Paint is projected onto exact fitted triangles, so only
@@ -709,6 +720,23 @@ namespace workphone::scene
                         const auto q =
                             a.position + ( b.position - a.position ) * ( ( end - a.distance ) / length );
                         strip( p, q, across, .12f );
+                    }
+                }
+            }
+            // The connector owns the mouth. Keep ordinary centre dashes out of
+            // it and continue edge paint around the same rounded kerb boundary.
+            for( const auto &connection : connections.junctions )
+            {
+                for( const auto &corner : connection.corners )
+                {
+                    for( size_t i = 1; i < corner.points.size(); ++i )
+                    {
+                        const auto &a = corner.points[i - 1], &b = corner.points[i];
+                        const auto &na = corner.outward[i - 1], &nb = corner.outward[i];
+                        const auto ai = a - na * .26f, ao = a - na * .14f,
+                                   bi = b - nb * .26f, bo = b - nb * .14f;
+                        triangle( ai, bi, bo );
+                        triangle( ai, bo, ao );
                     }
                 }
             }
@@ -821,7 +849,7 @@ namespace workphone::scene
             {
                 return false;
             }
-            roadMarkings( candidate->geometry, source, bake );
+            roadMarkings( candidate->geometry, source, bake, terrain, placement );
             candidate->actors.reserve( 5 );
             candidate->meshes.reserve( 4 );
             candidate->materials.reserve( 4 );

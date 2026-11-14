@@ -395,6 +395,428 @@ namespace workphone::procedural
             return chains;
         }
 
+        Point unit( Point vector )
+        {
+            const double length = std::hypot( vector.x, vector.z );
+            return length > 1e-8 ? Point{ vector.x / length, vector.z / length } : Point{};
+        }
+
+        // A degree-two bend is a continuation, not a junction. Both incident
+        // roads use the same bisector tangent, while real attachments keep their
+        // original approach direction and a straight collar.
+        Point endDirection( const Graph &graph, u32 at, Point toward )
+        {
+            const auto center = graph.nodes[at];
+            const auto direction = unit( { toward.x - center.x, toward.z - center.z } );
+            std::array<u32, 2> incident{};
+            unsigned count = 0;
+            for( u32 i = 0; i < graph.edges.size(); ++i )
+            {
+                if( graph.edges[i].a == at || graph.edges[i].b == at )
+                {
+                    if( count == incident.size() ) return direction;
+                    incident[count++] = i;
+                }
+            }
+            if( count != 2 || distance( center, {} ) < .001 ||
+                graph.edges[incident[0]].roadClass != graph.edges[incident[1]].roadClass ) return direction;
+            const auto first = graph.nodes[other( graph.edges[incident[0]], at )];
+            const auto second = graph.nodes[other( graph.edges[incident[1]], at )];
+            const double minimumRun = std::max( 40., double( graph.edges[incident[0]].width * 6 ) );
+            if( distance( center, first ) < minimumRun || distance( center, second ) < minimumRun ) return direction;
+            const auto a = unit( { first.x - center.x, first.z - center.z } );
+            const auto b = unit( { second.x - center.x, second.z - center.z } );
+            if( a.x * b.x + a.z * b.z > .05 ) return direction;
+            auto tangent = unit( { a.x - b.x, a.z - b.z } );
+            if( tangent.x * direction.x + tangent.z * direction.z < 0 )
+            {
+                tangent.x = -tangent.x;
+                tangent.z = -tangent.z;
+            }
+            return tangent;
+        }
+
+        struct CurvePath
+        {
+            u32 a = 0, b = 0;
+            float width = 0;
+            SourceBudgetVector<Vector3F> points;
+            SourceBudgetVector<u32> edges;
+        };
+
+        struct CurveBounds
+        {
+            double minX, maxX, minZ, maxZ;
+
+            bool contains( Point point ) const
+            {
+                return point.x >= minX && point.x <= maxX && point.z >= minZ && point.z <= maxZ;
+            }
+        };
+
+        // Fit inside each existing corridor. Candidate costs depend on actual
+        // longitudinal/crossfall samples and elevation-profile roughness, never
+        // on random offsets. A flat isolated straight road stays straight.
+        bool curveRoad( const Graph &graph, const Chain &chain,
+                        const OpenCityRoadSourceOptions &options, const CityRoadHeightSampler &terrain,
+                        const SourceBudgetVector<u8> &disabledCorners,
+                        const SourceBudgetVector<CurvePath> &previous, CityRoadSpline &road,
+                        CurvePath &published )
+        {
+            const auto a = graph.nodes[chain.a], b = graph.nodes[chain.b];
+            const Point start{ road.knots.front().position.x, road.knots.front().position.z };
+            const Point finish{ road.knots.back().position.x, road.knots.back().position.z };
+            const auto axis = unit( { b.x - a.x, b.z - a.z } );
+            const auto station = [&]( Point point ) {
+                return ( point.x - start.x ) * axis.x + ( point.z - start.z ) * axis.z;
+            };
+            const double span = distance( start, finish );
+            SourceBudgetVector<Point> pins{ start, finish };
+            for( const auto edge : chain.edges )
+            {
+                for( const auto node : { graph.edges[edge].a, graph.edges[edge].b } )
+                {
+                    const auto point = graph.nodes[node];
+                    const double along = station( point );
+                    if( along > .001 && along < span - .001 ) pins.push_back( point );
+                }
+            }
+            std::sort( pins.begin(), pins.end(), [&]( Point left, Point right ) { return station( left ) < station( right ); } );
+            pins.erase( std::unique( pins.begin(), pins.end(), []( Point left, Point right ) {
+                return distance( left, right ) < .001;
+            } ), pins.end() );
+            const auto roadClass = graph.edges[chain.edges.front()].roadClass;
+            const double maxOffset = roadClass == OpenCityRoadNetwork::RoadClass::Arterial ? 4.
+                                     : roadClass == OpenCityRoadNetwork::RoadClass::Collector ? 8. : 12.;
+            const double maxDetour = roadClass == OpenCityRoadNetwork::RoadClass::Arterial ? 1.035 : 1.14;
+            const auto startDirection = !disabledCorners[chain.a] && distance( start, a ) < .001
+                                            ? endDirection( graph, chain.a, b ) : axis;
+            auto endDirectionValue = !disabledCorners[chain.b] && distance( finish, b ) < .001
+                                         ? endDirection( graph, chain.b, a )
+                                                                 : Point{ -axis.x, -axis.z };
+            endDirectionValue = { -endDirectionValue.x, -endDirectionValue.z };
+            struct EdgeObstacle
+            {
+                Point a, b;
+                CurveBounds bounds;
+                double margin = 0;
+                std::array<Point, 2> shared;
+                unsigned sharedCount = 0;
+            };
+            struct PathObstacle
+            {
+                const CurvePath *path = nullptr;
+                CurveBounds bounds;
+                double margin = 0;
+                SourceBudgetVector<Point> shared;
+            };
+            SourceBudgetVector<u8> ownedEdges( graph.edges.size(), 0 ), ownedNodes( graph.nodes.size(), 0 );
+            for( const auto index : chain.edges )
+            {
+                ownedEdges[index] = 1;
+                ownedNodes[graph.edges[index].a] = ownedNodes[graph.edges[index].b] = 1;
+            }
+            SourceBudgetVector<EdgeObstacle> edgeObstacles;
+            edgeObstacles.reserve( graph.edges.size() - chain.edges.size() );
+            for( size_t i = 0; i < graph.edges.size(); ++i )
+            {
+                if( ownedEdges[i] ) continue;
+                const auto edge = graph.edges[i];
+                EdgeObstacle obstacle;
+                obstacle.a = graph.nodes[edge.a]; obstacle.b = graph.nodes[edge.b];
+                obstacle.margin = ( road.width + edge.width ) * .5 + 6.5;
+                obstacle.bounds = { std::min( obstacle.a.x, obstacle.b.x ) - obstacle.margin,
+                                    std::max( obstacle.a.x, obstacle.b.x ) + obstacle.margin,
+                                    std::min( obstacle.a.z, obstacle.b.z ) - obstacle.margin,
+                                    std::max( obstacle.a.z, obstacle.b.z ) + obstacle.margin };
+                for( const auto node : { edge.a, edge.b } )
+                    if( ownedNodes[node] ) obstacle.shared[obstacle.sharedCount++] = graph.nodes[node];
+                edgeObstacles.push_back( std::move( obstacle ) );
+            }
+            SourceBudgetVector<PathObstacle> pathObstacles;
+            pathObstacles.reserve( previous.size() );
+            for( const auto &path : previous )
+            {
+                if( path.points.empty() ) continue;
+                PathObstacle obstacle;
+                obstacle.path = &path;
+                obstacle.margin = ( road.width + path.width ) * .5 + 6.5;
+                obstacle.bounds = { path.points.front().x, path.points.front().x,
+                                    path.points.front().z, path.points.front().z };
+                for( const auto point : path.points )
+                {
+                    obstacle.bounds.minX = std::min( obstacle.bounds.minX, double( point.x ) );
+                    obstacle.bounds.maxX = std::max( obstacle.bounds.maxX, double( point.x ) );
+                    obstacle.bounds.minZ = std::min( obstacle.bounds.minZ, double( point.z ) );
+                    obstacle.bounds.maxZ = std::max( obstacle.bounds.maxZ, double( point.z ) );
+                }
+                obstacle.bounds.minX -= obstacle.margin; obstacle.bounds.maxX += obstacle.margin;
+                obstacle.bounds.minZ -= obstacle.margin; obstacle.bounds.maxZ += obstacle.margin;
+                for( const auto edge : path.edges ) for( const auto node : { graph.edges[edge].a, graph.edges[edge].b } )
+                    if( ownedNodes[node] ) obstacle.shared.push_back( graph.nodes[node] );
+                pathObstacles.push_back( std::move( obstacle ) );
+            }
+            const auto sharedAttachment = []( Point point, const auto &nodes, size_t count, double radius ) {
+                for( size_t i = 0; i < count; ++i ) if( distance( point, nodes[i] ) < radius ) return true;
+                return false;
+            };
+            const auto ownerSpace = namespaceHash( road.id, options.seed );
+            double bestCost = std::numeric_limits<double>::max();
+            CityRoadSpline selected = road;
+            SourceBudgetVector<Vector3F> selectedPoints;
+
+            const auto evaluate = [&]( CityRoadSpline &candidate, bool curved ) {
+                CityRoadSplineSource isolated;
+                isolated.id = options.sourceId;
+                isolated.terrainResourceUuid = options.terrainResourceUuid;
+                isolated.roads.push_back( candidate );
+                CityRoadSplineBake sampled;
+                String candidateError;
+                if( !sampleCityRoadSplines( isolated, {}, terrain, sampled, candidateError ) )
+                {
+                    // A resource denial must not silently choose a different
+                    // generated shape merely because its candidate was cheaper.
+                    if( candidateError == std::bad_alloc().what() ) throw std::bad_alloc();
+                    return;
+                }
+                const auto &points = sampled.roads.front().points;
+                if( points.size() < 2 || points.size() > 4096 ) return;
+                double length = 0, terrainCost = 0, previousCost = 0;
+                const double startHeight = points.front().position.y;
+                const double heightDifference = points.back().position.y - startHeight;
+                for( size_t p = 0; p < points.size(); ++p )
+                {
+                    const auto position = points[p].position;
+                    const Point point{ position.x, position.z };
+                    const double profile = startHeight + heightDifference * std::clamp( station( point ) / span, 0., 1. );
+                    const double deviation = position.y - profile;
+                    const double crossfall = ( points[p].left.y - points[p].right.y ) / road.width;
+                    const double stationCost = deviation * deviation * .002 + crossfall * crossfall * .5;
+                    if( p )
+                    {
+                        const auto last = points[p - 1].position;
+                        const double run = std::hypot( position.x - last.x, position.z - last.z );
+                        if( run <= 1e-7 ) return;
+                        const double grade = ( position.y - last.y ) / run;
+                        terrainCost += ( grade * grade + ( stationCost + previousCost ) * .5 ) * run;
+                        length += run;
+                    }
+                    previousCost = stationCost;
+                    if( !curved ) continue;
+                    // Extra separation reserves both fitted footways and the
+                    // sampling tolerance. Shared junction collars intentionally
+                    // meet; unrelated corridors may never be crossed by a bow.
+                    for( const auto &obstacle : edgeObstacles )
+                    {
+                        if( !obstacle.bounds.contains( point ) || sharedAttachment( point, obstacle.shared,
+                            obstacle.sharedCount, obstacle.margin * 2 ) ) continue;
+                        if( segmentDistance( point, obstacle.a, obstacle.b ) < obstacle.margin ) return;
+                    }
+                    for( const auto &obstacle : pathObstacles )
+                    {
+                        if( !obstacle.bounds.contains( point ) || sharedAttachment( point, obstacle.shared,
+                            obstacle.shared.size(), obstacle.margin * 2 ) ) continue;
+                        const auto &path = *obstacle.path;
+                        const double margin = obstacle.margin;
+                        for( size_t q = 1; q < path.points.size(); ++q )
+                        {
+                            const auto from = path.points[q - 1], to = path.points[q];
+                            if( point.x < std::min( from.x, to.x ) - margin || point.x > std::max( from.x, to.x ) + margin ||
+                                point.z < std::min( from.z, to.z ) - margin || point.z > std::max( from.z, to.z ) + margin ) continue;
+                            if( segmentDistance( point, { from.x, from.z }, { to.x, to.z } ) < margin ) return;
+                        }
+                    }
+                }
+                if( length > span * maxDetour ) return;
+                const double cost = terrainCost / length + .025 * ( length / span - 1 );
+                if( cost >= bestCost - 1e-10 ) return;
+                bestCost = cost;
+                selected = candidate;
+                selectedPoints.clear();
+                selectedPoints.reserve( points.size() );
+                for( const auto &point : points ) selectedPoints.push_back( point.position );
+            };
+
+            // The shape at degree-two corners is intrinsic to their continuation;
+            // on open spans, zero lateral displacement wins an equal terrain cost.
+            bool canDisplace = false;
+            for( size_t i = 1; i < pins.size(); ++i ) canDisplace = canDisplace || distance( pins[i - 1], pins[i] ) >= 40;
+            for( const double amount : { 0., -.5, .5, -1., 1. } )
+            {
+                if( amount != 0 && !canDisplace ) continue;
+                CityRoadSpline candidate = road;
+                candidate.knots.clear();
+                candidate.knots.reserve( pins.size() * 4 );
+                bool supported = true;
+                const auto append = [&]( Point point, Point outgoing, Point incoming ) {
+                    if( !supported ) return;
+                    float height = 0;
+                    if( !terrain( { float( point.x ), 0, float( point.z ) }, height ) || !std::isfinite( height ) )
+                    {
+                        supported = false;
+                        return;
+                    }
+                    const Vector3F position{ float( point.x ), height, float( point.z ) };
+                    if( candidate.knots.empty() )
+                    {
+                        candidate.knots.push_back( { {}, position, {}, {} } );
+                        return;
+                    }
+                    auto &last = candidate.knots.back();
+                    const double run = std::hypot( position.x - last.position.x, position.z - last.position.z );
+                    if( run < .001 ) return;
+                    const float vertical = ( position.y - last.position.y ) / 3.f;
+                    last.outHandle = { float( outgoing.x * run / 3 ), vertical, float( outgoing.z * run / 3 ) };
+                    candidate.knots.push_back( { {}, position,
+                        { float( -incoming.x * run / 3 ), -vertical, float( -incoming.z * run / 3 ) }, {} } );
+                };
+                append( start, axis, axis );
+                for( size_t interval = 1; interval < pins.size(); ++interval )
+                {
+                    const auto first = pins[interval - 1], last = pins[interval];
+                    const double run = distance( first, last );
+                    const auto firstDirection = interval == 1 ? startDirection : axis;
+                    const auto lastDirection = interval + 1 == pins.size() ? endDirectionValue : axis;
+                    const bool smoothFirst = std::abs( firstDirection.x * axis.z - firstDirection.z * axis.x ) > .001;
+                    const bool smoothLast = std::abs( lastDirection.x * axis.z - lastDirection.z * axis.x ) > .001;
+                    const double collarA = smoothFirst ? 0 : std::min( 10., run * .18 );
+                    const double collarB = smoothLast ? 0 : std::min( 10., run * .18 );
+                    const Point innerA{ first.x + axis.x * collarA, first.z + axis.z * collarA };
+                    const Point innerB{ last.x - axis.x * collarB, last.z - axis.z * collarB };
+                    if( collarA > 0 ) append( innerA, axis, axis );
+                    auto middle = interpolate( innerA, innerB, .5 );
+                    const double displacement = run >= 40 ? amount * std::min( maxOffset, run * .1 ) : 0;
+                    middle.x -= axis.z * displacement;
+                    middle.z += axis.x * displacement;
+                    append( middle, smoothFirst ? firstDirection : axis, axis );
+                    append( innerB, axis, smoothLast ? lastDirection : axis );
+                    if( collarB > 0 ) append( last, axis, axis );
+                }
+                if( !supported ) continue;
+                need( candidate.knots.size() <= 256, "Generated curved road exceeded its 256-knot budget." );
+                for( size_t k = 0; k < candidate.knots.size(); ++k )
+                    candidate.knots[k].id = guid( ownerSpace, 0x4355525600ull + k, a, b );
+                candidate.knots.front().id = road.knots.front().id;
+                candidate.knots.back().id = road.knots.back().id;
+                evaluate( candidate, true );
+            }
+            // Geometry or terrain may leave no safe room for a curve. Retain the
+            // full straight road rather than dropping an unsafe branch.
+            const bool fitted = !selectedPoints.empty();
+            if( !fitted ) evaluate( road, false );
+            road = std::move( selected );
+            published.a = chain.a;
+            published.b = chain.b;
+            published.width = road.width;
+            published.points = std::move( selectedPoints );
+            published.edges = chain.edges;
+            return fitted;
+        }
+
+        bool followPinnedCurves( const OpenCityLayout &original, const CityRoadSplineSource &source,
+                                 const CityRoadSplineBake &bake, OpenCityLayout &routed )
+        {
+            struct Projection
+            {
+                Point start, axis;
+                double length = 0;
+                bool curved = false, monotonic = true;
+                SourceBudgetVector<double> stations;
+            };
+            need( bake.roads.size() == source.roads.size(), "Pinned curve bake does not match its source." );
+            SourceBudgetVector<Projection> projections;
+            projections.reserve( source.roads.size() );
+            for( size_t r = 0; r < source.roads.size(); ++r )
+            {
+                Projection projection;
+                const auto &road = source.roads[r];
+                const auto first = road.knots.front().position, last = road.knots.back().position;
+                projection.start = { first.x, first.z };
+                projection.axis = unit( { last.x - first.x, last.z - first.z } );
+                projection.length = std::hypot( last.x - first.x, last.z - first.z );
+                if( !road.closed && projection.length > .001 )
+                {
+                    for( const auto &sample : bake.roads[r].points )
+                    {
+                        const double dx = sample.position.x - first.x, dz = sample.position.z - first.z;
+                        projection.curved = projection.curved ||
+                            std::abs( dx * projection.axis.z - dz * projection.axis.x ) > .001;
+                    }
+                    if( projection.curved )
+                    {
+                        projection.stations.reserve( bake.roads[r].points.size() );
+                        for( const auto &sample : bake.roads[r].points )
+                        {
+                            const double station = ( sample.position.x - first.x ) * projection.axis.x +
+                                                   ( sample.position.z - first.z ) * projection.axis.z;
+                            if( !projection.stations.empty() && station <= projection.stations.back() + 1e-7 )
+                                projection.monotonic = false;
+                            projection.stations.push_back( station );
+                        }
+                    }
+                }
+                projections.push_back( std::move( projection ) );
+            }
+            // Retain the exact earlier route sampling for a wholly straight
+            // source, including the explicit legacy opt-out.
+            if( std::none_of( projections.begin(), projections.end(),
+                              []( const Projection &projection ) { return projection.curved; } ) ) return false;
+            need( original.route.size() >= 3 && original.route.size() <= 8192,
+                  "City race route exceeds the converter's 8192-point input budget." );
+            for( const auto point : original.route )
+                need( std::isfinite( point.x ) && std::isfinite( point.z ), "City route contains a nonfinite point." );
+            routed.route.reserve( std::min( size_t( 8192 ), original.route.size() * 2 ) );
+            const auto append = [&]( OpenCityLayout::Point point )
+            {
+                Point mapped{ point.x, point.z };
+                bool found = false;
+                for( size_t r = 0; r < projections.size(); ++r )
+                {
+                    const auto &projection = projections[r];
+                    if( !projection.curved ) continue;
+                    const double dx = point.x - projection.start.x, dz = point.z - projection.start.z;
+                    const double station = dx * projection.axis.x + dz * projection.axis.z;
+                    if( station < -.001 || station > projection.length + .001 ||
+                        std::abs( dx * projection.axis.z - dz * projection.axis.x ) > .002 ) continue;
+                    need( projection.monotonic, "Edited road folds back across the pinned route stations." );
+                    const double clamped = std::clamp( station, 0., projection.length );
+                    const auto upper = std::upper_bound( projection.stations.begin(), projection.stations.end(), clamped );
+                    const size_t after = std::clamp( size_t( upper - projection.stations.begin() ),
+                                                    size_t( 1 ), projection.stations.size() - 1 );
+                    const size_t before = after - 1;
+                    const double length = projection.stations[after] - projection.stations[before];
+                    need( length > 0, "Pinned curve station interval is empty." );
+                    const double t = std::clamp( ( clamped - projection.stations[before] ) / length, 0., 1. );
+                    const auto a = bake.roads[r].points[before].position, b = bake.roads[r].points[after].position;
+                    const Point candidate{ a.x + ( b.x - a.x ) * t, a.z + ( b.z - a.z ) * t };
+                    need( !found || distance( mapped, candidate ) < .002,
+                          "Several edited road curves ambiguously cover the pinned route." );
+                    mapped = candidate;
+                    found = true;
+                }
+                if( routed.route.empty() && distance( mapped, {} ) < .001 ) mapped = {};
+                need( routed.route.size() < 8192, "Pinned curve mapping exceeds its 8192-station budget." );
+                routed.route.push_back( { float( mapped.x ), float( mapped.z ) } );
+            };
+            // Sparse pinned routes must follow the same interior curve as dense
+            // generated routes; mapping endpoints alone would cut straight
+            // across their bend before adaptRoute performs final resampling.
+            for( size_t i = 0; i < original.route.size(); ++i )
+            {
+                const auto a = original.route[i], b = original.route[( i + 1 ) % original.route.size()];
+                const double length = std::hypot( b.x - a.x, b.z - a.z );
+                if( length < 1e-7 ) continue;
+                need( length <= 16384, "Pinned curve mapping span exceeds its station budget." );
+                const unsigned steps = unsigned( std::max( 1., std::ceil( length / 2 ) ) );
+                for( unsigned step = 0; step < steps; ++step )
+                {
+                    const float t = float( step ) / steps;
+                    append( { a.x + ( b.x - a.x ) * t, a.z + ( b.z - a.z ) * t } );
+                }
+            }
+            return true;
+        }
+
         struct Event
         {
             double arc = 0;
@@ -699,6 +1121,49 @@ namespace workphone::procedural
                 candidate.source.roads.push_back( std::move( road ) );
                 portLengths.push_back( lengths );
             }
+            if( city.naturalRoads && options.terrainCurves )
+            {
+                const auto straightRoads = candidate.source.roads;
+                SourceBudgetVector<u8> disabledCorners( graph.nodes.size(), 0 );
+                SourceBudgetVector<CurvePath> curvePaths;
+                curvePaths.reserve( chains.size() );
+                // A corner belongs to both incident roads. If one cannot keep
+                // its shared tangent safely, refit both with the original
+                // approach direction. Each retry disables at least one node,
+                // giving this reconciliation a strict graph-sized bound.
+                for( size_t pass = 0; pass <= graph.nodes.size(); ++pass )
+                {
+                    curvePaths.clear();
+                    bool changed = false;
+                    for( size_t r = 0; r < chains.size(); ++r )
+                    {
+                        const auto &chain = chains[r];
+                        auto &road = candidate.source.roads[r];
+                        road = straightRoads[r];
+                        CurvePath path;
+                        if( !curveRoad( graph, chain, options, terrain, disabledCorners,
+                                        curvePaths, road, path ) )
+                        {
+                            const auto disable = [&]( u32 node, u32 otherNode, const Vector3F &endpoint ) {
+                                if( disabledCorners[node] ||
+                                    distance( graph.nodes[node], { endpoint.x, endpoint.z } ) > .001 ) return;
+                                const auto toward = graph.nodes[otherNode];
+                                const auto axis = unit( { toward.x - graph.nodes[node].x,
+                                                          toward.z - graph.nodes[node].z } );
+                                const auto tangent = endDirection( graph, node, toward );
+                                if( std::abs( axis.x * tangent.z - axis.z * tangent.x ) <= .001 ) return;
+                                disabledCorners[node] = 1;
+                                changed = true;
+                            };
+                            disable( chain.a, chain.b, road.knots.front().position );
+                            disable( chain.b, chain.a, road.knots.back().position );
+                        }
+                        curvePaths.push_back( std::move( path ) );
+                    }
+                    if( !changed ) break;
+                    need( pass < graph.nodes.size(), "Generated road corner reconciliation did not converge." );
+                }
+            }
             for( const auto &junction : junctions )
             {
                 CityRoadRoundaboutSpec spec;
@@ -782,7 +1247,9 @@ namespace workphone::procedural
             candidate.source = current;
             OpenCityRoadSourceOptions options;
             options.heightOffset = current.roads.front().heightOffset;
-            adaptRoute( original, options, terrain, junctions, candidate );
+            OpenCityLayout curvedRoute;
+            const bool followedCurves = followPinnedCurves( original, current, roads, curvedRoute );
+            adaptRoute( followedCurves ? curvedRoute : original, options, terrain, junctions, candidate );
 
             struct Bounds
             {

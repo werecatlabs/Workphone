@@ -185,6 +185,7 @@ namespace workphone
         Vector3F m_cityBoulevardCentre{};
         Vector3F m_cityFrontageEye{}, m_cityFrontageTarget{};
         Vector3F m_cityFacadeEye{}, m_cityFacadeTarget{};
+        Vector3F m_cityConnectionEye{}, m_cityConnectionTarget{};
         u64 m_cityFacadeLotId = 0;
         f64 m_cityBuildingStartupDeadline = 0;
         Vector3F m_generatedSpawnPosition{0,.42f,0};

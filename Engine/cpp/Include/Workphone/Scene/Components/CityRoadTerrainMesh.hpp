@@ -37,5 +37,6 @@ namespace workphone::scene
                                               const procedural::CityRoadSplineBake &bake,
                                               render::TerrainSnapshot terrain,
                                               const Transform3<real_Num> &placement,
-                                              CityRoadTerrainMesh &output, String &error );
+                                              CityRoadTerrainMesh &output, String &error,
+                                              bool connectRoads = true );
 }  // namespace workphone::scene

@@ -14,6 +14,9 @@ namespace workphone::procedural
         f32 roadWidth = 12, maxGrade = .08f, heightOffset = .025f;
         u32 maximumRoundabouts = 8;
         bool clockwise = true;
+        // Natural-road cubic fitting follows terrain inside the existing graph
+        // corridors. Disable to reproduce the earlier straight source geometry.
+        bool terrainCurves = true;
     };
 
     struct OpenCityRoadSourceResult : SourceBudgetObject
@@ -35,8 +38,9 @@ namespace workphone::procedural
                                              const OpenCityRoadSourceOptions &options,
                                              const CityRoadHeightSampler &terrain,
                                              OpenCityRoadSourceResult &output, String &error );
-    // Reuses the pinned original route only while the current editable source
-    // still supports it. Arbitrary topology retargeting is a later tier.
+    // Follows monotonic edited/generated curves on their pinned chord stations,
+    // then proves continuous running-surface coverage. Junction endpoints remain
+    // pinned; missing roads, folded/ambiguous mappings and gaps are rejected.
     WPCore_API bool fitOpenCityRoadRoute( const OpenCityLayout &original,
                                           const CityRoadSplineSource &current,
                                           const CityRoadHeightSampler &terrain,

@@ -11,7 +11,7 @@ param(
     [ValidateSet('grid', 'lsystem')][string]$CityLayout = 'grid',
     [ValidatePattern('^\d+x\d+$')][string]$Resolution = '1280x720',
     [ValidateRange(0.1, 3600)][double]$Seconds = 10,
-    [ValidateSet('follow', 'car', 'track', 'corner', 'street', 'boulevard', 'frontage', 'facade', 'building')][string[]]$Views = @('car', 'track', 'corner', 'follow'),
+    [ValidateSet('follow', 'car', 'track', 'corner', 'junction', 'street', 'boulevard', 'frontage', 'facade', 'building')][string[]]$Views = @('car', 'track', 'corner', 'follow'),
     [string]$Replay,
     [switch]$NoEffects,
     [switch]$FoliageWorld,
@@ -29,6 +29,7 @@ if ($RoadAuthoringShowcase) { $Scene = 'city' }
 if ($CityTerrainRoads) { $Scene = 'city' }
 if ($streetDetailExplicit -and !$CityTerrainRoads) { throw '-CityStreetDetail requires -CityTerrainRoads.' }
 if ($Views -contains 'frontage' -and !$CityTerrainRoads) { throw '-Views frontage requires -CityTerrainRoads.' }
+if ($Views -contains 'junction' -and !$CityTerrainRoads) { throw '-Views junction requires -CityTerrainRoads.' }
 if (($CityBuildingStyle -or $CityBuildingMeshes.Count -or $Views -contains 'facade' -or $Views -contains 'building') -and
     ($Scene -ne 'city' -or $RoadAuthoringShowcase)) { throw 'Building styles, mesh overrides, and the facade/building views require a generated city.' }
 if ($RoadAuthoringShowcase -and $CityTerrainRoads) { throw 'Choose -RoadAuthoringShowcase or -CityTerrainRoads.' }

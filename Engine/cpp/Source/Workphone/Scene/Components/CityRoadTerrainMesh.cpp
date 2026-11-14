@@ -1,9 +1,11 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Scene/Components/CityRoadTerrainMesh.hpp>
+#include <Workphone/Scene/Components/CityRoadJunctions.hpp>
 #include <Workphone/Interface/Procedural/CityRoadRoundabout.hpp>
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <limits>
 #include <stdexcept>
 
 namespace workphone::scene
@@ -273,6 +275,8 @@ namespace workphone::scene
                 normal /= length;
                 require( mesh.vertices.size() + 3 <= maximumVertices,
                          "Road terrain mesh vertex budget exceeded." );
+                require( mesh.indices.size() + 3 <= maximumVertices,
+                         "Road terrain mesh triangle budget exceeded." );
                 const u32 base = u32( mesh.vertices.size() );
                 for( auto &vertex : triangle )
                 {
@@ -283,6 +287,45 @@ namespace workphone::scene
                 mesh.indices.push_back( base + 1 );
                 mesh.indices.push_back( base + 2 );
                 mesh.triangleKinds.push_back( kind );
+            }
+
+            void emitClipped( const std::array<CityRoadTerrainVertex, 10> &polygon, size_t count,
+                              CityRoadTerrainTriangleKind kind, Vector3F normal )
+            {
+                const float normalLength = normal.length();
+                require( std::isfinite( normalLength ), "Road clipping plane has an invalid normal." );
+                if( normalLength <= 1e-8f ) return;
+                if( normal.y < 0 ) normal = -normal;
+                normal /= normalLength;
+                std::array<u32, 10> indices;
+                indices.fill( std::numeric_limits<u32>::max() );
+                const auto vertex = [&]( size_t index ) {
+                    if( indices[index] == std::numeric_limits<u32>::max() )
+                    {
+                        require( mesh.vertices.size() < maximumVertices,
+                                 "Road terrain mesh vertex budget exceeded." );
+                        auto value = polygon[index];
+                        value.normal = normal;
+                        indices[index] = u32( mesh.vertices.size() );
+                        mesh.vertices.push_back( value );
+                    }
+                    return indices[index];
+                };
+                for( size_t i = 1; i + 1 < count; ++i )
+                {
+                    const auto face = ( polygon[i].position - polygon[0].position )
+                                          .crossProduct( polygon[i + 1].position - polygon[0].position );
+                    const float faceLength = face.length();
+                    require( std::isfinite( faceLength ), "Road triangle normal is nonfinite." );
+                    if( faceLength <= 1e-8f ) continue;
+                    require( mesh.indices.size() + 3 <= maximumVertices,
+                             "Road terrain mesh triangle budget exceeded." );
+                    const auto a = vertex( 0 ), b = vertex( i ), c = vertex( i + 1 );
+                    mesh.indices.push_back( a );
+                    mesh.indices.push_back( face.y < 0 ? c : b );
+                    mesh.indices.push_back( face.y < 0 ? b : c );
+                    mesh.triangleKinds.push_back( kind );
+                }
             }
 
             void triangle( const std::array<Vector3F, 3> &positions, const std::array<Vector2F, 3> &uvs,
@@ -353,14 +396,11 @@ namespace workphone::scene
                                 fitted[i].position = position;
                                 fitted[i].uv = { float( point.u ), float( point.v ) };
                             }
+                            const auto wa = world( cell[0] ), wb = world( cell[1] ), wc = world( cell[2] );
+                            const auto normal = policy.drape ? ( wb - wa ).crossProduct( wc - wa )
+                                : ( positions[1] - positions[0] ).crossProduct( positions[2] - positions[0] );
                             if( policy.kind == CityRoadTerrainTriangleKind::Road )
                             {
-                                const auto wa = world( cell[0] ), wb = world( cell[1] ),
-                                           wc = world( cell[2] );
-                                const auto normal =
-                                    policy.drape ? ( wb - wa ).crossProduct( wc - wa )
-                                                 : ( positions[1] - positions[0] )
-                                                       .crossProduct( positions[2] - positions[0] );
                                 const double horizontal =
                                     std::hypot( double( normal.x ), double( normal.z ) );
                                 require( std::abs( normal.y ) > 1e-10 &&
@@ -369,10 +409,11 @@ namespace workphone::scene
                                          "Covered terrain or junction carriageway exceeds the road "
                                          "grade limit." );
                             }
-                            for( size_t i = 1; i + 1 < count; ++i )
-                            {
-                                emit( { fitted[0], fitted[i], fitted[i + 1] }, policy.kind, true );
-                            }
+                            // Every clipped polygon lies in exactly one terrain
+                            // or Fixed source plane. Its fan can share vertices
+                            // and that plane's stable normal without changing
+                            // any position, UV, winding or coverage triangle.
+                            emitClipped( fitted, count, policy.kind, normal );
                         }
                     }
                 }
@@ -527,7 +568,7 @@ namespace workphone::scene
                                    const procedural::CityRoadSplineBake &bake,
                                    render::TerrainSnapshot terrain,
                                    const Transform3<real_Num> &placement, CityRoadTerrainMesh &output,
-                                   String &error )
+                                   String &error, bool connectRoads )
     {
         try
         {
@@ -552,6 +593,12 @@ namespace workphone::scene
                 throw std::runtime_error( error.c_str() );
             }
             Builder builder( *terrain, placement, candidate );
+            const auto sampler = [terrain, placement]( const Vector3F &point, float &height ) {
+                return render::sampleTerrainHeight( *terrain, placement, point, height );
+            };
+            CityRoadJunctionBake connected;
+            if( connectRoads && !buildCityRoadJunctions( source, bake, sampler, {}, connected, error ) )
+                throw std::runtime_error( error.c_str() );
             for( size_t roadIndex = 0; roadIndex < source.roads.size(); ++roadIndex )
             {
                 const auto &road = source.roads[roadIndex];
@@ -579,23 +626,38 @@ namespace workphone::scene
                          "unavailable." );
                 policy.offset = road.heightOffset;
                 policy.maxGrade = road.maxGrade;
-                for( size_t first = 0; first + 1 < samples.points.size(); )
+                const auto emitRun = [&]( const SourceBudgetVector<procedural::CityRoadSplineSample> &points ) {
+                    for( size_t first = 0; first + 1 < points.size(); )
+                    {
+                        const size_t last = straightRunEnd( points, first, policy.drape );
+                        const auto &a = points[first], &b = points[last];
+                        const float av = a.distance * .125f, bv = b.distance * .125f;
+                        builder.triangle( { a.left, a.right, b.left },
+                                          { Vector2F( 0, av ), Vector2F( 1, av ), Vector2F( 0, bv ) }, policy );
+                        builder.triangle( { a.right, b.right, b.left },
+                                          { Vector2F( 1, av ), Vector2F( 1, bv ), Vector2F( 0, bv ) }, policy );
+                        first = last;
+                    }
+                };
+                if( connectRoads )
                 {
-                    const size_t last = straightRunEnd( samples.points, first, policy.drape );
-                    const auto &a = samples.points[first], &b = samples.points[last];
-                    const float av = a.distance * .125f, bv = b.distance * .125f;
-                    builder.triangle( { a.left, a.right, b.left },
-                                      { Vector2F( 0, av ), Vector2F( 1, av ), Vector2F( 0, bv ) },
-                                      policy );
-                    builder.triangle( { a.right, b.right, b.left },
-                                      { Vector2F( 1, av ), Vector2F( 1, bv ), Vector2F( 0, bv ) },
-                                      policy );
-                    first = last;
+                    for( const auto &run : connected.roadRuns ) if( run.roadIndex == roadIndex ) emitRun( run.points );
+                }
+                else emitRun( samples.points );
+            }
+            for( const auto &junction : connected.junctions )
+            {
+                Policy policy;
+                policy.drape = true; policy.offset = junction.heightOffset; policy.maxGrade = junction.maxGrade;
+                const auto vertex = [&]( u32 index ) { return index ? junction.boundary[index - 1] : junction.center; };
+                for( size_t i = 0; i < junction.indices.size(); i += 3 )
+                {
+                    const auto a = vertex( junction.indices[i] ), b = vertex( junction.indices[i + 1] ),
+                               c = vertex( junction.indices[i + 2] );
+                    builder.triangle( { a, b, c }, { Vector2F( a.x * .125f, a.z * .125f ),
+                        Vector2F( b.x * .125f, b.z * .125f ), Vector2F( c.x * .125f, c.z * .125f ) }, policy );
                 }
             }
-            const auto sampler = [terrain, placement]( const Vector3F &point, float &height ) {
-                return render::sampleTerrainHeight( *terrain, placement, point, height );
-            };
             for( const auto &junction : source.roundabouts )
             {
                 procedural::CityRoadRoundaboutBake junctionBake;

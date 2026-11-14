@@ -1,4 +1,5 @@
 #include <Workphone/Scene/Components/CityRoadFootways.hpp>
+#include <Workphone/Scene/Components/CityRoadJunctions.hpp>
 #include <Workphone/Interface/Procedural/OpenCityLayout.hpp>
 #include <Workphone/Interface/Procedural/OpenCityRoadSource.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
@@ -188,6 +189,103 @@ namespace
         require( topAt( footways, 11, 11 ) && !topAt( footways, 0, 0 ),
             "A tight valid road lost its outer sidewalk or emitted its folded inner sidewalk" );
     }
+    void ordinaryJunctionWalks()
+    {
+        for( unsigned variant = 0; variant < 4; ++variant )
+        {
+            const bool crossing = ( variant & 1 ) != 0, translated = variant >= 2;
+            const Vector3F origin = translated ? Vector3F( -440, 0, -176 ) : Vector3F();
+            std::cout << "ordinary footway " << ( crossing ? "X" : "T" ) << " junction translated=" << translated << '\n';
+            auto s = source(); addRoad( s, 0, origin + Vector3F( -24, 0, 0 ), origin + Vector3F( 24, 0, 0 ) );
+            addRoad( s, 1, origin + ( crossing ? Vector3F( 0, 0, -24 ) : Vector3F() ), origin + Vector3F( 0, 0, 24 ) );
+            s.roads[1].width = translated ? 12 : 7;
+            auto data = translated ? terrain( 321, 4 ) : terrain(); const auto bake = sample( s, data ); String error;
+            SourceBudgetText original; check( serializeCityRoadSplineSource( s, original, error ), error );
+            const CityRoadHeightSampler height = [data]( const Vector3F &p, float &h ) { return render::sampleTerrainHeight( *data, {}, p, h ); };
+            CityRoadJunctionBake connections;
+            check( buildCityRoadJunctions( s, bake, height, {}, connections, error ), error );
+            require( connections.junctions.size() == 1, "Footway fixture lost its ordinary junction" );
+            CityRoadTerrainMesh roads, walks;
+            check( buildCityRoadTerrainMesh( s, bake, data, {}, roads, error ), error );
+            check( buildCityRoadFootways( s, bake, data, {}, walks, error ), error ); agreement( walks, data );
+            const auto retained = checksum( walks );
+            check( buildCityRoadFootways( s, bake, data, {}, walks, error ), error );
+            require( checksum( walks ) == retained, "Ordinary junction footways are not deterministic" );
+            SourceBudgetVector<Vector3F> joins, exposedEdges;
+            unsigned inspected = 0;
+            for( const auto &corner : connections.junctions.front().corners )
+            {
+                require( corner.points.size() >= 2 && corner.points.size() == corner.outward.size(),
+                         "Ordinary junction corner has no shared sidewalk boundary" );
+                for( size_t i = 0; i + 1 < corner.points.size(); ++i )
+                {
+                    for( float offset : { .05f, 2.45f } )
+                        exposedEdges.push_back( ( corner.points[i] + corner.points[i + 1] ) * .5f +
+                            ( corner.outward[i] + corner.outward[i + 1] ) * ( .5f * offset ) );
+                    for( float t : { 0.f, .5f, 1.f } )
+                    {
+                        const auto p = corner.points[i] * ( 1 - t ) + corner.points[i + 1] * t +
+                            ( corner.outward[i] * ( 1 - t ) + corner.outward[i + 1] * t ) * 1.25f;
+                        require( topAt( walks, p.x, p.z ) && !topAt( roads, p.x, p.z ),
+                                 "Rounded junction sidewalk has a gap or intrudes into its carriageway" );
+                        joins.push_back( p ); // Cell-diagonal skirts must not block the walking arc either.
+                        ++inspected;
+                    }
+                }
+                joins.push_back( corner.points.front() + corner.outward.front() * 1.25f );
+                joins.push_back( corner.points.back() + corner.outward.back() * 1.25f );
+            }
+            require( inspected > 8, "Ordinary junction emitted no useful connected pedestrian corners" );
+            for( const auto &road : bake.roads ) for( const auto &p : road.points )
+                require( !topAt( walks, p.position.x, p.position.z ), "Ordinary sidewalk seals a T/X approach mouth" );
+            for( size_t i = 0; i < walks.indices.size(); i += 3 )
+            {
+                const auto &a = walks.vertices[walks.indices[i]], &b = walks.vertices[walks.indices[i + 1]],
+                           &c = walks.vertices[walks.indices[i + 2]];
+                const auto center = ( a.position + b.position + c.position ) / 3.f;
+                if( a.normal.y > .5f )
+                    require( !topAt( roads, center.x, center.z ), "Junction sidewalk top overlaps asphalt" );
+                else for( const auto &join : joins )
+                {
+                    const auto distance = [&]( Vector3F p, Vector3F q ) {
+                        const float dx = q.x - p.x, dz = q.z - p.z, squared = dx * dx + dz * dz;
+                        const float t = squared > 1e-10f ? std::clamp( ( ( join.x - p.x ) * dx + ( join.z - p.z ) * dz ) / squared, 0.f, 1.f ) : 0;
+                        return std::hypot( join.x - p.x - t * dx, join.z - p.z - t * dz );
+                    };
+                    if( std::min( { distance( a.position, b.position ), distance( b.position, c.position ),
+                                    distance( c.position, a.position ) } ) <= .2f )
+                        throw std::runtime_error( "An internal kerb blocks the junction pedestrian join (" +
+                            std::to_string( join.x ) + "," + std::to_string( join.z ) + "); triangle=(" +
+                            std::to_string( a.position.x ) + "," + std::to_string( a.position.z ) + ")-(" +
+                            std::to_string( b.position.x ) + "," + std::to_string( b.position.z ) + ")-(" +
+                            std::to_string( c.position.x ) + "," + std::to_string( c.position.z ) + ")" );
+                }
+            }
+            // Removing all skirts would hide the blocking wall while leaving
+            // visibly open pavement sides. Both real outlines must remain sealed.
+            for( const auto &edge : exposedEdges )
+            {
+                double nearest = std::numeric_limits<double>::max();
+                for( size_t i = 0; i < walks.indices.size(); i += 3 )
+                {
+                    if( walks.vertices[walks.indices[i]].normal.y > .5f ) continue;
+                    for( size_t j = 0; j < 3; ++j )
+                    {
+                        const auto a = walks.vertices[walks.indices[i + j]].position,
+                                   b = walks.vertices[walks.indices[i + ( j + 1 ) % 3]].position;
+                        const double dx = double( b.x ) - a.x, dz = double( b.z ) - a.z,
+                                     squared = dx * dx + dz * dz;
+                        const double t = squared > 1e-10 ? std::clamp( ( ( edge.x - a.x ) * dx +
+                            ( edge.z - a.z ) * dz ) / squared, 0., 1. ) : 0;
+                        nearest = std::min( nearest, std::hypot( edge.x - a.x - t * dx, edge.z - a.z - t * dz ) );
+                    }
+                }
+                require( nearest < .002, "Rounded pavement lost a real inner or outer kerb" );
+            }
+            SourceBudgetText after; check( serializeCityRoadSplineSource( s, after, error ), error );
+            require( after == original, "Building junction footways changed the editable source" );
+        }
+    }
     void coalescedStraightAdmission()
     {
         auto data = terrain( 65, 4 ); auto s = source(); addRoad( s, 0, { 0, 0, -120 }, { 0, 0, 120 } );
@@ -213,7 +311,7 @@ namespace
             }
             unmerged.roads.push_back( std::move( road ) ); unmergedBake.roads.push_back( std::move( samples ) );
         }
-        check( buildCityRoadTerrainMesh( unmerged, unmergedBake, data, {}, dense, error ), error );
+        check( buildCityRoadTerrainMesh( unmerged, unmergedBake, data, {}, dense, error, false ), error );
         size_t topTriangles = 0, skirtTriangles = 0, skirtVertices = 0;
         for( size_t i = 0; i < mesh.indices.size(); i += 3 )
             if( mesh.vertices[mesh.indices[i]].normal.y > .5f ) ++topTriangles; else ++skirtTriangles;
@@ -261,6 +359,7 @@ namespace
         auto data = terrain( 321, 4 ); const CityRoadHeightSampler plane = []( const Vector3F &, float &height ) { height = 0; return true; };
         for( bool natural : { false, true } ) for( u32 seed : { 0u, 7u, 42u, 0xffffffffu } )
         {
+            std::cout << "BEGIN generated footways " << ( natural ? "natural" : "grid" ) << " blocks=10 seed=" << seed << '\n';
             const auto city = OpenCityLayout::generate( seed, 10, 0, natural ); OpenCityRoadSourceOptions options;
             options.sourceId = "60000000-0000-4000-8000-000000000001"; options.terrainResourceUuid = "70000000-0000-4000-8000-000000000001";
             options.seed = seed; options.revision = 7; options.maximumRoundabouts = 4;
@@ -309,12 +408,18 @@ namespace
 }
 int main()
 {
+    std::cout << std::unitbuf;
+    std::cerr << std::unitbuf;
     int result = 0;
-    const auto run = []( const char *name, auto test ) { try { test(); } catch( const std::exception &e ) { throw std::runtime_error( std::string( name ) + ": " + e.what() ); } };
+    const auto run = []( const char *name, auto test ) {
+        try { std::cout << "BEGIN " << name << '\n'; test(); std::cout << "PASS " << name << '\n'; }
+        catch( const std::exception &e ) { throw std::runtime_error( std::string( name ) + ": " + e.what() ); }
+    };
     try
     {
         run( "streets and exact terrain", streetsAndTerrain ); run( "four-port roundabout", roundabout );
         run( "tight editable curve", tightEditableCurve );
+        run( "ordinary unequal-width T/X pedestrian joins", ordinaryJunctionWalks );
         run( "coalesced straight admission", coalescedStraightAdmission );
         run( "oblique batch boundary", obliqueBatchBoundary );
         run( "generated maximum profiles", generatedProfiles ); run( "transactional denial", failuresAndBudget );
