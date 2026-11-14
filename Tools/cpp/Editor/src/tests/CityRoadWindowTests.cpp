@@ -221,7 +221,59 @@ BOOST_AUTO_TEST_CASE(city_road_viewport_authoring_test)
         return *found;
     };
     const auto originalApproach = approach();
+    const auto originalJunctionId = city->getSource().roundabouts.front().junctionId;
     const auto approachMidpoint = (originalApproach.knots.front().position+originalApproach.knots.back().position)*.5f;
+    activate("Select Road");ray("begin",approachMidpoint.x,approachMidpoint.z);
+    SmartPtr<ui::IUILabelTextInputPair> roadWidthInput;
+    for(auto element:window->getParentWindow()->getChildren())
+        if(auto input=dynamic_pointer_cast<ui::IUILabelTextInputPair>(element))
+            if(input->getLabel()=="Road width (m)")roadWidthInput=input;
+    BOOST_REQUIRE(roadWidthInput);
+    const auto checkApproachWidth = [&](f32 width)
+    {
+        BOOST_REQUIRE_EQUAL(city->getSource().roundabouts.size(),1u);
+        BOOST_CHECK(city->getSource().roundabouts.front().junctionId==originalJunctionId);
+        BOOST_CHECK_SMALL(approach().width-width,.0001f);
+        BOOST_REQUIRE_EQUAL(approach().knots.size(),originalApproach.knots.size());
+        for(size_t i=0;i<originalApproach.knots.size();++i)
+        {
+            BOOST_CHECK(approach().knots[i].id==originalApproach.knots[i].id);
+            BOOST_CHECK(approach().knots[i].position==originalApproach.knots[i].position);
+            BOOST_CHECK(approach().knots[i].inHandle==originalApproach.knots[i].inHandle);
+            BOOST_CHECK(approach().knots[i].outHandle==originalApproach.knots[i].outHandle);
+        }
+        unsigned linkedPorts=0;
+        for(const auto &junction:city->getSource().roundabouts)for(const auto &port:junction.ports)
+            if(port.approachId==approachId){++linkedPorts;BOOST_CHECK_SMALL(port.width-width,.0001f);}
+        BOOST_CHECK_EQUAL(linkedPorts,1u);
+    };
+    const auto beforeWidthRevision=city->getSourceRevision();
+    const auto beforeWidthPublications=publications;
+    roadWidthInput->setValue("7");
+    {RoadTask render(TaskId::Render);activate("Apply Road Fields");}
+    BOOST_CHECK_EQUAL(city->getSourceRevision(),beforeWidthRevision);
+    BOOST_CHECK_EQUAL(publications,beforeWidthPublications);
+    flush();
+    BOOST_REQUIRE_MESSAGE(city->getSourceRevision()==beforeWidthRevision+1,diagnostic());
+    BOOST_CHECK_EQUAL(publications,beforeWidthPublications+1);
+    checkApproachWidth(7);
+    activate("Undo");checkApproachWidth(originalApproach.width);
+    activate("Redo");checkApproachWidth(7);
+    const auto beforeRejectedWidth=roadJSON(city->getSource());
+    const auto beforeRejectedPublications=publications;
+    roadWidthInput->setValue("13"); // Valid ordinary-road width, invalid roundabout approach.
+    activate("Apply Road Fields");
+    BOOST_CHECK(roadJSON(city->getSource())==beforeRejectedWidth);
+    BOOST_CHECK_EQUAL(publications,beforeRejectedPublications);
+    checkApproachWidth(7);
+    // Commit Road can also repair and publish a retained draft after rejection.
+    roadWidthInput->setValue("8");
+    activate("Commit Road");
+    BOOST_REQUIRE_MESSAGE(publications==beforeRejectedPublications+1,diagnostic());
+    checkApproachWidth(8);
+    activate("Undo");checkApproachWidth(7);
+    // The rejected draft did not create history: Undo still restores this edit.
+    activate("Undo");checkApproachWidth(originalApproach.width);
     activate("Select Road");ray("begin",approachMidpoint.x,approachMidpoint.z);
     activate("Insert Knot");ray("begin",approachMidpoint.x,approachMidpoint.z);
     BOOST_REQUIRE_MESSAGE(approach().knots.size()==3u,diagnostic());

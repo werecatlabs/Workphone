@@ -10,6 +10,7 @@ namespace workphone::procedural
         SourceBudgetText sourceId, terrainResourceUuid;
         u32 seed = 0;
         u64 revision = 1, terrainRevision = 0;
+        // Uniform grid width; maximum (arterial) width for natural-road profiles.
         f32 roadWidth = 12, maxGrade = .08f, heightOffset = .025f;
         u32 maximumRoundabouts = 8;
         bool clockwise = true;

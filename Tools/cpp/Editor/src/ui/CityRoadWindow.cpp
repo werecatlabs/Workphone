@@ -31,6 +31,13 @@ namespace workphone::editor
         {auto app=core::IApplicationManager::instancePtr();auto manager=app?app->getGameManager():nullptr;return manager?manager->getCurrentScene():nullptr;}
         String json(const procedural::CityRoadSplineSource &source,String &error)
         {SourceBudgetText bytes;if(!procedural::serializeCityRoadSplineSource(source,bytes,error))return {};return String(bytes.data(),bytes.size());}
+        void syncApproachWidths(procedural::CityRoadSplineSource &source,const procedural::CityRoadSpline &road)
+        {
+            // A road can connect two junctions. Publish all its approach profiles
+            // together; source/bake validation still rejects invalid widths or overlap.
+            for(auto &junction:source.roundabouts)for(auto &port:junction.ports)
+                if(port.approachId==road.id)port.width=road.width;
+        }
         bool sameAuthoredState(const String &current,const SourceBudgetText &expected,String &error)
         {
             procedural::CityRoadSplineSource a,b;
@@ -451,6 +458,7 @@ namespace workphone::editor
             if(m_drafting && m_road<m_draft.roads.size() && fields(m_draft.roads[m_road]))
             {
                 auto &road=m_draft.roads[m_road];
+                syncApproachWidths(m_draft,road);
                 if(m_mode==Mode::Draw && road.closed && road.knots.size()>=3)
                     for(const size_t i:{size_t(0),road.knots.size()-1})if(!m_manualHandles.count(road.knots[i].id))
                     {const auto tangent=(road.knots[(i+1)%road.knots.size()].position-road.knots[(i+road.knots.size()-1)%road.knots.size()].position)/6.f;road.knots[i].inHandle=-tangent;road.knots[i].outHandle=tangent;}
@@ -498,7 +506,12 @@ namespace workphone::editor
                 {cancelDraft();status("This road belongs to a roundabout. Delete Selected Roundabout removes its junction and approaches together.");return;}
                 m_draft.roads.erase(m_draft.roads.begin()+m_road);
             }
-            else if(!fields(m_draft.roads[m_road]))return;
+            else
+            {
+                auto &road=m_draft.roads[m_road];
+                if(!fields(road))return;
+                syncApproachWidths(m_draft,road);
+            }
             if(commitDraft() && id==RemoveRoad)m_selected=false;
         }
     }

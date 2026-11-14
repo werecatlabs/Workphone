@@ -2238,6 +2238,7 @@ namespace workphone::scene::race
                 return Vector3F( p.x, 0, p.z );
             };
             SourceBudgetVector<u32> degree( network.nodes.size(), 0 );
+            SourceBudgetVector<float> junctionHalfWidth( network.nodes.size(), 0.f );
             for( const auto &edge : network.edges )
             {
                 if( edge.a == edge.b ||
@@ -2247,6 +2248,9 @@ namespace workphone::scene::race
                 }
                 ++degree[edge.a];
                 ++degree[edge.b];
+                const float halfWidth = procedural::OpenCityRoadNetwork::roadWidth( edge.roadClass ) * .5f;
+                junctionHalfWidth[edge.a] = std::max( junctionHalfWidth[edge.a], halfWidth );
+                junctionHalfWidth[edge.b] = std::max( junctionHalfWidth[edge.b], halfWidth );
             }
             const auto stripe = []( Geometry &g, Vector3F a, Vector3F b, Vector3F across, float width,
                                     float y ) {
@@ -2254,8 +2258,9 @@ namespace workphone::scene::race
                 const auto half = across * ( width * .5f );
                 g.quad( a - half, b - half, b + half, a + half, { 0, 1, 0 } );
             };
-            const auto trim = [&]( u32 node, u32 other, Vector3F direction, int side, bool paint ) {
-                float distance = paint ? 8.5f : 0;
+            const auto trim = [&]( u32 node, u32 other, Vector3F direction, int side, bool paint,
+                                   float ownHalfWidth ) {
+                float distance = paint ? junctionHalfWidth[node] + 2.5f : 0;
                 for( const auto &edge : network.edges )
                 {
                     const u32 neighbour = edge.a == node ? edge.b : edge.b == node ? edge.a : node;
@@ -2267,11 +2272,14 @@ namespace workphone::scene::race
                     q.normalise();
                     const float cosine = direction.dotProduct( q );
                     const float sine = direction.x * q.z - direction.z * q.x;
+                    const float otherHalfWidth = procedural::OpenCityRoadNetwork::roadWidth( edge.roadClass ) * .5f;
                     if( paint )
                     {
                         if( cosine > 0 && std::abs( sine ) > .001f )
                         {
-                            distance = std::max( distance, 6.f / std::abs( sine ) + .1f );
+                            const float outerPaintOffset = ownHalfWidth - .3f + .065f;
+                            distance = std::max( distance,
+                                ( otherHalfWidth + outerPaintOffset * cosine ) / std::abs( sine ) + .1f );
                         }
                     }
                     else if( sine * side > .001f )
@@ -2279,9 +2287,9 @@ namespace workphone::scene::race
                         // A branch on this side can cross the walk. Behind-facing
                         // continuations use the inner offset, avoiding enormous trim
                         // distances on gentle bends close to a straight continuation.
-                        const float offset = cosine >= 0 ? 8.5f : 6.f;
+                        const float offset = cosine >= 0 ? ownHalfWidth + 2.5f : ownHalfWidth;
                         distance =
-                            std::max( distance, ( 6.f + offset * cosine ) / std::abs( sine ) + .05f );
+                            std::max( distance, ( otherHalfWidth + offset * cosine ) / std::abs( sine ) + .05f );
                     }
                 }
                 return distance;
@@ -2356,7 +2364,8 @@ namespace workphone::scene::race
                                 std::min( distanceSquared, offset.x * offset.x + offset.y * offset.y );
                         }
                     }
-                    if( distanceSquared < 5.998f * 5.998f )
+                    const float roadHalf = procedural::OpenCityRoadNetwork::roadWidth( edge.roadClass ) * .5f - .002f;
+                    if( distanceSquared < roadHalf * roadHalf )
                     {
                         return false;
                     }
@@ -2371,18 +2380,20 @@ namespace workphone::scene::race
                 const float length = direction.length();
                 direction /= length;
                 const Vector3F across( -direction.z, 0, direction.x );
+                const float width = procedural::OpenCityRoadNetwork::roadWidth( edge.roadClass );
+                const float halfWidth = width * .5f;
                 // Full segment rectangles and round node fans form the road's
                 // centreline-buffer union, including split crossings and dead ends.
-                stripe( asphalt, a, b, across, 12, .012f );
-                const float paintStart = trim( edge.a, edge.b, direction, 0, true );
-                const float paintEnd = trim( edge.b, edge.a, -direction, 0, true );
+                stripe( asphalt, a, b, across, width, .012f );
+                const float paintStart = trim( edge.a, edge.b, direction, 0, true, halfWidth );
+                const float paintEnd = trim( edge.b, edge.a, -direction, 0, true, halfWidth );
                 if( length > paintStart + paintEnd + 2 )
                 {
                     const auto start = a + direction * paintStart, end = b - direction * paintEnd;
                     for( int side : { -1, 1 } )
                     {
-                        stripe( markings, start + across * ( side * 5.7f ),
-                                end + across * ( side * 5.7f ), across, .13f, .018f );
+                        stripe( markings, start + across * ( side * ( halfWidth - .3f ) ),
+                                end + across * ( side * ( halfWidth - .3f ) ), across, .13f, .018f );
                     }
                     for( float t = paintStart; t + 2 < length - paintEnd; t += 5 )
                     {
@@ -2392,14 +2403,14 @@ namespace workphone::scene::race
                 }
                 for( int side : { -1, 1 } )
                 {
-                    const float start = trim( edge.a, edge.b, direction, side, false );
-                    const float end = trim( edge.b, edge.a, -direction, -side, false );
+                    const float start = trim( edge.a, edge.b, direction, side, false, halfWidth );
+                    const float end = trim( edge.b, edge.a, -direction, -side, false, halfWidth );
                     if( length <= start + end + 1 )
                     {
                         continue;
                     }
-                    auto p = a + direction * start + across * ( side * 7.25f );
-                    auto q = b - direction * end + across * ( side * 7.25f );
+                    auto p = a + direction * start + across * ( side * ( halfWidth + 1.25f ) );
+                    auto q = b - direction * end + across * ( side * ( halfWidth + 1.25f ) );
                     if( !ribbonClear( p, q, across ) )
                     {
                         continue;
@@ -2452,8 +2463,8 @@ namespace workphone::scene::race
                 constexpr u32 slices = 24;
                 for( u32 i = 0; i <= slices; ++i )
                 {
-                    vertex( p + Vector3F( std::cos( i * 2 * pi / slices ) * 6, 0,
-                                          std::sin( i * 2 * pi / slices ) * 6 ) );
+                    vertex( p + Vector3F( std::cos( i * 2 * pi / slices ) * junctionHalfWidth[node], 0,
+                                          std::sin( i * 2 * pi / slices ) * junctionHalfWidth[node] ) );
                 }
                 for( u32 i = 0; i < slices; ++i )
                 {

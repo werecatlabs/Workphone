@@ -1,5 +1,65 @@
 # WPProcedural implementation status
 
+## City centre and road hierarchy — 14 November 2026
+
+Natural layout revision 4 adds four direct main approaches into the city centre
+at the origin. Main roads are 12 m wide, district collectors 9 m and local streets
+7 m. Added local junctions on main roads require at least 65% of nominal block
+spacing on each side. The four outward main-road ends are intentional expansion
+gateways. Road classes survive graph splits, and unlike classes never coalesce
+into one editable source spline. Roundabout approach widths match their roads.
+The configurable source width scales this hierarchy, with a 4 m lower bound;
+grid road widths are unchanged.
+
+The City Roads window keeps linked roundabout approach widths synchronized when
+applying road fields or committing an edited draft. These updates share the road's
+undo/redo transaction; invalid profiles leave the published source unchanged.
+
+Central parcel candidates are packed first. Every natural building envelope
+reserves 5 m beyond the actual road edge; local frontages no longer assume a
+12 m carriageway. Flat and terrain scenes both use the different widths for
+roads and footways. Existing saved road widths remain canonical and editable.
+Revision-3 pinned race route coordinates remain identical, and the revision-2
+route compatibility path remains available. Natural lap records use a new
+namespace to account for changed road surfaces, preserving previous files.
+
+The seed-42 six-block graph has 14 main-road edges, 22 collector edges and 19
+local edges. Its main-road network reaches all four sides and remains within
+1.22% of direct distance from the centre; the diagnostic seed corpus stays
+within 2.05%. These are geometric route measurements, not vehicle travel-time
+or traffic-speed results. [Graph comparison](../artifacts/procedural/city-centre-roads-20261114/graph-comparison.png)
+
+Workphone, SampleVehicleAdvanced and Editor Debug builds pass. The six focused
+native tests pass in 127.87 s, covering layout, road graph, source conversion,
+street details, parcel support and footways. Tests verify the three width classes,
+four connected main approaches, mixed-width roundabouts, safe building envelopes,
+centre development and saved-source compatibility. The Lua racing fixture also
+passes, including preservation of historical lap-record files.
+[Native test log](../artifacts/procedural/city-centre-roads-20261114/tests-native.log)
+
+Both Editor integration tests pass in 155.45 s. Viewport authoring checks linked
+width edits, queued publication, undo/redo, rejected edits and repaired draft
+commits. The terrain-city source-anchor roundtrip checks saved source retention.
+[Editor test log](../artifacts/procedural/city-centre-roads-20261114/tests-editor.log)
+
+Fresh High terrain overview/boulevard and Low flat overview captures pass and
+exit 0. The terrain city publishes 42 editable roads at 7/9/12 m, four roundabouts,
+140 supported parcels, 279/279 ready building meshes and four passing native
+collision probes. The flat path has 95/95 ready building meshes. Neither path
+rejects Source CPU, Working CPU or GPU reservations. All 1,352 inventoried source
+files, 11 binaries and captured images match the final evidence hashes.
+[Capture integrity](../artifacts/procedural/city-centre-roads-20261114/capture-integrity.json)
+
+The inspected overview shows the four main approaches and subordinate local
+streets; the boulevard has closer, taller central frontage and continuous
+roundabout connections. Dark glazing, simple lighting and vacant grass remain
+visible. Captures use the Microsoft Basic Render Driver; geometry-dependent
+camera framing and concurrent Editor validation prevent performance comparisons.
+[Native captures and visual review](../artifacts/procedural/city-centre-roads-20261114/visual-review.md)
+
+Smooth curves, terrain-cost routing, traffic control and speed-limit enforcement
+remain outside this change. [Usage and editing](RacingGameOpenCity.md)
+
 ## Natural road districts — 14 November 2026
 
 Natural layout revision 3 replaces the three nearly identical nested loops with

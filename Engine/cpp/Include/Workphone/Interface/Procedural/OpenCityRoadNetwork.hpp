@@ -17,10 +17,24 @@ namespace workphone::procedural
             float x = 0, z = 0;
         };
 
+        enum class RoadClass : std::uint8_t
+        {
+            Local,
+            Collector,
+            Arterial
+        };
+
         struct Edge
         {
             std::uint32_t a = 0, b = 0;
+            RoadClass roadClass = RoadClass::Local;
         };
+
+        static constexpr float roadWidth( RoadClass roadClass )
+        {
+            return roadClass == RoadClass::Arterial ? 12.f
+                   : roadClass == RoadClass::Collector ? 9.f : 7.f;
+        }
 
         static constexpr std::size_t maximumNodes = 160, maximumEdges = 240;
         static constexpr float minimumEdgeLength = 4.f, roadHalfWidth = 6.f;
@@ -112,7 +126,8 @@ namespace workphone::procedural
                 graph.nodes.push_back( point );
                 return index;
             };
-            const auto edge = [&]( std::uint32_t a, std::uint32_t b ) {
+            const auto edge = [&]( std::uint32_t a, std::uint32_t b,
+                                   RoadClass roadClass = RoadClass::Local ) {
                 if( a == invalid || b == invalid || a == b ||
                     squared( graph.nodes[a], graph.nodes[b] ) <
                         minimumEdgeLength * minimumEdgeLength - .001 )
@@ -130,7 +145,7 @@ namespace workphone::procedural
                 {
                     return false;
                 }
-                graph.edges.push_back( { a, b } );
+                graph.edges.push_back( { a, b, roadClass } );
                 return true;
             };
             const auto random = [seed]( std::uint64_t domain ) {
@@ -141,10 +156,9 @@ namespace workphone::procedural
                 return float( ( x ^ ( x >> 31 ) ) >> 40 ) / 16777216.f;
             };
 
-            // Three adjoining districts share a central avenue, rather than three
-            // scaled copies of a race track. The compact eastern old town, the
-            // western neighbourhood and the broad eastern perimeter have their
-            // own seeded proportions. All are published before route selection.
+            // Collector streets enclose distinct districts around the city centre.
+            // Their pinned circuits retain revision-3 coordinates; the main-road
+            // hierarchy is built independently before neighbourhood growth.
             std::array<std::array<Point, 8>, 3> loops = {{
                 {{ { 0, 0 }, { 0, -.30f }, { .20f, -.42f }, { .47f, -.35f },
                    { .52f, 0 }, { .40f, .29f }, { .17f, .33f }, { 0, .27f } }},
@@ -176,7 +190,7 @@ namespace workphone::procedural
                 }
                 for( std::size_t i = 1; i < 7; ++i )
                 {
-                    edge( loopNodes[district][i], loopNodes[district][i + 1] );
+                    edge( loopNodes[district][i], loopNodes[district][i + 1], RoadClass::Collector );
                 }
                 spine[1 + district * 2] = loopNodes[district][1];
                 spine[2 + district * 2] = loopNodes[district][7];
@@ -185,8 +199,29 @@ namespace workphone::procedural
                        [&]( auto a, auto b ) { return graph.nodes[a].z < graph.nodes[b].z; } );
             for( std::size_t i = 0; i + 1 < spine.size(); ++i )
             {
-                edge( spine[i], spine[i + 1] );
+                edge( spine[i], spine[i + 1], RoadClass::Arterial );
             }
+
+            // Four direct approaches bring traffic into the centre. The east and
+            // west roads meet existing district corners rather than making tiny
+            // junction fragments beside them. Their gentle bends keep the main
+            // approach substantially straighter than a trip around the districts.
+            edge( 0, loopNodes[1][4], RoadClass::Arterial );
+            edge( 0, loopNodes[0][4], RoadClass::Arterial );
+            edge( loopNodes[0][4], loopNodes[2][4], RoadClass::Arterial );
+            const float boundary = graph.extent - 12;
+            const auto gateway = [&]( std::uint32_t from, Point destination ) {
+                // Perimeter collectors can already be close to the boundary.
+                // Do not create a short dead-end whisker just to reach its edge.
+                if( squared( graph.nodes[from], destination ) >= 24.f * 24.f )
+                {
+                    edge( from, node( destination ), RoadClass::Arterial );
+                }
+            };
+            gateway( spine.front(), { 0, -boundary } );
+            gateway( spine.back(), { 0, boundary } );
+            gateway( loopNodes[1][4], { -boundary, graph.nodes[loopNodes[1][4]].z } );
+            gateway( loopNodes[2][4], { boundary, graph.nodes[loopNodes[2][4]].z } );
 
             // Width-aware local constraints keep growth out of narrow slivers.
             // The stricter generation limits leave room for editable conversion,
@@ -314,8 +349,13 @@ namespace workphone::procedural
                     else if( db <= 1.e-6 ) hitNode = old.b;
                     else
                     {
-                        if( da < junctionSpacing * junctionSpacing ||
-                            db < junctionSpacing * junctionSpacing ) return stopped;
+                        // Local access is concentrated on collector streets.
+                        // Main roads admit well-separated junctions, retaining
+                        // longer uninterrupted approaches into the centre.
+                        const float spacing = old.roadClass == RoadClass::Arterial
+                                                  ? std::max( junctionSpacing, graph.spacing * .65f )
+                                                  : junctionSpacing;
+                        if( da < spacing * spacing || db < spacing * spacing ) return stopped;
                         const auto c = graph.nodes[old.a], d = graph.nodes[old.b];
                         const double cosine = std::abs( ( d.x - c.x ) * double( a.x - destination.x ) +
                                                         ( d.z - c.z ) * double( a.z - destination.z ) ) /
@@ -342,8 +382,8 @@ namespace workphone::procedural
                     if( hitEdge != maximumEdges )
                     {
                         const auto old = graph.edges[hitEdge];
-                        graph.edges[hitEdge] = { old.a, hitNode };
-                        edge( hitNode, old.b );
+                        graph.edges[hitEdge] = { old.a, hitNode, old.roadClass };
+                        edge( hitNode, old.b, old.roadClass );
                     }
                 }
                 edge( start, hitNode );
@@ -458,9 +498,18 @@ namespace workphone::procedural
             for( std::uint32_t at = 0; at < grownNodes; ++at )
             {
                 unsigned degree = 0;
+                bool arterial = false;
                 for( const auto existing : graph.edges )
-                    degree += existing.a == at || existing.b == at;
-                if( degree != 1 ) continue;
+                {
+                    if( existing.a == at || existing.b == at )
+                    {
+                        ++degree;
+                        arterial = arterial || existing.roadClass == RoadClass::Arterial;
+                    }
+                }
+                // These open ends represent main roads continuing beyond the
+                // bounded city, not residential cul-de-sacs to connect locally.
+                if( degree != 1 || arterial ) continue;
                 struct Connection { Point point; double distance; };
                 SourceBudgetVector<Connection> proposals;
                 proposals.reserve( graph.edges.size() );

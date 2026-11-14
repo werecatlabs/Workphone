@@ -13,8 +13,78 @@ static void sameGraph(const OpenCityRoadNetwork &a,const OpenCityRoadNetwork &b)
         a.nodes.size()==b.nodes.size()&&a.edges.size()==b.edges.size(),"Natural graph changed on replay/route selection");
     for(size_t i=0;i<a.nodes.size();++i)require(a.nodes[i].x==b.nodes[i].x&&a.nodes[i].z==b.nodes[i].z,
         "Natural node changed on replay/route selection");
-    for(size_t i=0;i<a.edges.size();++i)require(a.edges[i].a==b.edges[i].a&&a.edges[i].b==b.edges[i].b,
-        "Natural edge changed on replay/route selection");
+    for(size_t i=0;i<a.edges.size();++i)require(a.edges[i].a==b.edges[i].a&&a.edges[i].b==b.edges[i].b&&
+        a.edges[i].roadClass==b.edges[i].roadClass,
+        "Natural edge or road hierarchy changed on replay/route selection");
+}
+static void hierarchyContracts(const OpenCityRoadNetwork &graph)
+{
+    using RoadClass=OpenCityRoadNetwork::RoadClass;
+    require(OpenCityRoadNetwork::roadWidth(RoadClass::Arterial)>
+        OpenCityRoadNetwork::roadWidth(RoadClass::Collector)&&
+        OpenCityRoadNetwork::roadWidth(RoadClass::Collector)>
+        OpenCityRoadNetwork::roadWidth(RoadClass::Local),
+        "Main roads, collectors and local streets lost their width hierarchy");
+    require(OpenCityRoadNetwork::roadWidth(RoadClass::Local)>=4&&
+        OpenCityRoadNetwork::roadWidth(RoadClass::Arterial)<=12,
+        "Road hierarchy escaped the supported editable-road width range");
+    std::vector<unsigned> arterialDegree(graph.nodes.size(),0);
+    unsigned locals=0,collectors=0,arterials=0;
+    for(const auto &edge:graph.edges)
+    {
+        switch(edge.roadClass)
+        {
+        case RoadClass::Local: ++locals; break;
+        case RoadClass::Collector: ++collectors; break;
+        case RoadClass::Arterial:
+            ++arterials; ++arterialDegree[edge.a]; ++arterialDegree[edge.b]; break;
+        default: require(false,"Natural road contains an invalid road class");
+        }
+    }
+    require(locals>0&&collectors>0&&arterials>0,"City lost its primary or neighbourhood street network");
+    size_t centre=graph.nodes.size();
+    for(size_t i=0;i<graph.nodes.size();++i)
+        if(graph.nodes[i].x==0&&graph.nodes[i].z==0)centre=i;
+    require(centre<graph.nodes.size()&&arterialDegree[centre]==4,
+        "City centre does not connect to all four main-road approaches");
+
+    // Shortest paths on arterial edges alone prove that the fast approaches
+    // really reach the centre, rather than acquiring their class from a nearby
+    // street or depending on a detour through smaller neighbourhood roads.
+    std::vector<double> cost(graph.nodes.size(),std::numeric_limits<double>::infinity());
+    std::vector<unsigned char> settled(graph.nodes.size(),0); cost[centre]=0;
+    for(size_t iteration=0;iteration<graph.nodes.size();++iteration)
+    {
+        size_t at=graph.nodes.size();
+        for(size_t i=0;i<graph.nodes.size();++i)
+            if(!settled[i]&&std::isfinite(cost[i])&&(at==graph.nodes.size()||cost[i]<cost[at]))at=i;
+        if(at==graph.nodes.size())break;
+        settled[at]=1;
+        for(const auto &edge:graph.edges)
+        {
+            if(edge.roadClass!=RoadClass::Arterial||(edge.a!=at&&edge.b!=at))continue;
+            const auto next=edge.a==at?edge.b:edge.a;
+            const auto a=graph.nodes[at],b=graph.nodes[next];
+            cost[next]=std::min(cost[next],cost[at]+std::hypot(double(b.x)-a.x,double(b.z)-a.z));
+        }
+    }
+    for(size_t i=0;i<graph.nodes.size();++i)if(arterialDegree[i])
+    {
+        require(std::isfinite(cost[i]),"A main road is disconnected from the city centre");
+        const auto point=graph.nodes[i];
+        const double direct=std::hypot(point.x,point.z);
+        require(cost[i]<=direct*1.05+.01,"A main-road approach takes an indirect detour into the centre");
+        if(arterialDegree[i]==1)
+            require(std::max(std::abs(point.x),std::abs(point.z))>=graph.extent*.8f,
+                "A main-road approach terminates inside a neighbourhood");
+    }
+    for(const auto direction:{OpenCityRoadNetwork::Point{1,0},{-1,0},{0,1},{0,-1}})
+    {
+        double reach=0;
+        for(size_t i=0;i<graph.nodes.size();++i)if(arterialDegree[i])
+            reach=std::max(reach,double(graph.nodes[i].x)*direction.x+double(graph.nodes[i].z)*direction.z);
+        require(reach>=graph.extent*.8,"A cardinal city entrance has no direct main road into the centre");
+    }
 }
 static void graphContracts(const OpenCityRoadNetwork &graph)
 {
@@ -120,6 +190,7 @@ static void seedContracts(unsigned seed,int blocks,bool report)
     {
         const auto graph=OpenCityRoadNetwork::generate(seed,blocks,0);
         graphContracts(graph);
+        hierarchyContracts(graph);
         require(graph.route.size()>2&&graph.route[0].x==0&&graph.route[0].z==0&&
             graph.route[1].x==0&&graph.route[1].z<0,"Natural route lost the origin/-Z start");
         const auto repeated=OpenCityRoadNetwork::generate(seed,blocks,0);

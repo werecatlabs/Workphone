@@ -51,8 +51,9 @@ namespace workphone::procedural
         };
 
         static constexpr float roadHalfWidth = 6.f;
-        static constexpr std::uint32_t generatorRevision = 3;
+        static constexpr std::uint32_t generatorRevision = 4;
         static constexpr float roadSetback = 11.f;
+        static constexpr float roadsideSetback = roadSetback - roadHalfWidth;
         static constexpr float serviceGap = 4.f;
         int blocks = 0;
         float spacing = 0, extent = 0;
@@ -274,6 +275,20 @@ namespace workphone::procedural
         // centrelines. Checking only corners misses a road crossing a large parcel.
         float footprintRoadClearance( float x, float z, float width, float depth ) const
         {
+            return footprintClearance( x, z, width, depth, false );
+        }
+
+        // Natural streets have different widths. Reserve the same pedestrian /
+        // frontage envelope beyond their actual carriageway, not a 12m road at
+        // every address. The centreline query above keeps its existing meaning.
+        float footprintRoadEdgeClearance( float x, float z, float width, float depth ) const
+        {
+            return footprintClearance( x, z, width, depth, true );
+        }
+
+    private:
+        float footprintClearance( float x, float z, float width, float depth, bool fromEdge ) const
+        {
             if( !std::isfinite( x ) || !std::isfinite( z ) || !std::isfinite( width ) ||
                 !std::isfinite( depth ) || width < 0 || depth < 0 || spacing <= 0 )
             {
@@ -282,7 +297,7 @@ namespace workphone::procedural
             const float x0 = x - width * .5f, x1 = x + width * .5f;
             const float z0 = z - depth * .5f, z1 = z + depth * .5f;
             float distance = 1000;
-            const auto segment = [&]( float ax, float az, float bx, float bz ) {
+            const auto segment = [&]( float ax, float az, float bx, float bz, float halfWidth ) {
                 float t0 = 0, t1 = 1;
                 const auto clip = [&]( float p, float q ) {
                     if( std::abs( p ) < 1e-7f )
@@ -303,33 +318,34 @@ namespace workphone::procedural
                 if( clip( ax - bx, ax - x0 ) && clip( bx - ax, x1 - ax ) && clip( az - bz, az - z0 ) &&
                     clip( bz - az, z1 - az ) )
                 {
-                    distance = 0;
+                    distance = std::min( distance, fromEdge ? -halfWidth : 0.f );
                     return;
                 }
                 const auto toBox = [&]( float px, float pz ) {
                     return std::hypot( std::max( { x0 - px, 0.f, px - x1 } ),
                                        std::max( { z0 - pz, 0.f, pz - z1 } ) );
                 };
-                distance = std::min( { distance, toBox( ax, az ), toBox( bx, bz ),
+                const float nearest = std::min( { toBox( ax, az ), toBox( bx, bz ),
                                        pointSegmentDistance( x0, z0, ax, az, bx, bz ),
                                        pointSegmentDistance( x1, z0, ax, az, bx, bz ),
                                        pointSegmentDistance( x0, z1, ax, az, bx, bz ),
                                        pointSegmentDistance( x1, z1, ax, az, bx, bz ) } );
+                distance = std::min( distance, nearest - ( fromEdge ? halfWidth : 0.f ) );
             };
             if( naturalRoads )
             {
                 for( const auto &edge : roads.edges )
                 {
                     const auto &a = roads.nodes[edge.a], &b = roads.nodes[edge.b];
-                    segment( a.x, a.z, b.x, b.z );
+                    segment( a.x, a.z, b.x, b.z, OpenCityRoadNetwork::roadWidth( edge.roadClass ) * .5f );
                 }
             }
             else
             {
                 for( int i = -blocks / 2; i <= blocks / 2; ++i )
                 {
-                    segment( i * spacing, -extent, i * spacing, extent );
-                    segment( -extent, i * spacing, extent, i * spacing );
+                    segment( i * spacing, -extent, i * spacing, extent, roadHalfWidth );
+                    segment( -extent, i * spacing, extent, i * spacing, roadHalfWidth );
                 }
             }
             return distance;

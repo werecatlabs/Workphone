@@ -21,22 +21,36 @@ Inspector options: Seed, Appearance Quality (0-3), Laps (1-10), City Blocks
 City Street Detail (0-100), City Building Style (0-9), five building mesh slots,
 and Generate. Grid streets are 88-104 metres
 apart according to seed. Dense central buildings, quieter outer districts and
-park lots use the same deterministic CPU layout. Layout revision 3 retains
+park lots use the same deterministic CPU layout. Layout revision 4 retains
 stable parcel IDs, street frontages and coherent commercial, residential and civic
-districts. Building footprints retain an 11 metre road-centre setback and a
+districts. Grid building footprints retain an 11 metre road-centre setback and a
 4 metre service gap through the block centre. Road and route coordinates remain
 independent of appearance quality and route selection does not reshuffle parcels.
 
 **City Natural Roads** selects a bounded seeded L-system instead of the grid.
-Revision 3 gives the old-town, western neighbourhood and eastern perimeter distinct
-proportions around a shared main avenue. Local streets branch at near-right angles;
-growth stops at existing connections, rejects cramped or acute junctions, and closes
-nearby dead ends where there is room. Generated roads remain within the editable
-source's 128-road limit. Full footprint-to-road distance tests keep buildings and
-parks outside the 11 metre buffer. Route selection changes the chosen circuit
-without reshuffling the graph or parcels. Natural-city lap records use a new
-revision namespace because route lengths changed; historical files are preserved.
-Buildings remain axis aligned and streets use straight spans between junctions.
+Revision 4 gives the city four direct main approaches into its centre at the
+origin. The 12 m main roads connect the outskirts to the centre; 9 m district
+roads distribute traffic around the neighbourhoods, and 7 m local streets fill
+the blocks. New local junctions on main roads require more spacing. Their outer
+ends are intentional gateways for future expansion. This is a geometry and
+connectivity hierarchy; it does not add traffic simulation or enforced speed limits.
+
+Central building plots receive priority, producing a developed commercial core
+before the remaining building budget fills the surrounding neighbourhoods.
+Building footprints reserve 5 m beyond each road's actual carriageway edge for
+pavement and frontage, so narrower streets have closer frontages. Roundabouts,
+fitted sidewalks and collision use the actual editable road widths. Classes stay
+separate during source conversion, even where consecutive streets are collinear.
+Editing a connected road's width updates its roundabout approaches in the same
+undoable change. Invalid widths are rejected without replacing the published city.
+
+Local streets branch at near-right angles; growth stops at existing connections,
+rejects cramped or acute junctions, and closes nearby dead ends where there is room.
+Generated roads remain within the editable source's 128-road limit. Route selection
+does not reshuffle the graph or parcels. Revision-3 pinned route coordinates remain
+unchanged; natural-city lap records use a new revision namespace because road
+widths changed. Historical files are preserved. Buildings remain axis aligned
+and streets use straight spans between junctions.
 
 To see the new layout, enable **City Natural Roads** on a new **ProceduralCityScene**
 actor and press **Regenerate**. Enable **City Terrain Roads** for terrain fitting
@@ -197,7 +211,9 @@ structural checks do not certify image quality, drivability or hardware speed.
 Preferences use `RacingGameOpenCity.records` in the project directory. Lap records
 use separate `RacingGameOpenCity.<blocks>.<route>.records` files, keyed by city seed.
 Appearance quality does not change the street layout or lap record identity.
-Natural-layout records add `.lsystem` before `.records`, keeping grid records independent.
+Flat natural-layout records add `.lsystem-v4` before `.records`, keeping grid and
+historical natural-layout records independent. Authored terrain routes retain
+session-only records because their geometry can change during editing.
 City size and route are Inspector/session options; seed, quality and laps persist.
 
 This implementation is a bounded procedural city with solo racing and exploration.

@@ -21,6 +21,7 @@ namespace workphone::procedural
         {
             Lot lot;
             std::uint64_t rank;
+            bool cityCentre = false;
         };
 
         SourceBudgetVector<Candidate> candidates;
@@ -78,13 +79,13 @@ namespace workphone::procedural
                         // Projection of the whole AABB onto the road normal gives
                         // an exact supporting-line setback, including diagonal roads.
                         const float offset =
-                            roadSetback + .025f +
+                            OpenCityRoadNetwork::roadWidth( edge.roadClass ) * .5f + roadsideSetback + .025f +
                             ( std::abs( nx ) * lot.width + std::abs( nz ) * lot.depth ) * .5f;
                         lot.x = lot.parcelX = streetX + nx * offset;
                         lot.z = lot.parcelZ = streetZ + nz * offset;
                         if( std::abs( lot.x ) + lot.width * .5f > extent - roadSetback ||
                             std::abs( lot.z ) + lot.depth * .5f > extent - roadSetback ||
-                            footprintRoadClearance( lot.x, lot.z, lot.width, lot.depth ) < roadSetback )
+                            footprintRoadEdgeClearance( lot.x, lot.z, lot.width, lot.depth ) < roadsideSetback )
                         {
                             continue;
                         }
@@ -98,12 +99,16 @@ namespace workphone::procedural
                                                         : 8.f + random( lot.id, 4 ) * 14.f;
                         lot.height = floorHeight * std::floor( nominalHeight / floorHeight );
                         lot.park = random( lot.id, 5 ) < ( commercial ? .04f : .10f );
-                        candidates.push_back( { lot, hash( lot.id ^ 0x70617263656cULL ) } );
+                        candidates.push_back( { lot, hash( lot.id ^ 0x70617263656cULL ), radius < .34f } );
                     }
                 }
             }
         }
         std::sort( candidates.begin(), candidates.end(), []( const Candidate &a, const Candidate &b ) {
+            // Fill the core before spending the finite building budget on the
+            // outskirts. Outside the centre, seeded ordering still distributes
+            // neighbourhoods across every approach rather than one quadrant.
+            if( a.cityCentre != b.cityCentre ) return a.cityCentre;
             return a.rank != b.rank ? a.rank < b.rank : a.lot.id < b.lot.id;
         } );
         const std::size_t limit = std::size_t( blocks * blocks * 4 );

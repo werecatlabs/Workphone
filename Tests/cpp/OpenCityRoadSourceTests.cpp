@@ -72,6 +72,8 @@ namespace
             const auto found = std::find_if( source.roads.begin(), source.roads.end(),
                 [&]( const auto &road ) { return road.id == port.approachId; } );
             need( found != source.roads.end(), "Generated approach lost its source-road identity" );
+            need( std::abs( port.width - found->width ) < .00001f,
+                  "Generated roundabout approach does not match its road's width" );
             const float direction = std::hypot( port.outward.x, port.outward.z );
             const Vector3F expected = junction.center + port.outward * ( ( junction.outerRadius + port.length ) / direction );
             const auto a = found->knots.front().position, b = found->knots.back().position;
@@ -99,6 +101,19 @@ namespace
         check( buildOpenCityRoadSource( city, policy, plane, converted, error ), error );
         uniqueIds( converted.source );
         const auto longApproaches = approachContracts( converted.source );
+        for( const auto &road : converted.source.roads )
+        {
+            if( natural )
+                need( std::any_of( city.roads.edges.begin(), city.roads.edges.end(),
+                    [&]( const auto &edge ) {
+                        return road.width == OpenCityRoadNetwork::roadWidth( edge.roadClass );
+                    } ), "Natural source road lost its generated hierarchy width" );
+            else need( road.width == policy.roadWidth, "Road hierarchy changed the uniform grid width" );
+        }
+        if( natural ) for( const auto &edge : city.roads.edges )
+            need( std::any_of( converted.source.roads.begin(), converted.source.roads.end(),
+                [&]( const auto &road ) { return road.width == OpenCityRoadNetwork::roadWidth( edge.roadClass ); } ),
+                "Source conversion discarded one class of natural street" );
         need( converted.source.version == 2 && converted.source.revision == 17 && !converted.source.roundabouts.empty() &&
               converted.source.roundabouts.size() <= policy.maximumRoundabouts && converted.source.roads.size() <= 128,
               "Generated source lost a real junction or exceeded the source codec budget" );
@@ -193,6 +208,70 @@ namespace
             }
         std::cout << "Natural editable-source corpus: 72 seed/size/route conversions PASS\n";
     }
+    void hierarchicalWidths()
+    {
+        // A main approach crosses the core, while a collector feeds a smaller
+        // local street. The collinear class boundary at (60,-80) must remain
+        // independently editable even when the width policy clamps both to 4 m.
+        using RoadClass = OpenCityRoadNetwork::RoadClass;
+        OpenCityLayout city;
+        city.naturalRoads = true;
+        city.roads.nodes = { { 0, 0 }, { 0, -80 }, { 0, -180 }, { 60, -80 },
+                             { 120, -80 }, { -100, -80 }, { 120, 40 }, { 0, 40 } };
+        city.roads.edges = { { 0, 1, RoadClass::Arterial }, { 1, 2, RoadClass::Arterial },
+                             { 1, 3, RoadClass::Collector }, { 3, 4, RoadClass::Local },
+                             { 1, 5, RoadClass::Local }, { 4, 6, RoadClass::Local },
+                             { 6, 7, RoadClass::Collector }, { 7, 0, RoadClass::Arterial } };
+        city.route = { { 0, 0 }, { 0, -80 }, { 60, -80 }, { 120, -80 },
+                       { 120, 40 }, { 0, 40 } };
+        for( const float maximumWidth : { 12.f, 6.f, 4.f } )
+        {
+            auto policy = options( 42 ); policy.maximumRoundabouts = 1; policy.roadWidth = maximumWidth;
+            OpenCityRoadSourceResult result; String error;
+            check( buildOpenCityRoadSource( city, policy, plane, result, error ), error );
+            routeContracts( result ); approachContracts( result.source ); uniqueIds( result.source );
+            need( result.source.roundabouts.size() == 1 && result.source.roads.size() == 7 &&
+                      result.mergedChains == 1,
+                  "Different road classes merged across an editable width boundary" );
+            const auto roadWidths = { maximumWidth, std::max( 4.f, maximumWidth * .75f ),
+                                      std::max( 4.f, maximumWidth * ( 7.f / 12.f ) ) };
+            for( const auto width : roadWidths )
+                need( std::any_of( result.source.roads.begin(), result.source.roads.end(),
+                    [width]( const auto &road ) { return std::abs( road.width - width ) < .00001f; } ),
+                    "Road-class widths were lost or ignored the configured maximum" );
+            for( const auto &road : result.source.roads )
+                need( std::any_of( roadWidths.begin(), roadWidths.end(),
+                    [&]( float width ) { return std::abs( road.width - width ) < .00001f; } ),
+                    "A road escaped its width policy" );
+            const auto boundary = std::count_if( result.source.roads.begin(), result.source.roads.end(),
+                []( const auto &road ) {
+                    const auto atBoundary = []( const Vector3F &point ) {
+                        return std::abs( point.x - 60 ) < .0001f && std::abs( point.z + 80 ) < .0001f;
+                    };
+                    return atBoundary( road.knots.front().position ) || atBoundary( road.knots.back().position );
+                } );
+            need( boundary == 2, "Collector-to-local transition lost its shared editable endpoint" );
+            if( maximumWidth == 12 )
+            {
+                const auto editable = std::find_if( result.source.roads.begin(), result.source.roads.end(),
+                    []( const auto &road ) {
+                        return std::abs( road.knots.front().position.x - 60 ) < .001f &&
+                               std::abs( road.knots.back().position.x - 120 ) < .001f;
+                    } );
+                need( editable != result.source.roads.end(), "Width-edit fixture lost its local street" );
+                auto &edited = *editable;
+                edited.width = 8.25f;
+                const auto editedId = edited.id;
+                ++result.source.revision;
+                const auto json = encoded( result.source );
+                CityRoadSplineSource reopened;
+                check( deserializeCityRoadSplineSource( std::string_view( json.data(), json.size() ), reopened, error ), error );
+                need( encoded( reopened ) == json && std::any_of( reopened.roads.begin(), reopened.roads.end(),
+                    [&]( const auto &road ) { return road.id == editedId && road.width == 8.25f; } ),
+                    "Saving hierarchical roads lost a hand-edited width or identity" );
+            }
+        }
+    }
     void failures()
     {
         auto city = OpenCityLayout::generate( 42, 6, 0, false ); auto policy = options( 42 ); policy.maximumRoundabouts = 2;
@@ -205,6 +284,9 @@ namespace
         };
         auto invalid = policy; invalid.maximumRoundabouts = 9; reject( city, invalid, plane );
         invalid = policy; invalid.sourceId = "invalid"; reject( city, invalid, plane );
+        auto invalidClass = OpenCityLayout::generate( 42, 6, 0, true );
+        invalidClass.roads.edges.front().roadClass = static_cast<OpenCityRoadNetwork::RoadClass>( 255 );
+        reject( invalidClass, policy, plane );
         reject( city, policy, []( const Vector3F &, float & ) { return false; } );
         auto badRoute = city; badRoute.route[1].x = std::numeric_limits<float>::quiet_NaN(); reject( badRoute, policy, plane );
         const auto scheduler = WorldStreamingScheduler::shared(); const auto stats = scheduler->stats();
@@ -261,7 +343,8 @@ namespace
             need( std::hypot( expected.x - actual.x, expected.z - actual.z ) < .00002f,
                   "Legacy natural route no longer reproduces revision-2 coordinates" );
             legacy.roads.nodes.push_back( { expected.x, expected.z } );
-            legacy.roads.edges.push_back( { u32( i ), u32( ( i + 1 ) % oldCorners.size() ) } );
+            legacy.roads.edges.push_back( { u32( i ), u32( ( i + 1 ) % oldCorners.size() ),
+                                           OpenCityRoadNetwork::RoadClass::Arterial } );
         }
         auto policy = options( 42 ); policy.maximumRoundabouts = 0;
         OpenCityRoadSourceResult saved; String error;
@@ -342,7 +425,7 @@ int main()
         sharedEndpointIdentity(); generated( false, 6, 42, true ); generated( true, 6, 42, true );
         for( bool natural : { false, true } ) for( int blocks : { 6, 8, 10 } ) for( u32 seed : { 0u, 7u, 42u, 4294967295u } )
             generated( natural, blocks, seed, false );
-        naturalJunctionCorpus(); legacyNaturalRouteCompatibility(); failures(); editedRouteContinuity();
+        naturalJunctionCorpus(); hierarchicalWidths(); legacyNaturalRouteCompatibility(); failures(); editedRouteContinuity();
         std::cout << "Open city editable source and island-avoiding pinned route PASS\n";
     }
     catch( const std::exception &e ) { std::cerr << "Open city road source: " << e.what() << '\n'; result = 1; }

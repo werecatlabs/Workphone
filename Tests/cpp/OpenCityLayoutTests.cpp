@@ -37,9 +37,8 @@ static void checkMasses(const OpenCityLayout &city,const OpenCityLayout::Lot &lo
         require(std::abs(v.bottom-top)<.001f,"Building tiers overlap or leave vertical gaps");
         top=v.bottom+v.height;
         require(top<=lot.height+.001f,"Building mass exceeded authored height");
-        for(int a : {-1,1}) for(int b : {-1,1})
-            require(city.roadDistance(v.x+a*v.width*.5f,v.z+b*v.depth*.5f)>=OpenCityLayout::roadSetback-.001f,
-                "Shared render/collision volume intrudes onto street or sidewalk");
+        require(city.footprintRoadEdgeClearance(v.x,v.z,v.width,v.depth)>=OpenCityLayout::roadsideSetback-.001f,
+            "Shared render/collision volume intrudes onto street or sidewalk");
         for(size_t j=0;j<i;++j)
         {
             const auto &other=volumes[j];
@@ -170,7 +169,7 @@ int main()
                 std::abs(lot.x-lot.parcelX)+lot.width*.5f<=lot.parcelWidth*.5f+.001f &&
                 std::abs(lot.z-lot.parcelZ)+lot.depth*.5f<=lot.parcelDepth*.5f+.001f,
                 "Natural building escaped its parcel envelope");
-            require(natural.footprintRoadClearance(lot.parcelX,lot.parcelZ,lot.parcelWidth,lot.parcelDepth)>=OpenCityLayout::roadSetback-.001f,
+            require(natural.footprintRoadEdgeClearance(lot.parcelX,lot.parcelZ,lot.parcelWidth,lot.parcelDepth)>=OpenCityLayout::roadsideSetback-.001f,
                 "Natural road crosses a building/park envelope");
             require(std::abs(lot.parcelX)+lot.parcelWidth*.5f<=natural.extent-OpenCityLayout::roadSetback+.001f &&
                 std::abs(lot.parcelZ)+lot.parcelDepth*.5f<=natural.extent-OpenCityLayout::roadSetback+.001f,
@@ -181,6 +180,17 @@ int main()
                     "Natural parcel envelopes overlap or lose their service separation");}
             checkMasses(natural,lot);
         }
+        size_t centreBuildings=0, outerBuildings=0;
+        float centreHeight=0, outerHeight=0;
+        for(const auto &lot:natural.lots) if(!lot.park)
+        {
+            const float radius=std::hypot(lot.x,lot.z)/natural.extent;
+            if(radius<.34f) { ++centreBuildings; centreHeight+=lot.height; }
+            else if(radius>.65f) { ++outerBuildings; outerHeight+=lot.height; }
+        }
+        require(centreBuildings>=4 && outerBuildings>=4 &&
+            centreHeight/centreBuildings>outerHeight/outerBuildings,
+            "Natural city lost its developed centre or surrounding neighbourhoods");
         require(natural.route.size()>10 && natural.route[0].x==0 && natural.route[0].z==0 &&
             natural.route[1].x==0 && natural.route[1].z<0,"Natural route reset orientation changed");
         for(size_t i=0;i<natural.route.size();++i) {
@@ -196,6 +206,12 @@ int main()
         "Footprint query missed a diagonal road crossing between clear corners");
     require(std::abs(crossing.footprintRoadClearance(-10,10,2,2)-std::sqrt(162.f))<.001f,
         "Segment-to-footprint distance is incorrect");
+    require(std::abs(crossing.footprintRoadEdgeClearance(-10,10,2,2)-(std::sqrt(162.f)-3.5f))<.001f,
+        "Local road frontage does not use its actual carriageway edge");
+    crossing.roads.edges.front().roadClass=workphone::procedural::OpenCityRoadNetwork::RoadClass::Arterial;
+    require(std::abs(crossing.footprintRoadEdgeClearance(-10,10,2,2)-(std::sqrt(162.f)-6.f))<.001f &&
+        crossing.footprintRoadEdgeClearance(0,0,10,10)<0,
+        "Arterial frontage failed to reserve the wider carriageway");
     const auto city=OpenCityLayout::generate(1);
     require(OpenCityLayout{}.roadDistance(1,1)==1000,"Uninitialized city road query divided by zero");
     require(city.roadDistance(std::numeric_limits<float>::quiet_NaN(),0)==1000 &&

@@ -21,6 +21,8 @@ namespace workphone::procedural
         struct Edge
         {
             u32 a = 0, b = 0;
+            OpenCityRoadNetwork::RoadClass roadClass = OpenCityRoadNetwork::RoadClass::Local;
+            float width = 12;
         };
 
         struct Graph
@@ -33,6 +35,7 @@ namespace workphone::procedural
         {
             u32 node = 0;
             float radius = 14, island = 8;
+            float maximumRoadWidth = 12;
         };
 
         struct Chain
@@ -127,7 +130,7 @@ namespace workphone::procedural
             return distance( p, interpolate( a, b, t ) );
         }
 
-        Graph graphFrom( const OpenCityLayout &city )
+        Graph graphFrom( const OpenCityLayout &city, const OpenCityRoadSourceOptions &options )
         {
             Graph graph;
             if( city.naturalRoads )
@@ -138,7 +141,13 @@ namespace workphone::procedural
                 }
                 for( auto edge : city.roads.edges )
                 {
-                    graph.edges.push_back( { edge.a, edge.b } );
+                    need( edge.roadClass == OpenCityRoadNetwork::RoadClass::Local ||
+                              edge.roadClass == OpenCityRoadNetwork::RoadClass::Collector ||
+                              edge.roadClass == OpenCityRoadNetwork::RoadClass::Arterial,
+                          "City graph has an unsupported road class." );
+                    const float width = std::max( 4.f, options.roadWidth *
+                        ( OpenCityRoadNetwork::roadWidth( edge.roadClass ) / 12.f ) );
+                    graph.edges.push_back( { edge.a, edge.b, edge.roadClass, width } );
                 }
             }
             else
@@ -162,11 +171,13 @@ namespace workphone::procedural
                     {
                         if( x + 1 < side )
                         {
-                            graph.edges.push_back( { z * side + x, z * side + x + 1 } );
+                            graph.edges.push_back( { z * side + x, z * side + x + 1,
+                                OpenCityRoadNetwork::RoadClass::Local, options.roadWidth } );
                         }
                         if( z + 1 < side )
                         {
-                            graph.edges.push_back( { z * side + x, ( z + 1 ) * side + x } );
+                            graph.edges.push_back( { z * side + x, ( z + 1 ) * side + x,
+                                OpenCityRoadNetwork::RoadClass::Local, options.roadWidth } );
                         }
                     }
                 }
@@ -232,13 +243,18 @@ namespace workphone::procedural
                 {
                     continue;
                 }
+                float maximumRoadWidth = 0;
+                for( const auto index : incident )
+                {
+                    maximumRoadWidth = std::max( maximumRoadWidth, graph.edges[index].width );
+                }
                 // The codec requires approach width strictly below outer radius.
                 // A 12 m street therefore needs a little more than a 12 m fallback.
-                for( const float radius : { 14.f, std::max( 12.f, options.roadWidth + .5f ) } )
+                for( const float radius : { 14.f, std::max( 12.f, maximumRoadWidth + .5f ) } )
                 {
-                    const float trim = radius + 4, clearance = radius + options.roadWidth * .5f + 1;
+                    const float trim = radius + 4;
                     const auto center = graph.nodes[node];
-                    bool valid = distance( center, {} ) > trim + options.roadWidth * .5f + 4;
+                    bool valid = distance( center, {} ) > trim + maximumRoadWidth * .5f + 4;
                     for( auto edgeIndex : incident )
                     {
                         valid = valid &&
@@ -248,9 +264,9 @@ namespace workphone::procedural
                     for( const auto &previous : selected )
                     {
                         valid = valid && distance( center, graph.nodes[previous.node] ) >
-                                             trim + previous.radius + 4 + options.roadWidth + 6;
+                                             trim + previous.radius + 4 +
+                                                 std::max( maximumRoadWidth, previous.maximumRoadWidth ) + 6;
                     }
-                    const double half = std::asin( options.roadWidth * .5 / radius );
                     for( size_t i = 0; valid && i < incident.size(); ++i )
                     {
                         for( size_t j = 0; j < i; ++j )
@@ -260,8 +276,10 @@ namespace workphone::procedural
                             const double cosine = ( ( a.x - center.x ) * ( b.x - center.x ) +
                                                     ( a.z - center.z ) * ( b.z - center.z ) ) /
                                                   ( distance( a, center ) * distance( b, center ) );
-                            valid =
-                                valid && std::acos( std::clamp( cosine, -1., 1. ) ) >= half * 2 + .122;
+                            const double firstHalf = std::asin( graph.edges[incident[i]].width * .5 / radius );
+                            const double secondHalf = std::asin( graph.edges[incident[j]].width * .5 / radius );
+                            valid = valid && std::acos( std::clamp( cosine, -1., 1. ) ) >=
+                                                 firstHalf + secondHalf + .122;
                         }
                     }
                     for( auto edge : graph.edges )
@@ -269,7 +287,8 @@ namespace workphone::procedural
                         if( edge.a != node && edge.b != node )
                         {
                             valid = valid && segmentDistance( center, graph.nodes[edge.a],
-                                                              graph.nodes[edge.b] ) > clearance;
+                                                              graph.nodes[edge.b] ) >
+                                                 radius + edge.width * .5f + 1;
                         }
                     }
                     if( !valid )
@@ -287,7 +306,7 @@ namespace workphone::procedural
                         continue;
                     }
                     (void)h;
-                    selected.push_back( { node, radius, radius - 6 } );
+                    selected.push_back( { node, radius, radius - 6, maximumRoadWidth } );
                     break;
                 }
             }
@@ -312,7 +331,8 @@ namespace workphone::procedural
                 u32 found = none;
                 for( u32 i = 0; i < graph.edges.size(); ++i )
                 {
-                    if( i == incoming || ( graph.edges[i].a != node && graph.edges[i].b != node ) )
+                    if( i == incoming || graph.edges[i].roadClass != graph.edges[incoming].roadClass ||
+                        ( graph.edges[i].a != node && graph.edges[i].b != node ) )
                     {
                         continue;
                     }
@@ -594,7 +614,7 @@ namespace workphone::procedural
             }
             need( !options.terrainResourceUuid.empty(),
                   "Generated city roads require a stable terrain binding UUID." );
-            const auto graph = graphFrom( city );
+            const auto graph = graphFrom( city, options );
             const auto space = namespaceHash( options.sourceId, options.seed );
             candidate.inputNodes = u32( graph.nodes.size() );
             candidate.inputEdges = u32( graph.edges.size() );
@@ -611,6 +631,7 @@ namespace workphone::procedural
             for( const auto &chain : chains )
             {
                 const auto a = graph.nodes[chain.a], b = graph.nodes[chain.b];
+                const float roadWidth = graph.edges[chain.edges.front()].width;
                 const double length = distance( a, b );
                 const auto radiusAt = [&]( u32 node ) {
                     return junctionAt[node] < 0 ? 0.f : junctions[junctionAt[node]].radius;
@@ -622,7 +643,7 @@ namespace workphone::procedural
                     {
                         return 0.;
                     }
-                    const double resetMargin = 4 + options.roadWidth * .5;
+                    const double resetMargin = 4 + roadWidth * .5;
                     return std::clamp( distance( point, {} ) - radius - resetMargin, 4., 18. ) - 4;
                 };
                 const double wantedA = requestedExtra( a, ra ), wantedB = requestedExtra( b, rb );
@@ -659,7 +680,7 @@ namespace workphone::procedural
                 const auto tangent = ( finishPoint - startPoint ) / 3.f;
                 CityRoadSpline road;
                 road.id = guid( space, 0x524f4144, a, b );
-                road.width = options.roadWidth;
+                road.width = roadWidth;
                 road.maxGrade = options.maxGrade;
                 road.heightOffset = options.heightOffset;
                 // Controls belong to their road, even when ordinary graph
@@ -708,7 +729,7 @@ namespace workphone::procedural
                                          float( ( neighbor.z - center.z ) / length ) };
                         const auto roadIndex = roadAtEdge[i];
                         const auto &chain = chains[roadIndex];
-                        port.width = options.roadWidth;
+                        port.width = candidate.source.roads[roadIndex].width;
                         port.length = portLengths[roadIndex][chain.a == junction.node ? 0 : 1];
                         spec.ports.push_back( std::move( port ) );
                     }

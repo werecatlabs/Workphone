@@ -1040,6 +1040,33 @@ namespace workphone
                              << ",\n  \"terrainGameplaySourceFree\": " << (!m_terrainGameplayPackageDirectory.empty()?"true":"false")
                              << ",\n  \"vehicleRecipeHash\": " << advanced::jsonString(StringUtil::toString(m_assets.vehicle.contentHash));
                 bool cityValid = m_assets.openCity == m_openCity && m_assets.cityRoadShowcase==m_roadAuthoringShowcase && m_assets.cityTerrainRoads==m_cityTerrainRoads;
+                if( m_assets.openCity && m_assets.cityNaturalRoads && !m_assets.cityRoadShowcase )
+                {
+                    const auto &layout = m_assets.cityLayout;
+                    std::array<size_t, 3> edges{}, sourceWidths{};
+                    for( const auto &edge : layout.roads.edges )
+                    {
+                        const auto type = static_cast<size_t>( edge.roadClass );
+                        if( type < edges.size() ) ++edges[type];
+                    }
+                    if( m_assets.roadAuthoring )
+                        for( const auto &road : m_assets.roadAuthoring->getSource().roads )
+                        {
+                            if( std::abs( road.width - 7.f ) < .001f ) ++sourceWidths[0];
+                            if( std::abs( road.width - 9.f ) < .001f ) ++sourceWidths[1];
+                            if( std::abs( road.width - 12.f ) < .001f ) ++sourceWidths[2];
+                        }
+                    size_t centralBuildings = 0;
+                    for( const auto &lot : layout.lots )
+                        if( !lot.park && std::hypot( lot.x, lot.z ) < layout.extent * .34f ) ++centralBuildings;
+                    evidence << ",\n  \"roadHierarchy\": {\"generatorRevision\":"
+                             << procedural::OpenCityLayout::generatorRevision
+                             << ",\"centre\":[0,0],\"localEdges\":" << edges[0]
+                             << ",\"collectorEdges\":" << edges[1] << ",\"arterialEdges\":" << edges[2]
+                             << ",\"widthsMetres\":[7,9,12],\"sourceRoadsByWidth\":["
+                             << sourceWidths[0] << ',' << sourceWidths[1] << ',' << sourceWidths[2]
+                             << "],\"centralBuildings\":" << centralBuildings << '}';
+                }
                 if( m_assets.openCity && !m_assets.cityRoadShowcase )
                 {
                     const auto buildings = checkCityBuildingGeometry( m_assets, m_quality != procedural::VehicleAppearanceQuality::Preview );
@@ -1202,9 +1229,9 @@ namespace workphone
                     {
                         if( lot.park ) ++parkLots; else ++buildingLots;
                         expectedBuildingCollisions += procedural::OpenCityLayout::buildingVolumes( lot ).size();
-                        const float clearance = city.footprintRoadClearance( lot.x, lot.z, lot.width, lot.depth );
+                        const float clearance = city.footprintRoadEdgeClearance( lot.x, lot.z, lot.width, lot.depth );
                         footprintValid = footprintValid && std::isfinite( clearance ) &&
-                            clearance >= procedural::OpenCityLayout::roadSetback - .001f;
+                            clearance >= procedural::OpenCityLayout::roadsideSetback - .001f;
                     }
                     for( size_t i = 0; i < m_assets.circuit.samples.size(); ++i )
                     {
