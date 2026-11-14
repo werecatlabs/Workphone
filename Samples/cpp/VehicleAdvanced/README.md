@@ -77,6 +77,11 @@ accepts 0–2 and affects newly created terrain; regenerating a retained city
 preserves its edited terrain. The hillside camera is cached for the capture and
 its road ID, selected rise, eye and target are written to the evidence JSON.
 
+With `--view verge`, the sample looks across an open road end from pavement
+level. Use `-Views verge` in the capture harness with `-CityTerrainRoads`.
+The evidence records the selected endpoint camera and counts uploaded planting
+and soil-to-grass transition triangles separately.
+
 The capture harness accepts `-Views road-edit-before,road-edit-after` with
 `-CityTerrainRoads`. Both views apply the same live spline edit and check exact
 terrain and road restoration. The first records Undo and the second records

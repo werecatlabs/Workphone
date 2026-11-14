@@ -11,7 +11,7 @@ param(
     [ValidateSet('grid', 'lsystem')][string]$CityLayout = 'grid',
     [ValidatePattern('^\d+x\d+$')][string]$Resolution = '1280x720',
     [ValidateRange(0.1, 3600)][double]$Seconds = 10,
-    [ValidateSet('follow', 'car', 'track', 'corner', 'junction', 'hillside', 'street', 'boulevard', 'frontage', 'facade', 'building', 'road-edit-before', 'road-edit-after')][string[]]$Views = @('car', 'track', 'corner', 'follow'),
+    [ValidateSet('follow', 'car', 'track', 'corner', 'junction', 'hillside', 'verge', 'street', 'boulevard', 'frontage', 'facade', 'building', 'road-edit-before', 'road-edit-after')][string[]]$Views = @('car', 'track', 'corner', 'follow'),
     [string]$Replay,
     [switch]$NoEffects,
     [switch]$FoliageWorld,
@@ -31,6 +31,7 @@ if ($CityTerrainRoads) { $Scene = 'city' }
 if ($streetDetailExplicit -and !$CityTerrainRoads) { throw '-CityStreetDetail requires -CityTerrainRoads.' }
 if ($Views -contains 'frontage' -and !$CityTerrainRoads) { throw '-Views frontage requires -CityTerrainRoads.' }
 if ($Views -contains 'junction' -and !$CityTerrainRoads) { throw '-Views junction requires -CityTerrainRoads.' }
+if ($Views -contains 'verge' -and !$CityTerrainRoads) { throw '-Views verge requires -CityTerrainRoads.' }
 if (($Views -contains 'hillside' -or $PSBoundParameters.ContainsKey('CityTerrainRelief')) -and !$CityTerrainRoads) { throw 'The hillside view and terrain relief require -CityTerrainRoads.' }
 $roadEditViews = @($Views | Where-Object { $_ -in @('road-edit-before', 'road-edit-after') })
 if ($roadEditViews.Count -and !$CityTerrainRoads) { throw 'Road edit views require -CityTerrainRoads.' }

@@ -194,6 +194,8 @@ namespace workphone
         Vector3F m_cityHillsideEye{}, m_cityHillsideTarget{};
         String m_cityHillsideRoadId;
         f32 m_cityHillsideRise = 0;
+        Vector3F m_cityVergeEye{}, m_cityVergeTarget{};
+        size_t m_cityVergeRoad = 0;
         Vector3F m_roadTerrainEditEye{}, m_roadTerrainEditTarget{};
         Vector3F m_roadTerrainEditBeforeKnot{}, m_roadTerrainEditAfterKnot{}, m_roadTerrainEditProbe{};
         size_t m_roadTerrainEditRoad = 0, m_roadTerrainEditChangedSamples = 0;

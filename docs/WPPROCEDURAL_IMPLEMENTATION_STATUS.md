@@ -1,5 +1,30 @@
 # WPProcedural implementation status
 
+## Varied verge planting and pavement edges — 14 November 2026
+
+Terrain cities regenerate fescue, meadow grass, broad-leaf ground cover,
+bramble and heather from the accepted road alignment. Short plants group near
+the pavement and taller scrub varies with the surrounding terrain. The planting
+respects pavement, roundabout and parcel clearances, and its geometry is capped
+at each quality level.
+
+A separate surface mesh follows the exposed edge of the fitted pavement,
+including rounded ends. The damp kerb seam and worn soil break into short
+grass of varying width and fade into the existing ground. Verge clearance at
+free road ends follows the shallow cap shape. Supported cap edges get planting
+and blend priority before the remaining pavement edges fill the city budget.
+The verge pass samples the retained heightfield and publishes visual meshes.
+In `SampleVehicleAdvanced`, `--view verge` gives a pavement-level inspection
+view. Native evidence counts the planting and pavement-edge meshes separately.
+
+Three seed 42 capture passes used a close verge camera and the original
+edited-road camera. The final capture shows short, broken planting groups at
+both road ends with clear pavement. All 12 planting batches and the transition
+mesh were ready in both final views. The edited-road view passed the terrain
+restore and native collision checks. Both focused terrain road mesh and
+footway suites passed. The captures use Microsoft Basic Render Driver. See
+`artifacts/procedural/city-verge-realism-20261114/visual-review.md`.
+
 ## Restorable road grading, road ends and verges — 14 November 2026
 
 Terrain city generation and accepted City Roads edits record the original and

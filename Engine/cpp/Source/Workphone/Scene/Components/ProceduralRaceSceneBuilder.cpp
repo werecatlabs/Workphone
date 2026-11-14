@@ -2261,6 +2261,8 @@ namespace workphone::scene::race
             assets.cityStreetDetailCount = static_cast<u32>( admitted.size() );
         }
 
+#include "CityVergeTransitions.hpp"
+
         void buildTerrainCityVerges( SceneAssets &assets, const CityRoadTerrainMesh &walks, u32 seed,
                                      VehicleAppearanceQuality quality )
         {
@@ -2285,35 +2287,55 @@ namespace workphone::scene::race
                 const float rx = p.x - ( a.x + t * x ), rz = p.z - ( a.z + t * z );
                 return rx * rx + rz * rz;
             };
+            enum class VergePlant { Meadow, Fescue, GroundCover, Bramble, Heather };
+            const auto woody = []( VergePlant plant ) {
+                return plant == VergePlant::Bramble || plant == VergePlant::Heather;
+            };
             struct Site
             {
                 Vector3F position;
                 u64 key;
                 float radius;
-                bool scrub, blocked = false;
+                VergePlant plant;
+                bool blocked = false;
             };
-            const size_t limit = quality == VehicleAppearanceQuality::Preview ? 520 : 1440;
+            const bool preview = quality == VehicleAppearanceQuality::Preview;
+            const size_t limit = preview ? 580 : 1580;
             SourceBudgetVector<Site> sites;
             sites.reserve( limit );
             const auto plant = [&]( Vector3F centre, Vector3F along, float roadWidth, u64 key,
                                     bool outer, bool terminal ) {
                 const Vector3F side( -along.z, 0, along.x );
-                const unsigned members = terminal ? 8 : 5;
                 for( const float sign : { -1.f, 1.f } )
                 {
                     const auto sideKey = key ^ ( sign > 0 ? 0xdfe493b9u : 0xbc6b2fbdu );
-                    if( !terminal && scalar( sideKey ) < ( outer ? .18f : .5f ) ) continue;
+                    const float density = scalar( sideKey );
+                    if( !terminal && density < ( outer ? .12f : .44f ) ) continue;
+                    const unsigned members = ( terminal ? 8u : 4u ) + unsigned( density * ( outer ? 7.f : 4.f ) );
+                    const float drift = ( scalar( sideKey + 11 ) - .5f ) * ( outer ? 4.2f : 2.4f );
+                    const float patchDepth = scalar( sideKey + 17 ) * ( outer ? 3.3f : 1.3f );
+                    const float stretch = terminal ? 8.8f : 3.8f + 6.2f * density;
+                    const float habitat = scalar( sideKey + 23 );
                     for( unsigned i = 0; i < members && sites.size() < limit; ++i )
                     {
                         const auto variation = render::foliageStableHash( sideKey + i );
-                        const bool scrub = outer && i > 1 && scalar( variation ) > .64f;
-                        const float radius = scrub ? .82f + .49f * scalar( variation + 3 )
-                                                   : .36f + .27f * scalar( variation + 3 );
-                        // Leave the short, mown strip next to the kerb clear. Offset
-                        // and elongate patches so they do not repeat like street furniture.
-                        const float across = roadWidth * .5f + 3.1f + radius + ( scrub ? 1.5f : 0 ) +
-                                             scalar( variation + 1 ) * ( outer ? 4.2f : 1.8f );
-                        const float offset = ( scalar( variation + 2 ) - .5f ) * ( terminal ? 9.f : 7.f );
+                        const float mix = scalar( variation );
+                        VergePlant species = habitat < .34f ? VergePlant::Fescue : VergePlant::Meadow;
+                        if( mix < .26f ) species = VergePlant::GroundCover;
+                        if( outer && i >= 3 && mix > .75f )
+                            species = habitat > .43f ? VergePlant::Bramble : VergePlant::Heather;
+                        const auto size = scalar( variation + 3 );
+                        const float radius = woody( species ) ? .58f + .85f * size : .22f + .45f * size;
+                        // The first members form a low kerb fringe. The rest
+                        // drift outward in an irregular patch, with scrub set back.
+                        const float patch = i < 3 ? .48f * patchDepth : patchDepth;
+                        const float swale = outer && density > .62f && i >= 3
+                                                ? 1.2f + 2.3f * scalar( sideKey + 28 )
+                                                : 0.f;
+                        const float across = roadWidth * .5f + 2.63f + radius + patch +
+                                             ( woody( species ) ? 1.6f : 0.f ) + swale +
+                                             scalar( variation + 1 ) * ( i < 3 ? 1.7f : 3.2f );
+                        const float offset = drift + ( scalar( variation + 2 ) - .5f ) * stretch;
                         auto point = centre + side * ( sign * across ) + along * offset;
                         if( !render::sampleTerrainHeight( *ground, placement, point, point.y ) ) continue;
                         bool supported = true;
@@ -2325,7 +2347,7 @@ namespace workphone::scene::race
                                 *ground, placement, point + direction * radius, height ) &&
                                 std::abs( height - point.y ) < .42f * radius;
                         }
-                        if( supported ) sites.push_back( { point, variation, radius, scrub } );
+                        if( supported ) sites.push_back( { point, variation, radius, species } );
                     }
                 }
             };
@@ -2362,21 +2384,26 @@ namespace workphone::scene::race
                         {
                             const auto &a = points[j - 1], &b = points[j];
                             const float length = b.distance - a.distance;
-                            if( length <= 0 || station > b.distance ) continue;
-                            const float t = ( station - a.distance ) / length;
-                            const auto p = a.position + ( b.position - a.position ) * t;
+                            if( length <= 0 ) continue;
                             Vector3F direction( b.position.x - a.position.x, 0, b.position.z - a.position.z );
+                            if( direction.lengthSquared() < 1e-8f ) continue;
                             direction.normalise();
-                            const bool outer = std::max( std::abs( p.x ), std::abs( p.z ) ) >= outerRadius;
-                            const auto key = locationKey( p ) ^ 0x93c9e1f0u;
-                            plant( p, direction, source.roads[r].width, key, outer, false );
-                            station += ( outer ? 13.f : 25.f ) + 10.f * scalar( key );
+                            station = std::max( station, a.distance );
+                            while( station <= b.distance && sites.size() < limit )
+                            {
+                                const float t = ( station - a.distance ) / length;
+                                const auto p = a.position + ( b.position - a.position ) * t;
+                                const bool outer = std::max( std::abs( p.x ), std::abs( p.z ) ) >= outerRadius;
+                                const auto key = locationKey( p ) ^ 0x93c9e1f0u;
+                                plant( p, direction, source.roads[r].width, key, outer, false );
+                                station += ( outer ? 8.f : 21.f ) + ( outer ? 16.f : 13.f ) * scalar( key );
+                            }
                         }
                     }
                 }
 
             constexpr float bucketSize = 12.f;
-            constexpr float maxRadius = 1.55f;  // Largest plant plus separation from paving.
+            constexpr float maxRadius = 1.65f;  // Largest plant plus separation from paving.
             using Bucket = std::pair<int, int>;
             SourceBudgetMap<Bucket, SourceBudgetVector<size_t>> buckets;
             const auto cell = [bucketSize]( float value ) { return int( std::floor( value / bucketSize ) ); };
@@ -2440,8 +2467,101 @@ namespace workphone::scene::race
                        } );
             }
 
-            Geometry grasses[2], seeds, leaves[2], stems;
-            SourceBudgetVector<Vector3F> scrubCentres;
+            Geometry grasses[2], seeds, leaves, blooms[2], stems;
+            std::array<Geometry, 3> canopies;
+            const auto triangle = []( Geometry &shape, Vector3F a, Vector3F b, Vector3F c,
+                                      Vector3F normal ) {
+                const auto tangent = ( b - a ).normaliseCopy();
+                const auto offset = static_cast<u32>( shape.positions.size() );
+                for( const auto point : { a, b, c } )
+                {
+                    shape.positions.push_back( point );
+                    shape.normals.push_back( normal );
+                    shape.tangents.push_back( { tangent.x, tangent.y, tangent.z, 1 } );
+                }
+                shape.uv.push_back( { 0, 0, 0 } );
+                shape.uv.push_back( { 1, 0, 0 } );
+                shape.uv.push_back( { .5f, 1, 0 } );
+                const auto forward = ( b - a ).crossProduct( c - a ).dotProduct( normal ) >= 0;
+                shape.indices.push_back( offset );
+                shape.indices.push_back( offset + ( forward ? 1 : 2 ) );
+                shape.indices.push_back( offset + ( forward ? 2 : 1 ) );
+            };
+            const auto fanLeaf = [&]( Vector3F base, Vector3F tip, Vector3F across, float rib ) {
+                const auto middle = base + ( tip - base ) * .52f;
+                const auto ridge = middle + Vector3F( 0, rib, 0 );
+                const auto left = middle - across, right = middle + across;
+                const auto forward = ( tip - base ).normaliseCopy();
+                const auto normal = ( Vector3F( 0, 1, 0 ) - forward * forward.y ).normaliseCopy();
+                const auto tilt = across.normaliseCopy() * .38f;
+                triangle( leaves, base, left, ridge, ( normal - tilt ).normaliseCopy() );
+                triangle( leaves, ridge, left, tip, ( normal - tilt ).normaliseCopy() );
+                triangle( leaves, base, ridge, right, ( normal + tilt ).normaliseCopy() );
+                triangle( leaves, ridge, tip, right, ( normal + tilt ).normaliseCopy() );
+            };
+            const auto canopyLobe = [&]( Geometry &shape, Vector3F centre, float radius, float height,
+                                        float angle, u64 key ) {
+                constexpr u32 sides = 8, stride = sides + 1;
+                const auto first = static_cast<u32>( shape.positions.size() );
+                const auto vertex = [&]( Vector3F point, Vector3F normal, Vector3F tangent, float u, float v ) {
+                    shape.positions.push_back( point );
+                    shape.normals.push_back( normal );
+                    shape.tangents.push_back( { tangent.x, tangent.y, tangent.z, 1 } );
+                    shape.uv.push_back( { u, v, 0 } );
+                };
+                for( u32 ring = 0; ring < 3; ++ring )
+                {
+                    const float latitude = ( float( ring ) - 1.f ) * ( pi * .25f );
+                    const float slope = std::sin( latitude ), span = std::cos( latitude );
+                    for( u32 side = 0; side <= sides; ++side )
+                    {
+                        const auto sector = side % sides;
+                        const float azimuth = angle + sector * ( 2.f * pi / sides );
+                        const Vector3F direction( std::cos( azimuth ), 0, std::sin( azimuth ) );
+                        const float ripple = .88f + .12f * scalar( key + sector + ring * sides );
+                        const auto point = centre + direction * ( radius * span * ripple ) +
+                                           Vector3F( 0, height * ( slope + .09f * ( ripple - .94f ) ), 0 );
+                        const auto normal = ( direction * ( span * height ) +
+                                              Vector3F( 0, radius * slope, 0 ) ).normaliseCopy();
+                        vertex( point, normal, { -direction.z, 0, direction.x }, float( side ) / sides,
+                                .25f * ( ring + 1 ) );
+                    }
+                }
+                for( u32 side = 0; side < sides; ++side )
+                {
+                    const auto pole = static_cast<u32>( shape.positions.size() );
+                    const float u = ( side + .5f ) / sides;
+                    const float azimuth = angle + 2.f * pi * u;
+                    const Vector3F tangent( -std::sin( azimuth ), 0, std::cos( azimuth ) );
+                    vertex( centre - Vector3F( 0, height, 0 ), { 0, -1, 0 }, tangent, u, 0 );
+                    vertex( centre + Vector3F( 0, height, 0 ), { 0, 1, 0 }, tangent, u, 1 );
+                    const u32 a = first + side, b = a + stride, c = b + stride;
+                    for( const auto index : { pole, a, a + 1, a, b, a + 1, a + 1, b, b + 1,
+                                              b, c, b + 1, b + 1, c, c + 1, c, pole + 1, c + 1 } )
+                        shape.indices.push_back( index );
+                }
+            };
+            const auto flower = [&]( Vector3F head, float spread, float angle, unsigned tint ) {
+                for( unsigned petal = 0; petal < 5; ++petal )
+                {
+                    const float azimuth = angle + petal * ( 2.f * pi / 5.f );
+                    const Vector3F direction( std::cos( azimuth ), 0, std::sin( azimuth ) );
+                    const Vector3F side( -direction.z, 0, direction.x );
+                    const auto centre = head + direction * ( spread * .63f );
+                    const auto lip = centre + Vector3F( 0, spread * .2f, 0 );
+                    blooms[tint].quad( head, centre + side * ( spread * .25f ),
+                                       lip + direction * ( spread * .37f ), centre - side * ( spread * .25f ),
+                                       { 0, 1, 0 } );
+                }
+            };
+            struct PlantClearance
+            {
+                Vector3F position;
+                float radius;
+            };
+            SourceBudgetVector<PlantClearance> planted;
+            planted.reserve( sites.size() );
+            size_t remainingTriangles = preview ? 45000 : 156000;
             for( const auto &site : sites )
             {
                 const auto p = site.position;
@@ -2453,75 +2573,184 @@ namespace workphone::scene::race
                 {
                     continue;
                 }
-                if( site.scrub )
-                {
-                    if( std::any_of( scrubCentres.begin(), scrubCentres.end(), [&]( Vector3F existing ) {
-                            return distanceSquared( p, existing, existing ) < 1.6f * 1.6f;
-                        } ) ) continue;
-                    scrubCentres.push_back( p );
-                }
-                const unsigned blades = site.scrub ? 19 : 11;
+                const bool shrub = woody( site.plant );
+                const float separation = site.radius * ( shrub ? .73f : .37f );
+                if( std::any_of( planted.begin(), planted.end(), [&]( const PlantClearance &other ) {
+                        const float clearance = other.radius + separation;
+                        return distanceSquared( p, other.position, other.position ) < clearance * clearance;
+                    } ) ) continue;
+                // Upper bounds include stems, seed clusters and petal geometry.
+                const size_t triangleBudget = shrub ? 248 : site.plant == VergePlant::GroundCover ? 76 : 132;
+                if( triangleBudget > remainingTriangles ) continue;
+                remainingTriangles -= triangleBudget;
+                planted.push_back( { p, separation } );
                 const float rotation = scalar( site.key ) * 2.f * pi;
+                if( shrub )
+                {
+                    const bool bramble = site.plant == VergePlant::Bramble;
+                    const unsigned clusters = bramble ? 4 : 3;
+                    const float height = site.radius * ( bramble ? .71f : .40f );
+                    for( unsigned cluster = 0; cluster < clusters; ++cluster )
+                    {
+                        const auto key = render::foliageStableHash( site.key + 53 + cluster );
+                        const float angle = rotation + cluster * 2.39996323f;
+                        const Vector3F direction( std::cos( angle ), 0, std::sin( angle ) );
+                        const float offset = cluster == 0 ? .05f : .27f + .15f * scalar( key );
+                        const float width = site.radius * ( .32f + .12f * scalar( key + 1 ) );
+                        auto crown = p + direction * ( site.radius * offset );
+                        if( !render::sampleTerrainHeight( *ground, placement, crown, crown.y ) ) continue;
+                        crown.y += height * ( cluster == 0 ? .68f : .29f + .19f * scalar( key + 2 ) );
+                        const unsigned foliage = bramble ? unsigned( cluster == 0 || scalar( key + 3 ) > .53f ) : 2;
+                        const float lobeHeight = height * ( .33f + .13f * scalar( key + 4 ) );
+                        canopyLobe( canopies[foliage], crown, width, lobeHeight, angle, key );
+                        if( cluster == 0 || ( bramble && cluster == 2 ) )
+                            stems.beam( p, crown, .013f );
+                        for( unsigned leaf = 0; leaf < ( bramble ? 4u : 6u ); ++leaf )
+                        {
+                            const auto leafKey = render::foliageStableHash( key + 18 + leaf );
+                            const float turn = angle + ( leaf - ( bramble ? 1.5f : 2.5f ) ) * .64f +
+                                               .29f * scalar( leafKey );
+                            const Vector3F outward( std::cos( turn ), 0, std::sin( turn ) );
+                            const auto base = crown + outward * ( width * .62f ) +
+                                              Vector3F( 0, lobeHeight * ( .07f + .44f * scalar( leafKey + 1 ) ), 0 );
+                            const auto tip = base + outward * ( width * ( .40f + .24f * scalar( leafKey + 2 ) ) ) +
+                                             Vector3F( 0, lobeHeight * ( .76f * scalar( leafKey + 3 ) - .26f ), 0 );
+                            const auto side = Vector3F( -outward.z, .28f - .56f * scalar( leafKey + 5 ), outward.x ) *
+                                              ( width * ( bramble ? .12f : .082f ) );
+                            const auto middle = ( base + tip ) * .5f;
+                            const auto normal = side.crossProduct( tip - base ).normaliseCopy();
+                            leaves.quad( base, middle - side, tip, middle + side, normal );
+                        }
+                        if( !bramble && cluster < 2 && scalar( site.key + 61 ) > .29f )
+                            flower( crown + direction * ( width * .44f ) + Vector3F( 0, height * .22f, 0 ),
+                                    .04f + .035f * scalar( key + 7 ), angle, 1 );
+                    }
+                    continue;
+                }
+                if( site.plant == VergePlant::GroundCover )
+                {
+                    for( unsigned leaf = 0; leaf < 8; ++leaf )
+                    {
+                        const float angle = rotation + leaf * 2.39996323f;
+                        const Vector3F direction( std::cos( angle ), 0, std::sin( angle ) );
+                        const float fraction = .35f + .46f * scalar( site.key + 71 + leaf );
+                        auto tip = p + direction * ( site.radius * fraction );
+                        if( !render::sampleTerrainHeight( *ground, placement, tip, tip.y ) ) continue;
+                        tip.y += .035f + site.radius * .13f * scalar( site.key + 83 + leaf );
+                        fanLeaf( p + Vector3F( 0, .045f, 0 ), tip,
+                                 Vector3F( -direction.z, 0, direction.x ) * ( site.radius * fraction * .27f ), .019f );
+                    }
+                    if( scalar( site.key + 97 ) > .43f )
+                        for( unsigned stem = 0; stem < 2; ++stem )
+                        {
+                            const float angle = rotation + stem * 2.39996323f;
+                            const Vector3F direction( std::cos( angle ), 0, std::sin( angle ) );
+                            const auto head = p + direction * ( site.radius * .23f ) +
+                                              Vector3F( 0, .12f + .33f * site.radius * scalar( site.key + 101 + stem ), 0 );
+                            stems.beam( p, head, .004f );
+                            flower( head, .037f + .043f * scalar( site.key + 108 + stem ), angle, 0 );
+                        }
+                    continue;
+                }
+                const bool fescue = site.plant == VergePlant::Fescue;
+                const unsigned blades = fescue ? 17 : 14;
                 for( unsigned blade = 0; blade < blades; ++blade )
                 {
                     const auto variation = render::foliageStableHash( site.key + blade + 37 );
-                    const float angle = rotation + blade * 2.39996323f;
+                    const float angle = rotation + blade * 2.39996323f + .65f * scalar( variation + 11 );
                     const Vector3F direction( std::cos( angle ), 0, std::sin( angle ) );
                     const Vector3F across( -direction.z, 0, direction.x );
-                    auto root = p + direction * ( site.radius * .19f * scalar( variation ) );
+                    auto root = p + direction * ( site.radius * ( .08f + .34f * scalar( variation ) ) );
                     if( !render::sampleTerrainHeight( *ground, placement, root, root.y ) ) continue;
                     root.y -= .015f;
-                    if( site.scrub )
+                    const float height = ( fescue ? .075f : .105f ) + site.radius *
+                                         ( .14f + ( fescue ? .26f : .38f ) * scalar( variation + 1 ) );
+                    const float bend = site.radius * ( .24f + .29f * scalar( variation + 2 ) );
+                    const auto lower = root + direction * ( bend * .17f ) + Vector3F( 0, height * .43f, 0 );
+                    const auto upper = root + direction * ( bend * .51f ) + Vector3F( 0, height, 0 );
+                    auto tip = root + direction * bend + across * ( bend * ( scalar( variation + 8 ) - .5f ) * .26f ) +
+                               Vector3F( 0, height * ( .59f + .43f * scalar( variation + 4 ) ), 0 );
+                    float groundHeight = 0;
+                    if( render::sampleTerrainHeight( *ground, placement, tip, groundHeight ) )
+                        tip.y = std::max( tip.y, groundHeight + .025f );
+                    const auto width = across * ( ( fescue ? .004f : .007f ) + .009f * scalar( variation + 3 ) );
+                    const auto lowerNormal = ( across.crossProduct( lower - root ).normaliseCopy() +
+                                               Vector3F( 0, .9f, 0 ) ).normaliseCopy();
+                    const auto upperNormal = ( across.crossProduct( upper - lower ).normaliseCopy() +
+                                               Vector3F( 0, 1.5f, 0 ) ).normaliseCopy();
+                    auto &grass = grasses[fescue == ( scalar( variation + 12 ) > .18f ) ? 1 : 0];
+                    grass.quad( root - width, root + width, lower + width * .82f, lower - width * .82f, lowerNormal );
+                    grass.quad( lower - width * .82f, lower + width * .82f, upper + width * .42f,
+                                upper - width * .42f, upperNormal );
+                    triangle( grass, upper - width * .42f, upper + width * .42f, tip, upperNormal );
+                    if( !fescue && blade == 0 && scalar( variation + 5 ) > .36f )
                     {
-                        const auto crown = root + direction * ( site.radius * (.21f + .24f * scalar( variation + 1 ) ) ) +
-                                           Vector3F( 0, site.radius * ( .46f + .61f * scalar( variation + 2 ) ), 0 );
-                        if( blade % 3 == 0 ) stems.beam( root, crown, .018f );
-                        for( unsigned leaf = 0; leaf < 7; ++leaf )
-                        {
-                            const float turn = angle + leaf * 2.39996323f;
-                            const Vector3F tipDirection( std::cos( turn ), .14f + .36f * scalar( variation + leaf ), std::sin( turn ) );
-                            const Vector3F width( -tipDirection.z * .065f * site.radius, .025f,
-                                                  tipDirection.x * .065f * site.radius );
-                            const auto base = crown - direction * ( .14f * leaf / 7.f );
-                            const auto tip = base + tipDirection * ( site.radius * ( .16f + .12f * scalar( variation + 23 + leaf ) ) );
-                            const auto centre = ( base + tip ) * .5f;
-                            auto normal = tipDirection.crossProduct( width ).normaliseCopy();
-                            if( normal.y < 0 ) normal = -normal;
-                            leaves[variation & 1].quad( base, centre + width, tip, centre - width, normal );
-                        }
-                    }
-                    else
-                    {
-                        const float height = .21f + .35f * scalar( variation + 1 );
-                        const auto middle = root + direction * ( site.radius * (.13f + .18f * scalar( variation + 2 )) ) +
-                                            Vector3F( 0, height * .7f, 0 );
-                        const auto tip = middle + direction * ( site.radius * .31f ) + Vector3F( 0, height * .3f, 0 );
-                        const auto width = across * ( .014f + .009f * scalar( variation + 3 ) );
-                        auto normal = ( width.crossProduct( middle - root ) + Vector3F( 0, .013f, 0 ) ).normaliseCopy();
-                        auto &grass = grasses[variation & 1];
-                        grass.quad( root - width, root + width, middle + width * .55f, middle - width * .55f, normal );
-                        grass.quad( middle - width * .55f, middle + width * .55f, tip + width * .04f, tip - width * .04f, normal );
-                        if( blade < 3 && scalar( variation + 5 ) > .55f )
-                        {
-                            const auto head = tip + Vector3F( 0, .12f, 0 );
-                            seeds.beam( root, head, .006f );
-                            seeds.beam( head - Vector3F( 0, .055f, 0 ), head + direction * .045f, .015f );
-                        }
+                        const auto head = root + direction * ( bend * .66f ) + Vector3F( 0, height + .11f, 0 );
+                        stems.beam( root, head, .003f );
+                        canopyLobe( seeds, head, .015f + .004f * scalar( variation + 7 ), .034f, angle, variation );
                     }
                 }
             }
-            const auto publish = [&]( const char *name, const Geometry &geometry, ColourF tint, bool twoSided ) {
+            SmartPtr<render::ITexture> canopyTexture;
+            if( std::any_of( canopies.begin(), canopies.end(),
+                             []( const Geometry &shape ) { return !shape.indices.empty(); } ) )
+            {
+                constexpr int resolution = 128;
+                TextureBuffer leafMap( resolution, resolution );
+                const auto paint = [&]( int x, int y, u8 light ) {
+                    const auto index = ( size_t( ( y + resolution ) % resolution ) * resolution +
+                                         ( x + resolution ) % resolution ) * 4;
+                    leafMap.pixels[index] = light;
+                    leafMap.pixels[index + 1] = light;
+                    leafMap.pixels[index + 2] = light;
+                    leafMap.pixels[index + 3] = 255;
+                };
+                for( int y = 0; y < resolution; ++y )
+                    for( int x = 0; x < resolution; ++x )
+                        paint( x, y, u8( 165 + 25 * scalar( size_t( y ) * resolution + x ) ) );
+                for( u64 leaf = 0; leaf < 360; ++leaf )
+                {
+                    const auto key = render::foliageStableHash( seed ^ ( 0xc2a9au + leaf ) );
+                    const int cx = int( resolution * scalar( key ) ), cy = int( resolution * scalar( key + 1 ) );
+                    const float angle = 2.f * pi * scalar( key + 2 );
+                    const float ax = std::cos( angle ), ay = std::sin( angle );
+                    const float radius = 3.5f + 4.0f * scalar( key + 3 );
+                    const float bladeWidth = 1.8f + 1.8f * scalar( key + 4 );
+                    const float brightness = 182.f + 56.f * scalar( key + 5 );
+                    const int reach = int( std::ceil( radius ) );
+                    for( int y = -reach; y <= reach; ++y )
+                        for( int x = -reach; x <= reach; ++x )
+                        {
+                            const float along = ( ax * x + ay * y ) / radius;
+                            const float across = ( ax * y - ay * x ) / bladeWidth;
+                            const float edge = along * along + across * across * ( 1 + .7f * std::abs( along ) );
+                            if( edge < 1.f )
+                            {
+                                const float vein = std::abs( across ) < .15f ? 13.f : 0.f;
+                                paint( cx + x, cy + y, u8( brightness - 23.f * edge + vein ) );
+                            }
+                        }
+                }
+                canopyTexture = upload( assets, leafMap );
+            }
+            const auto publish = [&]( const char *name, const Geometry &geometry, ColourF tint, bool twoSided,
+                                      bool textured = false ) {
                 if( geometry.indices.empty() ) return;
                 auto surface = material( assets, tint, .94f );
                 if( !twoSided ) surface->setCullMode( 2 );
+                if( textured ) surface->setTexture( canopyTexture, 0 );
                 mesh( assets, String( "Terrain city verge " ) + name, geometry, surface );
             };
-            publish( "fresh meadow grass", grasses[0], { .24f, .32f, .11f, 1 }, true );
-            publish( "dry meadow grass", grasses[1], { .33f, .35f, .135f, 1 }, true );
-            publish( "seed heads", seeds, { .45f, .365f, .18f, 1 }, false );
-            publish( "scrub leaves", leaves[0], { .16f, .285f, .085f, 1 }, true );
-            publish( "scrub shoots", leaves[1], { .225f, .33f, .105f, 1 }, true );
-            publish( "scrub stems", stems, { .20f, .145f, .072f, 1 }, false );
+            publish( "meadow grass", grasses[0], { .315f, .395f, .153f, 1 }, true );
+            publish( "dry fescue", grasses[1], { .396f, .399f, .208f, 1 }, true );
+            publish( "seed heads", seeds, { .49f, .413f, .25f, 1 }, false );
+            publish( "shaded shrub foliage", canopies[0], { .29f, .39f, .158f, 1 }, false, true );
+            publish( "shrub growth tips", canopies[1], { .355f, .442f, .204f, 1 }, false, true );
+            publish( "heather foliage", canopies[2], { .36f, .41f, .245f, 1 }, false, true );
+            publish( "broad leaves", leaves, { .303f, .389f, .176f, 1 }, true );
+            publish( "meadow flowers", blooms[0], { .70f, .63f, .375f, 1 }, true );
+            publish( "heather flowers", blooms[1], { .48f, .277f, .335f, 1 }, true );
+            publish( "plant stems", stems, { .285f, .229f, .123f, 1 }, false );
         }
 
         void buildNaturalCityStreets( SceneAssets &assets, const OpenCityLayout &city, Geometry &asphalt,
@@ -4598,6 +4827,7 @@ namespace workphone::scene::race
                     }
                 }
                 buildTerrainCityStreetDressing( assets, fitted, terrainStreetLamps, quality );
+                buildTerrainCityVergeTransitions( assets, fitted, seed, quality );
                 buildTerrainCityVerges( assets, fitted, seed, quality );
             }
             mesh( assets, "City street furniture", streetMetal,

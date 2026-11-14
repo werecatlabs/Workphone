@@ -473,6 +473,72 @@ namespace workphone
             float rise = 0;
         };
 
+        struct CityVergeView
+        {
+            Vector3F eye{}, target{};
+            size_t road = 0;
+        };
+
+        CityVergeView cityVergeInspectionView( const advanced::SceneAssets &assets )
+        {
+            const auto authoring = assets.roadAuthoring;
+            const auto terrain = authoring ? authoring->getTerrainSnapshot() : nullptr;
+            if( !terrain ) throw std::runtime_error( "Verge view requires fitted terrain roads." );
+            const auto &placement = authoring->getTerrainPlacement();
+            const auto &source = authoring->getSource();
+            const auto &bake = authoring->getBake().roads;
+            if( source.roads.size() != bake.size() )
+                throw std::runtime_error( "Verge view requires the current road bake." );
+            CityVergeView selected;
+            float best = -1;
+            for( size_t r = 0; r < bake.size(); ++r )
+            {
+                const auto &road = source.roads[r];
+                const auto &points = bake[r].points;
+                if( road.closed || points.size() < 2 ) continue;
+                for( const bool end : { false, true } )
+                {
+                    const auto &sample = end ? points.back() : points.front();
+                    const auto p = sample.position;
+                    const float score = std::hypot( p.x, p.z ) + road.width;
+                    if( score <= best ) continue;
+                    const bool connected = std::any_of( bake.begin(), bake.end(), [&]( const auto &other ) {
+                        if( &other == &bake[r] ) return false;
+                        return std::any_of( other.points.begin(), other.points.end(), [&]( const auto &q ) {
+                            return std::hypot( p.x - q.position.x, p.z - q.position.z ) < 18.f;
+                        } );
+                    } );
+                    if( connected ) continue;
+                    auto intoRoad = end ? -sample.tangent : sample.tangent;
+                    intoRoad.y = 0;
+                    if( intoRoad.lengthSquared() < .0001f ) continue;
+                    intoRoad.normalise();
+                    const Vector3F side( -intoRoad.z, 0, intoRoad.x );
+                    for( const float bank : { 1.f, -1.f } )
+                    {
+                        const auto offset = side * bank;
+                        auto eye = p - intoRoad * 8.5f + offset * ( road.width * .5f + 5.5f );
+                        auto target = p + intoRoad * 2.5f + offset * ( road.width * .5f + 1.7f );
+                        if( !render::sampleTerrainHeight( *terrain, placement, eye, eye.y ) ||
+                            !render::sampleTerrainHeight( *terrain, placement, target, target.y ) ) continue;
+                        eye.y += 2.15f;
+                        target.y += .28f;
+                        bool blocked = false;
+                        for( int i = 1; i < 12 && !blocked; ++i )
+                        {
+                            const auto point = eye + ( target - eye ) * ( float( i ) / 12 );
+                            float height = 0;
+                            blocked = !render::sampleTerrainHeight( *terrain, placement, point, height ) ||
+                                      point.y < height + .1f;
+                        }
+                        if( !blocked ) { selected = { eye, target, r }; best = score; break; }
+                    }
+                }
+            }
+            if( best < 0 ) throw std::runtime_error( "Verge view needs an open road endpoint on supported terrain." );
+            return selected;
+        }
+
         CityHillsideView cityHillsideInspectionView( const advanced::SceneAssets &assets )
         {
             if( !assets.roadAuthoring ) throw std::runtime_error( "Hillside view requires editable terrain roads." );
@@ -1658,10 +1724,12 @@ namespace workphone
                 {
                     const auto check=checkTerrainCity(m_assets,app->getPhysicsManager()->getPhysicsScene());cityValid=cityValid && check.valid;
                     size_t vergeBatches = 0, vergeReady = 0, vergeTriangles = 0;
+                    size_t transitions = 0, transitionsReady = 0, transitionTriangles = 0;
                     for( const auto &actor : m_assets.actors )
                     {
                         if( !actor || actor->getName().find( "Terrain city verge " ) != 0 ) continue;
-                        ++vergeBatches;
+                        const bool transition = actor->getName().find( "Terrain city verge transition " ) == 0;
+                        ++( transition ? transitions : vergeBatches );
                         const auto renderer = actor->getComponent<scene::MeshRenderer>();
                         const auto graphics = renderer ? renderer->getGraphicsObject() : nullptr;
 #if WP_GRAPHICS_SYSTEM_CLAW
@@ -1669,17 +1737,24 @@ namespace workphone
                         const auto native = mesh ? mesh->getNativeMesh() : nullptr;
                         if( native && mesh->isLoaded() )
                         {
-                            ++vergeReady;
-                            vergeTriangles += wp_graphics_mesh_get_index_count( native ) / 3;
+                            ++( transition ? transitionsReady : vergeReady );
+                            ( transition ? transitionTriangles : vergeTriangles ) += wp_graphics_mesh_get_index_count( native ) / 3;
                         }
 #else
-                        if( graphics && graphics->isLoaded() ) ++vergeReady;
+                        if( graphics && graphics->isLoaded() ) ++( transition ? transitionsReady : vergeReady );
 #endif
                     }
                     evidence << ",\n  \"cityVerges\":{\"batches\":" << vergeBatches
-                             << ",\"readyBatches\":" << vergeReady << ",\"nativeTriangles\":" << vergeTriangles << '}';
-                    if( isRoadTerrainEditView( m_captureView ) )
-                        cityValid = cityValid && vergeBatches > 0 && vergeReady == vergeBatches;
+                             << ",\"readyBatches\":" << vergeReady << ",\"nativeTriangles\":" << vergeTriangles
+                             << ",\"transitionBatches\":" << transitions << ",\"readyTransitionBatches\":" << transitionsReady
+                             << ",\"transitionTriangles\":" << transitionTriangles << '}';
+                    if( isRoadTerrainEditView( m_captureView ) || m_captureView == "verge" )
+                        cityValid = cityValid && vergeBatches > 0 && vergeReady == vergeBatches &&
+                                    transitions > 0 && transitionsReady == transitions;
+                    if( m_captureView == "verge" )
+                        evidence << ",\n  \"cityVergeCamera\":{\"roadIndex\":" << m_cityVergeRoad
+                                 << ",\"eye\":[" << m_cityVergeEye.x << ',' << m_cityVergeEye.y << ',' << m_cityVergeEye.z
+                                 << "],\"target\":[" << m_cityVergeTarget.x << ',' << m_cityVergeTarget.y << ',' << m_cityVergeTarget.z << "]}";
                     const auto expectedDetail = m_cityStreetDetail >= 0 ? m_cityStreetDetail : 100;
                     const bool expectStreetDetail = m_cityStreetDetail == 100 && m_seed == 42 &&
                         m_cityBlocks == 6 && m_cityRoute == 0 && m_quality == procedural::VehicleAppearanceQuality::High;
@@ -3710,6 +3785,11 @@ namespace workphone
                 m_cityHillsideEye = view.eye; m_cityHillsideTarget = view.target;
                 m_cityHillsideRoadId = view.roadId; m_cityHillsideRise = view.rise;
             }
+            if( m_captureView == "verge" )
+            {
+                const auto view = cityVergeInspectionView( m_assets );
+                m_cityVergeEye = view.eye; m_cityVergeTarget = view.target; m_cityVergeRoad = view.road;
+            }
             if( m_captureView == "junction" )
             {
                 const auto connections = cityConnections( *m_assets.roadAuthoring );
@@ -3896,6 +3976,11 @@ namespace workphone
                     {
                         m_cameraActor->setPosition( m_cityHillsideEye );
                         m_cameraActor->lookAt( m_cityHillsideTarget, Vector3F::unitY() );
+                    }
+                    else if( m_captureView == "verge" )
+                    {
+                        m_cameraActor->setPosition( m_cityVergeEye );
+                        m_cameraActor->lookAt( m_cityVergeTarget, Vector3F::unitY() );
                     }
                     else if( isRoadTerrainEditView( m_captureView ) && m_roadTerrainEditPrepared )
                     {
@@ -4122,6 +4207,7 @@ int main( int argc, char **argv )
                    "  --view street|boulevard       Opposite street-level city inspections; track is the overview\n"
                    "  --view frontage               Close sidewalk inspection (requires --city-terrain-roads)\n"
                    "  --view hillside               Inspect a sustained road climb and its surrounding terrain\n"
+                   "  --view verge                  Inspect a terrain road end at pavement level\n"
                    "  --view road-edit-before|road-edit-after   Fixed camera after Undo or Redo of a graded road edit\n"
                    "  --view facade                 Inspect a generated building facade from a fixed parcel camera\n"
                    "  --view building               Inspect a representative low-rise building and its roof silhouette\n"
@@ -4376,10 +4462,10 @@ int main( int argc, char **argv )
             { audioEnabled = false; hud = false; }
         }
         if( captureView != "follow" && captureView != "car" && captureView != "track" &&
-            captureView != "corner" && captureView != "junction" && captureView != "hillside" && captureView != "street" && captureView != "boulevard" &&
+            captureView != "corner" && captureView != "junction" && captureView != "hillside" && captureView != "verge" && captureView != "street" && captureView != "boulevard" &&
             captureView != "frontage" && captureView != "facade" && captureView != "building" &&
             !isRoadTerrainEditView( captureView ) )
-            throw std::runtime_error( "View must be follow, car, track, corner, junction, hillside, street, boulevard, frontage, facade, building, road-edit-before, or road-edit-after." );
+            throw std::runtime_error( "View must be follow, car, track, corner, junction, hillside, verge, street, boulevard, frontage, facade, building, road-edit-before, or road-edit-after." );
         if( ( cityOptionsExplicit || captureView == "street" || captureView == "boulevard" ) && !openCity )
             throw std::runtime_error( "City options and street-level views require --city." );
         if(roadAuthoringShowcase && foliageWorld)throw std::runtime_error("Road authoring showcase does not provide foliage-world generation.");
@@ -4394,6 +4480,8 @@ int main( int argc, char **argv )
             throw std::runtime_error( "--view junction requires --city-terrain-roads." );
         if( captureView == "hillside" && !cityTerrainRoads )
             throw std::runtime_error( "--view hillside requires --city-terrain-roads." );
+        if( captureView == "verge" && !cityTerrainRoads )
+            throw std::runtime_error( "--view verge requires --city-terrain-roads." );
         if( isRoadTerrainEditView( captureView ) && ( !cityTerrainRoads || orbit || capturePath.empty() ) )
             throw std::runtime_error( "Road edit views require --city-terrain-roads and a fixed capture camera." );
         if( (cityBuildingMeshOverride || cityBuildingStyle >= 0 || captureView == "facade" || captureView == "building") &&
