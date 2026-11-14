@@ -1259,6 +1259,50 @@ namespace workphone
                 }
                 if( m_assets.openCity && !m_assets.cityRoadShowcase )
                 {
+                    // Verify the maps bound to live scene materials, rather than
+                    // treating presence in the downloaded asset pack as usage.
+                    SourceBudgetSet<render::IMaterial *> inspectedSurfaces;
+                    const auto gameManager = app->getGameManager();
+                    const auto activeScene = gameManager->getCurrentScene();
+                    bool surfaceMapsReady = true;
+                    evidence << ",\n  \"citySurfaceTextures\": {\"materials\":[";
+                    for( const auto &actor : gameManager->getActors() )
+                    {
+                        if( !actor || actor->getScene() != activeScene ) continue;
+                        const auto component = actor->getComponent<scene::Material>();
+                        const auto material = component ? component->getMaterial() : nullptr;
+                        if( !material ) continue;
+                        const auto albedo = material->getTexture( 0 );
+                        const auto name = albedo ? albedo->getName() : String();
+                        constexpr auto marker = "/city-surface/";
+                        const auto tag = name.find( marker );
+                        if( tag == String::npos || inspectedSurfaces.count( material.get() ) ) continue;
+                        const auto start = tag + std::char_traits<char>::length( marker );
+                        const auto end = name.find( '/', start );
+                        if( end == String::npos || end == start ) continue;
+                        const auto asset = name.substr( start, end - start );
+                        if( !inspectedSurfaces.empty() ) evidence << ',';
+                        inspectedSurfaces.insert( material.get() );
+                        u32 ready = 0;
+                        Vector2I size;
+                        for( const u32 slot : { 0u, 1u, 22u, 3u, 2u } )
+                        {
+                            const auto texture = material->getTexture( slot );
+                            void *native = nullptr;
+                            if( texture ) texture->getTextureFinal( &native );
+                            if( slot == 0 && texture ) size = texture->getSize();
+                            if( native && texture->getSize() == size && size.x >= 256 && size.x <= 1024 && size.y == size.x ) ++ready;
+                        }
+                        surfaceMapsReady = surfaceMapsReady && ready == 5;
+                        evidence << "{\"asset\":" << advanced::jsonString( asset )
+                                 << ",\"actor\":" << advanced::jsonString( actor->getName() )
+                                 << ",\"size\":[" << size.x << ',' << size.y << "]"
+                                 << ",\"uploadedMaps\":" << ready
+                                 << ",\"cyclesPerMetre\":" << material->getEditorFloat( "uvTriplanarScale", 1 ) << '}';
+                    }
+                    evidence << "],\"materialCount\":" << inspectedSurfaces.size()
+                             << ",\"bindingsReady\":" << ( surfaceMapsReady && !inspectedSurfaces.empty() ? "true" : "false" ) << '}';
+                    cityValid = cityValid && surfaceMapsReady;
                     const auto buildings = checkCityBuildingGeometry( m_assets, m_quality != procedural::VehicleAppearanceQuality::Preview );
                     cityValid = cityValid && buildings.valid;
                     evidence << ",\n  \"cityBuildingGeometry\": "; writeCityBuildingGeometry( evidence, buildings );
@@ -1347,6 +1391,10 @@ namespace workphone
                         <<",\"activeRevision\":"<<(authoring?authoring->getActiveRevision():0)<<",\"terrainRevision\":"<<(snapshot?snapshot->revision:0)
                         <<",\"sourceBytes\":"<<(authoring?authoring->getSourceJSON().size():0)<<",\"roads\":"<<check.roads<<",\"roundabouts\":"<<check.junctions
                         <<",\"runtimeTriangles\":"<<check.triangles<<",\"terrainRendererReady\":"<<(check.renderer?"true":"false")
+                        <<",\"groundAlbedo\":"<<advanced::jsonString(snapshot?snapshot->layers[0].albedo:String())
+                        <<",\"groundNormal\":"<<advanced::jsonString(snapshot?snapshot->layers[0].normal:String())
+                        <<",\"groundORM\":"<<advanced::jsonString(snapshot?snapshot->layers[0].orm:String())
+                        <<",\"groundSourceRoot\":"<<advanced::jsonString(app->getProjectPath())
                         <<",\"roadPBRBindingsReady\":"<<(check.roadPBRBindingsReady?"true":"false")<<",\"roadPBRTextures\":"<<check.roadPBRTextures<<",\"roadPBRMaterials\":"<<check.roadPBRMaterials
                         <<",\"footwayReady\":"<<(check.footwayReady?"true":"false")<<",\"footwayCollisionReady\":"<<(check.footwayCollisionReady?"true":"false")
                         <<",\"footwayActors\":"<<check.footwayActors<<",\"footwayNativeRayProbes\":"<<check.footwayNativeRayProbes<<",\"footwayRayCandidates\":"<<check.footwayRayCandidates<<",\"footwayRayHeightError\":"<<check.footwayRayHeightError
@@ -2692,6 +2740,16 @@ namespace workphone
 #else
             throw std::runtime_error("Terrain gameplay packaging is unavailable in this build.");
 #endif
+        }
+
+        if( m_cityTerrainRoads && applicationManager->getProjectPath().empty() )
+        {
+            // Standalone samples have no Editor project. Give generated terrain
+            // textures a persistent source root using the same canonical data://
+            // descriptors as project authoring and package export.
+            const auto root = std::filesystem::current_path() / ".FBCache" / "ProceduralCity";
+            std::filesystem::create_directories( root );
+            applicationManager->setProjectPath( root.generic_u8string().c_str() );
         }
 
         m_vehicleActor = sceneManager->createActor();

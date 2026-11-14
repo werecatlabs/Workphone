@@ -7,11 +7,14 @@
 
 namespace workphone::procedural::texture_export
 {
-    // Source-root-relative descriptors consumed by GraphicsResourceCompiler. The current
-    // cooked material tier binds base colour only; auxiliary maps remain explicit sources.
+    // Source-root-relative descriptors consumed by GraphicsResourceCompiler.
+    // scannedCityAsphalt identifies the fixed CC0 clean_asphalt import from
+    // CitySurfaceLibrary, including its engine-converted normal convention.
+    // Only the three appearance maps are required; no height map is exported.
     template <class Surface>
     bool exportAsphaltSource( const Surface &surface, const std::filesystem::path &directory,
-                              unsigned int seed, std::string &error )
+                              unsigned int seed, std::string &error,
+                              bool scannedCityAsphalt = false )
     {
         namespace fs = std::filesystem;
         error.clear();
@@ -86,14 +89,31 @@ namespace workphone::procedural::texture_export
             std::ostringstream provenance;
             provenance
                 << "{\"format\":\"workphone.procedural-material-source\",\"version\":1,"
-                   "\"generator\":\"racing-asphalt\",\"generatorVersion\":1,\"seed\":"
+                   "\"generator\":\""
+                << ( scannedCityAsphalt ? "poly-haven-city-asphalt" : "racing-asphalt" )
+                << "\",\"generatorVersion\":1,\"seed\":"
                 << seed << ",\"width\":" << surface.albedo.width
                 << ",\"height\":" << surface.albedo.height
-                << ",\"tileMetres\":1.5,\"maps\":{\"albedo\":\"srgb\",\"normal\":\"linear-tangent\","
+                << ",\"tileMetres\":" << ( scannedCityAsphalt ? "2.1" : "1.5" )
+                << ",\"maps\":{\"albedo\":\"srgb\",\"normal\":\"linear-tangent\","
                    "\"orm\":\"linear-AO-roughness-metalness\",\"ao\":\"linear\","
                    "\"roughness\":\"linear\",\"metalness\":\"linear\"},"
                    "\"cookedMaterialTier\":\"albedo-normal-orm\","
-                   "\"auxiliaryMapsBoundByCookedMaterial\":true}\n";
+                   "\"auxiliaryMapsBoundByCookedMaterial\":true";
+            if( scannedCityAsphalt )
+            {
+                // Fixed identifiers avoid accepting unescaped caller JSON. The
+                // seed identifies the requesting scene, not these imported maps.
+                provenance << ",\"seedAffectsMaps\":false,\"sourceProvider\":\"Poly Haven\","
+                    "\"sourceAssetId\":\"clean_asphalt\","
+                    "\"sourceUrl\":\"https://polyhaven.com/a/clean_asphalt\","
+                    "\"sourceLicense\":\"CC0-1.0\","
+                    "\"sourceLicenseUrl\":\"https://creativecommons.org/publicdomain/zero/1.0/\","
+                    "\"sourceNormalConvention\":\"OpenGL +Y\","
+                    "\"normalConvention\":\"engine-increasing-image-V\","
+                    "\"normalConversion\":\"green-flipped-and-renormalized\"";
+            }
+            provenance << "}\n";
             const auto manifest = provenance.str();
             // Written last: its presence certifies the complete source export, not a GPU cook.
             write( "material-source.json.tmp", manifest.data(), manifest.size() );

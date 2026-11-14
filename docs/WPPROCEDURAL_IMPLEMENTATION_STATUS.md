@@ -1,5 +1,54 @@
 # WPProcedural implementation status
 
+## Scanned city surface materials — 14 November 2026
+
+The bundled [Poly Haven CC0 pack](../bin/Media/Procedural/City/Textures/README.md)
+contains six surface sets and 24 unmodified 1K source maps (37,168,076 bytes).
+Asphalt, pavement slabs, brick, plaster, concrete and grass now feed the generated
+city and editable-road PBR materials. World projection uses physical tile sizes;
+the brick tile has an explicit 1.5 m architectural override. Source downloads,
+authors, hashes and licences are retained with a reproducible offline-verifiable
+restore script. Runtime generation never downloads assets.
+
+`CitySurfaceLibrary` bounds encoded files and source dimensions before decoding,
+supports 8/16-bit channels and 256/512/1024 px outputs, and publishes a complete
+surface transactionally. Colour downsamples in linear light, normals are
+green-converted and vector-filtered, roughness uses fourth-moment filtering, and
+AO/roughness/nonmetallic channels bind the engine's separate map slots. Source
+buffers and codec work use the existing shared memory ledger. Missing, invalid
+or denied sets leave the caller's previous data intact and use procedural
+fallback materials.
+
+New terrain imports converted grass maps through the existing immutable project
+texture source writer. Canonical `data://` layer references survive source
+saving, regeneration and dependency collection; existing terrain materials are
+preserved. Scanned asphalt export writes the rendered maps with accurate CC0
+provenance while retaining the legacy procedural export contract. The sample
+reports live scanned material IDs, physical scale, dimensions and native map
+bindings, plus terrain texture references.
+
+Workphone, SampleVehicleAdvanced and Editor Debug builds pass. All six focused
+checks pass on the final build in 182.79 s: the real-asset loader suite (24.84 s), texture export,
+Lua material chain, road terrain mesh, road authoring, and Editor terrain source
+save/reload (154.63 s). Loader checks include channel values/normal precision,
+all output sizes, malformed/oversized files and metadata, embedded thumbnail
+stripping, failure on the last map, memory-budget denial and complete admission
+return after teardown. Source-pack offline verification passes for all 24 maps.
+[Build log](../artifacts/procedural/city-pbr-textures-20261114/build-iteration-02-retry.log) ·
+[Test log](../artifacts/procedural/city-pbr-textures-20261114/tests-iteration-02.log).
+
+Three fresh matched native captures pass consistency checks, including exact
+cameras, unchanged editable road/roundabout controls, current source/binary/map
+hashes, and native material bindings. District captures use all six families
+through eight materials with 40 uploaded 512 px maps, plus three saved terrain
+maps. All 77 ordinary-junction collision probes pass. Source CPU peaks at
+338.82 MiB and GPU admission is 142.68 MiB, under their 512 MiB limits with no
+rejected reservations. [Comparison and visual review](../artifacts/procedural/city-pbr-textures-20261114/visual-review.md)
+records the observed gains in brick, concrete and paving detail, plus remaining
+grass repetition, plaster mottling, dark glazing and lighting limits. Captures
+use Microsoft Basic Render Driver; no physical-GPU performance, blind F1
+comparison or photorealism claim is made.
+
 ## Shared road connection geometry — 14 November 2026
 
 This iteration follows the dynamic connection approach described in the

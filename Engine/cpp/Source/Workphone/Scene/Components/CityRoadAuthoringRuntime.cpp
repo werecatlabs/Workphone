@@ -2,6 +2,7 @@
 #include <Workphone/Scene/Components/CityRoadAuthoring.hpp>
 #include <Workphone/Scene/Components/CityRoadTerrainMesh.hpp>
 #include <Workphone/Scene/Components/CityRoadJunctions.hpp>
+#include <Workphone/Scene/Components/CitySurfaceLibrary.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
 #include <Workphone/Scene/Components/Mesh.hpp>
 #include <Workphone/Scene/Components/MeshRenderer.hpp>
@@ -135,8 +136,9 @@ namespace workphone::scene
                                                    render::TextureMipFilter filter )
         {
             requireRuntime(
-                buffer.width == 256 && buffer.height == 256 && buffer.pixels.size() == 256 * 256 * 4,
-                "Authored road surfaces require complete bounded 256px textures." );
+                buffer.width >= 256 && buffer.width <= 1024 && buffer.height == buffer.width &&
+                    buffer.pixels.size() == size_t( buffer.width ) * buffer.height * 4,
+                "Authored road surfaces require complete bounded 256-1024px textures." );
             requireRuntime( state.textures.size() < 16 && state.textures.capacity() >= 16,
                             "Authored road texture ownership must be admitted before publication." );
             // Use the same transactional staging path as the procedural scene:
@@ -165,7 +167,7 @@ namespace workphone::scene
             properties->setProperty( "mipmapAtlasColumns", 1u );
             texture->setProperties( properties );
             String error;
-            requireRuntime( texture->copyByteData( bgra, { 256, 256 }, error ),
+            requireRuntime( texture->copyByteData( bgra, { s32( buffer.width ), s32( buffer.height ) }, error ),
                             error.empty() ? "Road texture staging failed." : error.c_str() );
             texture->load( nullptr );
             return texture;
@@ -210,6 +212,25 @@ namespace workphone::scene
             const bool asphalt = kind == CityRoadTerrainTriangleKind::Road;
             const bool turf = kind == CityRoadTerrainTriangleKind::Island;
             const bool paint = kind == CityRoadTerrainTriangleKind::Marking;
+            if( !paint )
+            {
+                const auto family = asphalt ? CitySurface::Asphalt : turf ? CitySurface::Ground
+                                                                         : CitySurface::Concrete;
+                SurfaceBakeResult scanned;
+                String diagnostic;
+                if( loadCitySurface( family, 512, scanned, diagnostic ) )
+                {
+                    surfaceMaps( state, prefix + "/city-surface/" + citySurfaceAssetId( family ), material, scanned );
+                    material->setNormalStrength( asphalt ? .45f : turf ? .5f : .35f );
+                    material->setEditorFloat( "aoStrength", .65f );
+                    material->setUVProjection( kind == CityRoadTerrainTriangleKind::Kerb ? 1 : 3 );
+                    material->setTriplanarScale( 1.f / citySurfaceTileMetres( family ) );
+                    material->setEditorUInt( "uvFilter", 3 );
+                    material->setEditorFloat( "uvAniso", 8.f );
+                    return;
+                }
+                WP_LOG( String( "City road surface uses procedural fallback: " ) + diagnostic );
+            }
             forge->setSeed( seed ^ ( u32( kind ) * 0x9e3779b9u ) );
             SurfaceBakeParams params;
             params.size = 256;

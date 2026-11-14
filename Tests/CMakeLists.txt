@@ -4,7 +4,7 @@ if (WP_BUILD_TESTS)
 	endif()
 	
 	if (WP_BUILD_CPP)
-		#add_subdirectory(./ProceduralTextureExport)
+		add_subdirectory(./cpp/ProceduralTextureExport)
         #add_subdirectory(./cpp/CarVisual)
 	    if(TARGET WorkphoneNetwork)
 			add_subdirectory(./cpp/NetworkProduction)

@@ -2,6 +2,7 @@
 #include <Workphone/Scene/Components/ProceduralSceneGeneration.hpp>
 #include <Workphone/Scene/Systems/LODSystem.hpp>
 #include <Workphone/Scene/Components/CityBuildingStyles.hpp>
+#include <Workphone/Scene/Components/CitySurfaceLibrary.hpp>
 #include <Workphone/Scene/Components/Terrain/FoliagePlantGenerator.hpp>
 #include <Workphone/Workphone.hpp>
 #include <Workphone/Interface/Mesh/IMeshResource.hpp>
@@ -27,6 +28,7 @@
 #include <Workphone/Graphics/GraphicsCubemap.hpp>
 #include <Workphone/Graphics/TextureMipGenerator.hpp>
 #include <Workphone/Graphics/ProceduralSurfaceSourceExport.hpp>
+#include <Workphone/Graphics/GeneratedTextureSource.hpp>
 #include <Workphone/System/SourceBudgetContainers.hpp>
 #include "CityBuildingKit.hpp"
 #include "../RuntimeSceneMembership.hpp"
@@ -278,7 +280,8 @@ namespace workphone::scene::race
 
         SmartPtr<render::ITexture> uploadPixels(
             SceneAssets &assets, const u8 *pixels, size_t bytes, u32 width, u32 height,
-            render::TextureMipFilter filter = render::TextureMipFilter::Colour, u32 atlasColumns = 1 )
+            render::TextureMipFilter filter = render::TextureMipFilter::Colour, u32 atlasColumns = 1,
+            const char *citySurface = nullptr )
         {
             if( !bytes )
             {
@@ -302,8 +305,9 @@ namespace workphone::scene::race
             auto graphics = core::IApplicationManager::instance()->getGraphicsSystem();
             auto manager = graphics->getTextureManager();
             reserveOwnerSlot( assets.textures );
-            auto name =
-                assets.resourcePrefix + "/texture/" + StringUtil::toString( assets.textures.size() );
+            auto name = assets.resourcePrefix;
+            if( citySurface ) name += String( "/city-surface/" ) + citySurface;
+            name += "/texture/" + StringUtil::toString( assets.textures.size() );
             // New sampled textures default to 2D/usage zero. Avoid allocating
             // createManual's complete blank image before replacing its pixels.
             auto texture = dynamic_pointer_cast<render::ITexture>( manager->create( name ) );
@@ -343,10 +347,11 @@ namespace workphone::scene::race
 
         SmartPtr<render::ITexture> upload(
             SceneAssets &assets, const TextureBuffer &buffer,
-            render::TextureMipFilter filter = render::TextureMipFilter::Colour, u32 atlasColumns = 1 )
+            render::TextureMipFilter filter = render::TextureMipFilter::Colour, u32 atlasColumns = 1,
+            const char *citySurface = nullptr )
         {
             return uploadPixels( assets, buffer.data(), buffer.pixels.size(), buffer.width,
-                                 buffer.height, filter, atlasColumns );
+                                 buffer.height, filter, atlasColumns, citySurface );
         }
 
         SmartPtr<render::ITexture> uploadLinearRadiance( SceneAssets &assets, const Array<f32> &rgba,
@@ -388,16 +393,17 @@ namespace workphone::scene::race
         }
 
         void maps( SceneAssets &assets, SmartPtr<render::IMaterial> m, const TextureBuffer &albedo,
-                   const TextureBuffer &normal, const TextureBuffer &orm )
+                   const TextureBuffer &normal, const TextureBuffer &orm,
+                   const char *citySurface = nullptr )
         {
             if( !albedo.pixels.empty() )
             {
                 m->setDiffuse( ColourF::White );
-                m->setTexture( upload( assets, albedo ), 0 );
+                m->setTexture( upload( assets, albedo, render::TextureMipFilter::Colour, 1, citySurface ), 0 );
             }
             if( !normal.pixels.empty() )
             {
-                m->setTexture( upload( assets, normal, render::TextureMipFilter::Normal ), 1 );
+                m->setTexture( upload( assets, normal, render::TextureMipFilter::Normal, 1, citySurface ), 1 );
             }
             // The generated ORM is AO/Roughness/Metalness. WPGraphics' separate map slots
             // read red, so expand each channel explicitly, without applying an sRGB transfer.
@@ -414,7 +420,7 @@ namespace workphone::scene::race
                     }
                     m->setTexture( upload( assets, split,
                                            channel == 1 ? render::TextureMipFilter::Roughness
-                                                        : render::TextureMipFilter::Data ),
+                                                        : render::TextureMipFilter::Data, 1, citySurface ),
                                    channel == 0   ? 22
                                    : channel == 1 ? 3
                                                   : 2 );
@@ -424,9 +430,43 @@ namespace workphone::scene::race
             }
         }
 
+        bool applyCitySurface( SceneAssets &assets, SmartPtr<render::IMaterial> material,
+                               CitySurface family, u32 size, float normalStrength, u32 projection,
+                               u32 seed = 0 )
+        {
+            SurfaceBakeResult surface;
+            String diagnostic;
+            if( !loadCitySurface( family, size, surface, diagnostic ) )
+            {
+                WP_LOG( String( "City surface uses procedural fallback: " ) + diagnostic );
+                return false;
+            }
+            if( family == CitySurface::Asphalt && !assets.exportSourceDirectory.empty() )
+            {
+                std::string error;
+                if( !texture_export::exportAsphaltSource( surface,
+                        std::filesystem::u8path( assets.exportSourceDirectory.c_str() ), seed, error, true ) )
+                    throw std::runtime_error( "City asphalt source export failed: " + error );
+            }
+            maps( assets, material, surface.albedo, surface.normal, surface.orm, citySurfaceAssetId( family ) );
+            material->setUVProjection( projection );
+            material->setTriplanarScale( 1.f / citySurfaceTileMetres( family ) );
+            material->setNormalStrength( normalStrength );
+            material->setEditorFloat( "aoStrength", .65f );
+            material->setEditorUInt( "uvFilter", 3 );
+            material->setEditorFloat( "uvAniso", 8.f );
+            return true;
+        }
+
         SmartPtr<render::IMaterial> raceAsphalt( SceneAssets &assets, SmartPtr<ITextureForge> forge,
                                                  const SurfaceBakeParams &params, u32 seed )
         {
+            if( assets.openCity )
+            {
+                auto scanned = material( assets, ColourF::White, 1 );
+                if( applyCitySurface( assets, scanned, CitySurface::Asphalt, params.size, .45f, 3, seed ) )
+                    return scanned;
+            }
             auto asphalt = forge->bakeSurface( SurfaceTag::Asphalt, params );
             // Keep the forge's seeded aggregate detail subtle at driving distance.
             // Its general-purpose height/rut contrast is too strong for a race surface.
@@ -2541,6 +2581,34 @@ namespace workphone::scene::race
                 data.appearance.macroStrength = .3f;
                 data.appearance.macroSeed = seed;
                 data.appearance.macroTint = { .29f, .35f, .19f, 1 };
+                // Only seed newly created terrain. Existing terrain appearance is
+                // hand-authored data and must survive city regeneration unchanged.
+                SurfaceBakeResult groundProbe;
+                String groundDiagnostic;
+                if( loadCitySurface( CitySurface::Ground, 512, groundProbe, groundDiagnostic ) )
+                {
+                    auto layer = data.layers[0];
+                    const String directory = "Assets/Landscape/CitySurfaces";
+                    if( render::saveGeneratedTextureSource( groundProbe.albedo, app->getProjectPath(),
+                            directory, "grass-ground-albedo", render::TextureMipFilter::Colour,
+                            layer.albedo, groundDiagnostic ) &&
+                        render::saveGeneratedTextureSource( groundProbe.normal, app->getProjectPath(),
+                            directory, "grass-ground-normal", render::TextureMipFilter::Normal,
+                            layer.normal, groundDiagnostic ) &&
+                        render::saveGeneratedTextureSource( groundProbe.orm, app->getProjectPath(),
+                            directory, "grass-ground-orm", render::TextureMipFilter::Data,
+                            layer.orm, groundDiagnostic ) )
+                    {
+                        const float scale = 1.f / citySurfaceTileMetres( CitySurface::Ground );
+                        layer.uvScale = { scale, scale };
+                        layer.tint = { 1, 1, 1, 1 };
+                        layer.normalStrength = .5f;
+                        data.layers[0] = std::move( layer );
+                        data.appearance.macroStrength = .12f;
+                        data.appearance.macroTint = { .62f, .72f, .48f, 1 };
+                    }
+                    else WP_LOG( String( "City terrain surface uses procedural fallback: " ) + groundDiagnostic );
+                }
                 const float terrainPhase = float( seed % 997 ) * ( 6.28318530718f / 997.f );
                 float junctionDistrictRadius = 0;
                 if( city.naturalRoads )
@@ -2791,7 +2859,9 @@ namespace workphone::scene::race
             if( cityAsphalt )
             {
                 cityAsphalt->setUVProjection( 3 );
-                cityAsphalt->setEditorFloat( "uvTriplanarScale", 1.f / 8.f );
+                const auto albedo = cityAsphalt->getTexture( 0 );
+                if( !albedo || albedo->getName().find( "/city-surface/" ) == String::npos )
+                    cityAsphalt->setEditorFloat( "uvTriplanarScale", 1.f / 8.f );
             }
             Geometry asphalt, pavement, markings, parks, courtyards, streetMetal, lampGlass;
             SourceBudgetVector<Vector3F> terrainStreetLamps;
@@ -4021,8 +4091,19 @@ namespace workphone::scene::race
             {
                 mesh( assets, "City streets", asphalt, cityAsphalt );
             }
-            mesh( assets, "City sidewalks", pavement,
-                  material( assets, { .42f, .43f, .44f, 1 }, .95f ) );
+            auto pavingMaterial = material( assets, { .54f, .53f, .48f, 1 }, .92f );
+            if( !applyCitySurface( assets, pavingMaterial, CitySurface::Paving, surfaceParams.size,
+                                   .45f, 1 ) )
+            {
+                auto paving = forge->bakeSurface( SurfaceTag::Concrete, surfaceParams );
+                maps( assets, pavingMaterial, paving.albedo, paving.normal, paving.orm );
+                pavingMaterial->setDiffuse( { .54f, .53f, .48f, 1 } );
+                pavingMaterial->setUVProjection( 1 );
+                pavingMaterial->setTriplanarScale( .5f );
+                pavingMaterial->setNormalStrength( .12f );
+                pavingMaterial->setEditorFloat( "aoStrength", .3f );
+            }
+            mesh( assets, "City sidewalks", pavement, pavingMaterial );
             if( !assets.cityTerrainRoads )
             {
                 mesh( assets, "City lane markings", markings,
@@ -4034,8 +4115,22 @@ namespace workphone::scene::race
             const SurfaceTag facadeSurfaces[] = { SurfaceTag::Brick, SurfaceTag::Plaster,
                                                   SurfaceTag::Concrete };
             std::array<SmartPtr<render::IMaterial>, 3> facades;
+            const CitySurface facadeFamilies[] = { CitySurface::Brick, CitySurface::Plaster,
+                                                   CitySurface::Concrete };
             for( int i = 0; i < 3; ++i )
             {
+                facades[i] = material( assets, colours[i], 1, 1 );
+                if( applyCitySurface( assets, facades[i], facadeFamilies[i], surfaceParams.size,
+                                      i == 0 ? .6f : i == 1 ? .12f : .25f, 1 ) )
+                {
+                    // Scanned albedo already carries the surface colour. Restrained
+                    // architectural tints preserve reflectance and mortar contrast.
+                    facades[i]->setDiffuse( i == 1 ? ColourF( .96f, .94f, .90f, 1 )
+                                            : i == 2 ? ColourF( .93f, .96f, 1, 1 )
+                                                     : ColourF::White );
+                    if( i == 1 ) facades[i]->setEditorFloat( "aoStrength", .25f );
+                    continue;
+                }
                 // Complete bakes supply encoded albedo and linear normal/ORM data.
                 // Each architectural kit has a different surface and physical scale.
                 auto surface = forge->bakeSurface( facadeSurfaces[i], surfaceParams );
@@ -4064,7 +4159,6 @@ namespace workphone::scene::race
                         }
                     }
                 }
-                facades[i] = material( assets, colours[i], 1, 1 );
                 maps( assets, facades[i], surface.albedo, surface.normal, surface.orm );
                 facades[i]->setDiffuse( colours[i] );
                 // Box projection uses facade height as well as width; XZ projection
@@ -4151,20 +4245,6 @@ namespace workphone::scene::race
                     throw std::runtime_error( "Invalid city LOD patch: " + error );
                 }
             }
-            auto pavingMaterial = material( assets,
-                                            assets.cityTerrainRoads ? ColourF( .54f, .53f, .48f, 1 )
-                                                                    : ColourF( .40f, .41f, .38f, 1 ),
-                                            .92f );
-            if( assets.cityTerrainRoads )
-            {
-                auto paving = forge->bakeSurface( SurfaceTag::Concrete, surfaceParams );
-                maps( assets, pavingMaterial, paving.albedo, paving.normal, paving.orm );
-                pavingMaterial->setDiffuse( { .54f, .53f, .48f, 1 } );
-                pavingMaterial->setUVProjection( 1 );
-                pavingMaterial->setEditorFloat( "uvTriplanarScale", .5f );
-                pavingMaterial->setNormalStrength( .12f );
-                pavingMaterial->setEditorFloat( "aoStrength", .3f );
-            }
             mesh( assets, "City block plazas", courtyards, pavingMaterial );
             if( assets.cityTerrainRoads )
             {
@@ -4227,7 +4307,18 @@ namespace workphone::scene::race
                   material( assets, { .16f, .19f, .20f, 1 }, .48f, .6f ) );
             mesh( assets, "City lamp lenses", lampGlass,
                   material( assets, { .80f, .82f, .76f, 1 }, .35f ) );
-            mesh( assets, "City parks", parks, material( assets, { .20f, .34f, .14f, 1 }, 1 ) );
+            auto land = material( assets, { .34f, .48f, .25f, 1 }, 1 );
+            if( !applyCitySurface( assets, land, CitySurface::Ground, surfaceParams.size, .5f, 3 ) )
+            {
+                auto soil = forge->bakeSurface( SurfaceTag::Dirt, surfaceParams );
+                maps( assets, land, soil.albedo, soil.normal, soil.orm );
+                land->setDiffuse( { .34f, .48f, .25f, 1 } );
+                land->setUVProjection( 3 );
+                land->setTriplanarScale( .1f );
+                land->setNormalStrength( .15f );
+                land->setEditorFloat( "aoStrength", .4f );
+            }
+            mesh( assets, "City parks", parks, land );
             buildCityStreetDressing( assets, city, quality );
             Geometry ground;
             ground.box( { 0, -.06f, 0 }, { city.extent * 2 + 80, .1f, city.extent * 2 + 80 } );
@@ -4261,14 +4352,6 @@ namespace workphone::scene::race
                                  { horizon, -.12f, horizon }, { -horizon, -.12f, horizon },
                                  { 0, 1, 0 } );
             }
-            auto land = material( assets, { .34f, .48f, .25f, 1 }, 1 );
-            auto soil = forge->bakeSurface( SurfaceTag::Dirt, surfaceParams );
-            maps( assets, land, soil.albedo, soil.normal, soil.orm );
-            land->setDiffuse( { .34f, .48f, .25f, 1 } );
-            land->setUVProjection( 3 );
-            land->setEditorFloat( "uvTriplanarScale", .1f );
-            land->setNormalStrength( .15f );
-            land->setEditorFloat( "aoStrength", .4f );
             if( city.naturalRoads && !assets.cityTerrainRoads )
             {
                 mesh( assets, "City ground", ground, land );

@@ -1,0 +1,496 @@
+{
+  "schemaVersion": 1,
+  "name": "Workphone procedural city surfaces",
+  "provider": "Poly Haven",
+  "acquiredUtc": "2026-11-14T10:52:48.4592170Z",
+  "license": "CC0-1.0",
+  "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+  "providerLicenseUrl": "https://polyhaven.com/license",
+  "dimensionUnitSource": "https://github.com/Poly-Haven/Public-API/blob/master/swagger.yml",
+  "imageTransforms": "none",
+  "maximumEncodedBytes": 40000000,
+  "totalEncodedBytes": 37168076,
+  "assets": [
+    {
+      "role": "asphalt",
+      "id": "clean_asphalt",
+      "name": "Clean Asphalt",
+      "sourceUrl": "https://polyhaven.com/a/clean_asphalt",
+      "infoApiUrl": "https://api.polyhaven.com/info/clean_asphalt",
+      "filesApiUrl": "https://api.polyhaven.com/files/clean_asphalt",
+      "upstreamFilesHash": "402035bf9077d331e5de76b938c8b6d818aed6a0",
+      "authors": {
+        "Dimitrios Savva": "All"
+      },
+      "physicalDimensionsMillimeters": [
+        2099.9999046325684,
+        2099.9999046325684
+      ],
+      "tileMeters": [
+        2.1,
+        2.1
+      ],
+      "normalConvention": "OpenGL +Y",
+      "metallic": 0,
+      "maps": [
+        {
+          "channel": "diff",
+          "file": "clean_asphalt_diff_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/clean_asphalt/clean_asphalt_diff_1k.jpg",
+          "encoding": "jpg",
+          "colorSpace": "sRGB",
+          "dimensions": [
+            1024,
+            1024
+          ],
+          "bytes": 697630,
+          "sha256": "ddf9224e9cfa3eb2998d9097e4cd34bd3630c85e0e6798e5a0a000415a684083",
+          "upstreamMd5": "7edccb95cbf72e63889baade8455f9e5"
+        },
+        {
+          "channel": "nor_gl",
+          "file": "clean_asphalt_nor_gl_1k.png",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/clean_asphalt/clean_asphalt_nor_gl_1k.png",
+          "encoding": "png",
+          "colorSpace": "linear",
+          "dimensions": [
+            1024,
+            1024
+          ],
+          "bytes": 5632375,
+          "sha256": "5d5f512a8d90fa4c43f52f22c1904a845aefddb162b03d2547f0c60175b17125",
+          "upstreamMd5": "2609fb18d22b915d5ba6dee13fcae1c7"
+        },
+        {
+          "channel": "rough",
+          "file": "clean_asphalt_rough_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/clean_asphalt/clean_asphalt_rough_1k.jpg",
+          "encoding": "jpg",
+          "colorSpace": "linear",
+          "dimensions": [
+            1024,
+            1024
+          ],
+          "bytes": 641634,
+          "sha256": "2280be133c104eb04370b625ebcc7f6709d2173b43ae2cd15a0074c26f492bf9",
+          "upstreamMd5": "4238f2eab76530f4b0c66ddb929b142d"
+        },
+        {
+          "channel": "ao",
+          "file": "clean_asphalt_ao_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/clean_asphalt/clean_asphalt_ao_1k.jpg",
+          "encoding": "jpg",
+          "colorSpace": "linear",
+          "dimensions": [
+            1024,
+            1024
+          ],
+          "bytes": 696236,
+          "sha256": "f27bc52d4342361c2af68cc91650835b9d47b50e5a09067fda456b525e438a23",
+          "upstreamMd5": "15a02231f5187e5a2677eda9a4d91198"
+        }
+      ]
+    },
+    {
+      "role": "pavement",
+      "id": "concrete_pavement",
+      "name": "Concrete Pavement",
+      "sourceUrl": "https://polyhaven.com/a/concrete_pavement",
+      "infoApiUrl": "https://api.polyhaven.com/info/concrete_pavement",
+      "filesApiUrl": "https://api.polyhaven.com/files/concrete_pavement",
+      "upstreamFilesHash": "13659c72c1314d12b0c5cd809f89ccc9fec09cbf",
+      "authors": {
+        "Charlotte Baglioni": "All"
+      },
+      "physicalDimensionsMillimeters": [
+        1800.0000715255737,
+        1800.0000715255737
+      ],
+      "tileMeters": [
+        1.8,
+        1.8
+      ],
+      "normalConvention": "OpenGL +Y",
+      "metallic": 0,
+      "maps": [
+        {
+          "channel": "diff",
+          "file": "concrete_pavement_diff_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/concrete_pavement/concrete_pavement_diff_1k.jpg",
+          "encoding": "jpg",
+          "colorSpace": "sRGB",
+          "dimensions": [
+            1024,
+            1024
+          ],
+          "bytes": 926197,
+          "sha256": "70d3ff969a7421c7ae057b5d16386d11f5e59c6740db643352e1039413f419c4",
+          "upstreamMd5": "b7a0d071a3406d55a1c3e9a73a06df03"
+        },
+        {
+          "channel": "nor_gl",
+          "file": "concrete_pavement_nor_gl_1k.png",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/concrete_pavement/concrete_pavement_nor_gl_1k.png",
+          "encoding": "png",
+          "colorSpace": "linear",
+          "dimensions": [
+            1024,
+            1024
+          ],
+          "bytes": 5974518,
+          "sha256": "9800e6b905862cbe4c5729d60d62b1c9dbf8e9cb52a7a468489131c556ec5e7c",
+          "upstreamMd5": "6676e0e60345c2697ff62aedeaaafe4f"
+        },
+        {
+          "channel": "rough",
+          "file": "concrete_pavement_rough_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/concrete_pavement/concrete_pavement_rough_1k.jpg",
+          "encoding": "jpg",
+          "colorSpace": "linear",
+          "dimensions": [
+            1024,
+            1024
+          ],
+          "bytes": 475799,
+          "sha256": "99f81099af07b009134b6a81bf0f95ab16da09c57156cc2ed534975664a68533",
+          "upstreamMd5": "e5a0fc9831bad12c7b3779179aa706f7"
+        },
+        {
+          "channel": "ao",
+          "file": "concrete_pavement_ao_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/concrete_pavement/concrete_pavement_ao_1k.jpg",
+          "encoding": "jpg",
+          "colorSpace": "linear",
+          "dimensions": [
+            1024,
+            1024
+          ],
+          "bytes": 866967,
+          "sha256": "e8f529efda5559c428984880e265ec7e7711aa6de89f27a6b1d5ea2d44e446b8",
+          "upstreamMd5": "1c65e0b268fbdef5c4c13e080d15702f"
+        }
+      ]
+    },
+    {
+      "role": "brick",
+      "id": "brick_wall_001",
+      "name": "Brick Wall 001",
+      "sourceUrl": "https://polyhaven.com/a/brick_wall_001",
+      "infoApiUrl": "https://api.polyhaven.com/info/brick_wall_001",
+      "filesApiUrl": "https://api.polyhaven.com/files/brick_wall_001",
+      "upstreamFilesHash": "fd60577b22b011e4f5ae6ac5b2ffddd8dacf9b3d",
+      "authors": {
+        "Rob Tuytel": "Processing",
+        "Dimitrios Savva": "Photography"
+      },
+      "physicalDimensionsMillimeters": [
+        3000,
+        3000
+      ],
+      "tileMeters": [
+        3.0,
+        3.0
+      ],
+      "normalConvention": "OpenGL +Y",
+      "metallic": 0,
+      "maps": [
+        {
+          "channel": "diff",
+          "file": "brick_wall_001_diff_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/brick_wall_001/brick_wall_001_diffuse_1k.jpg",
+          "encoding": "jpg",
+          "colorSpace": "sRGB",
+          "dimensions": [
+            1024,
+            1024
+          ],
+          "bytes": 574381,
+          "sha256": "6a1233ec0186703de830354d89f122991e61e67fb67e0846c7eaf6c5aefea902",
+          "upstreamMd5": "955d2d4500eb549be0f2873305782798"
+        },
+        {
+          "channel": "nor_gl",
+          "file": "brick_wall_001_nor_gl_1k.png",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/brick_wall_001/brick_wall_001_nor_gl_1k.png",
+          "encoding": "png",
+          "colorSpace": "linear",
+          "dimensions": [
+            1024,
+            1024
+          ],
+          "bytes": 2562545,
+          "sha256": "0b51c30896a1706d8a5bb24448bcff791ec2e51458a90fef9498e61f74de9efe",
+          "upstreamMd5": "99200c9dd07ae8bc85f5a027deea4b78"
+        },
+        {
+          "channel": "rough",
+          "file": "brick_wall_001_rough_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/brick_wall_001/brick_wall_001_rough_1k.jpg",
+          "encoding": "jpg",
+          "colorSpace": "linear",
+          "dimensions": [
+            1024,
+            1024
+          ],
+          "bytes": 211093,
+          "sha256": "a23342b02e6c5af106aaece16130aa9153a801cb1a84d5f3e0d06ce248677f38",
+          "upstreamMd5": "618ceca60a4321aecc6d61eebe53d551"
+        },
+        {
+          "channel": "ao",
+          "file": "brick_wall_001_ao_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/brick_wall_001/brick_wall_001_ao_1k.jpg",
+          "encoding": "jpg",
+          "colorSpace": "linear",
+          "dimensions": [
+            1024,
+            1024
+          ],
+          "bytes": 269071,
+          "sha256": "2f3135384946565118afd5b17a36c9535a4946445e6b005b406097c6c719828f",
+          "upstreamMd5": "aa63a3345a5217f34aae37a05344ce00"
+        }
+      ]
+    },
+    {
+      "role": "plaster",
+      "id": "white_plaster_02",
+      "name": "White Plaster 02",
+      "sourceUrl": "https://polyhaven.com/a/white_plaster_02",
+      "infoApiUrl": "https://api.polyhaven.com/info/white_plaster_02",
+      "filesApiUrl": "https://api.polyhaven.com/files/white_plaster_02",
+      "upstreamFilesHash": "508068441dd24eb06ef6d269a43f6ea7c8bade6b",
+      "authors": {
+        "Rob Tuytel": "All"
+      },
+      "physicalDimensionsMillimeters": [
+        1000,
+        1000
+      ],
+      "tileMeters": [
+        1.0,
+        1.0
+      ],
+      "normalConvention": "OpenGL +Y",
+      "metallic": 0,
+      "maps": [
+        {
+          "channel": "diff",
+          "file": "white_plaster_02_diff_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/white_plaster_02/white_plaster_02_diff_1k.jpg",
+          "encoding": "jpg",
+          "colorSpace": "sRGB",
+          "dimensions": [
+            1024,
+            1024
+          ],
+          "bytes": 527219,
+          "sha256": "a1ebbe091bd1ae93d2abd5de8d69f9003a8d0ee6532bcf9a87c2492c97051f23",
+          "upstreamMd5": "7b10c2686bcfd76d1f309a20fd06b57e"
+        },
+        {
+          "channel": "nor_gl",
+          "file": "white_plaster_02_nor_gl_1k.png",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/white_plaster_02/white_plaster_02_nor_gl_1k.png",
+          "encoding": "png",
+          "colorSpace": "linear",
+          "dimensions": [
+            1024,
+            1024
+          ],
+          "bytes": 6075625,
+          "sha256": "36ac2eec35a5678eda0c1ccfd81f6ab8a2e2fed0ca3e77d6e1d44e372e130450",
+          "upstreamMd5": "576d036eb85d0887c7613f8d3f5e13df"
+        },
+        {
+          "channel": "rough",
+          "file": "white_plaster_02_rough_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/white_plaster_02/white_plaster_02_rough_1k.jpg",
+          "encoding": "jpg",
+          "colorSpace": "linear",
+          "dimensions": [
+            1024,
+            1024
+          ],
+          "bytes": 295900,
+          "sha256": "4ff1fe957cd161b07f721fe6c28a9459c8c2e8ec65627a26c16e483a07c80d85",
+          "upstreamMd5": "8b28f263360b8c4ddbdc4f7c650c4eeb"
+        },
+        {
+          "channel": "ao",
+          "file": "white_plaster_02_ao_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/white_plaster_02/white_plaster_02_ao_1k.jpg",
+          "encoding": "jpg",
+          "colorSpace": "linear",
+          "dimensions": [
+            1024,
+            1024
+          ],
+          "bytes": 528899,
+          "sha256": "01a479ced98447569958ccb6d396ed700dc9f8fd3197c86e52836382b24126c6",
+          "upstreamMd5": "08f0b52fbedc1259f571ace126c94025"
+        }
+      ]
+    },
+    {
+      "role": "concrete",
+      "id": "concrete_wall_009",
+      "name": "Concrete Wall 009",
+      "sourceUrl": "https://polyhaven.com/a/concrete_wall_009",
+      "infoApiUrl": "https://api.polyhaven.com/info/concrete_wall_009",
+      "filesApiUrl": "https://api.polyhaven.com/files/concrete_wall_009",
+      "upstreamFilesHash": "aa0ca0dda97572dbc41eac0b2942320a9163d928",
+      "authors": {
+        "Charlotte Baglioni": "All"
+      },
+      "physicalDimensionsMillimeters": [
+        1804.9999475479126,
+        1804.9999475479126
+      ],
+      "tileMeters": [
+        1.805,
+        1.805
+      ],
+      "normalConvention": "OpenGL +Y",
+      "metallic": 0,
+      "maps": [
+        {
+          "channel": "diff",
+          "file": "concrete_wall_009_diff_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/concrete_wall_009/concrete_wall_009_diff_1k.jpg",
+          "encoding": "jpg",
+          "colorSpace": "sRGB",
+          "dimensions": [
+            1024,
+            1024
+          ],
+          "bytes": 626688,
+          "sha256": "59811fad71658323462287b072eef22ebb857c13bba63eeff34842a4d4dba8fe",
+          "upstreamMd5": "183930f83ca9b70797b1226833d64bf3"
+        },
+        {
+          "channel": "nor_gl",
+          "file": "concrete_wall_009_nor_gl_1k.png",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/concrete_wall_009/concrete_wall_009_nor_gl_1k.png",
+          "encoding": "png",
+          "colorSpace": "linear",
+          "dimensions": [
+            1024,
+            1024
+          ],
+          "bytes": 4923845,
+          "sha256": "d90dfe845bd49db18c9dfb3204b6763849da89ae7afab2149d4cc1ff8a5e826d",
+          "upstreamMd5": "f7f7f8dc1c03b2995b667326bd4c7d41"
+        },
+        {
+          "channel": "rough",
+          "file": "concrete_wall_009_rough_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/concrete_wall_009/concrete_wall_009_rough_1k.jpg",
+          "encoding": "jpg",
+          "colorSpace": "linear",
+          "dimensions": [
+            1024,
+            1024
+          ],
+          "bytes": 766943,
+          "sha256": "109424f91c6c385b7c2b5791e2d9f8c9d082d9d5665dae42c35df96410ea05d1",
+          "upstreamMd5": "4b5da97ce2a223738a67457ff9b75081"
+        },
+        {
+          "channel": "ao",
+          "file": "concrete_wall_009_ao_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/concrete_wall_009/concrete_wall_009_ao_1k.jpg",
+          "encoding": "jpg",
+          "colorSpace": "linear",
+          "dimensions": [
+            1024,
+            1024
+          ],
+          "bytes": 410540,
+          "sha256": "4a17193181ba8131bbe5f122e0eef3f21ab4de9a4a47dd7f51e10537b8b6f96f",
+          "upstreamMd5": "a6bf3959e4735a0c11de2b1d2d77f892"
+        }
+      ]
+    },
+    {
+      "role": "grass",
+      "id": "grass_ground",
+      "name": "Grass Ground",
+      "sourceUrl": "https://polyhaven.com/a/grass_ground",
+      "infoApiUrl": "https://api.polyhaven.com/info/grass_ground",
+      "filesApiUrl": "https://api.polyhaven.com/files/grass_ground",
+      "upstreamFilesHash": "0835c92f7cacee85b306c2a35d2c006be11ea3c2",
+      "authors": {
+        "Charlotte Baglioni": "All"
+      },
+      "physicalDimensionsMillimeters": [
+        2509.999990463257,
+        2509.999990463257
+      ],
+      "tileMeters": [
+        2.51,
+        2.51
+      ],
+      "normalConvention": "OpenGL +Y",
+      "metallic": 0,
+      "maps": [
+        {
+          "channel": "diff",
+          "file": "grass_ground_diff_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/grass_ground/grass_ground_diff_1k.jpg",
+          "encoding": "jpg",
+          "colorSpace": "sRGB",
+          "dimensions": [
+            1024,
+            1024
+          ],
+          "bytes": 876584,
+          "sha256": "a79cc5ed65af0f80261b39a383b64a8c5272c5144d724deb43dbc29f0e4cd19b",
+          "upstreamMd5": "299047258586c762735b7284d3c662c3"
+        },
+        {
+          "channel": "nor_gl",
+          "file": "grass_ground_nor_gl_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/grass_ground/grass_ground_nor_gl_1k.jpg",
+          "encoding": "jpg",
+          "colorSpace": "linear",
+          "dimensions": [
+            1024,
+            1024
+          ],
+          "bytes": 1310516,
+          "sha256": "7000e2ccd479bb7b66dcdf4faef7b47554324566886314ca620cbf03e274e826",
+          "upstreamMd5": "d518c5b2af6f2c0297bc807b351f511f"
+        },
+        {
+          "channel": "rough",
+          "file": "grass_ground_rough_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/grass_ground/grass_ground_rough_1k.jpg",
+          "encoding": "jpg",
+          "colorSpace": "linear",
+          "dimensions": [
+            1024,
+            1024
+          ],
+          "bytes": 328190,
+          "sha256": "111341f948b7e073edf7ac6add8777e1bf10df8959400df3863243e89bbc8c08",
+          "upstreamMd5": "2e6afca246cf6b80bdb53f46fe7e5ce5"
+        },
+        {
+          "channel": "ao",
+          "file": "grass_ground_ao_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/grass_ground/grass_ground_ao_1k.jpg",
+          "encoding": "jpg",
+          "colorSpace": "linear",
+          "dimensions": [
+            1024,
+            1024
+          ],
+          "bytes": 968681,
+          "sha256": "5f6c3623404f9c3f0ef4d27fb96cc3bf107554352e1193e8480ab3e2c9fb187d",
+          "upstreamMd5": "de85b335b1dafb6a9296b93563607f4d"
+        }
+      ]
+    }
+  ]
+}

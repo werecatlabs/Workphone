@@ -1,4 +1,4 @@
-#include "../Engine/cpp/Include/Workphone/Graphics/ProceduralTextureExport.hpp"
+#include <Workphone/Graphics/ProceduralTextureExport.hpp>
 #include <Workphone/Graphics/ProceduralSurfaceSourceExport.hpp>
 #include <cstdlib>
 #define CHECK(condition) do { if( !(condition) ) std::abort(); } while( false )
@@ -70,8 +70,41 @@ int main( int argc, char **argv )
     CHECK( read( "asphalt-normal.texres" ).find( "\"mipFilter\":\"normal\"" ) != std::string::npos );
     CHECK( read( "asphalt-orm.texres" ).find( "\"mipFilter\":\"data\"" ) != std::string::npos );
     CHECK( read( "asphalt.matres" ).find( "data://asphalt-albedo.texres" ) != std::string::npos );
-    CHECK( read( "material-source.json" ).find( "\"seed\":42" ) != std::string::npos );
-    CHECK( read( "material-source.json" ).find( "\"auxiliaryMapsBoundByCookedMaterial\":false" ) != std::string::npos );
+    const auto legacyMetadata = read( "material-source.json" );
+    CHECK( legacyMetadata.find( "\"seed\":42" ) != std::string::npos );
+    CHECK( legacyMetadata.find( "\"generator\":\"racing-asphalt\"" ) != std::string::npos );
+    CHECK( legacyMetadata.find( "\"tileMetres\":1.5" ) != std::string::npos );
+    CHECK( legacyMetadata.find( "sourceProvider" ) == std::string::npos );
+    CHECK( legacyMetadata.find( "\"auxiliaryMapsBoundByCookedMaterial\":true" ) != std::string::npos );
+
+    // Surface intentionally has no height member: a scanned appearance-only
+    // pack must export its actual albedo/normal/ORM without invented displacement.
+    const auto scannedSource = fs::path( directory ) / "texture-export-scanned-asphalt-source";
+    CHECK( !fs::exists( scannedSource ) );
+    CHECK( workphone::procedural::texture_export::exportAsphaltSource( surface, scannedSource, 73, error, true ) );
+    const auto readScanned = [&]( const char *name ) {
+        std::ifstream stream( scannedSource / name, std::ios::binary );
+        CHECK( stream.good() );
+        return std::string( std::istreambuf_iterator<char>( stream ), {} );
+    };
+    const auto scanMetadata = readScanned( "material-source.json" );
+    CHECK( scanMetadata.find( "\"generator\":\"poly-haven-city-asphalt\"" ) != std::string::npos );
+    CHECK( scanMetadata.find( "\"seed\":73" ) != std::string::npos );
+    CHECK( scanMetadata.find( "\"seedAffectsMaps\":false" ) != std::string::npos );
+    CHECK( scanMetadata.find( "\"tileMetres\":2.1" ) != std::string::npos );
+    CHECK( scanMetadata.find( "\"sourceProvider\":\"Poly Haven\"" ) != std::string::npos );
+    CHECK( scanMetadata.find( "\"sourceAssetId\":\"clean_asphalt\"" ) != std::string::npos );
+    CHECK( scanMetadata.find( "\"sourceUrl\":\"https://polyhaven.com/a/clean_asphalt\"" ) != std::string::npos );
+    CHECK( scanMetadata.find( "\"sourceLicense\":\"CC0-1.0\"" ) != std::string::npos );
+    CHECK( scanMetadata.find( "\"normalConvention\":\"engine-increasing-image-V\"" ) != std::string::npos );
+    CHECK( scanMetadata.find( "\"normalConversion\":\"green-flipped-and-renormalized\"" ) != std::string::npos );
+    CHECK( readScanned( "asphalt-albedo.tga" ) == albedo );
+    CHECK( readScanned( "asphalt-normal.tga" ) == read( "asphalt-normal.tga" ) );
+    CHECK( readScanned( "asphalt-orm.tga" ) == read( "asphalt-orm.tga" ) );
+    CHECK( !fs::exists( scannedSource / "asphalt-height.tga" ) );
+    CHECK( !workphone::procedural::texture_export::exportAsphaltSource( surface, scannedSource, 74, error, true ) );
+    CHECK( readScanned( "material-source.json" ) == scanMetadata );
+    fs::remove_all( scannedSource ); // Only this fixture's newly created export.
     CHECK( !workphone::procedural::texture_export::exportAsphaltSource( surface, source, 43, error ) );
     CHECK( !error.empty() && read( "asphalt-albedo.tga" ) == albedo );
     fs::remove_all( source ); // Only the new fixture directory created above.

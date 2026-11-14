@@ -172,6 +172,16 @@ else ()
     add_library(Workphone SHARED ${HEADER_FILES} ${SOURCE_FILES})
 endif()
 
+# The shared city surface loader uses the same bounded image codec as WPGraphics,
+# without introducing a reverse dependency from the core to its renderer plugin.
+if(NOT TARGET FreeImage)
+    add_subdirectory("${WP_ROOT}/Dependencies/FreeImage" "${CMAKE_BINARY_DIR}/Dependencies/FreeImage")
+    set_target_properties(FreeImage PROPERTIES FOLDER Dependencies/FreeImage)
+endif()
+target_include_directories(Workphone PRIVATE "${WP_ROOT}/Dependencies/FreeImage/Source")
+target_compile_definitions(Workphone PRIVATE FREEIMAGE_LIB)
+target_link_libraries(Workphone FreeImage)
+
 # Terrain persistence uses the already vendored cJSON parser. Keep it internal
 # to the core library and available even when optional Lua/tools are disabled.
 target_sources(Workphone PRIVATE ${WP_ROOT}/Dependencies/cJSON/cJSON.c)

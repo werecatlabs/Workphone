@@ -87,6 +87,24 @@ route if that route still fits the edited roads. If neither the new nor original
 route remains supported, racing is unavailable while free driving and road
 editing remain available.
 
+The bundled city texture pack adds scanned asphalt, pavement slabs, brick,
+plaster, concrete and grass from Poly Haven. Generated buildings, sidewalks,
+roundabout surfaces and landscape materials use these shared PBR sets at physical
+world scale. City previews use 256 px maps; normal city generation uses 512 px.
+Authored road surfaces use 512 px. Missing or invalid sets retain procedural
+surfaces. Restore or check the pack with
+`Tools/powershell/FetchCitySurfaceTextures.ps1` (`-VerifyOnly` works offline).
+[Asset provenance and licences](../bin/Media/Procedural/City/Textures/README.md)
+document every source and its pinned download hash.
+
+New generated terrain imports grass albedo, normal and ORM maps into the active
+project's `Assets/Landscape/CitySurfaces`. These immutable, content-addressed
+texture sources remain ordinary editable terrain layer references and support
+the existing terrain dependency/export path. Regenerating a city preserves its
+existing terrain material edits. Keep these generated project assets with the
+scene when moving it. Standalone SampleVehicleAdvanced creates a source project
+under `.FBCache/ProceduralCity` in its working directory when no project is open.
+
 Grid roads and intersections reuse WPProcedural's IRoadSystem; natural streets
 render the buffered graph with matching conservative sidewalk prisms. A shared flat city
 street profile partitions the sidewalks and junction corners at a 15 cm grade;
