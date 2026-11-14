@@ -468,16 +468,19 @@ namespace workphone
 
     void Properties::addChild( const SmartPtr<Properties> &properties )
     {
-        WP_ASSERT( properties != nullptr );
-        WP_ASSERT( properties != this );
+        if( properties )
+        {
+            WP_ASSERT( properties != this );
 
-        // check if the child already exists
-        WP_ASSERT( std::find( m_children.begin(), m_children.end(), properties ) == m_children.end() );
+            // check if the child already exists
+            WP_ASSERT( std::find( m_children.begin(), m_children.end(), properties ) ==
+                       m_children.end() );
 
-        m_children.push_back( properties );
+            m_children.push_back( properties );
 
-        // Check if objects are unique
-        WP_ASSERT( std::count( m_children.begin(), m_children.end(), properties ) == 1 );
+            // Check if objects are unique
+            WP_ASSERT( std::count( m_children.begin(), m_children.end(), properties ) == 1 );
+        }
     }
 
     void Properties::removeChild( const String &name )
