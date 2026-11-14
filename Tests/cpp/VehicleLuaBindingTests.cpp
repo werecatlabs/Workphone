@@ -1,5 +1,7 @@
 #include <WPLua/LuaManager.hpp>
 #include <WPLuabind/SmartPtrConverter.hpp>
+#include <Workphone/Scene/Components/ProceduralCircuitScene.hpp>
+#include <Workphone/Scene/Components/ProceduralCityScene.hpp>
 #include <Workphone/Scene/Components/ProceduralRaceScene.hpp>
 #include <Workphone/Scene/Components/VehicleController.hpp>
 #include <Workphone/Scene/Components/HelicopterController.hpp>
@@ -320,6 +322,10 @@ int main( int argc, char **argv )
         luabind::globals( state )["flightController"] = make_ptr<scene::VehicleController>();
         luabind::globals( state )["helicopterController"] = make_ptr<scene::HelicopterController>();
         luabind::globals( state )["raceScene"] = race;
+        luabind::globals( state )["circuitScene"] =
+            static_pointer_cast<scene::IComponent>( make_ptr<scene::ProceduralCircuitScene>() );
+        luabind::globals( state )["cityScene"] =
+            static_pointer_cast<scene::IComponent>( make_ptr<scene::ProceduralCityScene>() );
         auto controller = syntheticPad();
         controller->setDeadZone( 0.9f ); controller->setSensitivity( 4 ); controller->setInvertX( true );
         Array<SmartPtr<IJoystick>> devices{ controller };
@@ -395,6 +401,14 @@ int main( int argc, char **argv )
             copy:addChild(controllerSettingsReplacement)
             assert(original:getChild('Vehicle Controller'):getPropertyAsBool('Enabled'))
             assert(not copy:getChild('Vehicle Controller'):getPropertyAsBool('Enabled'))
+            assert(ProceduralScene.typeInfo() ~= ProceduralCircuitScene.typeInfo())
+            assert(ProceduralCircuitScene.typeInfo() ~= ProceduralCityScene.typeInfo())
+            for index, component in ipairs({raceScene, circuitScene, cityScene}) do
+                component:setSeed(100 + index)
+                assert(component:getSeed() == 100 + index)
+                assert(not component:isGenerated() and component:getCircuitSampleCount() == 0)
+                assert(type(component.regenerate) == 'function')
+            end
             assert(raceScene:getAudioEnabled() and raceScene:getEffectsEnabled())
             assert(not raceScene:isAudioAvailable() and not raceScene:isEffectsAvailable())
             assert(raceScene:getParticleCount() == 0 and raceScene:getSkidDecalCount() == 0)

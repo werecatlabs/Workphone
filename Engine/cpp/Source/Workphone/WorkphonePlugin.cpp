@@ -166,6 +166,8 @@ namespace workphone
         FactoryUtil::addFactory<scene::ProceduralVehicle>();
         FactoryUtil::addFactory<scene::ProceduralFoliage>();
         FactoryUtil::addFactory<scene::ProceduralOcean>();
+        FactoryUtil::addFactory<scene::ProceduralCircuitScene>();
+        FactoryUtil::addFactory<scene::ProceduralCityScene>();
         FactoryUtil::addFactory<scene::ProceduralRaceScene>();
         FactoryUtil::addFactory<scene::ProceduralRoad>();
         FactoryUtil::addFactory<scene::CityRoadAuthoring>();
@@ -718,6 +720,8 @@ namespace workphone
         FactoryUtil::removeFactory<scene::ProceduralVehicle>();
         FactoryUtil::removeFactory<scene::ProceduralFoliage>();
         FactoryUtil::removeFactory<scene::ProceduralOcean>();
+        FactoryUtil::removeFactory<scene::ProceduralCircuitScene>();
+        FactoryUtil::removeFactory<scene::ProceduralCityScene>();
         FactoryUtil::removeFactory<scene::ProceduralRaceScene>();
         FactoryUtil::removeFactory<scene::ProceduralRoad>();
         FactoryUtil::removeFactory<scene::CityRoadAuthoring>();

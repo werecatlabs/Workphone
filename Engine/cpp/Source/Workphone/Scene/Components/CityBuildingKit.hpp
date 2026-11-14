@@ -3,7 +3,7 @@
 #include <Workphone/Workphone.hpp>
 #include <Workphone/Mesh/MeshManager.hpp>
 #include <Workphone/Mesh/MeshUtil.hpp>
-#include <Workphone/Scene/Components/ProceduralRaceScene.hpp>
+#include <Workphone/Scene/Components/ProceduralSceneGeneration.hpp>
 #include <algorithm>
 #include <array>
 #include <cmath>

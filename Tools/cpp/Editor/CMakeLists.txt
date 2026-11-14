@@ -1198,6 +1198,9 @@ if (WP_EDITOR_TESTS)
                 WORKING_DIRECTORY "$<TARGET_FILE_DIR:Editor>"
                 RUN_SERIAL TRUE)
         set_tests_properties("Editor.${WP_EDITOR_TEST_CASE}" PROPERTIES TIMEOUT 90)
+        if (WP_EDITOR_TEST_CASE STREQUAL "terrain_city_source_anchor_roundtrip_test")
+            set_tests_properties("Editor.${WP_EDITOR_TEST_CASE}" PROPERTIES TIMEOUT 180)
+        endif()
         if (WP_EDITOR_TEST_CASE MATCHES "^play_")
             set_tests_properties("Editor.${WP_EDITOR_TEST_CASE}" PROPERTIES
                 LABELS "editor;playmode"

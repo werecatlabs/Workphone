@@ -855,25 +855,42 @@ namespace workphone
                             value( "DCS", HelicopterController::PhysicsSolution::DCS )]
                         .scope[def( "typeInfo", HelicopterController::typeInfo )]];
 
-        module( L )[class_<ProceduralRaceScene, Component, SmartPtr<ProceduralRaceScene>>(
+        module( L )[class_<ProceduralScene, Component, SmartPtr<ProceduralScene>>( "ProceduralScene" )
+                        .def( "regenerate", &ProceduralScene::regenerate )
+                        .def( "clearGeneratedScene", &ProceduralScene::clearGeneratedScene )
+                        .def( "isGenerated", &ProceduralScene::isGenerated )
+                        .def( "getGenerationError", &ProceduralScene::getGenerationError )
+                        .def( "getSeed", &ProceduralScene::getSeed )
+                        .def( "setSeed", &ProceduralScene::setSeed )
+                        .def( "getQuality", &ProceduralScene::getQuality )
+                        .def( "setQuality", &ProceduralScene::setQuality )
+                        .def( "setFoliageWorldEnabled", &ProceduralScene::setFoliageWorldEnabled )
+                        .def( "getFoliageWorldEnabled", &ProceduralScene::getFoliageWorldEnabled )
+                        .def( "setMaterialExportDirectory", &ProceduralScene::setMaterialExportDirectory )
+                        .def( "getMaterialExportDirectory", &ProceduralScene::getMaterialExportDirectory )
+                        .def( "getCircuitSampleCount", &ProceduralScene::getCircuitSampleCount )
+                        .def( "getCircuitLength", &ProceduralScene::getCircuitLength )
+                        .def( "nearestCircuitSample", &ProceduralScene::nearestCircuitSample )
+                        .def( "getCircuitPosition", &ProceduralScene::getCircuitPosition )
+                        .def( "getCircuitRight", &ProceduralScene::getCircuitRight )
+                        .scope[def( "typeInfo", ProceduralScene::typeInfo )]];
+
+        module( L )[class_<ProceduralCircuitScene, ProceduralScene, SmartPtr<ProceduralCircuitScene>>(
+                        "ProceduralCircuitScene" )
+                        .scope[def( "typeInfo", ProceduralCircuitScene::typeInfo )]];
+
+        module( L )[class_<ProceduralCityScene, ProceduralScene, SmartPtr<ProceduralCityScene>>(
+                        "ProceduralCityScene" )
+                        .scope[def( "typeInfo", ProceduralCityScene::typeInfo )]];
+
+        module( L )[class_<ProceduralRaceScene, ProceduralScene, SmartPtr<ProceduralRaceScene>>(
                         "ProceduralRaceScene" )
-                        .def( "regenerate", &ProceduralRaceScene::regenerate )
-                        .def( "clearGeneratedScene", &ProceduralRaceScene::clearGeneratedScene )
                         .def( "configurePhysics", &ProceduralRaceScene::configurePhysics )
+                        .def( "setCitySourceOwner", &ProceduralRaceScene::setCitySourceOwner )
                         .def( "setControls", &ProceduralRaceScene::setControls )
                         .def( "usePlayerControls", &ProceduralRaceScene::usePlayerControls )
                         .def( "reset", &ProceduralRaceScene::reset )
-                        .def( "isGenerated", &ProceduralRaceScene::isGenerated )
                         .def( "isPhysicsConfigured", &ProceduralRaceScene::isPhysicsConfigured )
-                        .def( "getGenerationError", &ProceduralRaceScene::getGenerationError )
-                        .def( "getSeed", &ProceduralRaceScene::getSeed )
-                        .def( "setSeed", &ProceduralRaceScene::setSeed )
-                        .def( "getQuality", &ProceduralRaceScene::getQuality )
-                        .def( "setQuality", &ProceduralRaceScene::setQuality )
-                        .def( "setFoliageWorldEnabled", &ProceduralRaceScene::setFoliageWorldEnabled )
-                        .def( "getFoliageWorldEnabled", &ProceduralRaceScene::getFoliageWorldEnabled )
-                        .def( "setMaterialExportDirectory", &ProceduralRaceScene::setMaterialExportDirectory )
-                        .def( "getMaterialExportDirectory", &ProceduralRaceScene::getMaterialExportDirectory )
                         .def( "setAudioEnabled", &ProceduralRaceScene::setAudioEnabled )
                         .def( "getAudioEnabled", &ProceduralRaceScene::getAudioEnabled )
                         .def( "setEffectsEnabled", &ProceduralRaceScene::setEffectsEnabled )
@@ -882,11 +899,6 @@ namespace workphone
                         .def( "isEffectsAvailable", &ProceduralRaceScene::isEffectsAvailable )
                         .def( "getParticleCount", &ProceduralRaceScene::getParticleCount )
                         .def( "getSkidDecalCount", &ProceduralRaceScene::getSkidDecalCount )
-                        .def( "getCircuitSampleCount", &ProceduralRaceScene::getCircuitSampleCount )
-                        .def( "getCircuitLength", &ProceduralRaceScene::getCircuitLength )
-                        .def( "nearestCircuitSample", &ProceduralRaceScene::nearestCircuitSample )
-                        .def( "getCircuitPosition", &ProceduralRaceScene::getCircuitPosition )
-                        .def( "getCircuitRight", &ProceduralRaceScene::getCircuitRight )
                         .def( "getWheelbase", &ProceduralRaceScene::getWheelbase )
                         .def( "getMaxSteeringAngle", &ProceduralRaceScene::getMaxSteeringAngle )
                         .def( "getWheelActor", &ProceduralRaceScene::getWheelActor )

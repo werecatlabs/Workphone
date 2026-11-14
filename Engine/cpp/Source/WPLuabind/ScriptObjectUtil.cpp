@@ -41,6 +41,21 @@ namespace workphone
             luabind::detail::convert_to_lua( L, SmartPtr<scene::ProceduralRaceScene>( scriptObj ) );
             return true;
         }
+        if( scriptObj->isDerived<scene::ProceduralCircuitScene>() )
+        {
+            luabind::detail::convert_to_lua( L, SmartPtr<scene::ProceduralCircuitScene>( scriptObj ) );
+            return true;
+        }
+        if( scriptObj->isDerived<scene::ProceduralCityScene>() )
+        {
+            luabind::detail::convert_to_lua( L, SmartPtr<scene::ProceduralCityScene>( scriptObj ) );
+            return true;
+        }
+        if( scriptObj->isDerived<scene::ProceduralScene>() )
+        {
+            luabind::detail::convert_to_lua( L, SmartPtr<scene::ProceduralScene>( scriptObj ) );
+            return true;
+        }
 
         if( scriptObj->isDerived<core::IApplicationManager>() )
         {

@@ -1,5 +1,6 @@
 #include <Workphone/WorkphonePCH.hpp>
-#include <Workphone/Scene/Components/ProceduralRaceScene.hpp>
+#include <Workphone/Scene/Components/ProceduralSceneGeneration.hpp>
+#include <Workphone/Scene/Systems/LODSystem.hpp>
 #include <Workphone/Scene/Components/CityBuildingStyles.hpp>
 #include <Workphone/Scene/Components/Terrain/FoliagePlantGenerator.hpp>
 #include <Workphone/Workphone.hpp>
@@ -27,6 +28,7 @@
 #include <Workphone/Graphics/ProceduralSurfaceSourceExport.hpp>
 #include <Workphone/System/SourceBudgetContainers.hpp>
 #include "CityBuildingKit.hpp"
+#include "../RuntimeSceneMembership.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -74,6 +76,7 @@ namespace workphone::scene::race
         shadow( other.shadow ),
         reflectionActor( other.reflectionActor ),
         ground( other.ground ),
+        sceneryRoot( other.sceneryRoot ),
         reflectionTexture( other.reflectionTexture ),
         vehicleMaterials( other.vehicleMaterials ),
         materials( other.materials ),
@@ -137,6 +140,7 @@ namespace workphone::scene::race
         swap( shadow, other.shadow );
         swap( reflectionActor, other.reflectionActor );
         swap( ground, other.ground );
+        swap( sceneryRoot, other.sceneryRoot );
         swap( reflectionTexture, other.reflectionTexture );
         vehicleMaterials.swap( other.vehicleMaterials );
         materials.swap( other.materials );
@@ -556,16 +560,21 @@ namespace workphone::scene::race
             actor->addComponent<scene::Mesh>()->setMeshResource( resource );
             actor->addComponent<scene::MeshRenderer>();
             actor->addComponent<scene::Material>()->setMaterial( m );
-            if( !parent )
-            {
-                app->getGameManager()->getCurrentScene()->addActor( actor );
-            }
             return actor;
         }
 
         Vector3F vector( const VehiclePhysicsVector3 &p )
         {
             return { float( p.x ), float( p.y ), float( p.z ) };
+        }
+
+        void attachWorldActor( SmartPtr<IGameScene> scene, SmartPtr<IGameActor> owner,
+                               SmartPtr<IGameActor> actor )
+        {
+            actor->setFlag( IGameActor::ActorFlagWorldSpaceTransform, true );
+            owner->addChild( actor );
+            actor->setScene( scene );
+            scene->registerAllUpdates( actor );
         }
 
         void staticBox( SceneAssets &assets, const String &name, Vector3F centre, Vector3F size,
@@ -588,7 +597,6 @@ namespace workphone::scene::race
             // CollisionBox takes full dimensions, not half extents.
             actor->addComponent<scene::CollisionBox>()->setExtents( size );
             actor->addComponent<scene::Rigidbody>();
-            app->getGameManager()->getCurrentScene()->addActor( actor );
         }
 
         void railCollision( SceneAssets &assets, Vector3F start, Vector3F end )
@@ -1238,7 +1246,6 @@ namespace workphone::scene::race
                     assets.actors.push_back( root );
                     root->setName( "Tree LOD patch" );
                     root->setPosition( { key.first * 64.f + 32, 0, key.second * 64.f + 32 } );
-                    app->getGameManager()->getCurrentScene()->addActor( root );
                     Geometry nearTrees;
                     auto append = [&]( const Geometry &source, float paletteU ) {
                         const auto base = static_cast<u32>( nearTrees.positions.size() );
@@ -2457,12 +2464,17 @@ namespace workphone::scene::race
         }
 
         SourceBudgetVector<Vector3F> prepareTerrainCity( SceneAssets &assets, OpenCityLayout &city,
+                                                         SmartPtr<IGameActor> sourceOwner,
                                                          SmartPtr<IGameActor> vehicle, u32 seed )
         {
             auto app = core::IApplicationManager::instance();
             auto manager = app->getGameManager();
             auto scene = manager->getCurrentScene();
             const auto persistentActor = [&]( const String &name ) {
+                if( !detail::runtimeActorPublished( sourceOwner ) || sourceOwner->getScene() != scene )
+                {
+                    throw std::runtime_error( "Attach the city source owner to the current scene before generating terrain roads." );
+                }
                 auto actor = manager->createActor();
                 if( !actor )
                 {
@@ -2473,8 +2485,7 @@ namespace workphone::scene::race
                 actor->setPosition( Vector3F::zero() );
                 actor->setOrientation( QuaternionF::identity() );
                 actor->setScale( Vector3F::unit() );
-                scene->addActor( actor );
-                scene->registerAllUpdates( actor );
+                attachWorldActor( scene, sourceOwner, actor );
                 return actor;
             };
             String error;
@@ -2630,6 +2641,10 @@ namespace workphone::scene::race
             assets.ground = assets.roadTerrain->getActor();
             assets.triangles += assets.roadAuthoring->getRuntimeTriangleCount() +
                                 u64( terrain->dimensions.x - 1 ) * ( terrain->dimensions.y - 1 ) * 2;
+            if( !vehicle )
+            {
+                return route;
+            }
             Vector3F spawn = route.empty() ? Vector3F( 0, 0, 0 ) : route.front();
             bool driveable = false;
             float y = 0;
@@ -2654,15 +2669,15 @@ namespace workphone::scene::race
             return route;
         }
 
-        void buildCity( SceneAssets &assets, SmartPtr<IGameActor> vehicle, u32 seed,
-                        VehicleAppearanceQuality quality )
+        void buildCity( SceneAssets &assets, SmartPtr<IGameActor> sourceOwner,
+                        SmartPtr<IGameActor> vehicle, u32 seed, VehicleAppearanceQuality quality )
         {
             auto city = OpenCityLayout::generate( seed, assets.cityBlocks, assets.cityRoute,
                                                   assets.cityNaturalRoads );
             SourceBudgetVector<Vector3F> fittedRoute;
             if( assets.cityTerrainRoads )
             {
-                fittedRoute = prepareTerrainCity( assets, city, vehicle, seed );
+                fittedRoute = prepareTerrainCity( assets, city, sourceOwner, vehicle, seed );
             }
             const auto buildingCount = std::count_if( city.lots.begin(), city.lots.end(),
                                                       []( const auto &lot ) { return !lot.park; } );
@@ -3920,7 +3935,6 @@ namespace workphone::scene::race
                     wall->setPosition( p );
                     wall->addComponent<CollisionBox>()->setExtents( size );
                     wall->addComponent<Rigidbody>();
-                    app->getGameManager()->getCurrentScene()->addActor( wall );
                 }
             }
             if( !assets.cityTerrainRoads )
@@ -4004,7 +4018,6 @@ namespace workphone::scene::race
                 assets.actors.push_back( root );
                 root->setName( "City LOD patch" );
                 root->setPosition( { key.first * 128.f + 64, 0, key.second * 128.f + 64 } );
-                app->getGameManager()->getCurrentScene()->addActor( root );
                 auto nearRenderers = makeSourceBudgetSnapshot<SmartPtr<scene::Renderer>>();
                 auto farRenderers = makeSourceBudgetSnapshot<SmartPtr<scene::Renderer>>();
                 const auto add = [&]( const String &name, Geometry &geometry,
@@ -4127,7 +4140,6 @@ namespace workphone::scene::race
                     {
                         throw std::runtime_error( "Cannot create terrain-city footway rigidbody." );
                     }
-                    app->getGameManager()->getCurrentScene()->registerAllUpdates( actor );
                 }
                 buildTerrainCityStreetDressing( assets, fitted, terrainStreetLamps, quality );
             }
@@ -4214,6 +4226,7 @@ namespace workphone::scene::race
             {
                 mesh( assets, "City race route arrows", arrows,
                       material( assets, { .05f, .7f, .9f, 1 }, .6f ) );
+                assets.cityLayout = std::move( city );
             }
         }
 
@@ -4223,6 +4236,10 @@ namespace workphone::scene::race
             auto app = core::IApplicationManager::instancePtr();
             auto manager = app->getGameManager();
             auto scene = manager->getCurrentScene();
+            if( !detail::runtimeActorPublished( vehicle ) || vehicle->getScene() != scene )
+            {
+                throw std::runtime_error( "Attach the road showcase owner to the current scene before generating." );
+            }
             const auto root = [&]( const String &name ) {
                 reserveOwnerSlot( assets.actors );
                 auto actor = manager->createActor();
@@ -4236,8 +4253,8 @@ namespace workphone::scene::race
                 actor->setPosition( Vector3F::zero() );
                 actor->setOrientation( QuaternionF::identity() );
                 actor->setScale( Vector3F::unit() );
-                scene->addActor( actor );
-                scene->registerAllUpdates( actor );
+                actor->setFlag( IGameActor::ActorFlagDontSave, true );
+                attachWorldActor( scene, vehicle, actor );
                 return actor;
             };
             auto terrainActor = root( "Road authoring showcase terrain" );
@@ -4568,9 +4585,6 @@ namespace workphone::scene::race
                 }
                 // The actor's material also lets Cubemap manage the representative body material.
                 actor->addComponent<scene::Material>()->setMaterial( assets.vehicleMaterials.front() );
-                auto scene = app->getGameManager()->getCurrentScene();
-                scene->addActor( actor );
-                scene->registerAllUpdates( actor );
                 assets.reflectionActor = actor;
                 WP_LOG(
                     "VehicleAdvanced: custom cubemap actor created; reflection applied to all vehicle "
@@ -4657,7 +4671,6 @@ namespace workphone::scene::race
             }
 
             auto manager = core::IApplicationManager::instance()->getGameManager();
-            auto scene = manager->getCurrentScene();
             reserveOwnerSlot( assets.actors );
             auto ground = manager->createActor();
             if( !ground )
@@ -4671,8 +4684,6 @@ namespace workphone::scene::race
             ground->setPosition( Vector3F::zero() );
             ground->setOrientation( QuaternionF::identity() );
             ground->setScale( Vector3F::unit() );
-            scene->addActor( ground );
-            scene->registerAllUpdates( ground );
             auto terrain = ground->addComponent<TerrainSystem>();
             if( !terrain || !ground->addComponent<CollisionTerrain>() ||
                 !ground->addComponent<Rigidbody>() )
@@ -4780,8 +4791,6 @@ namespace workphone::scene::race
         return result;
     }
 
-    // Private module entry point shared with ProceduralRaceScene.cpp. Activation
-    // is deferred while a saved scene is reconstructing its actor hierarchy.
     bool activateGeneratedScene( const SceneAssets &assets, SmartPtr<scene::IGameActor> owner,
                                  String &error )
     {
@@ -4895,7 +4904,7 @@ namespace workphone::scene::race
                 {
                     throw std::runtime_error( "Generated actor is not loaded: " + generated->getName() );
                 }
-                generated->setState( actorState, true );
+                generated->setState( actorState, false );
                 // Same-state actors can still contain newly added components.
                 for( auto component : generated->getComponents() )
                 {
@@ -4986,11 +4995,129 @@ namespace workphone::scene::race
         }
     }
 
-    void buildScene( SceneAssets &assets, SmartPtr<scene::IGameActor> actor, u32 seed,
-                     VehicleAppearanceQuality quality )
+    namespace
+    {
+        void buildFlatGround( SceneAssets &assets )
+        {
+            reserveOwnerSlot( assets.actors );
+            auto ground = core::IApplicationManager::instance()->getGameManager()->createActor();
+            if( !ground )
+            {
+                throw std::runtime_error( "Cannot create procedural collision actor." );
+            }
+            assets.actors.push_back( ground );
+            assets.ground = ground;
+            ground->setName( "Circuit collision plane" );
+            ground->setStatic( true );
+            ground->setPosition( { 0, -.5f, 0 } );
+            ground->addComponent<CollisionBox>()->setExtents( { 1100, 1, 1100 } );
+            ground->addComponent<Rigidbody>();
+        }
+
+        void attachGeneratedActors( SceneAssets &assets, SmartPtr<IGameActor> owner )
+        {
+            auto manager = core::IApplicationManager::instance()->getGameManager();
+            auto scene = manager->getCurrentScene();
+            reserveOwnerSlot( assets.actors );
+            auto scenery = manager->createActor();
+            if( !scenery )
+            {
+                throw std::runtime_error( "Cannot create procedural scenery group." );
+            }
+            assets.sceneryRoot = scenery;
+            assets.actors.push_back( scenery );
+            scenery->setName( "Procedural scenery" );
+            scenery->setStatic( true );
+            scenery->setFlag( IGameActor::ActorFlagDontSave, true );
+            scenery->setScene( scene );
+
+            // Build the hierarchy before entering Edit/Play. The world's poses
+            // remain relative to this identity group, independent of the owner.
+            for( auto actor : assets.actors )
+            {
+                if( actor == scenery )
+                {
+                    continue;
+                }
+                actor->setFlag( IGameActor::ActorFlagDontSave, true );
+                if( !actor->getParent() )
+                {
+                    scenery->addChild( actor );
+                }
+                actor->setScene( scene );
+                scene->registerAllUpdates( actor );
+            }
+            if( !owner->getScene() )
+            {
+                scenery->setScene( nullptr );
+            }
+            attachWorldActor( scene, owner, scenery );
+        }
+
+        void buildVehicleShadow( SceneAssets &assets )
+        {
+            TextureBuffer shade( 64, 64 );
+            for( u32 y = 0; y < 64; ++y )
+            {
+                for( u32 x = 0; x < 64; ++x )
+                {
+                    auto pixel = shade.pixel( x, y );
+                    const auto dx = ( x - 31.5f ) / 31.5f, dz = ( y - 31.5f ) / 31.5f;
+                    pixel[0] = pixel[1] = pixel[2] = 0;
+                    pixel[3] = u8( 130 * std::pow( std::max( 0.f, 1.f - dx * dx - dz * dz ), 2 ) );
+                }
+            }
+            auto shadowMaterial = material( assets, ColourF::White, 1 );
+            shadowMaterial->setTexture( upload( assets, shade ), 0 );
+            shadowMaterial->setTransparent( true );
+            shadowMaterial->setBlendMode( 1 );
+            shadowMaterial->setDepthWrite( false );
+            Geometry shadowGeometry;
+            shadowGeometry.quad( { -1.6f, .025f, -3.7f }, { 1.6f, .025f, -3.7f },
+                                 { 1.6f, .025f, 3.7f }, { -1.6f, .025f, 3.7f }, { 0, 1, 0 } );
+            assets.shadow = mesh( assets, "Vehicle contact shadow", shadowGeometry, shadowMaterial );
+        }
+    }  // namespace
+
+    void buildCircuitScene( SceneAssets &assets, SmartPtr<IGameActor> owner, u32 seed,
+                            VehicleAppearanceQuality quality )
+    {
+        assets.resourcePrefix = "__procedural/circuit/" + StringUtil::getUUID();
+        if( assets.terrainGameplaySource )
+        {
+            buildTerrainGameplayScene( assets );
+        }
+        else
+        {
+            buildFlatGround( assets );
+            buildTrack( assets, seed, quality );
+        }
+        attachGeneratedActors( assets, owner );
+    }
+
+    void buildCityScene( SceneAssets &assets, SmartPtr<IGameActor> owner, u32 seed,
+                         VehicleAppearanceQuality quality )
+    {
+        assets.resourcePrefix = "__procedural/city/" + StringUtil::getUUID();
+        assets.openCity = true;
+        if( !assets.cityTerrainRoads )
+        {
+            buildFlatGround( assets );
+        }
+        buildCity( assets, owner, nullptr, seed, quality );
+        attachGeneratedActors( assets, owner );
+    }
+
+    void buildScene( SceneAssets &assets, SmartPtr<IGameActor> actor, u32 seed,
+                     VehicleAppearanceQuality quality, SmartPtr<IGameActor> citySourceOwner )
     {
         assets.resourcePrefix = "__procedural/race/" + StringUtil::getUUID();
         const auto started = std::chrono::steady_clock::now();
+        if( !assets.ground && !assets.cityRoadShowcase && !assets.cityTerrainRoads &&
+            !assets.terrainGameplaySource )
+        {
+            buildFlatGround( assets );
+        }
         buildCar( assets, actor, seed, quality );
         if( assets.terrainGameplaySource )
         {
@@ -5002,56 +5129,15 @@ namespace workphone::scene::race
         }
         else if( assets.openCity )
         {
-            buildCity( assets, actor, seed, quality );
+            buildCity( assets, citySourceOwner ? citySourceOwner : actor, actor, seed, quality );
         }
         else
         {
             buildTrack( assets, seed, quality );
         }
         buildSky( assets, actor );
-        TextureBuffer shade( 64, 64 );
-        for( u32 y = 0; y < 64; ++y )
-        {
-            for( u32 x = 0; x < 64; ++x )
-            {
-                auto pixel = shade.pixel( x, y );
-                const auto dx = ( x - 31.5f ) / 31.5f, dz = ( y - 31.5f ) / 31.5f;
-                pixel[0] = pixel[1] = pixel[2] = 0;
-                pixel[3] = u8( 130 * std::pow( std::max( 0.f, 1.f - dx * dx - dz * dz ), 2 ) );
-            }
-        }
-        auto shadowMaterial = material( assets, ColourF::White, 1 );
-        shadowMaterial->setTexture( upload( assets, shade ), 0 );
-        shadowMaterial->setTransparent( true );
-        shadowMaterial->setBlendMode( 1 );
-        shadowMaterial->setDepthWrite( false );
-        Geometry shadowGeometry;
-        shadowGeometry.quad( { -1.6f, .025f, -3.7f }, { 1.6f, .025f, -3.7f }, { 1.6f, .025f, 3.7f },
-                             { -1.6f, .025f, 3.7f }, { 0, 1, 0 } );
-        assets.shadow = mesh( assets, "Vehicle contact shadow", shadowGeometry, shadowMaterial );
-        if( assets.cityTerrainRoads || assets.terrainGameplaySource )
-        {
-            for( auto generated : assets.actors )
-            {
-                generated->setFlag( IGameActor::ActorFlagDontSave, true );
-            }
-        }
-        if( auto root = actor->getParent() )
-        {
-            auto scene = core::IApplicationManager::instance()->getGameManager()->getCurrentScene();
-            // Serialize generated scenery only under the game's owned root.
-            // Removing the old root after Editor restoration then removes all
-            // scenery/colliders too, even when Lua's native references were lost.
-            for( const auto &generated : assets.actors )
-            {
-                if( !generated->getParent() )
-                {
-                    scene->removeActor( generated );
-                    root->addChild( generated );
-                    scene->registerAllUpdates( generated );
-                }
-            }
-        }
+        buildVehicleShadow( assets );
+        attachGeneratedActors( assets, actor );
 
         String activationError;
         if( !activateGeneratedScene( assets, actor, activationError ) && !activationError.empty() )
@@ -5068,6 +5154,142 @@ namespace workphone::scene::race
                 " triangles=" + StringUtil::toString( assets.triangles ) +
                 " texture bytes=" + StringUtil::toString( assets.textureBytes ) +
                 " circuit metres=" + StringUtil::toString( assets.circuit.length ) );
+    }
+
+    void clearScene( SceneAssets &assets, SmartPtr<IGameActor> owner )
+    {
+        SceneAssets retired;
+        assets.swap( retired );
+        // Release producer storage before retirement callbacks need new allocations.
+        retired.vehicle = {};
+        retired.circuit = {};
+        retired.cityLayout = {};
+        auto app = core::IApplicationManager::instancePtr();
+        auto manager = app ? app->getGameManager() : nullptr;
+
+        if( retired.vehicleLOD )
+        {
+            if( auto system =
+                    dynamic_pointer_cast<LODSystem>( retired.vehicleLOD->getComponentSystem() ) )
+            {
+                system->clearViewOverride();
+            }
+            if( owner )
+            {
+                owner->removeComponentInstance( retired.vehicleLOD );
+            }
+        }
+
+        if( manager )
+        {
+            if( retired.sceneryRoot )
+            {
+                try
+                {
+                    retired.sceneryRoot->removeChildren();
+                }
+                catch( const std::bad_alloc & )
+                {
+                    // Retire actors individually if the bulk snapshot cannot be admitted.
+                }
+            }
+            for( auto it = retired.actors.rbegin(); it != retired.actors.rend(); ++it )
+            {
+                if( *it == retired.sceneryRoot )
+                {
+                    continue;
+                }
+                try
+                {
+                    manager->destroyActor( *it );
+                }
+                catch( const std::bad_alloc & )
+                {
+                }
+            }
+            if( retired.sceneryRoot )
+            {
+                try
+                {
+                    manager->destroyActor( retired.sceneryRoot );
+                }
+                catch( const std::bad_alloc & )
+                {
+                }
+            }
+        }
+
+        auto graphics = app ? app->getGraphicsSystem() : nullptr;
+        if( graphics )
+        {
+            auto scene = graphics->getGraphicsScene();
+            if( retired.foliageTerrain )
+            {
+                String error;
+                retired.foliageTerrain->setFoliageSnapshot( {}, error );
+                if( scene && ( !retired.cityTerrainRoads || !retired.roadTerrain ||
+                               retired.roadTerrain->getTerrain() != retired.foliageTerrain ) )
+                {
+                    scene->removeGraphicsObject( retired.foliageTerrain );
+                }
+            }
+
+            if( scene && retired.sky )
+            {
+                scene->removeGraphicsObject( retired.sky );
+            }
+
+            if( scene && retired.sun )
+            {
+                scene->removeGraphicsObject( retired.sun );
+            }
+
+            auto materials = graphics->getMaterialManager();
+            if( materials )
+            {
+                for( auto material : retired.materials )
+                {
+                    try
+                    {
+                        materials->destroyResource( material );
+                    }
+                    catch( const std::bad_alloc & )
+                    {
+                    }
+                }
+            }
+
+            auto textures = graphics->getTextureManager();
+            if( textures )
+            {
+                for( auto texture : retired.textures )
+                {
+                    // TextureManager detaches the resource before notifying it.
+                    try
+                    {
+                        textures->destroyResource( texture );
+                    }
+                    catch( const std::bad_alloc & )
+                    {
+                    }
+                }
+            }
+        }
+
+        auto meshes = app ? dynamic_pointer_cast<MeshManager>( app->getMeshManager() ) : nullptr;
+        if( meshes )
+        {
+            for( auto mesh : retired.meshes )
+            {
+                try
+                {
+                    meshes->removeMeshResource( mesh );
+                }
+                catch( const std::bad_alloc & )
+                {
+                }
+            }
+        }
     }
 
     bool validateReflection( const SceneAssets &assets )

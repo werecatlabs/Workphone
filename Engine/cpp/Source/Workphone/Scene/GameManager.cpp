@@ -251,7 +251,8 @@ namespace workphone::scene
         {
             // An attached mesh's application history is not an independent
             // simulation pose. Follow the sampled parent unless physics owns it.
-            auto parent = actor.getParentPtr();
+            auto parent = actor.getFlag( IGameActor::ActorFlagWorldSpaceTransform )
+                              ? nullptr : actor.getParentPtr();
             const auto sourceTask = transform.getTask();
             const bool attached = parent && parent->isSmoothMotion() && sourceTask != TaskId::Physics;
             if( !attached && manager.getTransformState( id, time, dt, worldTransform, sourceTask ) )

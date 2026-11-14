@@ -70,6 +70,7 @@ namespace workphone
             static const u32 ActorFlagSmoothMotion;    ///< Actor uses smooth interpolation.
             static const u32 ActorFlagHidden;          ///< Actor is hidden.
             static const u32 ActorFlagDontSave;        ///< Actor should not be saved.
+            static const u32 ActorFlagWorldSpaceTransform;  ///< Ignore the owning parent's pose.
             static const u32 ActorFlagPrefab;          ///< Actor is a prefab.
             /** @} */
 

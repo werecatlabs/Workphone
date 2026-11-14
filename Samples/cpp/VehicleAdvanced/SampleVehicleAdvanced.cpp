@@ -471,6 +471,10 @@ namespace workphone
 
             for( auto child : actor->getChildren() )
             {
+                if( child->getFlag( scene::IGameActor::ActorFlagWorldSpaceTransform ) )
+                {
+                    continue;
+                }
                 Transform3<real_Num> childWorld;
                 childWorld.transformFromParent( expected, child->getLocalTransform() );
                 if( !checkMeshTransforms( child, childWorld ) )
@@ -2462,6 +2466,7 @@ namespace workphone
         m_vehicleActor = sceneManager->createActor();
         m_vehicleActor->setName( "Procedural Grand Prix" );
         m_vehicleActor->setPosition( getVehicleSpawnPosition() );
+        scene->addActor( m_vehicleActor );
         m_raceScene = m_vehicleActor->addComponent<scene::ProceduralRaceScene>();
         m_raceScene->setAudioEnabled( m_audioEnabled );
         m_raceScene->setEffectsEnabled( m_effectsEnabled );
@@ -2492,6 +2497,20 @@ namespace workphone
         if( !m_raceScene->regenerate() )
             throw std::runtime_error( m_raceScene->getGenerationError() );
         m_assets = m_raceScene->getAssets();
+        const auto generatedUnderVehicle = [&]( SmartPtr<scene::IGameActor> actor ) {
+            while( actor && actor != m_vehicleActor &&
+                   !actor->getFlag( scene::IGameActor::ActorFlagInScene ) )
+            {
+                actor = actor->getParent();
+            }
+            return actor == m_vehicleActor;
+        };
+        if( !std::all_of( m_assets.actors.begin(), m_assets.actors.end(), generatedUnderVehicle ) ||
+            ( m_assets.roadAuthoring && !generatedUnderVehicle( m_assets.roadAuthoring->getActor() ) ) ||
+            ( m_assets.roadTerrain && !generatedUnderVehicle( m_assets.roadTerrain->getActor() ) ) )
+        {
+            throw std::runtime_error( "Generated racing actors must belong to the vehicle hierarchy." );
+        }
         if( m_assets.openCity && !m_assets.cityRoadShowcase && ( !m_capturePath.empty() || m_benchmarkSeconds > 0 ) )
         {
             std::cout << "VehicleAdvanced generated city memory ledger: ";
@@ -2772,8 +2791,6 @@ namespace workphone
         m_boxGround = m_assets.ground;
         m_chassisMeshActor = m_assets.body;
         m_wheelActors = m_assets.wheels;
-        scene->addActor( m_vehicleActor );
-        scene->registerAllUpdates( m_vehicleActor );
 
         m_cameraActor = sceneManager->createActor();
         WP_ASSERT( m_cameraActor );

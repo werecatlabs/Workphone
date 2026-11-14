@@ -6,6 +6,8 @@
 #include <Workphone/Core/Handle.hpp>
 #include <Workphone/Scene/GameScene.hpp>
 #include <Workphone/Scene/Components/CityRoadAuthoring.hpp>
+#include <Workphone/Scene/Components/ProceduralCircuitScene.hpp>
+#include <Workphone/Scene/Components/ProceduralCityScene.hpp>
 #include <Workphone/Scene/Components/ProceduralRaceScene.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
 #include <Workphone/Scene/Components/CollisionBox.hpp>
@@ -302,15 +304,25 @@ BOOST_AUTO_TEST_CASE( terrain_city_source_anchor_roundtrip_test )
     registrationRemovalOrdering( manager );
     queuedSceneActivation( manager );
     fsmFlagsSurviveStorageGrowth( app->getFsmManager() );
+    auto anchorOwner = manager->createActor();
+    BOOST_REQUIRE( anchorOwner );
+    anchorOwner->setName( "Terrain city anchor owner" );
+    originalScene->addActor( anchorOwner );
+    anchorOwner->setState( scene::IGameActor::State::Edit );
+    anchorOwner->setPosition( { 17, 3, -8 } );
     auto terrainActor = manager->createActor(); BOOST_REQUIRE( terrainActor ); terrainActor->setName( "Terrain city persisted terrain" );
-    auto terrain = terrainActor->addComponent<scene::TerrainSystem>(); BOOST_REQUIRE( terrain ); originalScene->addActor( terrainActor );
+    terrainActor->setFlag( scene::IGameActor::ActorFlagWorldSpaceTransform, true, false );
+    anchorOwner->addChild( terrainActor );
+    auto terrain = terrainActor->addComponent<scene::TerrainSystem>(); BOOST_REQUIRE( terrain );
     if( auto renderer = dynamic_pointer_cast<render::Terrain>( terrain->getTerrain() ) ) renderer->setDeferredTerrainPublication( false );
     render::TerrainData data; data.dimensions = { 33, 33 }; data.spacing = { 8, 8 }; data.origin = { -128, -128 };
     data.heights.resize( 33 * 33 );
     for( int z = 0; z < 33; ++z ) for( int x = 0; x < 33; ++x ) data.heights[size_t( z ) * 33 + x] = 2 + ( -128 + x * 8 ) * .01f;
     String error; BOOST_REQUIRE_MESSAGE( terrain->applyTerrainData( data, error ), error );
     auto sourceActor = manager->createActor(); BOOST_REQUIRE( sourceActor ); sourceActor->setName( "Terrain city persisted source" );
-    auto source = sourceActor->addComponent<scene::CityRoadAuthoring>(); BOOST_REQUIRE( source ); originalScene->addActor( sourceActor );
+    sourceActor->setFlag( scene::IGameActor::ActorFlagWorldSpaceTransform, true, false );
+    anchorOwner->addChild( sourceActor );
+    auto source = sourceActor->addComponent<scene::CityRoadAuthoring>(); BOOST_REQUIRE( source );
     unsigned publications = 0;
     const auto publisher = [&]( const auto &, const auto &, auto, const auto &, String &diagnostic ) {
         BOOST_CHECK( Thread::getCurrentTask() == TaskId::Application ); ++publications; diagnostic.clear(); return true;
@@ -332,6 +344,120 @@ BOOST_AUTO_TEST_CASE( terrain_city_source_anchor_roundtrip_test )
     BOOST_REQUIRE( source->getHandle() ); BOOST_REQUIRE( terrain->getHandle() );
     const String sourceUuid = source->getHandle()->getUUIDAsString(), terrainUuid = terrain->getHandle()->getUUIDAsString();
     BOOST_REQUIRE( !sourceUuid.empty() ); BOOST_REQUIRE( !terrainUuid.empty() ); BOOST_REQUIRE( sourceUuid != terrainUuid );
+
+    // The factory list is also the Editor's Add Component inventory.
+    const auto factory = app->getFactoryManager();
+    auto circuitFactory = factory->getFactoryById( scene::ProceduralCircuitScene::typeInfo() );
+    auto cityFactory = factory->getFactoryById( scene::ProceduralCityScene::typeInfo() );
+    BOOST_REQUIRE( circuitFactory );
+    BOOST_REQUIRE( cityFactory );
+    BOOST_CHECK( circuitFactory->isObjectDerivedFrom<scene::ProceduralScene>() );
+    BOOST_CHECK( cityFactory->isObjectDerivedFrom<scene::ProceduralScene>() );
+    BOOST_CHECK( !factory->getFactoryByName( "workphone::scene::ProceduralScene" ) );
+
+    auto circuitOwner = manager->createActor();
+    BOOST_REQUIRE( circuitOwner );
+    circuitOwner->setName( "Persisted standalone circuit" );
+    auto standaloneCircuit = circuitOwner->addComponent<scene::ProceduralCircuitScene>();
+    BOOST_REQUIRE( standaloneCircuit );
+    originalScene->addActor( circuitOwner );
+    auto authoredCircuitChild = manager->createActor();
+    BOOST_REQUIRE( authoredCircuitChild );
+    authoredCircuitChild->setName( "Authored circuit child" );
+    circuitOwner->setState( scene::IGameActor::State::Edit );
+    circuitOwner->addChild( authoredCircuitChild );
+    flush();
+    circuitOwner->setPosition( { 24, 7, -16 } );
+    authoredCircuitChild->setLocalPosition( { 1, 0, 2 } );
+    standaloneCircuit->setSeed( 428 );
+    standaloneCircuit->setQuality( static_cast<s32>( procedural::VehicleAppearanceQuality::Preview ) );
+    const auto sceneRootCount = originalScene->getActors().size();
+    BOOST_REQUIRE_MESSAGE( standaloneCircuit->regenerate(), standaloneCircuit->getGenerationError() );
+    BOOST_REQUIRE( standaloneCircuit->isGenerated() );
+    BOOST_CHECK( !standaloneCircuit->getAssets().vehicle.geometry.hasGeometry() );
+    BOOST_REQUIRE_GT( standaloneCircuit->getCircuitSampleCount(), 10u );
+    const auto circuitLength = standaloneCircuit->getCircuitLength();
+    BOOST_REQUIRE_GT( circuitLength, 100.f );
+    const auto deterministicCircuit = scene::race::generateCircuit( standaloneCircuit->getSeed() );
+    BOOST_CHECK_EQUAL( standaloneCircuit->getCircuitSampleCount(), deterministicCircuit.samples.size() );
+    BOOST_CHECK_EQUAL( circuitLength, deterministicCircuit.length );
+    const auto middleSample = standaloneCircuit->getCircuitSampleCount() / 2;
+    BOOST_CHECK( standaloneCircuit->getCircuitPosition( middleSample ) == deterministicCircuit.samples.at( middleSample ).position );
+    BOOST_CHECK( standaloneCircuit->getCircuitRight( middleSample ) == deterministicCircuit.samples.at( middleSample ).right );
+    BOOST_CHECK_EQUAL( originalScene->getActors().size(), sceneRootCount );
+
+    const auto initialChildren = circuitOwner->getChildren();
+    BOOST_REQUIRE_EQUAL( initialChildren.size(), 2u );
+    const auto scenery = standaloneCircuit->getAssets().sceneryRoot;
+    BOOST_REQUIRE( scenery );
+    BOOST_CHECK_EQUAL( scenery->getName(), "Procedural scenery" );
+    BOOST_CHECK( scenery->getParent() == circuitOwner );
+    BOOST_CHECK( scenery->getFlag( scene::IGameActor::ActorFlagDontSave ) );
+    BOOST_CHECK( scenery->getFlag( scene::IGameActor::ActorFlagWorldSpaceTransform ) );
+    SmartPtr<scene::IGameActor> ground;
+    for( auto child : scenery->getChildren() )
+    {
+        BOOST_CHECK( child->getParent() == scenery );
+        BOOST_CHECK( child->getFlag( scene::IGameActor::ActorFlagDontSave ) );
+        BOOST_CHECK( !child->getComponent<scene::CarController>() );
+        if( child->getName() == "Circuit collision plane" ) ground = child;
+    }
+    BOOST_REQUIRE( ground );
+    auto groundRigidbody = ground->getComponent<scene::Rigidbody>();
+    BOOST_REQUIRE( groundRigidbody );
+    BOOST_REQUIRE( groundRigidbody->getRigidStatic() );
+    BOOST_CHECK_GT( groundRigidbody->getRigidStatic()->getNumShapes(), 0u );
+    const auto groundPosition = ground->getWorldTransform().getPosition();
+    BOOST_CHECK_SMALL( groundPosition.y + real_Num( .5 ), real_Num( .001 ) );
+    circuitOwner->setPosition( { 31, 12, 6 } );
+    circuitOwner->updateTransform();
+    BOOST_CHECK( ground->getWorldTransform().getPosition() == groundPosition );
+    BOOST_CHECK( authoredCircuitChild->getWorldTransform().getPosition() ==
+                 circuitOwner->getPosition() + Vector3<real_Num>( 1, 0, 2 ) );
+    const Vector3<real_Num> authoredWorldPosition( -6, 5, 18 );
+    authoredCircuitChild->setFlag( scene::IGameActor::ActorFlagWorldSpaceTransform, true, false );
+    authoredCircuitChild->setPosition( authoredWorldPosition );
+    BOOST_CHECK( authoredCircuitChild->getWorldTransform().getPosition() == authoredWorldPosition );
+    const auto circuitChildren = circuitOwner->getChildren();
+
+    auto cityOwner = manager->createActor();
+    BOOST_REQUIRE( cityOwner );
+    cityOwner->setName( "Persisted standalone city" );
+    auto standaloneCity = cityOwner->addComponent<scene::ProceduralCityScene>();
+    BOOST_REQUIRE( standaloneCity );
+    originalScene->addActor( cityOwner );
+    cityOwner->setState( scene::IGameActor::State::Edit );
+    auto citySettings = standaloneCity->getProperties();
+    citySettings->setProperty( "Seed", u32( 621 ) );
+    citySettings->setProperty( "Appearance Quality", static_cast<s32>( procedural::VehicleAppearanceQuality::Preview ) );
+    citySettings->setProperty( "City Blocks", 6 );
+    citySettings->setProperty( "City Building Style", 8 );
+    flush();
+    const auto cityRootCount = originalScene->getActors().size();
+    citySettings->setButtonPressed( "Regenerate", true );
+    standaloneCity->setProperties( citySettings );
+    BOOST_REQUIRE_MESSAGE( standaloneCity->isGenerated(), standaloneCity->getGenerationError() );
+    BOOST_CHECK( !standaloneCity->getAssets().cityLayout.lots.empty() );
+    BOOST_CHECK( !standaloneCity->getAssets().meshes.empty() );
+    BOOST_CHECK( !standaloneCity->getAssets().vehicle.geometry.hasGeometry() );
+    BOOST_CHECK( !cityOwner->getComponent<scene::CarController>() );
+    BOOST_REQUIRE_EQUAL( cityOwner->getChildren().size(), 1u );
+    const auto cityScenery = standaloneCity->getAssets().sceneryRoot;
+    BOOST_REQUIRE( cityScenery );
+    BOOST_CHECK( cityOwner->getChildren().front() == cityScenery );
+    BOOST_CHECK( cityScenery->getFlag( scene::IGameActor::ActorFlagDontSave ) );
+    BOOST_CHECK( !cityScenery->getChildren().empty() );
+    BOOST_CHECK_EQUAL( originalScene->getActors().size(), cityRootCount );
+    standaloneCity->clearGeneratedScene();
+    BOOST_CHECK( !standaloneCity->isGenerated() );
+    BOOST_CHECK( cityOwner->getChildren().empty() );
+    BOOST_CHECK( !cityScenery->getParent() && !cityScenery->getScene() );
+
+    citySettings = standaloneCity->getProperties();
+    citySettings->setProperty( "City Terrain Roads", true );
+    citySettings->setProperty( "City Road Authoring UUID", sourceUuid );
+    standaloneCity->setProperties( citySettings );
+    standaloneCity->setEnabled( false );
 
     auto vehicleActor = manager->createActor(); BOOST_REQUIRE( vehicleActor ); vehicleActor->setName( "Terrain city persisted vehicle" );
     auto vehicle = vehicleActor->addComponent<scene::ProceduralRaceScene>(); BOOST_REQUIRE( vehicle ); originalScene->addActor( vehicleActor );
@@ -379,12 +505,24 @@ BOOST_AUTO_TEST_CASE( terrain_city_source_anchor_roundtrip_test )
     BOOST_REQUIRE( !bytes.empty() ); BOOST_CHECK( bytes.find( sourceUuid.c_str() ) != std::string::npos );
     BOOST_REQUIRE_MESSAGE(bytes.find("30000000-0000-4000-8000-000000000001")!=std::string::npos,"Scene serialization omitted the authored road");
     BOOST_CHECK( bytes.find( terrainUuid.c_str() ) != std::string::npos );
+    BOOST_CHECK( bytes.find( "Circuit collision plane" ) == std::string::npos );
+    BOOST_CHECK( bytes.find( "Procedural scenery" ) == std::string::npos );
+    BOOST_CHECK( bytes.find( "Authored circuit child" ) != std::string::npos );
 
     if( auto selection = app->getSelectionManager() ) selection->clearSelection();
     if( auto history = app->getCommandManager() ) history->clearAll();
     originalScene->clear( true );
     BOOST_CHECK( originalScene->getComponents<scene::CityRoadAuthoring>().empty() );
     BOOST_CHECK( !source->getActor() ); BOOST_CHECK( !terrain->getActor() );
+    BOOST_CHECK( !standaloneCircuit->isLoaded() );
+    BOOST_CHECK( !standaloneCircuit->isGenerated() );
+    BOOST_CHECK_EQUAL( standaloneCircuit->getCircuitSampleCount(), 0u );
+    BOOST_CHECK( !ground->getParent() && !ground->getScene() );
+    for( auto child : circuitChildren )
+    {
+        BOOST_CHECK( !child->getParent() );
+        BOOST_CHECK( !child->getScene() );
+    }
     auto reopenedScene = app->getFactoryManager()->make_ptr<scene::GameScene>(); BOOST_REQUIRE( reopenedScene );
     reopenedScene->load( nullptr ); manager->setCurrentScene( reopenedScene );
     BOOST_REQUIRE( manager->getCurrentScene() != originalScene );
@@ -392,10 +530,21 @@ BOOST_AUTO_TEST_CASE( terrain_city_source_anchor_roundtrip_test )
     reopenedScene->loadScene( path.generic_u8string(), false );
     BOOST_REQUIRE_MESSAGE( reopenedScene->getSceneLoadingState() == scene::IGameScene::SceneLoadingState::Loaded,
         "Actual saved terrain-city scene failed to reopen" );
-    auto restoredSourceActor = reopenedScene->findActorByName( "Terrain city persisted source" );
-    auto restoredTerrainActor = reopenedScene->findActorByName( "Terrain city persisted terrain" );
+    auto restoredAnchorOwner = reopenedScene->findActorByName( "Terrain city anchor owner" );
     auto restoredVehicleActor = reopenedScene->findActorByName( "Terrain city persisted vehicle" );
+    BOOST_REQUIRE( restoredAnchorOwner );
+    SmartPtr<scene::IGameActor> restoredSourceActor, restoredTerrainActor;
+    for( auto child : restoredAnchorOwner->getChildren() )
+    {
+        if( child->getName() == "Terrain city persisted source" ) restoredSourceActor = child;
+        if( child->getName() == "Terrain city persisted terrain" ) restoredTerrainActor = child;
+    }
     BOOST_REQUIRE( restoredSourceActor ); BOOST_REQUIRE( restoredTerrainActor ); BOOST_REQUIRE( restoredVehicleActor );
+    BOOST_CHECK( restoredSourceActor->getParent() == restoredAnchorOwner );
+    BOOST_CHECK( restoredTerrainActor->getParent() == restoredAnchorOwner );
+    BOOST_CHECK( !restoredSourceActor->getFlag( scene::IGameActor::ActorFlagInScene ) );
+    BOOST_CHECK( !restoredTerrainActor->getFlag( scene::IGameActor::ActorFlagInScene ) );
+    BOOST_CHECK( restoredTerrainActor->getWorldTransform().getPosition() == Vector3<real_Num>::zero() );
     auto restoredSource = restoredSourceActor->getComponent<scene::CityRoadAuthoring>();
     auto restoredTerrain = restoredTerrainActor->getComponent<scene::TerrainSystem>();
     auto restoredVehicle = restoredVehicleActor->getComponent<scene::ProceduralRaceScene>();
@@ -406,6 +555,7 @@ BOOST_AUTO_TEST_CASE( terrain_city_source_anchor_roundtrip_test )
     flush(); restoredSource->update();
     BOOST_REQUIRE_MESSAGE(restoredSource->getSource().roads.size()==1u,"Source lost during actual scene restore: "+restoredSource->getError()+"; JSON="+restoredSource->getSourceJSON());
     BOOST_REQUIRE_MESSAGE( restoredSource->rebuild( error ), error );
+    BOOST_CHECK_GT( restoredSource->getActiveRevision(), 0u );
     BOOST_REQUIRE_EQUAL( restoredSource->getSource().roads.size(), 1u );
     const auto &actual = restoredSource->getSource();
     const auto &actualRoad = actual.roads[0], &expectedRoad = expected.roads[0];
@@ -440,6 +590,33 @@ BOOST_AUTO_TEST_CASE( terrain_city_source_anchor_roundtrip_test )
     BOOST_CHECK_EQUAL( building->getProperty( "City Roof Mesh" ), "56c12775-468d-41fb-936a-a7f932b081f4" );
     BOOST_CHECK( building->getProperty( "City Corner Mesh" ).empty() );
     BOOST_CHECK( !restoredVehicle->isGenerated() );
+
+    auto restoredCircuitOwner = reopenedScene->findActorByName( "Persisted standalone circuit" );
+    auto restoredCityOwner = reopenedScene->findActorByName( "Persisted standalone city" );
+    BOOST_REQUIRE( restoredCircuitOwner );
+    BOOST_REQUIRE( restoredCityOwner );
+    auto restoredCircuit = restoredCircuitOwner->getComponent<scene::ProceduralCircuitScene>();
+    auto restoredCity = restoredCityOwner->getComponent<scene::ProceduralCityScene>();
+    BOOST_REQUIRE( restoredCircuit );
+    BOOST_REQUIRE( restoredCity );
+    BOOST_CHECK( !restoredCircuit->isGenerated() );
+    BOOST_CHECK_EQUAL( restoredCircuit->getSeed(), 428u );
+    BOOST_CHECK_EQUAL( restoredCircuit->getQuality(), static_cast<s32>( procedural::VehicleAppearanceQuality::Preview ) );
+    BOOST_REQUIRE_EQUAL( restoredCircuitOwner->getChildren().size(), 1u );
+    auto restoredCircuitChild = restoredCircuitOwner->getChildren().front();
+    BOOST_CHECK_EQUAL( restoredCircuitChild->getName(), "Authored circuit child" );
+    BOOST_CHECK( restoredCircuitChild->getFlag( scene::IGameActor::ActorFlagWorldSpaceTransform ) );
+    BOOST_CHECK( restoredCircuitOwner->getPosition() == Vector3<real_Num>( 31, 12, 6 ) );
+    BOOST_CHECK( restoredCircuitChild->getWorldTransform().getPosition() == authoredWorldPosition );
+    restoredCircuitOwner->setPosition( { 51, 4, -12 } );
+    BOOST_CHECK( restoredCircuitChild->getWorldTransform().getPosition() == authoredWorldPosition );
+    BOOST_CHECK( !restoredCity->isGenerated() );
+    BOOST_CHECK_EQUAL( restoredCity->getSeed(), 621u );
+    const auto restoredCitySettings = restoredCity->getProperties();
+    BOOST_CHECK_EQUAL( restoredCitySettings->getPropertyAsInt( "City Blocks" ), 6 );
+    BOOST_CHECK_EQUAL( restoredCitySettings->getPropertyAsInt( "City Building Style" ), 8 );
+    BOOST_CHECK_EQUAL( restoredCitySettings->getProperty( "City Road Authoring UUID" ), sourceUuid );
+
     for( int style = 0; style < 9; ++style )
     {
         auto styleActor = reopenedScene->findActorByName( "Persisted building style " + StringUtil::toString( style ) );

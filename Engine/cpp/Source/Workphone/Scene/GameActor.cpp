@@ -2505,6 +2505,13 @@ namespace workphone::scene
         // holds that lock while reading actor flags. Never notify under m_flags.
         if( dirty )
         {
+            if( ( ( flags ^ oldFlags ) & ActorFlagWorldSpaceTransform ) != 0 )
+            {
+                if( auto transform = getTransform() )
+                {
+                    transform->setLocalDirty( true );
+                }
+            }
             updateDirty( flags, oldFlags );
         }
     }
@@ -2546,6 +2553,13 @@ namespace workphone::scene
 
         if( dirty )
         {
+            if( ( ( flags ^ oldFlags ) & ActorFlagWorldSpaceTransform ) != 0 )
+            {
+                if( auto transform = getTransform() )
+                {
+                    transform->setLocalDirty( true );
+                }
+            }
             updateDirty( flags, oldFlags );
         }
 
@@ -2928,7 +2942,7 @@ namespace workphone::scene
 
         for( const auto &child : getChildren() )
         {
-            if( child )
+            if( child && !child->getFlag( ActorFlagWorldSpaceTransform ) )
             {
                 const auto childBounds = child->getLocalAABB();
                 if( childBounds.isFinite() && childBounds.isValid() )

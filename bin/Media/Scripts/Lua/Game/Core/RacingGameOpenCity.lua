@@ -113,6 +113,7 @@ function RacingGameOpenCity:configureRaceScene(scene)
         assert(not self.cityTerrainRoads, "Rebuild Workphone: ProceduralRaceScene has no terrain-city road support")
     end
     if self.cityTerrainRoads then
+        if scene.setCitySourceOwner then scene:setCitySourceOwner(self:getActor()) end
         assert(p:hasProperty("City Road Authoring UUID"), "Rebuild Workphone: ProceduralRaceScene has no persistent road source binding")
         p:setPropertyAsString("City Road Authoring UUID", self.cityRoadAuthoringUUID)
         if p:hasProperty("City Street Detail") then

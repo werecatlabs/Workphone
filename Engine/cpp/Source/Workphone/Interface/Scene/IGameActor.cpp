@@ -23,6 +23,7 @@ namespace workphone::scene
     const u32 IGameActor::ActorFlagHidden = ( 1 << 14 );
     const u32 IGameActor::ActorFlagDontSave = ( 1 << 15 );
     const u32 IGameActor::ActorFlagPrefab = ( 1 << 16 );
+    const u32 IGameActor::ActorFlagWorldSpaceTransform = ( 1 << 17 );
 
     const String IGameActor::actorName = "Actor";
 

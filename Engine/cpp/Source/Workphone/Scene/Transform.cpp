@@ -99,7 +99,7 @@ namespace workphone::scene
         const Transform3<real_Num> *parentWorldTransformPtr = nullptr;
         auto canUpdateTransform = true;
 
-        if( auto actor = getActor() )
+        if( auto actor = getActor(); actor && !actor->getFlag( IGameActor::ActorFlagWorldSpaceTransform ) )
         {
             if( auto parent = actor->getParent() )
             {
@@ -185,6 +185,10 @@ namespace workphone::scene
                         for( auto &child : children )
                         {
                             WP_ASSERT( child );
+                            if( child->getFlag( IGameActor::ActorFlagWorldSpaceTransform ) )
+                            {
+                                continue;
+                            }
 
                             auto childTransform = child->getTransform();
                             WP_ASSERT( childTransform );
@@ -235,7 +239,7 @@ namespace workphone::scene
                         auto children = actor->getChildren();
                         for( auto &child : children )
                         {
-                            if( child )
+                            if( child && !child->getFlag( IGameActor::ActorFlagWorldSpaceTransform ) )
                             {
                                 if( auto childTransform = child->getTransform() )
                                 {
@@ -411,7 +415,7 @@ namespace workphone::scene
             const Transform3<real_Num> *parentWorldTransformPtr = nullptr;
             auto canUpdateTransform = true;
 
-            if( auto actor = getActor() )
+            if( auto actor = getActor(); actor && !actor->getFlag( IGameActor::ActorFlagWorldSpaceTransform ) )
             {
                 auto parent = actor->getParent();
                 if( parent )

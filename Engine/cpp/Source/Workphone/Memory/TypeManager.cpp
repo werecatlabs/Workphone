@@ -970,6 +970,9 @@ namespace workphone
         scene::ProceduralVehicle::setupTypeInfo();
         scene::ProceduralFoliage::setupTypeInfo();
         scene::ProceduralOcean::setupTypeInfo();
+        scene::ProceduralScene::setupTypeInfo();
+        scene::ProceduralCircuitScene::setupTypeInfo();
+        scene::ProceduralCityScene::setupTypeInfo();
         scene::ProceduralRaceScene::setupTypeInfo();
         scene::WorldStreaming::setupTypeInfo();
         scene::ProceduralRoad::setupTypeInfo();

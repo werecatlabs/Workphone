@@ -8,6 +8,7 @@
 #include <Workphone/Interface/Scene/IGameActor.hpp>
 #include <Workphone/Interface/Scene/ITransform.hpp>
 #include <Workphone/Core/Handle.hpp>
+#include "../RuntimeSceneMembership.hpp"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -174,7 +175,7 @@ namespace workphone::scene
         }
         if( auto actor = terrain->getActor() )
         {
-            if( actor->getScene() && !actor->getFlag( IGameActor::ActorFlagInScene ) )
+            if( actor->getScene() && !detail::runtimeActorPublished( actor ) )
             {
                 error = "The bound terrain actor has left its scene.";
                 return false;
@@ -310,9 +311,11 @@ namespace workphone::scene
         {
             if( auto manager = app->getGameManager() )
             {
+                const auto owner = getActor();
+                const auto scene = owner && owner->getScene() ? owner->getScene() : manager->getCurrentScene();
                 for( auto actor : manager->getActors() )
                 {
-                    if( actor && actor->getFlag( IGameActor::ActorFlagInScene ) )
+                    if( actor && actor->getScene() == scene && detail::runtimeActorPublished( actor ) )
                     {
                         if( auto terrain = actor->getComponent<TerrainSystem>() )
                         {
@@ -502,7 +505,7 @@ namespace workphone::scene
             {
                 return;
             }
-            if( !actor->getFlag( IGameActor::ActorFlagInScene ) )
+            if( !detail::runtimeActorPublished( actor ) )
             {
                 if( m_activeRevision )
                 {

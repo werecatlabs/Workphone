@@ -58,11 +58,37 @@ remain close to the contact surface. Natural layouts retain parcel/park details 
 omit grid-derived street decorations. Glazing is an opaque approximation with outdoor
 HDR specular response; transmission and furnished interiors remain open.
 
+## Standalone generation components
+
+Add **ProceduralCityScene** to an empty scene actor and press **Regenerate** to
+build a city without a race vehicle. Set **City Terrain Roads** to create an
+editable road source and terrain, or enter an existing **City Road Authoring
+UUID** to reuse its bound terrain. The standalone city uses the same district,
+building style, mesh slot, street detail, and route settings as the racing city.
+
+Add **ProceduralCircuitScene** for a seeded circuit with scenery and collision.
+The city and circuit components share seed, appearance quality, foliage, and
+regeneration controls through `ProceduralScene`. They use the scene's lighting.
+For a vehicle alone, use **ProceduralVehicle**. Use **ProceduralRaceScene** on a
+vehicle actor for the integrated racing setup with driving, audio, and effects.
+Existing race scenes continue to use their saved component and settings.
+
+Generated scenery appears in a **Procedural scenery** group under the generating
+actor. Regeneration replaces that group. Press **Regenerate** after
+reopening a standalone flat city or circuit to rebuild it from its saved
+settings. World scenery and its collision keep their seeded world positions
+when the owner moves. Newly generated editable terrain and road-source actors
+are saved under the generating actor and retain hand edits between builds.
+When the city reuses an existing source, the source and terrain keep their
+place in the hierarchy. The Lua open-city game saves new road and terrain
+sources under its script actor so it can replace the car between sessions.
+
 ## Building styles and mesh slots
 
-In the `ProceduralRaceScene` Inspector, enable **Open City**, select **City
-Building Style**, then press **Regenerate**. The style controls the built-in
-façade modules and roof shapes used on the city's building masses.
+In the `ProceduralCityScene` Inspector, select **City Building Style** and
+press **Regenerate**. In `ProceduralRaceScene`, also enable **Open City**.
+The style controls the built-in façade modules and roof shapes used on the
+city's building masses.
 
 | Index | Style | Capture/CLI name | Built-in geometry |
 | --- | --- | --- | --- |

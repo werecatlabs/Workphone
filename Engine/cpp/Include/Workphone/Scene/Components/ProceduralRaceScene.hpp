@@ -1,191 +1,15 @@
 #pragma once
+
+#include <Workphone/Scene/Components/ProceduralScene.hpp>
 #include <Workphone/Vehicle/VehicleAudio.h>
 #include <Workphone/Vehicle/VehicleVisualEffects.h>
-#include <Workphone/Atomics/AtomicTypes.hpp>
-#include <Workphone/Core/FixedArray.hpp>
-#include <Workphone/Interface/Procedural/IVehicleGenerator.hpp>
-#include <Workphone/Interface/Procedural/OpenCityLayout.hpp>
-#include <Workphone/Scene/Components/Component.hpp>
-#include <Workphone/Scene/Components/LODGroup.hpp>
-#include <Workphone/Scene/Components/CityRoadAuthoring.hpp>
-#include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
-#include <Workphone/Graphics/Terrain.hpp>
-#include <array>
-#include <mutex>
-#include <vector>
-#include <Workphone/System/SourceBudgetVector.hpp>
-
-namespace workphone::scene
-{
-    class CityRoadAuthoring;
-    class TerrainSystem;
-}  // namespace workphone::scene
-
-namespace workphone::scene::race
-{
-
-    /**
-     * A single sample point along a race circuit.
-     *
-     * position: world-space position of the sample.
-     * right: world-space right direction at the sample (used for vehicle orientation).
-     * distance: accumulated distance along the circuit up to this sample.
-     */
-    struct CircuitSample
-    {
-        Vector3F position;
-        Vector3F right;
-        f32 distance = 0.0f;
-    };
-
-    /**
-     * Represents a procedural race circuit composed of ordered samples.
-     *
-     * The samples vector contains the track samples in order; length is the total
-     * path length computed from the samples. nearest() returns the index of the
-     * sample closest to a given world-space position.
-     */
-    struct WPCore_API Circuit : SourceBudgetObject
-    {
-        SourceBudgetVector<CircuitSample> samples;
-        float length = 0;
-        Circuit() = default;
-        Circuit( const Circuit & ) = default;
-        Circuit( Circuit && ) noexcept = default;
-        Circuit &operator=( Circuit && ) noexcept = default;
-
-        Circuit &operator=( const Circuit &other )
-        {
-            if( this != &other )
-            {
-                Circuit candidate( other );
-                swap( candidate );
-            }
-            return *this;
-        }
-
-        void swap( Circuit &other ) noexcept
-        {
-            samples.swap( other.samples );
-            std::swap( length, other.length );
-        }
-
-        /**
-         * Find the index of the nearest circuit sample to the provided position.
-         *
-         * @param position World-space position to query.
-         * @return Index into the samples vector of the nearest sample.
-         */
-        size_t nearest( const Vector3F &position ) const;
-    };
-
-    /**
-     * Collection of assets that make up a generated race scene.
-     *
-     * This structure holds the generated vehicle data, the track circuit and all
-     * render / physics actors, materials, textures and supporting scene resources
-     * required for rendering and simulation. It is intended to be populated by
-     * buildScene() and consumed by the scene component and physics configuration
-     * code.
-     */
-    struct WPCore_API SceneAssets : SourceBudgetObject
-    {
-        bool openCity = false, useFoliageWorld = false, cityNaturalRoads = false,
-             cityRoadShowcase = false, cityTerrainRoads = false;
-        SmartPtr<CityRoadAuthoring> roadAuthoring;
-        SmartPtr<TerrainSystem> roadTerrain;
-        render::TerrainSnapshot terrainGameplaySource;
-        procedural::OpenCityLayout cityLayout;
-        u32 cityBuildingSupportChecks = 0, cityCulledParcels = 0;
-        bool cityBuildingSupportValid = true, citySourceReused = false;
-        bool cityRaceRouteAvailable = true;
-        String cityRaceRouteError;
-        u64 cityAppliedSourceRevision = 0;
-        int cityStreetDetail = 100;
-        u32 cityStreetDetailCount = 0;
-        int cityBuildingStyle = 0;
-        std::array<String, 5> cityBuildingMeshes;
-        u32 cityBuildingModuleCount = 0;
-        std::array<u32, 5> cityBuildingModulePlacements{};
-        String cityBuildingKitDiagnostic;
-        SmartPtr<render::Terrain> foliageTerrain;
-        int cityBlocks = 8, cityRoute = 0;
-        procedural::GeneratedVehicle vehicle;
-        Circuit circuit;
-        std::array<SmartPtr<IGameActor>, 4> wheels;
-        SmartPtr<IGameActor> body, shadow, reflectionActor, ground;
-        SmartPtr<render::ITexture> reflectionTexture;
-        SourceBudgetVector<SmartPtr<render::IMaterial>> vehicleMaterials, materials;
-        SourceBudgetVector<SmartPtr<render::ITexture>> textures;
-        SourceBudgetVector<SmartPtr<IMeshResource>> meshes;
-        SourceBudgetVector<SmartPtr<IGameActor>> actors;
-        Array<SmartPtr<LODGroup>> treeLODs{ Allocator<SmartPtr<LODGroup>>( sourceBudget ) };
-        SmartPtr<LODGroup> vehicleLOD;
-        SmartPtr<render::ISky> sky;
-        SmartPtr<render::IGraphicsLight> sun;
-        String resourcePrefix;
-        String exportSourceDirectory;
-        u64 triangles = 0, textureBytes = 0;
-        SceneAssets() = default;
-        SceneAssets( const SceneAssets &other );
-        SceneAssets &operator=( const SceneAssets &other );
-        SceneAssets( SceneAssets && ) noexcept = default;
-        SceneAssets &operator=( SceneAssets && ) noexcept = default;
-        void swap( SceneAssets &other ) noexcept;
-    };
-
-    /**
-     * Generate a deterministic circuit using the provided seed.
-     *
-     * @param seed Random seed for procedural generation.
-     * @return Generated Circuit instance containing samples and length.
-     */
-    WPCore_API Circuit generateCircuit( u32 seed );
-
-    /**
-     * Run any internal validation checks for circuit generation. Intended for
-     * debug/assertions; does not return a value.
-     */
-    WPCore_API void validateCircuit();
-
-    /**
-     * Validate that reflection rendering resources are correctly configured for
-     * the provided scene assets (e.g. textures and actors present).
-     *
-     * @param assets Scene assets to validate.
-     * @return true if reflection resources are valid and usable.
-     */
-    WPCore_API bool validateReflection( const SceneAssets &assets );
-
-    /**
-     * Build scene assets for a procedural race scene and attach them to the
-     * provided vehicle actor. This creates renderable actors, materials,
-     * textures and computes derived statistics such as triangle and texture
-     * memory usage.
-     *
-     * @param assets Output container for created scene assets.
-     * @param vehicle Vehicle actor to attach generated parts to.
-     * @param seed Seed used for deterministic generation.
-     * @param quality Visual quality level for generated vehicle appearance.
-     */
-    WPCore_API void buildScene( SceneAssets &assets, SmartPtr<IGameActor> vehicle, u32 seed,
-                                procedural::VehicleAppearanceQuality quality );
-
-    /**
-     * Configure physics actors, colliders and joints for the generated scene
-     * and associated vehicle. This function should be called after buildScene()
-     * and before stepping physics simulation.
-     *
-     * @param assets Scene assets containing actors and meshes.
-     * @param vehicle Vehicle actor to configure physics for.
-     */
-    WPCore_API void configurePhysics( const SceneAssets &assets, SmartPtr<IGameActor> vehicle );
-}  // namespace workphone::scene::race
+#include <memory>
 
 namespace workphone::scene
 {
 
     class CarController;
+    class ProceduralCityConfiguration;
 
     /**
      * ProceduralRaceScene
@@ -196,7 +20,7 @@ namespace workphone::scene
      * the game thread while physics-related updates (forces, resets, suspension)
      * are executed on the physics task.
      */
-    class WPCore_API ProceduralRaceScene : public Component
+    class WPCore_API ProceduralRaceScene : public ProceduralScene
     {
     public:
         /** Construct an empty ProceduralRaceScene. */
@@ -219,15 +43,6 @@ namespace workphone::scene
 
         /** Retrieve editable component properties for inspector/editor. */
         SmartPtr<Properties> getProperties() const override;
-
-        /** Apply properties loaded from the editor or serialized state. */
-        void setProperties( SmartPtr<Properties> properties ) override;
-
-        /** Regenerate the procedural scene and vehicle using the current seed. */
-        bool regenerate();
-
-        /** Remove all generated actors and free associated resources. */
-        void clearGeneratedScene();
 
         /** Configure physics for the generated scene and vehicle. */
         void configurePhysics();
@@ -256,43 +71,18 @@ namespace workphone::scene
          */
         void setView( const Vector3F &position, f32 fovRadians, f32 nearClip, f32 lodBias );
 
-        /** Get/Set the seed used for deterministic generation. */
-        u32 getSeed() const;
-        void setSeed( u32 seed );
-
-        /** Get/Set visual quality for generated vehicle appearance. */
-        s32 getQuality() const;
-        void setQuality( s32 quality );
-
-        /** Query whether a scene has been generated. */
-        bool isGenerated() const;
-
-        void setFoliageWorldEnabled( bool enabled );
-        bool getFoliageWorldEnabled() const;
-        void setMaterialExportDirectory( const String &directory );
-        String getMaterialExportDirectory() const;
-
         /** Select a scene-owned native terrain ground for the next regeneration.
          * Null restores the existing circuit mode. The supplied immutable source
          * must contain the flat, hole-free driving corridor around the origin.
          */
         void setTerrainGameplaySource( render::TerrainSnapshot source );
 
+        /// Let a host retain newly authored terrain and roads independently of its disposable car.
+        void setCitySourceOwner( SmartPtr<IGameActor> owner );
+
         /** Query whether physics has been configured for the generated scene. */
         bool isPhysicsConfigured() const;
-
-        /** If generation failed, return a human-readable error message. */
-        String getGenerationError() const;
-
-        /** Access the generated scene assets (read-only). */
-        const race::SceneAssets &getAssets() const;
-
-        /** Circuit query helpers. */
-        u32 getCircuitSampleCount() const;
-        f32 getCircuitLength() const;
-        u32 nearestCircuitSample( const Vector3F &position ) const;
-        Vector3F getCircuitPosition( u32 index ) const;
-        Vector3F getCircuitRight( u32 index ) const;
+        bool isGenerated() const override;
 
         /** Vehicle geometry/parameters. */
         f32 getWheelbase() const;
@@ -333,9 +123,14 @@ namespace workphone::scene
         WP_CLASS_REGISTER_DECL;
 
     private:
+        void readGenerationProperties( Properties &properties ) override;
+        bool prepareGeneration() override;
+        void buildGeneratedScene() override;
+        void generationFailed() override;
+        void generationCleared() override;
+
         advanced::VehicleAudio m_vehicleAudio;
         advanced::VehicleVisualEffects m_vehicleVisualEffects;
-        mutable std::recursive_mutex m_presentationMutex;
         atomic_bool m_audioEnabled{ true }, m_effectsEnabled{ true }, m_automaticPresentation{ true };
         atomic_bool m_presentationResetRequested{ false };
         bool m_presentationInitialized = false, m_appliedAudioEnabled = false,
@@ -347,42 +142,9 @@ namespace workphone::scene
         /** Update surface grip coefficient from current scene / physics state. */
         void updateSurfaceGrip();
 
-        /** Generated scene assets owned by this component. */
-        race::SceneAssets m_assets;
-
-        /** Deterministic seed used for procedural generation (default = 7). */
-        u32 m_seed = 7;
-
-        /** Visual quality level used when building the vehicle appearance. */
-        procedural::VehicleAppearanceQuality m_quality = procedural::VehicleAppearanceQuality::High;
-
-        /** Generated city layout used for street surface queries. */
-        procedural::OpenCityLayout m_cityLayout{};
-
-        /** Select open-city generation instead of the standalone circuit. */
-        bool m_openCity = false;
-        bool m_cityNaturalRoads = false;
-        bool m_cityRoadShowcase = false;
-        bool m_cityTerrainRoads = false;
+        std::unique_ptr<ProceduralCityConfiguration> m_city;
+        WeakPtr<IGameActor> m_citySourceOwner;
         render::TerrainSnapshot m_terrainGameplaySource;
-        String m_cityRoadAuthoringUUID;
-        SmartPtr<CityRoadAuthoring> m_cityRoadAuthoring;
-        SmartPtr<TerrainSystem> m_cityTerrain;
-        u64 m_cityLastRefreshAttemptRevision = 0;
-        render::TerrainSnapshot m_cityBuiltTerrain, m_cityLastAttemptTerrain;
-        Transform3<real_Num> m_cityBuiltTerrainPlacement, m_cityLastAttemptPlacement;
-        bool m_foliageWorldEnabled = false;
-        String m_materialExportDirectory;
-
-        /** City size and selected street route used for generation. */
-        s32 m_cityBlocks = 8;
-        s32 m_cityRoute = 0;
-        s32 m_cityStreetDetail = 100;
-        s32 m_cityBuildingStyle = 0;
-        std::array<String, 5> m_cityBuildingMeshes;
-
-        /** Last generation error message, empty when generation succeeded. */
-        String m_generationError;
 
         /** Per-scene surface grip multiplier applied to vehicle physics. */
         f32 m_surfaceGrip = 1;

@@ -31,6 +31,7 @@
 #include <Workphone/ApplicationUtil.hpp>
 #include <Workphone/System/TaskLock.hpp>
 #include <Workphone/Thread/Thread.hpp>
+#include "../RuntimeSceneMembership.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -834,7 +835,7 @@ namespace workphone::scene
                 bool( game ) && bool( scene ) && bool( physics ) && bool( physics->getPhysicsScene() ),
                 "Roads require the scene and physics services." );
             requireRuntime(
-                getActor()->getScene() == scene && getActor()->getFlag( IGameActor::ActorFlagInScene ),
+                getActor()->getScene() == scene && detail::runtimeActorPublished( getActor() ),
                 "Road authoring belongs to a different or detached scene." );
             auto factories = app->getFactoryManager();
             requireRuntime( bool( factories ), "Road procedural service factory is unavailable." );
@@ -853,6 +854,7 @@ namespace workphone::scene
             candidate->root->setName( "City road generation " +
                                       StringUtil::toString( source.revision ) );
             candidate->root->setFlag( IGameActor::ActorFlagDontSave, true );
+            candidate->root->setFlag( IGameActor::ActorFlagWorldSpaceTransform, true );
             const String prefix = "__procedural/city-roads/" + StringUtil::getUUID();
             for( u32 layer = 0; layer < 4; ++layer )
             {
@@ -921,14 +923,12 @@ namespace workphone::scene
                     requireRuntime( !detached && current == terrain && currentPlacement == placement,
                                     "Terrain changed before road publication." );
                 }
-                requireRuntime( getActor()->getScene() == scene &&
-                                    getActor()->getFlag( IGameActor::ActorFlagInScene ),
+                requireRuntime( getActor()->getScene() == scene && detail::runtimeActorPublished( getActor() ),
                                 "The authoring scene changed during preparation." );
-                scene->addActor( candidate->root );
+                getActor()->addChild( candidate->root );
                 for( auto actor : candidate->actors )
                 {
                     actor->setScene( scene );
-                    actor->setFlag( IGameActor::ActorFlagInScene, true );
                     actor->setState( getActor()->getState() );
                     scene->registerAllUpdates( actor );
                 }

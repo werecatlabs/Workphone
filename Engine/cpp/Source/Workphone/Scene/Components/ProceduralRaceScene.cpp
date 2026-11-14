@@ -1,9 +1,7 @@
 #include <Workphone/WorkphonePCH.hpp>
-#include <Workphone/Interface/Procedural/OpenCityLayout.hpp>
-#include <Workphone/Mesh/MeshManager.hpp>
 #include <Workphone/Physics/RaycastHit.hpp>
 #include <Workphone/Scene/Components/ProceduralRaceScene.hpp>
-#include <Workphone/Scene/Components/CityBuildingStyles.hpp>
+#include "ProceduralCityConfiguration.hpp"
 #include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
 #include <Workphone/Scene/Components/Terrain/CollisionTerrain.hpp>
 #include <Workphone/Scene/Components/CityRoadAuthoring.hpp>
@@ -17,21 +15,11 @@
 
 namespace workphone::scene
 {
-    namespace
+    WP_CLASS_REGISTER_DERIVED( workphone::scene, ProceduralRaceScene, ProceduralScene );
+    ProceduralRaceScene::ProceduralRaceScene() : m_city( std::make_unique<ProceduralCityConfiguration>() )
     {
-        constexpr std::array cityBuildingMeshProperties{
-            "City Wall Mesh", "City Window Mesh", "City Entrance Mesh", "City Corner Mesh", "City Roof Mesh"
-        };
     }
 
-    namespace race
-    {
-        // Module-private declaration; no public/PCH API or layout change.
-        bool activateGeneratedScene( const SceneAssets &, SmartPtr<IGameActor>, String & );
-    }  // namespace race
-
-    WP_CLASS_REGISTER_DERIVED( workphone::scene, ProceduralRaceScene, Component );
-    ProceduralRaceScene::ProceduralRaceScene() = default;
     ProceduralRaceScene::~ProceduralRaceScene() = default;
 
     void ProceduralRaceScene::load( SmartPtr<ISharedObject> data )
@@ -41,433 +29,140 @@ namespace workphone::scene
             return;
         }
 
-        Component::load( data );
+        ProceduralScene::load( data );
 
         auto manager = core::IApplicationManager::instance()->getGameManager();
         manager->registerComponentUpdate( TaskId::Physics, Thread::UpdateState::Update, this );
         manager->registerComponentUpdate( TaskId::Physics, Thread::UpdateState::PostUpdate, this );
         manager->registerComponentUpdate( TaskId::Render, Thread::UpdateState::Update, this );
-        manager->registerComponentUpdate( TaskId::Application, Thread::UpdateState::Update, this );
-
-        setLoadingState( LoadingState::Loaded );
     }
 
     void ProceduralRaceScene::unload( SmartPtr<ISharedObject> data )
     {
-        if( getLoadingState() == LoadingState::Unloaded )
-        {
-            return;
-        }
-
-        if( auto app = core::IApplicationManager::instancePtr() )
-        {
-            if( auto manager = app->getGameManager() )
-            {
-                manager->unregisterAllComponent( this );
-            }
-        }
-
-        clearGeneratedScene();
-        m_cityRoadAuthoring = nullptr;
-        m_cityTerrain = nullptr;
+        ProceduralScene::unload( data );
+        std::lock_guard<std::recursive_mutex> lock( m_generationMutex );
+        m_city->releaseBindings();
+        m_citySourceOwner = nullptr;
         m_terrainGameplaySource.reset();
-        Component::unload( data );
-
-        setLoadingState( LoadingState::Unloaded );
     }
 
-    bool ProceduralRaceScene::regenerate()
+    bool ProceduralRaceScene::prepareGeneration()
     {
-        auto tasks = core::IApplicationManager::instance()->getTaskManager();
-        // Lua can generate during Play. Synchronize resource/body replacement
-        // without changing the Editor's global play flag (which requests Stop).
-        auto renderLock = tasks ? tasks->lockTask( TaskId::Render ) : TaskLock();
-        auto physicsLock = tasks ? tasks->lockTask( TaskId::Physics ) : TaskLock();
-        std::lock_guard<std::recursive_mutex> presentationLock( m_presentationMutex );
-
-        auto actor = getActor();
-        if( !actor )
-        {
-            m_generationError = "Attach ProceduralRaceScene to a vehicle actor before generating.";
-            return false;
-        }
-        if( m_cityTerrainRoads && m_cityRoadShowcase )
+        if( m_city->usesTerrainRoads() && m_city->isRoadShowcase() )
         {
             m_generationError =
                 "Choose a generated terrain city or the separate road authoring showcase.";
             return false;
         }
         if( m_terrainGameplaySource &&
-            ( m_openCity || m_cityRoadShowcase || m_cityTerrainRoads || m_foliageWorldEnabled ||
-              !m_materialExportDirectory.empty() ) )
+            ( m_city->isOpenCity() || m_city->isRoadShowcase() || m_city->usesTerrainRoads() ||
+              m_foliageWorldEnabled || !m_materialExportDirectory.empty() ) )
         {
             m_generationError =
                 "Terrain gameplay requires its own ground; disable city, foliage-world and source "
                 "material export modes.";
             return false;
         }
-        if( m_cityTerrainRoads && !m_materialExportDirectory.empty() )
+        if( m_city->usesTerrainRoads() && !m_materialExportDirectory.empty() )
         {
             m_generationError = "Terrain-city source material export is unavailable.";
             return false;
         }
-
-        auto currentScene = core::IApplicationManager::instance()->getGameManager()->getCurrentScene();
-        if( m_cityTerrainRoads )
+        auto manager = core::IApplicationManager::instance()->getGameManager();
+        if( !m_city->resolveBindings( *manager, m_generationError ) )
         {
-            if( m_cityTerrain &&
-                ( !m_cityTerrain->getActor() || m_cityTerrain->getActor()->getScene() != currentScene ) )
-            {
-                m_cityTerrain = nullptr;
-            }
-            if( m_cityRoadAuthoring &&
-                ( !m_cityRoadAuthoring->getActor() ||
-                  m_cityRoadAuthoring->getActor()->getScene() != currentScene ||
-                  !m_cityRoadAuthoring->getActor()->getFlag( IGameActor::ActorFlagInScene ) ) )
-            {
-                m_cityRoadAuthoring = nullptr;
-                m_cityTerrain = nullptr;
-            }
-            if( !m_cityRoadAuthoring && !m_cityRoadAuthoringUUID.empty() )
-            {
-                for( auto candidate :
-                     core::IApplicationManager::instance()->getGameManager()->getActors() )
-                {
-                    if( candidate && candidate->getScene() == currentScene &&
-                        candidate->getFlag( IGameActor::ActorFlagInScene ) )
-                    {
-                        if( auto source = candidate->getComponent<CityRoadAuthoring>() )
-                        {
-                            if( source->getHandle() &&
-                                source->getHandle()->getUUIDAsString() == m_cityRoadAuthoringUUID )
-                            {
-                                m_cityRoadAuthoring = source;
-                                break;
-                            }
-                        }
-                    }
-                }
-                if( !m_cityRoadAuthoring )
-                {
-                    clearGeneratedScene();
-                    m_generationError = "The saved city road source is unavailable in this scene.";
-                    return false;
-                }
-            }
-            if( m_cityRoadAuthoring )
-            {
-                // The canonical source owns this binding; cached scenery must
-                // never reverse a user's rebind to another terrain.
-                m_cityTerrain = m_cityRoadAuthoring->getTerrain();
-                if( !m_cityTerrain )
-                {
-                    for( auto candidate :
-                         core::IApplicationManager::instance()->getGameManager()->getActors() )
-                    {
-                        if( candidate && candidate->getScene() == currentScene &&
-                            candidate->getFlag( IGameActor::ActorFlagInScene ) )
-                        {
-                            if( auto terrain = candidate->getComponent<TerrainSystem>() )
-                            {
-                                if( terrain->getHandle() &&
-                                    terrain->getHandle()->getUUIDAsString() ==
-                                        m_cityRoadAuthoring->getTerrainBindingUUID() )
-                                {
-                                    m_cityTerrain = terrain;
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }
-                if( !m_cityTerrain )
-                {
-                    clearGeneratedScene();
-                    m_generationError = "The saved city terrain binding is unavailable.";
-                    return false;
-                }
-            }
-        }
-        // Saved source/terrain anchors are scene-owned. Only their derived city
-        // presentation is replaced, so regeneration cannot erase manual roads.
-        clearGeneratedScene();
-
-        try
-        {
-            auto app = core::IApplicationManager::instance();
-            auto physics = app->getPhysicsManager();
-            if( !physics )
-            {
-                throw std::runtime_error( "ProceduralRaceScene requires a physics manager." );
-            }
-
-            if( !physics->getPhysicsScene() )
-            {
-                physics->setPhysicsScene( physics->addScene() );
-            }
-
-            physics->getPhysicsScene()->setGravity( Vector3F( 0, -9.81f, 0 ) );
-
-            if( auto manager = app->getVehicleManager() )
-            {
-                manager->load( nullptr );
-            }
-
-            if( !actor->getComponent<CollisionBox>() )
-            {
-                actor->addComponent<CollisionBox>();
-            }
-
-            auto body = actor->getComponent<Rigidbody>();
-            if( !body )
-            {
-                body = actor->addComponent<Rigidbody>();
-            }
-
-            body->setAngularDamping( 3 );
-            body->setLinearDamping( .05f );
-
-            auto car = actor->getComponent<CarController>();
-            if( !car )
-            {
-                car = actor->addComponent<CarController>();
-            }
-
-            if( !car->getVehicleController() )
-            {
-                throw std::runtime_error( "ProceduralRaceScene requires WPVehiclePhysics." );
-            }
-
-            // Admit the owner slot before publishing a new manager-owned actor.
-            if( !m_cityRoadShowcase && !m_cityTerrainRoads && !m_terrainGameplaySource )
-            {
-                m_assets.actors.reserve( m_assets.actors.size() + 1 );
-                auto ground = app->getGameManager()->createActor();
-                if( !ground )
-                {
-                    throw std::runtime_error( "Cannot create procedural collision actor" );
-                }
-                m_assets.actors.push_back( ground );
-                m_assets.ground = ground;
-                ground->setName( "Circuit collision plane" );
-                ground->setStatic( true );
-                ground->setPosition( Vector3F( 0, -.5f, 0 ) );
-                ground->addComponent<CollisionBox>()->setExtents( Vector3F( 1100, 1, 1100 ) );
-                ground->addComponent<Rigidbody>();
-                app->getGameManager()->getCurrentScene()->addActor( ground );
-            }
-
-            if( m_openCity && !m_cityRoadShowcase )
-            {
-                m_cityLayout = procedural::OpenCityLayout::generate( m_seed, m_cityBlocks, m_cityRoute,
-                                                                     m_cityNaturalRoads );
-            }
-
-            m_assets.openCity = m_openCity;
-            m_assets.cityNaturalRoads = m_cityNaturalRoads;
-            m_assets.cityRoadShowcase = m_cityRoadShowcase;
-            m_assets.cityTerrainRoads = m_cityTerrainRoads;
-            m_assets.terrainGameplaySource = m_terrainGameplaySource;
-            if( m_cityTerrainRoads )
-            {
-                m_assets.roadAuthoring = m_cityRoadAuthoring;
-                m_assets.roadTerrain = m_cityTerrain;
-            }
-            m_assets.useFoliageWorld = m_foliageWorldEnabled;
-            m_assets.exportSourceDirectory = m_materialExportDirectory;
-            m_assets.cityBlocks = m_cityBlocks;
-            m_assets.cityRoute = m_cityRoute;
-            m_assets.cityStreetDetail = m_cityStreetDetail;
-            m_assets.cityBuildingStyle = m_cityBuildingStyle;
-            m_assets.cityBuildingMeshes = m_cityBuildingMeshes;
-
-            race::buildScene( m_assets, actor, m_seed, m_quality );
-            if( m_cityTerrainRoads )
-            {
-                m_cityRoadAuthoring = m_assets.roadAuthoring;
-                m_cityTerrain = m_assets.roadTerrain;
-                m_cityRoadAuthoringUUID = m_cityRoadAuthoring->getHandle()->getUUIDAsString();
-                m_cityLayout = m_assets.cityLayout;
-                m_cityLastRefreshAttemptRevision = m_assets.cityAppliedSourceRevision;
-                m_cityBuiltTerrain = m_cityRoadAuthoring->getTerrainSnapshot();
-                m_cityBuiltTerrainPlacement = m_cityRoadAuthoring->getTerrainPlacement();
-                m_cityLastAttemptTerrain = m_cityBuiltTerrain;
-                m_cityLastAttemptPlacement = m_cityBuiltTerrainPlacement;
-            }
-
-            // Render the chassis and attached meshes from the same sampled parent pose.
-            actor->setSmoothMotion( true, true );
-            actor->getTransform()->setTask( TaskId::Physics );
-            car->refreshWheels();
-            configurePhysics();
-            if( !m_assets.body )
-            {
-                throw std::runtime_error( m_generationError.empty()
-                                              ? "Generated scene activation failed."
-                                              : m_generationError.c_str() );
-            }
-
-            // Scene play can reconstruct the body and controller; configure again after settling.
-            m_physicsConfigured = false;
-            m_generationError = m_assets.cityRaceRouteAvailable ? String() : m_assets.cityRaceRouteError;
-            return true;
-        }
-        catch( const std::exception &e )
-        {
-            if( m_cityTerrainRoads && m_assets.roadTerrain )
-            {
-                m_cityTerrain = m_assets.roadTerrain;
-            }
-            if( m_cityTerrainRoads && m_assets.roadAuthoring )
-            {
-                m_cityRoadAuthoring = m_assets.roadAuthoring;
-                m_cityTerrain = m_assets.roadTerrain;
-                if( auto handle = m_cityRoadAuthoring->getHandle() )
-                {
-                    m_cityRoadAuthoringUUID = handle->getUUIDAsString();
-                }
-            }
-            // Retire partial producers before admitting the diagnostic string.
             clearGeneratedScene();
-            m_generationError = e.what();
             return false;
         }
-
-        return false;
+        return true;
     }
 
-    void ProceduralRaceScene::clearGeneratedScene()
+    void ProceduralRaceScene::buildGeneratedScene()
     {
-        std::lock_guard<std::recursive_mutex> presentationLock( m_presentationMutex );
-        race::SceneAssets retired;
-        m_assets.swap( retired );
-        // Drop producer pixels/path scratch before allocation-prone callbacks.
-        // Resource inventories remain owners through the entire retirement.
-        retired.vehicle = {};
-        retired.circuit = {};
-        m_cityLayout = {};
+        auto app = core::IApplicationManager::instance();
+        auto actor = getActor();
+        ensurePhysicsScene();
+        app->getPhysicsManager()->getPhysicsScene()->setGravity( Vector3F( 0, -9.81f, 0 ) );
+        if( auto manager = app->getVehicleManager() )
+        {
+            manager->load( nullptr );
+        }
+
+        if( !actor->getComponent<CollisionBox>() )
+        {
+            actor->addComponent<CollisionBox>();
+        }
+        auto body = actor->getComponent<Rigidbody>();
+        if( !body )
+        {
+            body = actor->addComponent<Rigidbody>();
+        }
+        body->setAngularDamping( 3 );
+        body->setLinearDamping( .05f );
+        auto car = actor->getComponent<CarController>();
+        if( !car )
+        {
+            car = actor->addComponent<CarController>();
+        }
+        if( !car->getVehicleController() )
+        {
+            throw std::runtime_error( "ProceduralRaceScene requires WPVehiclePhysics." );
+        }
+
+        m_city->applyTo( m_assets );
+        m_assets.terrainGameplaySource = m_terrainGameplaySource;
+        m_assets.useFoliageWorld = m_foliageWorldEnabled;
+        m_assets.exportSourceDirectory = m_materialExportDirectory;
+        race::buildScene( m_assets, actor, m_seed, m_quality, m_citySourceOwner.lock() );
+        m_city->adoptBuild( m_assets );
+
+        actor->setSmoothMotion( true, false );
+        for( auto child : actor->getChildren() )
+        {
+            if( !child->getFlag( IGameActor::ActorFlagWorldSpaceTransform ) )
+            {
+                child->setSmoothMotion( true, true );
+            }
+        }
+        actor->getTransform()->setTask( TaskId::Physics );
+        car->refreshWheels();
+        configurePhysics();
+        if( !m_assets.body )
+        {
+            throw std::runtime_error( m_generationError.empty() ? "Generated scene activation failed."
+                                                                 : m_generationError.c_str() );
+        }
+
+        // Scene play can reconstruct the body and controller; configure again after settling.
+        m_physicsConfigured = false;
+        if( !m_assets.cityRaceRouteAvailable )
+        {
+            m_generationError = m_assets.cityRaceRouteError;
+        }
+    }
+
+    void ProceduralRaceScene::generationFailed()
+    {
+        m_city->retainBindings( m_assets );
+    }
+
+    void ProceduralRaceScene::generationCleared()
+    {
         m_vehicleAudio.unload();
         m_vehicleVisualEffects.unload();
         m_presentationInitialized = false;
         m_presentationResetRequested = false;
         m_presentationAudioClock = 0;
-
         setControls( 0, 0, 0 );
-
         m_resetRequested = false;
         m_physicsConfigured = false;
         m_surfaceGrip = 1;
-
-        auto app = core::IApplicationManager::instancePtr();
-        auto manager = app ? app->getGameManager() : nullptr;
-
-        if( retired.vehicleLOD )
-        {
-            if( auto system =
-                    dynamic_pointer_cast<LODSystem>( retired.vehicleLOD->getComponentSystem() ) )
-            {
-                system->clearViewOverride();
-            }
-        }
-
-        if( retired.vehicleLOD )
-        {
-            if( auto actor = getActor() )
-            {
-                actor->removeComponentInstance( retired.vehicleLOD );
-            }
-        }
-
-        if( manager )
-        {
-            for( auto it = retired.actors.rbegin(); it != retired.actors.rend(); ++it )
-            {
-                try
-                {
-                    manager->destroyActor( *it );
-                }
-                catch( const std::bad_alloc & )
-                {
-                }
-            }
-        }
-
-        auto graphics = app ? app->getGraphicsSystem() : nullptr;
-        if( graphics )
-        {
-            auto scene = graphics->getGraphicsScene();
-            if( retired.foliageTerrain )
-            {
-                String error;
-                retired.foliageTerrain->setFoliageSnapshot( {}, error );
-                if( scene && ( !retired.cityTerrainRoads || !retired.roadTerrain ||
-                               retired.roadTerrain->getTerrain() != retired.foliageTerrain ) )
-                {
-                    scene->removeGraphicsObject( retired.foliageTerrain );
-                }
-            }
-
-            if( scene && retired.sky )
-            {
-                scene->removeGraphicsObject( retired.sky );
-            }
-
-            if( scene && retired.sun )
-            {
-                scene->removeGraphicsObject( retired.sun );
-            }
-
-            auto materials = graphics->getMaterialManager();
-            if( materials )
-            {
-                for( auto material : retired.materials )
-                {
-                    try
-                    {
-                        materials->destroyResource( material );
-                    }
-                    catch( const std::bad_alloc & )
-                    {
-                    }
-                }
-            }
-
-            auto textures = graphics->getTextureManager();
-            if( textures )
-            {
-                for( auto texture : retired.textures )
-                {
-                    // TextureManager detaches the resource before notifying it.
-                    try
-                    {
-                        textures->destroyResource( texture );
-                    }
-                    catch( const std::bad_alloc & )
-                    {
-                    }
-                }
-            }
-        }
-
-        auto meshes = app ? dynamic_pointer_cast<MeshManager>( app->getMeshManager() ) : nullptr;
-        if( meshes )
-        {
-            for( auto mesh : retired.meshes )
-            {
-                try
-                {
-                    meshes->removeMeshResource( mesh );
-                }
-                catch( const std::bad_alloc & )
-                {
-                }
-            }
-        }
     }
 
     void ProceduralRaceScene::configurePhysics()
     {
-        if( isGenerated() && getCarController() && getCarController()->getVehicleController() )
+        if( !m_assets.circuit.samples.empty() && getCarController() &&
+            getCarController()->getVehicleController() )
         {
             if( Thread::getTaskFlag( Thread::Application_Flag ) )
             {
@@ -512,7 +207,7 @@ namespace workphone::scene
                 auto tasks = app ? app->getTaskManager() : nullptr;
                 auto renderLock = tasks ? tasks->lockTask( TaskId::Render ) : TaskLock();
                 auto physicsLock = tasks ? tasks->lockTask( TaskId::Physics ) : TaskLock();
-                std::lock_guard<std::recursive_mutex> presentationLock( m_presentationMutex );
+                std::lock_guard<std::recursive_mutex> presentationLock( m_generationMutex );
                 String error;
                 if( !race::activateGeneratedScene( m_assets, getActor(), error ) )
                 {
@@ -642,72 +337,11 @@ namespace workphone::scene
             configurePhysics();
         }
         if( Thread::getCurrentTask() == TaskId::Application && isLoaded() && isEnabled() &&
-            m_cityTerrainRoads )
+            m_city->usesTerrainRoads() )
         {
-            const auto currentScene = app->getGameManager()->getCurrentScene();
-            if( m_cityRoadAuthoring &&
-                ( !m_cityRoadAuthoring->getActor() ||
-                  m_cityRoadAuthoring->getActor()->getScene() != currentScene ||
-                  !m_cityRoadAuthoring->getActor()->getFlag( IGameActor::ActorFlagInScene ) ) )
+            if( auto manager = app->getGameManager();
+                manager && m_city->needsRefresh( *manager, getActor(), m_assets ) )
             {
-                // A retained component pointer must not keep scenery/collision
-                // alive after its canonical source actor leaves the scene.
-                if( auto owner = m_cityRoadAuthoring->getActor() )
-                {
-                    if( !owner->getFlag( IGameActor::ActorFlagInScene ) )
-                    {
-                        m_cityRoadAuthoring->update();
-                    }
-                }
-                regenerate();
-                return;
-            }
-            if( !m_cityRoadAuthoring && !m_cityRoadAuthoringUUID.empty() )
-            {
-                const auto scene = app->getGameManager()->getCurrentScene();
-                if( getActor() && getActor()->getScene() == scene )
-                {
-                    for( auto candidate : app->getGameManager()->getActors() )
-                    {
-                        if( candidate && candidate->getScene() == scene &&
-                            candidate->getFlag( IGameActor::ActorFlagInScene ) )
-                        {
-                            if( auto source = candidate->getComponent<CityRoadAuthoring>() )
-                            {
-                                if( source->getHandle() &&
-                                    source->getHandle()->getUUIDAsString() == m_cityRoadAuthoringUUID )
-                                {
-                                    m_cityRoadAuthoring = source;
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            if( !m_cityRoadAuthoring )
-            {
-                if( m_assets.roadAuthoring || !m_assets.actors.empty() )
-                {
-                    regenerate();
-                }
-                return;
-            }
-            const auto revision = m_cityRoadAuthoring->getActiveRevision();
-            const auto snapshot = m_cityRoadAuthoring->getTerrainSnapshot();
-            const auto placement = m_cityRoadAuthoring->getTerrainPlacement();
-            const bool changed = m_assets.roadAuthoring != m_cityRoadAuthoring ||
-                                 revision != m_assets.cityAppliedSourceRevision ||
-                                 snapshot != m_cityBuiltTerrain ||
-                                 placement != m_cityBuiltTerrainPlacement;
-            const bool attempted = revision == m_cityLastRefreshAttemptRevision &&
-                                   snapshot == m_cityLastAttemptTerrain &&
-                                   placement == m_cityLastAttemptPlacement;
-            if( changed && !attempted )
-            {
-                m_cityLastRefreshAttemptRevision = revision;
-                m_cityLastAttemptTerrain = snapshot;
-                m_cityLastAttemptPlacement = placement;
                 regenerate();
             }
             return;
@@ -716,7 +350,7 @@ namespace workphone::scene
         {
             // Generation may hold scene/graphics locks on the application task.
             // Skip presentation rather than wait with render locks held.
-            std::unique_lock<std::recursive_mutex> presentationLock( m_presentationMutex,
+            std::unique_lock<std::recursive_mutex> presentationLock( m_generationMutex,
                                                                      std::try_to_lock );
             if( !presentationLock.owns_lock() || !isGenerated() || !getActor() )
             {
@@ -851,7 +485,7 @@ namespace workphone::scene
         }
         else if( m_assets.openCity )
         {
-            roadDistance = m_cityLayout.roadDistance( p.x, p.z );
+            roadDistance = m_assets.cityLayout.roadDistance( p.x, p.z );
         }
         else
         {
@@ -961,26 +595,6 @@ namespace workphone::scene
         }
     }
 
-    void ProceduralRaceScene::setQuality( s32 quality )
-    {
-        m_quality = static_cast<procedural::VehicleAppearanceQuality>( std::clamp( quality, 0, 3 ) );
-    }
-
-    u32 ProceduralRaceScene::nearestCircuitSample( const Vector3F &position ) const
-    {
-        return static_cast<u32>( m_assets.circuit.nearest( position ) );
-    }
-
-    Vector3F ProceduralRaceScene::getCircuitPosition( u32 index ) const
-    {
-        return m_assets.circuit.samples.at( index ).position;
-    }
-
-    Vector3F ProceduralRaceScene::getCircuitRight( u32 index ) const
-    {
-        return m_assets.circuit.samples.at( index ).right;
-    }
-
     f32 ProceduralRaceScene::getWheelbase() const
     {
         return static_cast<float>( m_assets.vehicle.physics.wheelbaseM );
@@ -1009,111 +623,22 @@ namespace workphone::scene
 
     SmartPtr<Properties> ProceduralRaceScene::getProperties() const
     {
-        auto p = Component::getProperties();
-        p->setProperty( "Seed", m_seed );
-        p->setProperty( "Appearance Quality", getQuality() );
-        p->setProperty( "Audio Enabled", getAudioEnabled() );
-        p->setProperty( "Effects Enabled", getEffectsEnabled() );
-        p->setProperty( "Open City", m_openCity );
-        p->setProperty( "Foliage World", m_foliageWorldEnabled );
-        p->setProperty( "City Blocks", m_cityBlocks );
-        p->setProperty( "City Route", m_cityRoute );
-        p->setProperty( "City Natural Roads", m_cityNaturalRoads );
-        p->setProperty( "Road Authoring Showcase", m_cityRoadShowcase );
-        p->setProperty( "City Terrain Roads", m_cityTerrainRoads );
-        p->setProperty( "City Street Detail", m_cityStreetDetail );
-        p->setProperty( "City Building Style", m_cityBuildingStyle );
-        auto &buildingStyle = p->getPropertyObject( "City Building Style" );
-        buildingStyle.setTypeName( Properties::enumTypeStr );
-        buildingStyle.setAttribute( Properties::enumTypeStr, race::cityBuildingStyleLabels );
-        for( size_t i = 0; i < cityBuildingMeshProperties.size(); ++i )
-        {
-            const auto name = cityBuildingMeshProperties[i];
-            p->setProperty( name, m_cityBuildingMeshes[i], Properties::resourceStr );
-            auto &property = p->getPropertyObject( name );
-            property.setAttribute( Properties::resourceTypeStr, "Mesh" );
-            property.setAttribute( "allowResourcePath", "true" );
-            property.setAttribute( "description", "Choose a mesh asset, or enter a file path. Clear to use the built-in module." );
-        }
-        p->setProperty( "City Building Kit Status", m_assets.cityBuildingKitDiagnostic, true );
-        p->setProperty( "City Road Authoring UUID", m_cityRoadAuthoringUUID );
-        p->setProperty( "Generation Error", m_generationError );
-        p->setButtonPressed( "Regenerate", false );
-        return p;
+        std::lock_guard<std::recursive_mutex> lock( m_generationMutex );
+        auto properties = ProceduralScene::getProperties();
+        properties->setProperty( "Audio Enabled", getAudioEnabled() );
+        properties->setProperty( "Effects Enabled", getEffectsEnabled() );
+        m_city->writeProperties( *properties, m_assets );
+        return properties;
     }
 
-    void ProceduralRaceScene::setProperties( SmartPtr<Properties> p )
+    void ProceduralRaceScene::readGenerationProperties( Properties &properties )
     {
-        if( !p )
-        {
-            return;
-        }
-
-        Component::setProperties( p );
-
-        p->getPropertyValue( "Seed", m_seed );
-        s32 quality = getQuality();
-        p->getPropertyValue( "Appearance Quality", quality );
-        setQuality( quality );
-
         bool audio = getAudioEnabled(), effects = getEffectsEnabled();
-        p->getPropertyValue( "Audio Enabled", audio );
-        p->getPropertyValue( "Effects Enabled", effects );
+        properties.getPropertyValue( "Audio Enabled", audio );
+        properties.getPropertyValue( "Effects Enabled", effects );
         setAudioEnabled( audio );
         setEffectsEnabled( effects );
-        p->getPropertyValue( "Open City", m_openCity );
-        p->getPropertyValue( "Foliage World", m_foliageWorldEnabled );
-        p->getPropertyValue( "City Blocks", m_cityBlocks );
-        p->getPropertyValue( "City Route", m_cityRoute );
-        p->getPropertyValue( "City Natural Roads", m_cityNaturalRoads );
-        p->getPropertyValue( "Road Authoring Showcase", m_cityRoadShowcase );
-        bool terrainMode = m_cityTerrainRoads;
-        p->getPropertyValue( "City Terrain Roads", terrainMode );
-        if( !terrainMode && m_cityTerrainRoads &&
-            ( m_cityRoadAuthoring || !m_cityRoadAuthoringUUID.empty() ) )
-        {
-            m_generationError =
-                "Leaving terrain-city mode while its saved road/terrain anchors are active is "
-                "unavailable; use a separate scene for the flat city.";
-        }
-        else
-        {
-            m_cityTerrainRoads = terrainMode;
-        }
-        String binding = m_cityRoadAuthoringUUID;
-        p->getPropertyValue( "City Road Authoring UUID", binding );
-        if( binding != m_cityRoadAuthoringUUID )
-        {
-            m_cityRoadAuthoringUUID = binding;
-            m_cityRoadAuthoring = nullptr;
-            m_cityTerrain = nullptr;
-            m_cityLastAttemptTerrain.reset();
-        }
-        if( m_cityTerrainRoads )
-        {
-            m_openCity = true;
-        }
-        m_cityBlocks = std::clamp( m_cityBlocks / 2 * 2, 6, 10 );
-        m_cityRoute = std::clamp( m_cityRoute, 0, 2 );
-        s32 streetDetail = m_cityStreetDetail;
-        if( p->getPropertyValue( "City Street Detail", streetDetail ) )
-        {
-            m_cityStreetDetail = std::clamp( streetDetail, 0, 100 );
-        }
-        s32 buildingStyle = m_cityBuildingStyle;
-        if( p->getPropertyValue( "City Building Style", buildingStyle ) )
-            m_cityBuildingStyle = std::clamp( buildingStyle, 0, race::cityBuildingStyleMax );
-        for( size_t i = 0; i < cityBuildingMeshProperties.size(); ++i )
-        {
-            String path;
-            if( p->getPropertyValue( cityBuildingMeshProperties[i], path ) )
-                m_cityBuildingMeshes[i] = StringUtil::trim( path );
-        }
-
-        if( p->isButtonPressed( "Regenerate" ) )
-        {
-            regenerate();
-        }
+        m_city->readProperties( properties, m_generationError );
     }
 
     SmartPtr<IGameActor> ProceduralRaceScene::getBodyActor() const
@@ -1121,49 +646,14 @@ namespace workphone::scene
         return m_assets.body;
     }
 
-    f32 ProceduralRaceScene::getCircuitLength() const
-    {
-        return m_assets.circuit.length;
-    }
-
-    u32 ProceduralRaceScene::getCircuitSampleCount() const
-    {
-        return static_cast<u32>( m_assets.circuit.samples.size() );
-    }
-
-    const race::SceneAssets &ProceduralRaceScene::getAssets() const
-    {
-        return m_assets;
-    }
-
-    String ProceduralRaceScene::getGenerationError() const
-    {
-        return m_generationError;
-    }
-
     bool ProceduralRaceScene::isPhysicsConfigured() const
     {
         return m_physicsConfigured;
     }
 
-    void ProceduralRaceScene::setFoliageWorldEnabled( bool enabled )
+    bool ProceduralRaceScene::isGenerated() const
     {
-        m_foliageWorldEnabled = enabled;
-    }
-
-    bool ProceduralRaceScene::getFoliageWorldEnabled() const
-    {
-        return m_foliageWorldEnabled;
-    }
-
-    void ProceduralRaceScene::setMaterialExportDirectory( const String &directory )
-    {
-        m_materialExportDirectory = directory;
-    }
-
-    String ProceduralRaceScene::getMaterialExportDirectory() const
-    {
-        return m_materialExportDirectory;
+        return ProceduralScene::isGenerated() && !m_assets.circuit.samples.empty();
     }
 
     void ProceduralRaceScene::setTerrainGameplaySource( render::TerrainSnapshot source )
@@ -1173,33 +663,19 @@ namespace workphone::scene
         {
             throw std::invalid_argument( error.c_str() );
         }
-        std::lock_guard<std::recursive_mutex> presentationLock( m_presentationMutex );
+        std::lock_guard<std::recursive_mutex> presentationLock( m_generationMutex );
         m_terrainGameplaySource = std::move( source );
     }
 
-    bool ProceduralRaceScene::isGenerated() const
+    void ProceduralRaceScene::setCitySourceOwner( SmartPtr<IGameActor> owner )
     {
-        return !m_assets.circuit.samples.empty();
-    }
-
-    s32 ProceduralRaceScene::getQuality() const
-    {
-        return static_cast<s32>( m_quality );
-    }
-
-    void ProceduralRaceScene::setSeed( u32 seed )
-    {
-        m_seed = seed;
-    }
-
-    u32 ProceduralRaceScene::getSeed() const
-    {
-        return m_seed;
+        std::lock_guard<std::recursive_mutex> lock( m_generationMutex );
+        m_citySourceOwner = owner.get();
     }
 
     void ProceduralRaceScene::initializePresentation()
     {
-        std::lock_guard<std::recursive_mutex> lock( m_presentationMutex );
+        std::lock_guard<std::recursive_mutex> lock( m_generationMutex );
         if( !isGenerated() )
         {
             return;
@@ -1272,25 +748,25 @@ namespace workphone::scene
 
     bool ProceduralRaceScene::isAudioAvailable() const
     {
-        std::lock_guard<std::recursive_mutex> lock( m_presentationMutex );
+        std::lock_guard<std::recursive_mutex> lock( m_generationMutex );
         return m_vehicleAudio.isPlaying();
     }
 
     bool ProceduralRaceScene::isEffectsAvailable() const
     {
-        std::lock_guard<std::recursive_mutex> lock( m_presentationMutex );
+        std::lock_guard<std::recursive_mutex> lock( m_generationMutex );
         return m_vehicleVisualEffects.uploaded();
     }
 
     u32 ProceduralRaceScene::getParticleCount() const
     {
-        std::lock_guard<std::recursive_mutex> lock( m_presentationMutex );
+        std::lock_guard<std::recursive_mutex> lock( m_generationMutex );
         return u32( m_vehicleVisualEffects.particles() );
     }
 
     u32 ProceduralRaceScene::getSkidDecalCount() const
     {
-        std::lock_guard<std::recursive_mutex> lock( m_presentationMutex );
+        std::lock_guard<std::recursive_mutex> lock( m_generationMutex );
         return u32( m_vehicleVisualEffects.decals() );
     }
 
@@ -1322,7 +798,7 @@ namespace workphone::scene
 
         if( m_assets.openCity )
         {
-            return m_cityLayout.roadDistance( position.x, position.z ) < 6.85f;
+            return m_assets.cityLayout.roadDistance( position.x, position.z ) < 6.85f;
         }
 
         auto offset = position - getCircuitPosition( nearestCircuitSample( position ) );

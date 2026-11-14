@@ -106,8 +106,10 @@ local sources = {
     [selectedId]={width=10.5,knot="81f2148b-c7ab-48a2-a045-f01c56ed1003"}
 }
 local generations = 0
+function race:setCitySourceOwner(actor) self.citySourceOwner = actor end
 function race:regenerate()
     assert(self.cityOptions["City Terrain Roads"], "Terrain mode must reach the native component before generation")
+    assert(self.citySourceOwner == owner, "Editable city sources must belong to the persistent script actor")
     local id=self.cityOptions["City Road Authoring UUID"]
     assert(type(id)=="string", "Source binding must be forwarded before generation")
     if id=="" then id=initialId;properties.values["City Road Authoring UUID"]=id end

@@ -196,15 +196,26 @@ namespace
             "An identical terrain placement notification republished roads or advanced the authored revision");
         terrain->setActor(nullptr);terrainOwner->setTransform(nullptr);
         auto owner=make_ptr<GameActor>();auto scene=make_ptr<GameScene>();
+        // The headless publisher bypasses native load. Mark the fixture's scene
+        // and actor loaded to exercise the same membership gate as real actors.
+        owner->setLoadingState( LoadingState::Loaded );
+        scene->setLoadingState( LoadingState::Loaded );
         const auto attachedJSON=document->getSourceJSON();
         owner->setScene(scene);owner->setFlag(IGameActor::ActorFlagInScene,true);document->setActor(owner);
         owner->setFlag(IGameActor::ActorFlagInScene,false);document->update();
         require(document->getActiveRevision()==0 && document->getBake().sourceRevision==0 &&
             document->getSourceJSON()==attachedJSON,"Detached source retained active collision or lost authored intent");
+        owner->setLoadingState( LoadingState::Unloaded );
         owner->setFlag(IGameActor::ActorFlagInScene,true);document->update();
+        require(document->getActiveRevision()==0 && document->getSourceJSON()==attachedJSON,
+            "The source published before its reattached actor was loaded");
+        owner->setLoadingState( LoadingState::Loaded );
+        document->update();
         require(document->getActiveRevision()==revision && document->getSourceJSON()==attachedJSON,
             "Reattached source did not republish the retained document");
         document->setActor(nullptr);owner->setScene(nullptr);
+        owner->setLoadingState( LoadingState::Unloaded );
+        scene->setLoadingState( LoadingState::Unloaded );
     }
 }
 int main()

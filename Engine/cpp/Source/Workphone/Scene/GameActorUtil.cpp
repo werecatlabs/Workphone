@@ -254,7 +254,7 @@ namespace workphone::scene
             const auto &children = actor->getChildren();
             for( auto child : children )
             {
-                if( !child )
+                if( !child || child->getFlag( IGameActor::ActorFlagWorldSpaceTransform ) )
                 {
                     continue;
                 }
@@ -902,6 +902,7 @@ namespace workphone::scene
             auto perpetual = pActor->getPerpetual();
             auto bStatic = false;
             auto bSmoothMotion = false;
+            auto worldSpaceTransform = false;
             auto collisionMask = u32( 0 );
             auto layer = String();
             Array<String> tags{ Allocator<String>( sourceBudget ) };
@@ -916,6 +917,7 @@ namespace workphone::scene
             properties->getPropertyValue( "visible", visible );
             properties->getPropertyValue( "perpetual", perpetual );
             properties->getPropertyValue( smoothMotionStr, bSmoothMotion );
+            properties->getPropertyValue( "worldSpaceTransform", worldSpaceTransform );
             properties->getPropertyValue( collisionMaskStr, collisionMask );
             getDirectStringProperty( properties, layerStr, layer );
             properties->getPropertyValue( tagsStr, tags );
@@ -926,6 +928,7 @@ namespace workphone::scene
             pActor->setPerpetual( perpetual, false );
             pActor->setStatic( bStatic );
             pActor->setSmoothMotion( bSmoothMotion );
+            pActor->setFlag( IGameActor::ActorFlagWorldSpaceTransform, worldSpaceTransform, false );
             pActor->setCollisionMask( collisionMask );
             pActor->setLayer( layer );
             pActor->setTags( tags );
@@ -1171,6 +1174,10 @@ namespace workphone::scene
         actorData->setProperty( "visible", visible );
         actorData->setProperty( "perpetual", actor->getPerpetual() );
         actorData->setProperty( GameActorUtil::smoothMotionStr, actor->isSmoothMotion() );
+        if( actor->getFlag( IGameActor::ActorFlagWorldSpaceTransform ) )
+        {
+            actorData->setProperty( "worldSpaceTransform", true );
+        }
         actorData->setProperty( GameActorUtil::collisionMaskStr, actor->getCollisionMask() );
         actorData->setProperty( GameActorUtil::layerStr, actor->getLayer() );
         actorData->setProperty( GameActorUtil::tagsStr, actor->getTags() );
