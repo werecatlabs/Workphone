@@ -9,6 +9,7 @@
 #include <Workphone/Scene/Components/ProceduralCircuitScene.hpp>
 #include <Workphone/Scene/Components/ProceduralCityScene.hpp>
 #include <Workphone/Scene/Components/ProceduralRaceScene.hpp>
+#include <Workphone/Scene/Components/ProceduralSceneGeneration.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
 #include <Workphone/Scene/Components/CollisionBox.hpp>
 #include <Workphone/Scene/Components/Rigidbody.hpp>
@@ -28,6 +29,7 @@
 #include <array>
 #include <vector>
 #include <cstdint>
+#include <limits>
 
 using namespace workphone;
 using namespace workphone::editor;
@@ -71,6 +73,65 @@ namespace
         SourceBudgetText json; String error;
         BOOST_REQUIRE_MESSAGE( procedural::serializeCityRoadSplineSource( source, json, error ), error );
         return String( json.data(), json.size() );
+    }
+
+    void invalidInitialCityCandidateCleanup( SmartPtr<scene::IGameManager> manager )
+    {
+        // Internal invalid-candidate regression, not a supported UI workflow:
+        // the property reader rejects NaN. Direct builder input reaches initial
+        // terrain preparation after creating its two temporary source anchors.
+        auto scene = manager->getCurrentScene(); BOOST_REQUIRE( scene );
+        auto owner = manager->createActor(); BOOST_REQUIRE( owner );
+        owner->setName( "Invalid city candidate cleanup probe" );
+        scene->addActor( owner ); owner->setState( scene::IGameActor::State::Edit );
+        scene::race::SceneAssets assets;
+        struct Cleanup
+        {
+            scene::race::SceneAssets &assets;
+            SmartPtr<scene::IGameManager> manager;
+            SmartPtr<scene::IGameActor> owner;
+            ~Cleanup() { scene::race::clearScene( assets, owner ); manager->destroyActor( owner ); }
+        } cleanup{ assets, manager, owner };
+        const auto liveActors = [&] {
+            std::set<scene::IGameActor *> actors;
+            for( const auto &actor : manager->getActors() ) if( actor ) actors.insert( actor.get() );
+            return actors;
+        };
+        const auto beforeActors = liveActors();
+        const auto beforeRoots = scene->getActors().size();
+        const auto beforeRoads = scene->getComponents<scene::CityRoadAuthoring>().size();
+        const auto beforeTerrain = scene->getComponents<scene::TerrainSystem>().size();
+        for( unsigned attempt = 0; attempt < 2; ++attempt )
+        {
+            BOOST_TEST_CONTEXT( "Internal invalid initial terrain candidate attempt=" << attempt )
+            {
+                assets.cityTerrainRoads = true;
+                assets.cityNaturalRoads = true;
+                assets.cityBlocks = 6;
+                assets.cityTerrainRelief = std::numeric_limits<float>::quiet_NaN();
+                String failure;
+                try
+                {
+                    scene::race::buildCityScene( assets, owner, 42,
+                        procedural::VehicleAppearanceQuality::Preview );
+                }
+                catch( const std::exception &error ) { failure = error.what(); }
+                BOOST_REQUIRE_MESSAGE( failure.find( "Terrain samples and scaled heights must be finite" ) != String::npos,
+                    "Expected rejection inside terrain fitting after anchor creation; received: " + failure );
+                // Check before the outer caller clears disposable generation data:
+                // clearing that data alone intentionally does not own these anchors.
+                BOOST_CHECK( !assets.roadAuthoring ); BOOST_CHECK( !assets.roadTerrain );
+                BOOST_CHECK( owner->getChildren().empty() );
+                BOOST_CHECK_EQUAL( scene->getComponents<scene::CityRoadAuthoring>().size(), beforeRoads );
+                BOOST_CHECK_EQUAL( scene->getComponents<scene::TerrainSystem>().size(), beforeTerrain );
+                BOOST_CHECK( liveActors() == beforeActors );
+                scene::race::clearScene( assets, owner );
+                BOOST_CHECK_EQUAL( scene->getActors().size(), beforeRoots );
+                BOOST_CHECK( owner->getChildren().empty() );
+                BOOST_CHECK( !assets.roadAuthoring && !assets.roadTerrain );
+                BOOST_CHECK( liveActors() == beforeActors );
+            }
+        }
     }
 
     void registrationRemovalOrdering( SmartPtr<scene::IGameManager> manager )
@@ -453,6 +514,8 @@ BOOST_AUTO_TEST_CASE( terrain_city_source_anchor_roundtrip_test )
     BOOST_CHECK( cityOwner->getChildren().empty() );
     BOOST_CHECK( !cityScenery->getParent() && !cityScenery->getScene() );
 
+    invalidInitialCityCandidateCleanup( manager );
+
     citySettings = standaloneCity->getProperties();
     citySettings->setProperty( "City Terrain Roads", true );
     citySettings->setProperty( "City Road Authoring UUID", sourceUuid );
@@ -462,6 +525,16 @@ BOOST_AUTO_TEST_CASE( terrain_city_source_anchor_roundtrip_test )
     auto vehicleActor = manager->createActor(); BOOST_REQUIRE( vehicleActor ); vehicleActor->setName( "Terrain city persisted vehicle" );
     auto vehicle = vehicleActor->addComponent<scene::ProceduralRaceScene>(); BOOST_REQUIRE( vehicle ); originalScene->addActor( vehicleActor );
     BOOST_CHECK_EQUAL( vehicle->getProperties()->getPropertyAsInt( "City Street Detail" ), 100 );
+    f32 terrainRelief = 0;
+    BOOST_REQUIRE( vehicle->getProperties()->getPropertyValue( "City Terrain Relief", terrainRelief ) );
+    BOOST_CHECK_EQUAL( terrainRelief, 1.f );
+    auto reliefEdit = vehicle->getProperties();
+    reliefEdit->setProperty( "City Terrain Relief", -1.f ); vehicle->setProperties( reliefEdit );
+    BOOST_REQUIRE( vehicle->getProperties()->getPropertyValue( "City Terrain Relief", terrainRelief ) );
+    BOOST_CHECK_EQUAL( terrainRelief, 0.f );
+    reliefEdit->setProperty( "City Terrain Relief", 3.f ); vehicle->setProperties( reliefEdit );
+    BOOST_REQUIRE( vehicle->getProperties()->getPropertyValue( "City Terrain Relief", terrainRelief ) );
+    BOOST_CHECK_EQUAL( terrainRelief, 2.f );
     auto streetEdit = vehicle->getProperties();
     streetEdit->setProperty( "City Street Detail", -12 ); vehicle->setProperties( streetEdit );
     BOOST_CHECK_EQUAL( vehicle->getProperties()->getPropertyAsInt( "City Street Detail" ), 0 );
@@ -478,6 +551,7 @@ BOOST_AUTO_TEST_CASE( terrain_city_source_anchor_roundtrip_test )
         .getAttribute( Properties::enumTypeStr ), expectedStyleLabels );
     auto properties = vehicle->getProperties(); properties->setProperty( "City Terrain Roads", true );
     properties->setProperty( "City Street Detail", 64 );
+    properties->setProperty( "City Terrain Relief", 1.25f );
     properties->setProperty( "City Building Style", 9 );
     properties->setProperty( "City Window Mesh", String( " Assets/architecture/arched-window.glb " ) );
     properties->setProperty( "City Roof Mesh", String( "56c12775-468d-41fb-936a-a7f932b081f4" ) );
@@ -584,6 +658,8 @@ BOOST_AUTO_TEST_CASE( terrain_city_source_anchor_roundtrip_test )
     BOOST_REQUIRE( restoredVehicle->getProperties()->getPropertyValue( "City Road Authoring UUID", vehicleSourceUuid ) );
     BOOST_CHECK( terrainRoads ); BOOST_CHECK_EQUAL( vehicleSourceUuid, restoredSource->getHandle()->getUUIDAsString() );
     BOOST_CHECK_EQUAL( restoredVehicle->getProperties()->getPropertyAsInt( "City Street Detail" ), 64 );
+    BOOST_REQUIRE( restoredVehicle->getProperties()->getPropertyValue( "City Terrain Relief", terrainRelief ) );
+    BOOST_CHECK_EQUAL( terrainRelief, 1.25f );
     const auto building = restoredVehicle->getProperties();
     BOOST_CHECK_EQUAL( building->getPropertyAsInt( "City Building Style" ), 9 );
     BOOST_CHECK_EQUAL( building->getProperty( "City Window Mesh" ), "Assets/architecture/arched-window.glb" );

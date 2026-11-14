@@ -87,7 +87,8 @@ namespace workphone::procedural
 
     struct CityRoadSplineSampling
     {
-        // Bounds the authored Bezier before terrain fit; not terrain cell/hole coverage.
+        // Bounds the authored Bezier before terrain fit; Drape uses its XZ plan
+        // only, so unused control Y cannot change sampling. Not cell/hole coverage.
         f32 tolerance = .05f, maxStep = 2.f;
         u32 maximumSamples = 65536;
     };
@@ -103,6 +104,8 @@ namespace workphone::procedural
                                                      String &error );
     // Transactional outputs; no source edit, terrain carving, mesh/collision or scene publication.
     // Bridge is explicitly unsupported. maxGrade bounds fitted half-crossfalls and road edges.
+    // Drape ignores authored control Y without changing the canonical controls.
+    // Open-road endpoint direction is the limiting Bezier tangent, including zero handles.
     // Reversed local offset edges fail; this does not solve global road/junction intersections.
     // Point queries cannot prove continuous terrain/hole coverage between accepted samples.
     WPCore_API bool sampleCityRoadSplines( const CityRoadSplineSource &, const CityRoadSplineSampling &,

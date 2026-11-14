@@ -71,6 +71,20 @@ success.
 
 ## Checks and captures
 
+For a generated terrain city, `--city-terrain-roads --city-layout lsystem
+--city-terrain-relief 1 --view hillside` selects a sustained road climb. Relief
+accepts 0–2 and affects newly created terrain; regenerating a retained city
+preserves its edited terrain. The hillside camera is cached for the capture and
+its road ID, selected rise, eye and target are written to the evidence JSON.
+
+Terrain-city evidence includes retained heightfield relief, centreline and edge
+grades, half-crossfalls, and the terrain fitter's changed-sample/cut/fill report.
+Up to 96 distributed carriageway probes and eight probes per roundabout compare
+the runtime surface with terrain and native collision. Roundabout cap probes
+also check surface-plane continuity and terrain support. These are bounded
+samples alongside the existing full geometry validation, not an exhaustive
+visual or hardware certification.
+
 ```powershell
 ./SampleVehicleAdvanced.exe --validate-circuit
 ./SampleVehicleAdvanced.exe --smoke-test --quality low

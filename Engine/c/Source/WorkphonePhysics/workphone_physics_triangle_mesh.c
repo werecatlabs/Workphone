@@ -6,6 +6,7 @@
 #include "workphone_physics_triangle_mesh.h"
 
 #include "workphone_physics_internal.h"
+#include "workphone_physics_ray_triangle.h"
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
@@ -70,24 +71,6 @@ static wp_vec3f v3( const wp_f32 *vertices, wp_u32 index )
     return v;
 }
 
-static wp_vec3f sub3( wp_vec3f a, wp_vec3f b )
-{
-    wp_vec3f r;
-    r.x = a.x - b.x;
-    r.y = a.y - b.y;
-    r.z = a.z - b.z;
-    return r;
-}
-
-static wp_vec3f cross3( wp_vec3f a, wp_vec3f b )
-{
-    wp_vec3f r;
-    r.x = a.y * b.z - a.z * b.y;
-    r.y = a.z * b.x - a.x * b.z;
-    r.z = a.x * b.y - a.y * b.x;
-    return r;
-}
-
 static wp_f32 dot3( wp_vec3f a, wp_vec3f b )
 {
     return a.x * b.x + a.y * b.y + a.z * b.z;
@@ -96,19 +79,6 @@ static wp_f32 dot3( wp_vec3f a, wp_vec3f b )
 static wp_f32 component3( wp_vec3f v, wp_u32 axis )
 {
     return axis == 0u ? v.x : ( axis == 1u ? v.y : v.z );
-}
-
-static wp_vec3f normalize3( wp_vec3f v )
-{
-    wp_f32 len = sqrtf( dot3( v, v ) );
-    if( len <= 1.0e-7f )
-    {
-        return zero3();
-    }
-    v.x /= len;
-    v.y /= len;
-    v.z /= len;
-    return v;
 }
 
 static wp_s32 triangle_vertices( const wp_triangle_mesh *mesh, wp_u32 triangle, wp_vec3f *a, wp_vec3f *b,
@@ -786,49 +756,8 @@ static wp_s32 ray_aabb( wp_vec3f origin, wp_vec3f direction, wp_f32 max_distance
 static wp_s32 ray_triangle_distance( wp_vec3f origin, wp_vec3f direction, wp_f32 max_distance,
                                      wp_vec3f a, wp_vec3f b, wp_vec3f c, wp_f32 *out_distance )
 {
-    const wp_f32 epsilon = 1.0e-7f;
-    const wp_vec3f edge1 = sub3( b, a );
-    const wp_vec3f edge2 = sub3( c, a );
-    const wp_vec3f p = cross3( direction, edge2 );
-    const wp_f32 determinant = dot3( edge1, p );
-    wp_vec3f from_a;
-    wp_vec3f q;
-    wp_f32 inverse;
-    wp_f32 u;
-    wp_f32 v;
-    wp_f32 distance;
-
-    if( determinant > -epsilon && determinant < epsilon )
-    {
-        return 0;
-    }
-
-    inverse = 1.0f / determinant;
-    from_a = sub3( origin, a );
-    u = dot3( from_a, p ) * inverse;
-    if( u < 0.0f || u > 1.0f )
-    {
-        return 0;
-    }
-
-    q = cross3( from_a, edge1 );
-    v = dot3( direction, q ) * inverse;
-    if( v < 0.0f || u + v > 1.0f )
-    {
-        return 0;
-    }
-
-    distance = dot3( edge2, q ) * inverse;
-    if( distance < 0.0f || distance > max_distance )
-    {
-        return 0;
-    }
-
-    if( out_distance )
-    {
-        *out_distance = distance;
-    }
-    return 1;
+    return wp_ray_triangle_distance_exact( origin, direction, max_distance,
+                                          a, b, c, out_distance );
 }
 
 static void raycast_bvh_node( const wp_triangle_mesh *mesh, wp_u32 node_index, wp_vec3f origin,
@@ -950,7 +879,7 @@ wp_s32 wp_triangle_mesh_raycast( const wp_triangle_mesh *mesh, wp_vec3f origin, 
         wp_vec3f normal = zero3();
         if( triangle_vertices( mesh, (wp_u32)best_index, &a, &b, &c ) )
         {
-            normal = normalize3( cross3( sub3( b, a ), sub3( c, a ) ) );
+            normal = wp_ray_triangle_normal_exact( a, b, c );
         }
         if( out_distance )
         {

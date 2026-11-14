@@ -38,6 +38,31 @@ namespace workphone::editor
             for(auto &junction:source.roundabouts)for(auto &port:junction.ports)
                 if(port.approachId==road.id)port.width=road.width;
         }
+        struct AttachedPort
+        {
+            Vector3F outward;
+            float gradeX,gradeZ;
+            bool atStart;
+        };
+        std::optional<AttachedPort> attachedPort(const procedural::CityRoadSplineSource &source,
+                                                const procedural::CityRoadSpline &road,size_t knot)
+        {
+            if(road.closed || road.knots.size()<2 || (knot!=0 && knot+1!=road.knots.size()))return {};
+            for(const auto &junction:source.roundabouts)for(const auto &port:junction.ports)
+            {
+                if(port.approachId!=road.id)continue;
+                const float length=std::hypot(port.outward.x,port.outward.z);
+                if(!std::isfinite(length) || length<=1e-5f)continue;
+                const Vector3F direction{port.outward.x/length,0,port.outward.z/length};
+                const auto mouth=junction.center+direction*(junction.outerRadius+port.length);
+                const auto delta=road.knots[knot].position-mouth;
+                // Identify an existing connection, never snap a nearby free endpoint.
+                // Drape control Y is authored intent, not its fitted terrain elevation.
+                if(delta.x*delta.x+delta.z*delta.z<=.001f*.001f)
+                    return AttachedPort{direction,junction.gradeX,junction.gradeZ,knot==0};
+            }
+            return {};
+        }
         bool sameAuthoredState(const String &current,const SourceBudgetText &expected,String &error)
         {
             procedural::CityRoadSplineSource a,b;
@@ -282,11 +307,11 @@ namespace workphone::editor
         String error;if(!target || !target->bindTerrain(terrain,error)){status(error);return false;}
         m_authoring=target;m_scene=scene;m_enabled=true;status("Terrain bound. Draw Road starts one editable Bezier spline.");return true;
     }
-    void CityRoadWindow::cancelDraft(){m_draft={};m_manualHandles.clear();m_drafting=m_dragging=false;}
+    void CityRoadWindow::cancelDraft(){m_draft={};m_manualHandles.clear();m_drafting=m_dragging=m_portHandleDrag=false;}
     bool CityRoadWindow::beginDraft()
     {
         auto target=current();if(!target){status("Bind a terrain or select a City Road Authoring component first.");return false;}
-        m_draft=target->getSource();m_draftRevision=target->getSourceRevision();m_drafting=true;return true;
+        m_draft=target->getSource();m_draftRevision=target->getSourceRevision();m_drafting=true;m_portHandleDrag=false;return true;
     }
     bool CityRoadWindow::beginDraw()
     {
@@ -402,7 +427,20 @@ namespace workphone::editor
         auto app=core::IApplicationManager::instancePtr();auto history=app?app->getCommandManager():nullptr;
         if(!history){status("Command history is unavailable; draft retained.");return false;}
         auto command=make_ptr<CityRoadEditCommand>();if(!command->configure(target,after,error)){status(error);return false;}
-        command->execute();if(!command->applied()){status(command->error());return false;}history->addCommand(command);
+        command->execute();if(!command->applied())
+        {
+            String context;
+            if(m_road<m_draft.roads.size())
+            {
+                const auto &road=m_draft.roads[m_road];
+                context="Road "+String(road.id.data(),road.id.size());
+                if(m_knot<road.knots.size() && (m_mode==Mode::Move || m_mode==Mode::InHandle || m_mode==Mode::OutHandle))
+                    context+="; knot "+StringUtil::toString(u32(m_knot+1));
+                context+=". ";
+            }
+            status(context+command->error()+" Draft retained; adjust the control or Cancel.");return false;
+        }
+        history->addCommand(command);
         cancelDraft();status("Road edit committed. Ctrl+Z/Redo use scene command history; Save Scene persists source and terrain binding.");return true;
     }
     bool CityRoadWindow::addRoundabout(Vector3F center)
@@ -471,7 +509,7 @@ namespace workphone::editor
             beginDraw();return;
         }
         if(id==Move || id==InHandle || id==OutHandle)
-        {cancelDraft();m_mode=id==Move?Mode::Move:id==InHandle?Mode::InHandle:Mode::OutHandle;m_enabled=true;status("Drag a knot or handle on the terrain. Each completed drag is one undoable edit.");return;}
+        {cancelDraft();m_mode=id==Move?Mode::Move:id==InHandle?Mode::InHandle:Mode::OutHandle;m_enabled=true;status("Drag a knot or handle on the terrain. Roundabout mouths stay fixed; their handles follow the port direction. Each completed drag is one undoable edit.");return;}
         if(id==SelectRoad || id==InsertKnot)
         {
             cancelDraft();
@@ -567,7 +605,13 @@ namespace workphone::editor
         if(phase=="remove")
         {if(m_drafting && m_mode==Mode::Draw)history(false);else action(RemoveRoad);return preview();}
         if(phase=="commit")
-        {if(m_dragging && m_mode!=Mode::Draw)commitDraft();m_dragging=false;return preview();}
+        {
+            const bool constrained=m_portHandleDrag;
+            const auto revision=current()->getSourceRevision();
+            if(m_dragging && m_mode!=Mode::Draw && commitDraft() && constrained && current()->getSourceRevision()!=revision)
+                status("Roundabout handle committed along its port direction. The mouth and junction stay fixed. Undo/Redo restores this edit.");
+            m_dragging=false;return preview();
+        }
         if(phase!="begin" && phase!="update")return preview();
         const bool roadPicking = m_mode == Mode::SelectRoad || m_mode == Mode::InsertKnot;
         if(roadPicking && phase!="begin")return preview();
@@ -604,11 +648,36 @@ namespace workphone::editor
                 {const auto &road=m_draft.roads[r];const auto &knot=road.knots[k];const auto p=controlPoint(knot.position+(m_mode==Mode::InHandle?knot.inHandle:m_mode==Mode::OutHandle?knot.outHandle:Vector3F::zero()),road);const auto distance=(p-hit).lengthSquared();if(distance<closest){closest=distance;m_road=r;m_knot=k;found=true;}}
                 if(!found){cancelDraft();status("No knot/handle within 2 metres of the terrain pick.");return preview();}
                 m_dragging=true;const auto &road=m_draft.roads[m_road];selectRoad(road);m_selectedKnotId=road.knots[m_knot].id;
+                if(attachedPort(m_draft,road,m_knot))
+                {
+                    if(m_mode==Mode::Move)
+                    {cancelDraft();status("This endpoint is attached to a roundabout port. Move an interior knot or the free end; the roundabout mouth stays fixed.");return preview();}
+                    m_portHandleDrag=true;
+                    status("This roundabout handle follows its port ray. Drag along the approach to change its length; the mouth stays fixed.");
+                }
             }
         }
         else if(m_dragging && m_drafting && m_road<m_draft.roads.size() && m_knot<m_draft.roads[m_road].knots.size())
         {
-            auto &knot=m_draft.roads[m_road].knots[m_knot];if(m_mode==Mode::Move)knot.position=hit;
+            auto &road=m_draft.roads[m_road];auto &knot=road.knots[m_knot];
+            if(m_portHandleDrag)
+            {
+                if(const auto port=attachedPort(m_draft,road,m_knot))
+                {
+                    const bool active=(port->atStart && m_mode==Mode::OutHandle) || (!port->atStart && m_mode==Mode::InHandle);
+                    const auto direction=port->outward*(active?1.f:-1.f);
+                    const auto delta=hit-knot.position;
+                    const float length=delta.x*direction.x+delta.z*direction.z;
+                    if(!std::isfinite(length) || length<=.001f)
+                    {status("Keep the handle on its port ray, away from the roundabout mouth. The last valid handle is retained.");return preview();}
+                    auto handle=direction*length;handle.y=port->gradeX*handle.x+port->gradeZ*handle.z;
+                    if(m_mode==Mode::InHandle)knot.inHandle=handle;else knot.outHandle=handle;
+                    status("Handle projected onto the roundabout port direction; release to commit one undoable edit.");
+                    return preview();
+                }
+                status("The roundabout connection changed. Cancel this draft and select the approach again.");return preview();
+            }
+            if(m_mode==Mode::Move)knot.position=hit;
             else if(m_mode==Mode::InHandle)knot.inHandle=hit-knot.position;
             else {knot.outHandle=hit-knot.position;if(m_mode==Mode::Draw){knot.inHandle=-knot.outHandle;m_manualHandles.insert(knot.id);}}
         }

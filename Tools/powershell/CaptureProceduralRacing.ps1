@@ -11,12 +11,13 @@ param(
     [ValidateSet('grid', 'lsystem')][string]$CityLayout = 'grid',
     [ValidatePattern('^\d+x\d+$')][string]$Resolution = '1280x720',
     [ValidateRange(0.1, 3600)][double]$Seconds = 10,
-    [ValidateSet('follow', 'car', 'track', 'corner', 'junction', 'street', 'boulevard', 'frontage', 'facade', 'building')][string[]]$Views = @('car', 'track', 'corner', 'follow'),
+    [ValidateSet('follow', 'car', 'track', 'corner', 'junction', 'hillside', 'street', 'boulevard', 'frontage', 'facade', 'building')][string[]]$Views = @('car', 'track', 'corner', 'follow'),
     [string]$Replay,
     [switch]$NoEffects,
     [switch]$FoliageWorld,
     [switch]$RoadAuthoringShowcase,
     [switch]$CityTerrainRoads,
+    [ValidateRange(0, 2)][double]$CityTerrainRelief = 1,
     [switch]$ExportMaterials,
     [ValidateRange(30, 7200)][int]$TimeoutSeconds = 600,
     [ValidateRange(0, 100)][int]$CityStreetDetail = 100,
@@ -30,6 +31,7 @@ if ($CityTerrainRoads) { $Scene = 'city' }
 if ($streetDetailExplicit -and !$CityTerrainRoads) { throw '-CityStreetDetail requires -CityTerrainRoads.' }
 if ($Views -contains 'frontage' -and !$CityTerrainRoads) { throw '-Views frontage requires -CityTerrainRoads.' }
 if ($Views -contains 'junction' -and !$CityTerrainRoads) { throw '-Views junction requires -CityTerrainRoads.' }
+if (($Views -contains 'hillside' -or $PSBoundParameters.ContainsKey('CityTerrainRelief')) -and !$CityTerrainRoads) { throw 'The hillside view and terrain relief require -CityTerrainRoads.' }
 if (($CityBuildingStyle -or $CityBuildingMeshes.Count -or $Views -contains 'facade' -or $Views -contains 'building') -and
     ($Scene -ne 'city' -or $RoadAuthoringShowcase)) { throw 'Building styles, mesh overrides, and the facade/building views require a generated city.' }
 if ($RoadAuthoringShowcase -and $CityTerrainRoads) { throw 'Choose -RoadAuthoringShowcase or -CityTerrainRoads.' }
@@ -93,6 +95,7 @@ $diffPath = Join-Path $output 'working-tree.patch'
 & git -C $repoRoot diff --binary HEAD "--output=$diffPath"
 if ($LASTEXITCODE -ne 0) { throw 'Cannot capture local diff.' }
 $sourceRoots = @('Engine/cpp/Include/WPProcedural', 'Engine/cpp/Source/WPProcedural', 'Engine/cpp/Include/WPGraphics', 'Engine/cpp/Source/WPGraphics', 'Engine/cpp/Include/WPImGui', 'Engine/cpp/Source/WPImGui', 'Engine/cpp/Include/Workphone/Graphics', 'Engine/cpp/Source/Workphone/Graphics', 'Engine/cpp/Include/Workphone/Interface/Graphics', 'Engine/cpp/Include/Workphone/Interface/Procedural', 'Engine/cpp/Source/Workphone/Interface/Graphics', 'Engine/cpp/Include/Workphone/Scene', 'Engine/cpp/Source/Workphone/Scene', 'Engine/c/Include/WorkphoneGraphics', 'Engine/c/Source/WorkphoneGraphics', 'Engine/c/Include/WorkphonePlatformWin32', 'Engine/c/Source/WorkphonePlatformWin32', 'Samples/cpp/VehicleAdvanced')
+$sourceRoots += @('Engine/c/Include/WorkphonePhysics', 'Engine/c/Source/WorkphonePhysics')
 $sources = @($sourceRoots | ForEach-Object { Get-ChildItem -LiteralPath (Join-Path $repoRoot $_) -Recurse -File | Where-Object { $_.Extension -in '.cpp', '.c', '.hpp', '.h', '.txt' } } | Sort-Object FullName -Unique | ForEach-Object { Get-Identity $_.FullName })
 $sources += @('Engine/cpp/Source/Workphone/System/FSM.cpp', 'Engine/cpp/Source/Workphone/System/FSMManager.cpp', 'Engine/cpp/Include/Workphone/System/FSM.hpp', 'Engine/cpp/Include/Workphone/System/FSMManager.hpp') | ForEach-Object { Get-Identity (Join-Path $repoRoot $_) }
 $binaries = @(Get-ChildItem -LiteralPath $binaryRoot -File | Where-Object { $_.Extension -eq '.dll' -or $_.Name -eq 'SampleVehicleAdvanced.exe' } | Sort-Object Name | ForEach-Object { Get-Identity $_.FullName })
@@ -105,6 +108,7 @@ $manifest = [ordered]@{
     cityLayout = $(if ($RoadAuthoringShowcase) { 'authored-splines' } elseif ($Scene -eq 'city') { $CityLayout } else { $null })
     roadAuthoringShowcase = [bool]$RoadAuthoringShowcase
     cityTerrainRoads = [bool]$CityTerrainRoads
+    cityTerrainRelief = $(if ($CityTerrainRoads) { $CityTerrainRelief } else { $null })
     cityStreetDetail = $(if ($streetDetailExplicit) { $CityStreetDetail } else { $null })
     cityBuildingStyle = $(if ($CityBuildingStyle) { $CityBuildingStyle.ToLowerInvariant() } else { $null })
     cityBuildingMeshes = $buildingMeshPaths
@@ -128,7 +132,7 @@ try {
         $arguments = @('--seed', "$Seed", '--quality', $Quality, '--plugins', (Quote-ProcessArgument $plugins), '--capture', (Quote-ProcessArgument $capture), '--view', $view, '--no-hud', '--resolution', $Resolution, '--no-audio', '--benchmark', $Seconds.ToString([Globalization.CultureInfo]::InvariantCulture), '--evidence', (Quote-ProcessArgument $evidence))
         if ($Scene -eq 'city') { $arguments += @('--city', '--city-blocks', "$CityBlocks", '--city-route', "$CityRoute", '--city-layout', $CityLayout) }
         if ($RoadAuthoringShowcase) { $arguments += '--road-authoring-showcase' }
-        if ($CityTerrainRoads) { $arguments += '--city-terrain-roads' }
+        if ($CityTerrainRoads) { $arguments += @('--city-terrain-roads', '--city-terrain-relief', $CityTerrainRelief.ToString([Globalization.CultureInfo]::InvariantCulture)) }
         if ($streetDetailExplicit) { $arguments += @('--city-street-detail', "$CityStreetDetail") }
         if ($CityBuildingStyle) { $arguments += @('--city-building-style', $CityBuildingStyle.ToLowerInvariant()) }
         foreach ($role in $buildingMeshRoles) {

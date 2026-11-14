@@ -747,17 +747,41 @@ static int test_mesh( void )
 static int test_degenerate_mesh( void )
 {
     float vertices[9] = { 0 };
-    unsigned indices[3] = { 0, 1, 7 };
+    unsigned indices[3] = { 0, 1, 2 };
+    unsigned invalid_indices[3] = { 0, 1, 7 };
     wp_collision_mesh_data data = { vertices, 3, indices, 1 };
+    wp_collision_mesh_data invalid_data = { vertices, 3, invalid_indices, 1 };
     wp_collision_shape *mesh_shape = wp_collision_shape_create( WORKPHONE_COLLISION_SHAPE_MESH );
     wp_collision_shape *sphere = wp_collision_shape_create( WORKPHONE_COLLISION_SHAPE_SPHERE );
     wp_narrowphase *np = wp_narrowphase_create( WORKPHONE_NARROWPHASE_HYBRID );
     wp_rigidbody *a = wp_rigidbody_create( WORKPHONE_RIGIDBODY_DYNAMIC ),
                  *b = wp_rigidbody_create( WORKPHONE_RIGIDBODY_STATIC );
     CHECK( np && a && b && sphere && mesh_shape );
-    wp_collision_shape_set_mesh_data( mesh_shape, &data );
+    uint64_t revision = wp_collision_shape_get_revision( mesh_shape );
+    /* Invalid input is rejected before publication, even through the legacy
+     * void adapter. Keep a separate array: mesh descriptors are shallow. */
+    CHECK( !wp_collision_shape_try_set_mesh_data( mesh_shape, &invalid_data ) );
+    CHECK( wp_collision_shape_get_triangle_mesh( mesh_shape ) == NULL );
+    CHECK( wp_collision_shape_get_revision( mesh_shape ) == revision );
+    const wp_collision_mesh_data *stored = wp_collision_shape_get_mesh_data( mesh_shape );
+    CHECK( stored && !stored->vertices && !stored->indices &&
+           stored->vertex_count == 0 && stored->triangle_count == 0 );
+
+    /* Coincident finite vertices with in-range indices are supported geometry:
+     * the BVH retains the triangle and primitive contacts reduce it to a point. */
+    CHECK( wp_collision_shape_try_set_mesh_data( mesh_shape, &data ) );
     wp_triangle_mesh *mesh = (wp_triangle_mesh *)wp_collision_shape_get_triangle_mesh( mesh_shape );
     CHECK( mesh );
+    revision = wp_collision_shape_get_revision( mesh_shape );
+    CHECK( !wp_collision_shape_try_set_mesh_data( mesh_shape, &invalid_data ) );
+    CHECK( wp_collision_shape_get_triangle_mesh( mesh_shape ) == mesh );
+    CHECK( wp_collision_shape_get_revision( mesh_shape ) == revision );
+    wp_collision_shape_set_mesh_data( mesh_shape, &invalid_data );
+    CHECK( wp_collision_shape_get_triangle_mesh( mesh_shape ) == mesh );
+    CHECK( wp_collision_shape_get_revision( mesh_shape ) == revision );
+    stored = wp_collision_shape_get_mesh_data( mesh_shape );
+    CHECK( stored && stored->vertices == vertices && stored->indices == indices &&
+           stored->vertex_count == 3 && stored->triangle_count == 1 );
     wp_triangle_mesh_query query = { 0 };
     query.sphere = 1;
     query.radius = 1;
@@ -765,12 +789,12 @@ static int test_degenerate_mesh( void )
     visit_result result = { 0, seen, 1 };
     wp_triangle_mesh_query_stats stats = { 0 };
     wp_triangle_mesh_visit( mesh, &query, collect_triangle, &result, &stats );
-    CHECK( result.count == 0 && stats.full_scan_fallbacks == 1 );
-    indices[2] = 2;
+    CHECK( result.count == 1 && seen[0] && stats.candidates == 1 );
     wp_triangle_mesh_refit_aabb( mesh );
     wp_rigidbody_set_position( a, v( 0, .25f, 0 ) );
     wp_contact_manifold m;
     CHECK( wp_narrowphase_test_pair( np, a, sphere, b, mesh_shape, &m ) );
+    CHECK( m.contact_count == 1 );
     CHECK( isfinite( m.contacts[0].penetration_depth ) );
     CHECK( fabsf( m.contacts[0].penetration_depth - .25f ) < 1.e-6f );
     CHECK( close_vector( m.contacts[0].normal_world_on_b, v( 0, -1, 0 ), 1.e-6f ) );

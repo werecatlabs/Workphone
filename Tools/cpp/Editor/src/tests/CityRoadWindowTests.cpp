@@ -6,6 +6,7 @@
 #include <ui/UIManager.hpp>
 #include <Workphone/Workphone.hpp>
 #include <Workphone/Scene/Components/CityRoadAuthoring.hpp>
+#include <Workphone/Scene/Components/CityRoadTerrainMesh.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
 #include <WPImGui/SceneViewportToolInput.hpp>
 
@@ -93,8 +94,17 @@ BOOST_AUTO_TEST_CASE(city_road_viewport_authoring_test)
     for(int z=0;z<33;++z)for(int x=0;x<33;++x)data.heights[size_t(z)*33+x]=2+.01f*(-128+x*8);
     String error;BOOST_REQUIRE_MESSAGE(terrain->applyTerrainData(data,error),error);
     auto cityActor=manager->createActor();cityActor->setName("City tool test source");auto city=cityActor->addComponent<scene::CityRoadAuthoring>();BOOST_REQUIRE(city);scene->addActor(cityActor);
-    unsigned publications=0;bool applicationOnly=true;
-    city->setPublishCallback([&](const auto &,const auto &,auto,const auto &,String &){++publications;applicationOnly=applicationOnly && Thread::getCurrentTask()==TaskId::Application;return true;});
+    unsigned publications=0,meshPreflights=0;bool applicationOnly=true,preflightRoundaboutEdits=false;
+    city->setPublishCallback([&](const auto &source,const auto &bake,auto ground,const auto &placement,String &failure)
+    {
+        if(preflightRoundaboutEdits)
+        {
+            scene::CityRoadTerrainMesh geometry;
+            if(!scene::buildCityRoadTerrainMesh(source,bake,ground,placement,geometry,failure))return false;
+            ++meshPreflights;
+        }
+        ++publications;applicationOnly=applicationOnly && Thread::getCurrentTask()==TaskId::Application;return true;
+    });
     window->setWindowVisible(true);selection->clearSelection();selection->addSelectedObject(terrainActor);window->updateSelection();
     const auto activate=[&](const String &label)
     {
@@ -209,6 +219,7 @@ BOOST_AUTO_TEST_CASE(city_road_viewport_authoring_test)
     activate("Draw Road");ray("begin",-40,25);ray("commit",-40,25);ray("cancel",0,0);BOOST_CHECK_EQUAL(city->getSource().roads.size(),1u);
     activate("Place Roundabout (4 approaches)");ray("begin",0,40);
     BOOST_REQUIRE_EQUAL(city->getSource().roundabouts.size(),1u);BOOST_CHECK_EQUAL(city->getSource().roads.size(),5u);
+    const auto roundaboutControlSource=city->getSource();
     BOOST_CHECK_EQUAL(city->getSource().roundabouts[0].ports.size(),4u);
     for(const auto &port:city->getSource().roundabouts[0].ports)
         BOOST_CHECK(std::any_of(city->getSource().roads.begin(),city->getSource().roads.end(),[&](const auto &road){return road.id==port.approachId;}));
@@ -389,6 +400,92 @@ BOOST_AUTO_TEST_CASE(city_road_viewport_authoring_test)
     BOOST_CHECK(city->getSource().roads[0].closed);
     BOOST_CHECK(seam.front().id==closedRoad.knots.front().id && seam[2].id==closedRoad.knots.back().id);
     BOOST_CHECK_SMALL((seam.back().position-seamPick).length(),.002f);
+    BOOST_REQUIRE_MESSAGE(city->setSourceJSON(roadJSON(openSource),city->getSourceRevision(),error),error);
+
+    // Exercise the actual port/terrain mesh contract through native UI gestures.
+    // Keep this focused city isolated from the earlier unrelated drawing fixture.
+    auto controlFixture=roundaboutControlSource;
+    controlFixture.roads.erase(std::remove_if(controlFixture.roads.begin(),controlFixture.roads.end(),[&](const auto &road)
+    {return std::none_of(controlFixture.roundabouts.front().ports.begin(),controlFixture.roundabouts.front().ports.end(),
+        [&](const auto &port){return port.approachId==road.id;});}),controlFixture.roads.end());
+    preflightRoundaboutEdits=true;
+    for(const bool reversed:{false,true})
+    {
+        BOOST_TEST_CONTEXT("Roundabout controls: reversed angled approach="<<reversed)
+        {
+            auto candidate=controlFixture;
+            if(reversed)
+            {
+                auto &junction=candidate.roundabouts.front();
+                const auto rotate=[](Vector3F value){return Vector3F(.6f*value.x-.8f*value.z,0,.8f*value.x+.6f*value.z);};
+                for(auto &port:junction.ports)port.outward=rotate(port.outward);
+                for(auto &road:candidate.roads)for(auto &knot:road.knots)
+                {
+                    knot.position=junction.center+rotate(knot.position-junction.center);
+                    knot.position.y=junction.center.y+junction.gradeX*(knot.position.x-junction.center.x)+junction.gradeZ*(knot.position.z-junction.center.z)-road.heightOffset;
+                    for(auto handle:{&knot.inHandle,&knot.outHandle})
+                    {*handle=rotate(*handle);handle->y=junction.gradeX*handle->x+junction.gradeZ*handle->z;}
+                }
+                auto &road=candidate.roads.front();std::reverse(road.knots.begin(),road.knots.end());
+                for(auto &knot:road.knots)std::swap(knot.inHandle,knot.outHandle);
+            }
+            BOOST_REQUIRE_MESSAGE(city->setSourceJSON(roadJSON(candidate),city->getSourceRevision(),error),error);
+            const auto originalRoad=city->getSource().roads.front();
+            const auto originalJunction=city->getSource().roundabouts.front();
+            const size_t attached=reversed?originalRoad.knots.size()-1:0,freeEnd=reversed?0:originalRoad.knots.size()-1;
+            const auto mouth=originalRoad.knots[attached].position;
+            const auto direction=originalJunction.ports.front().outward.normaliseCopy();
+            const Vector3F side{-direction.z,0,direction.x};
+            const auto originalHandle=reversed?originalRoad.knots[attached].inHandle:originalRoad.knots[attached].outHandle;
+            const auto activeHandle=[&](){const auto &knot=city->getSource().roads.front().knots[attached];return reversed?knot.inHandle:knot.outHandle;};
+            const auto checkAttachment=[&]()
+            {
+                const auto &road=city->getSource().roads.front();const auto &junction=city->getSource().roundabouts.front();
+                BOOST_CHECK(road.id==originalRoad.id);BOOST_REQUIRE_EQUAL(road.knots.size(),originalRoad.knots.size());
+                for(size_t i=0;i<road.knots.size();++i)BOOST_CHECK(road.knots[i].id==originalRoad.knots[i].id);
+                BOOST_CHECK(road.knots[attached].position==mouth);
+                BOOST_CHECK(junction.junctionId==originalJunction.junctionId);BOOST_CHECK(junction.center==originalJunction.center);
+                BOOST_CHECK_EQUAL(junction.gradeX,originalJunction.gradeX);BOOST_CHECK_EQUAL(junction.gradeZ,originalJunction.gradeZ);
+                BOOST_REQUIRE_EQUAL(junction.ports.size(),originalJunction.ports.size());
+                for(size_t i=0;i<junction.ports.size();++i)
+                {BOOST_CHECK(junction.ports[i].approachId==originalJunction.ports[i].approachId);BOOST_CHECK(junction.ports[i].outward==originalJunction.ports[i].outward);}
+            };
+            const auto beforeMove=city->getSourceJSON();const auto beforeMovePublications=publications;
+            activate("Move Knot");ray("begin",mouth.x,mouth.z);
+            BOOST_CHECK(diagnostic().find("attached to a roundabout port")!=String::npos);
+            ray("update",mouth.x+side.x*3,mouth.z+side.z*3);ray("commit",mouth.x+side.x*3,mouth.z+side.z*3);
+            BOOST_CHECK(city->getSourceJSON()==beforeMove);BOOST_CHECK_EQUAL(publications,beforeMovePublications);checkAttachment();
+
+            const auto pick=mouth+originalHandle,drag=mouth+direction*18.f+side*5.f;
+            activate(reversed?"In Handle":"Out Handle");ray("begin",pick.x,pick.z);ray("update",drag.x,drag.z);ray("commit",drag.x,drag.z);
+            BOOST_REQUIRE_MESSAGE(publications==beforeMovePublications+1,diagnostic());
+            auto expectedHandle=direction*18.f;expectedHandle.y=originalJunction.gradeX*expectedHandle.x+originalJunction.gradeZ*expectedHandle.z;
+            BOOST_CHECK_SMALL((activeHandle()-expectedHandle).length(),.0001f);checkAttachment();
+            BOOST_CHECK(diagnostic().find("port direction")!=String::npos);
+            activate("Undo");BOOST_CHECK(activeHandle()==originalHandle);checkAttachment();
+            activate("Redo");BOOST_CHECK_SMALL((activeHandle()-expectedHandle).length(),.0001f);checkAttachment();
+            activate("Undo");BOOST_CHECK(activeHandle()==originalHandle);
+
+            const auto beforeCrossing=city->getSourceJSON();const auto beforeCrossingPublications=publications;
+            activate(reversed?"In Handle":"Out Handle");ray("begin",pick.x,pick.z);
+            const auto behind=mouth-direction*4.f;ray("update",behind.x,behind.z);
+            BOOST_CHECK(diagnostic().find("last valid handle is retained")!=String::npos);
+            ray("commit",behind.x,behind.z);
+            BOOST_CHECK(city->getSourceJSON()==beforeCrossing);BOOST_CHECK_EQUAL(publications,beforeCrossingPublications);
+
+            // Moving the other end creates a real curved approach; its mouth tangent
+            // must remain exact and pass the native terrain/roundabout seam checks.
+            const auto freePoint=originalRoad.knots[freeEnd].position,freeDrag=freePoint+side*2.f;
+            activate("Move Knot");ray("begin",freePoint.x,freePoint.z);ray("update",freeDrag.x,freeDrag.z);ray("commit",freeDrag.x,freeDrag.z);
+            BOOST_REQUIRE_MESSAGE(publications==beforeCrossingPublications+1,diagnostic());
+            const auto actualFree=city->getSource().roads.front().knots[freeEnd].position;
+            BOOST_CHECK_SMALL(actualFree.x-freeDrag.x,.0001f);BOOST_CHECK_SMALL(actualFree.z-freeDrag.z,.0001f);
+            BOOST_CHECK(activeHandle()==originalHandle);checkAttachment();
+            activate("Undo");BOOST_CHECK(city->getSource().roads.front().knots[freeEnd].position==freePoint);checkAttachment();
+        }
+    }
+    BOOST_CHECK_GE(meshPreflights,14u);
+    preflightRoundaboutEdits=false;
     BOOST_REQUIRE_MESSAGE(city->setSourceJSON(roadJSON(openSource),city->getSourceRevision(),error),error);
 
     const auto beforeHide=city->getSourceRevision();activate("Draw Road");

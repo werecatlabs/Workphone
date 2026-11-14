@@ -196,6 +196,8 @@ namespace
         auto folded=source();folded.roads[0].width=12;
         folded.roads[0].knots[0].position={-3,0,0};folded.roads[0].knots[0].outHandle={0,0,-6};
         folded.roads[0].knots[1].position={3,0,0};folded.roads[0].knots[1].inHandle={0,0,-6};reject(folded,options);
+        require(error.find(folded.roads[0].id.c_str())!=String::npos && error.find("width 12 m")!=String::npos &&
+            error.find("near")!=String::npos,"Tight-corner rejection did not identify its road, width and location");
         auto closed=source();closed.roads[0].closed=true;const float c=16.568543f;
         closed.roads[0].knots={
             {"40000000-0000-4000-8000-000000000001",{30,0,0},{0,0,c},{0,0,-c}},
@@ -232,6 +234,59 @@ namespace
         r.knots[0].position={0,0,0};r.knots[0].outHandle={10,1,0};r.knots[1].position={30,3,0};r.knots[1].inHandle={-10,-1,0};
         check(sampleCityRoadSplines(fixed,options,[](const Vector3F &,float &){return false;},bake,error),error);
         for(const auto &p:bake.roads[0].points)require(std::abs(p.position.y-.1f*p.position.x-.2f)<.0001f,"Fixed road ignored its authored vertical profile");
+    }
+    void drapedPlanAndEndpointTangents()
+    {
+        auto original=source(true); String error; CityRoadSplineSampling options;
+        const auto plane=[](const Vector3F &point,float &height){height=11+.02f*point.x-.03f*point.z;return true;};
+        CityRoadSplineBake expected,actual;
+        check(sampleCityRoadSplines(original,options,plane,expected,error),error);
+        auto elevated=original;
+        elevated.roads[0].knots[0].position.y=500;
+        elevated.roads[0].knots[0].outHandle.y=20000;
+        elevated.roads[0].knots[1].position.y=-700;
+        elevated.roads[0].knots[1].inHandle.y=-30000;
+        const auto canonical=encode(elevated);
+        options.maximumSamples=u32(expected.roads[0].points.size());
+        check(sampleCityRoadSplines(elevated,options,plane,actual,error),error);
+        sameBake(expected,actual);
+        require(encode(elevated)==canonical,"XZ-only drape sampling rewrote canonical knot or handle heights");
+        CityRoadSplineSource reopened;
+        check(deserializeCityRoadSplineSource(std::string_view(canonical.data(),canonical.size()),reopened,error),error);
+        check(sampleCityRoadSplines(reopened,options,plane,actual,error),error);
+        sameBake(expected,actual);
+        // A zero endpoint handle still has an exact limiting direction. The
+        // finite first chord changes with tolerance and must not define a cap.
+        auto zero=source(true); auto &road=zero.roads[0]; road.width=4;
+        road.knots[0].outHandle={0,500,0};
+        road.knots[1].position={100,900,-100};
+        road.knots[1].inHandle={-100,-400,20};
+        options.maximumSamples=65536;
+        const auto flat=[](const Vector3F &,float &height){height=7;return true;};
+        const auto zeroCanonical=encode(zero);
+        for(float step:{2.f,.5f})
+        {
+            options.maxStep=step;
+            check(sampleCityRoadSplines(zero,options,flat,actual,error),error);
+            const auto &start=actual.roads[0].points.front();
+            require(pointsNear(start.tangent,{0,0,-1},.000001f) &&
+                pointsNear(start.left,{-2,7,0},.000001f),"Zero-handle start cap used a sampled chord instead of the limiting tangent");
+        }
+        require(encode(zero)==zeroCanonical,"Endpoint tangent fitting modified authored controls");
+        std::reverse(road.knots.begin(),road.knots.end());
+        for(auto &knot:road.knots)std::swap(knot.inHandle,knot.outHandle);
+        for(float step:{2.f,.5f})
+        {
+            options.maxStep=step;
+            check(sampleCityRoadSplines(zero,options,flat,actual,error),error);
+            require(pointsNear(actual.roads[0].points.back().tangent,{0,0,1},.000001f),
+                "Zero-handle end cap used a sampled chord instead of the limiting tangent");
+        }
+        auto fixed=source(); fixed.roads[0].knots[0].outHandle={0,.01f,0};
+        const auto retained=actual;
+        require(!sampleCityRoadSplines(fixed,options,{},actual,error) && !error.empty(),
+            "A genuinely vertical Fixed endpoint was concealed by a sampled chord");
+        sameBake(retained,actual);
     }
     void budgetDenials()
     {
@@ -270,7 +325,7 @@ namespace
 int main( int argc, char **argv )
 {
     int result=0;
-    try {codec();versionTwoCodec();sampling();terrain();budgetDenials();if(argc>1)fixture(argv[1]);std::cout<<"City road spline source: v1/v2 codec, roundabout GUID references, Bezier, terrain, allocation denials and transactional failures PASS\n";}
+    try {codec();versionTwoCodec();sampling();terrain();drapedPlanAndEndpointTangents();budgetDenials();if(argc>1)fixture(argv[1]);std::cout<<"City road spline source: v1/v2 codec, roundabout GUID references, Bezier, terrain, allocation denials and transactional failures PASS\n";}
     catch(const std::exception &e){std::cerr<<"City road spline source: "<<e.what()<<'\n';result=1;}
     WorldStreamingScheduler::shutdownShared();return result;
 }

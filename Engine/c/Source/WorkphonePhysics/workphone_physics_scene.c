@@ -10,6 +10,7 @@
 #include "workphone_physics_constraint.h"
 #include "workphone_physics_narrowphase.h"
 #include "workphone_physics_triangle_mesh.h"
+#include "workphone_physics_ray_triangle.h"
 #include "workphone_physics_bounds.h"
 #include "workphone_physics_geometry.h"
 #include "workphone_physics_cache_internal.h"
@@ -459,46 +460,8 @@ static wp_s32 ray_aabb( wp_vec3f start, wp_vec3f dir, wp_f32 max_dist, wp_vec3f 
 static wp_s32 ray_triangle( wp_vec3f start, wp_vec3f dir, wp_f32 max_dist, wp_vec3f a, wp_vec3f b,
                             wp_vec3f c, wp_f32 *out_t, wp_vec3f *out_normal )
 {
-    const wp_f32 epsilon = 1.0e-7f;
-    wp_vec3f edge1 = vec3f_sub( b, a );
-    wp_vec3f edge2 = vec3f_sub( c, a );
-    wp_vec3f p = vec3f_cross( dir, edge2 );
-    wp_f32 determinant = vec3f_dot( edge1, p );
-    wp_vec3f s;
-    wp_f32 inverse;
-    wp_f32 u;
-    wp_vec3f q;
-    wp_f32 v;
-    wp_f32 t;
-
-    if( fabsf( determinant ) <= epsilon )
-    {
-        return 0;
-    }
-
-    inverse = 1.0f / determinant;
-    s = vec3f_sub( start, a );
-    u = vec3f_dot( s, p ) * inverse;
-    if( u < 0.0f || u > 1.0f )
-    {
-        return 0;
-    }
-
-    q = vec3f_cross( s, edge1 );
-    v = vec3f_dot( dir, q ) * inverse;
-    if( v < 0.0f || u + v > 1.0f )
-    {
-        return 0;
-    }
-
-    t = vec3f_dot( edge2, q ) * inverse;
-    if( t < 0.0f || t > max_dist )
-    {
-        return 0;
-    }
-
-    *out_t = t;
-    *out_normal = vec3f_normalize( vec3f_cross( edge1, edge2 ) );
+    if( !wp_ray_triangle_distance_exact( start, dir, max_dist, a, b, c, out_t ) ) return 0;
+    *out_normal = wp_ray_triangle_normal_exact( a, b, c );
     return 1;
 }
 

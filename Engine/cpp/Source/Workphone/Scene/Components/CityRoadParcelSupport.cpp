@@ -1,7 +1,9 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Scene/Components/CityRoadParcelSupport.hpp>
+#include <Workphone/Scene/Components/CityRoadJunctions.hpp>
 #include <Workphone/Scene/Components/CityRoadTerrainMesh.hpp>
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <limits>
 #include <new>
@@ -38,6 +40,99 @@ namespace workphone::scene
         {
             double ax, az, bx, bz, clearance;
         };
+
+        struct Point
+        {
+            double x, z;
+        };
+
+        struct ReservedTriangle
+        {
+            std::array<Point, 3> points;
+            double x0, x1, z0, z1;
+        };
+
+        bool triangleOverlap( const Rectangle &r, const ReservedTriangle &triangle )
+        {
+            const double halfX = r.width * .5, halfZ = r.depth * .5;
+            if( r.x + halfX < triangle.x0 || r.x - halfX > triangle.x1 ||
+                r.z + halfZ < triangle.z0 || r.z - halfZ > triangle.z1 )
+            {
+                return false;
+            }
+            // Rectangle axes were checked by the bounds. The three triangle
+            // edge normals complete SAT, including boundary contact as reserved.
+            for( size_t i = 0; i < triangle.points.size(); ++i )
+            {
+                const auto a = triangle.points[i], b = triangle.points[( i + 1 ) % 3];
+                const double nx = a.z - b.z, nz = b.x - a.x;
+                double minimum = std::numeric_limits<double>::max(), maximum = -minimum;
+                for( const auto p : triangle.points )
+                {
+                    const double projected = ( p.x - r.x ) * nx + ( p.z - r.z ) * nz;
+                    minimum = std::min( minimum, projected );
+                    maximum = std::max( maximum, projected );
+                }
+                const double radius = std::abs( nx ) * halfX + std::abs( nz ) * halfZ;
+                if( maximum < -radius || minimum > radius ) return false;
+            }
+            return true;
+        }
+
+        SourceBudgetVector<ReservedTriangle> junctionReservations(
+            const procedural::CityRoadSplineSource &source,
+            const procedural::CityRoadSplineBake &bake,
+            const procedural::CityRoadHeightSampler &sampler, String &error )
+        {
+            CityRoadJunctionBake connections;
+            if( !buildCityRoadJunctions( source, bake, sampler, {}, connections, error ) )
+            {
+                throw std::runtime_error( error.c_str() );
+            }
+            SourceBudgetVector<ReservedTriangle> triangles;
+            const auto point = []( Vector3F p ) { return Point{ p.x, p.z }; };
+            const auto append = [&]( Point a, Point b, Point c ) {
+                const double area = ( b.x - a.x ) * ( c.z - a.z ) -
+                                    ( b.z - a.z ) * ( c.x - a.x );
+                require( std::isfinite( area ), "Parcel junction reservation is not finite." );
+                if( std::abs( area ) < 1e-10 ) return;
+                require( triangles.size() < 65536, "Parcel junction reservation capacity exceeded." );
+                triangles.push_back( { { a, b, c }, std::min( { a.x, b.x, c.x } ),
+                    std::max( { a.x, b.x, c.x } ), std::min( { a.z, b.z, c.z } ),
+                    std::max( { a.z, b.z, c.z } ) } );
+            };
+            for( const auto &connection : connections.junctions )
+            {
+                const auto vertex = [&]( u32 index ) {
+                    require( index <= connection.boundary.size(), "Parcel junction index is invalid." );
+                    return point( index ? connection.boundary[index - 1] : connection.center );
+                };
+                require( connection.indices.size() % 3 == 0, "Parcel junction triangles are invalid." );
+                for( size_t i = 0; i < connection.indices.size(); i += 3 )
+                    append( vertex( connection.indices[i] ), vertex( connection.indices[i + 1] ),
+                            vertex( connection.indices[i + 2] ) );
+                for( const auto &corner : connection.corners )
+                {
+                    require( corner.points.size() == corner.outward.size(),
+                             "Parcel junction pavement offsets are invalid." );
+                    for( size_t i = 1; i < corner.points.size(); ++i )
+                    {
+                        const auto a = point( corner.points[i - 1] ), b = point( corner.points[i] ),
+                                   na = point( corner.outward[i - 1] ), nb = point( corner.outward[i] );
+                        const auto offset = []( Point p, Point n, double amount ) {
+                            return Point{ p.x + n.x * amount, p.z + n.z * amount };
+                        };
+                        // Exactly CityRoadFootways' corner-strip endpoints. These
+                        // rounded walks extend beyond the straight-road capsules;
+                        // a disk around the junction would unnecessarily lose lots.
+                        const auto ai = offset( a, na, .05 ), ao = offset( a, na, pedestrianEnvelope ),
+                                   bi = offset( b, nb, .05 ), bo = offset( b, nb, pedestrianEnvelope );
+                        append( ai, ao, bo ); append( ai, bo, bi );
+                    }
+                }
+            }
+            return triangles;
+        }
 
         double pointSegmentSquared( double x, double z, const Segment &segment )
         {
@@ -137,7 +232,8 @@ namespace workphone::scene
             }
             const std::string_view text( error.data(), error.size() );
             return text == "Terrain sample is outside, a hole or unavailable." ||
-                   text == "Road profile exceeds grade or has zero horizontal span." ||
+                   text.find( "Road profile exceeds grade" ) == 0 ||
+                   text == "Road profile has zero horizontal span." ||
                    text == "A road or junction footprint intersects a terrain hole." ||
                    text == "Road or junction footprint extends outside its bound terrain." ||
                    text == "Road footprint is not completely supported by terrain cells." ||
@@ -152,10 +248,24 @@ namespace workphone::scene
                                  procedural::OpenCityLayout &output, u32 &culled, u32 &supportChecks,
                                  String &error )
     {
+        return prepareCityRoadParcels( input, source, bake, std::move( terrain ), placement, output,
+                                      culled, supportChecks, error, {} );
+    }
+
+    bool prepareCityRoadParcels( const procedural::OpenCityLayout &input,
+                                 const procedural::CityRoadSplineSource &source,
+                                 const procedural::CityRoadSplineBake &bake,
+                                 render::TerrainSnapshot terrain, const Transform3<real_Num> &placement,
+                                 procedural::OpenCityLayout &output, u32 &culled, u32 &supportChecks,
+                                 String &error, const CityRoadParcelSupportOptions &options )
+    {
         try
         {
             require( terrain && input.lots.size() <= 400,
                      "Parcel support requires retained terrain and at most400 parcels." );
+            require( std::isfinite( options.minimumBuildingSpan ) && options.minimumBuildingSpan >= 2 &&
+                         options.minimumBuildingSpan <= 30,
+                     "Parcel adaptation requires a finite minimum building span from 2 to 30 metres." );
             if( !render::validateTerrainPlacement( *terrain, placement, error ) ||
                 !procedural::validateCityRoadSplineSource( source, error ) )
             {
@@ -244,6 +354,16 @@ namespace workphone::scene
             const procedural::CityRoadHeightSampler sampler = [&]( const Vector3F &point, f32 &height ) {
                 return render::sampleTerrainHeight( *terrain, placement, point, height );
             };
+            const auto reservedJunctions = junctionReservations( source, bake, sampler, error );
+            const auto overlapsOrdinaryJunction = [&]( const Rectangle &footprint ) {
+                for( const auto &triangle : reservedJunctions )
+                {
+                    require( ++clearanceVisits <= 32000000,
+                             "Parcel road-clearance work budget exceeded." );
+                    if( triangleOverlap( footprint, triangle ) ) return true;
+                }
+                return false;
+            };
             for( auto lot : input.lots )
             {
                 const Rectangle footprint{ lot.parcelX, lot.parcelZ, lot.parcelWidth, lot.parcelDepth };
@@ -270,55 +390,105 @@ namespace workphone::scene
                         }
                     }
                 }
+                if( !excluded ) excluded = overlapsOrdinaryJunction( footprint );
                 if( excluded )
                 {
                     ++nextCulled;
                     continue;
                 }
-                ++nextChecks;
-                auto &sweep = rectangle.roads[0];
-                const bool alongX = lot.parcelWidth > lot.parcelDepth;
-                sweep.width = std::min( lot.parcelWidth, lot.parcelDepth );
-                const Vector3F span =
-                    alongX ? Vector3F( lot.parcelWidth, 0, 0 ) : Vector3F( 0, 0, lot.parcelDepth );
-                const Vector3F center{ lot.parcelX, 0, lot.parcelZ };
-                sweep.knots[0].position = center - span * .5f;
-                sweep.knots[1].position = center + span * .5f;
-                sweep.knots[0].outHandle = span / 3.f;
-                sweep.knots[1].inHandle = -span / 3.f;
-                const auto denialBefore = sourceBudgetDenialCount();
-                procedural::CityRoadSplineBake rectangleBake;
-                CityRoadTerrainMesh surface;
-                if( !procedural::sampleCityRoadSplines( rectangle, {}, sampler, rectangleBake, error ) ||
-                    !buildCityRoadTerrainMesh( rectangle, rectangleBake, terrain, placement, surface,
-                                               error, false ) )
+                const auto original = lot;
+                std::array<std::pair<float, float>, 25> scales;
+                size_t scaleIndex = 0;
+                for( float x : { 1.f, .85f, .7f, .55f, .4f } )
+                    for( float z : { 1.f, .85f, .7f, .55f, .4f } ) scales[scaleIndex++] = { x, z };
+                const bool frontageAlongX = lot.frontage == procedural::OpenCityLayout::Frontage::North ||
+                                            lot.frontage == procedural::OpenCityLayout::Frontage::South;
+                std::sort( scales.begin(), scales.end(), [&]( const auto &a, const auto &b ) {
+                    const float areaA = a.first * a.second, areaB = b.first * b.second;
+                    if( areaA != areaB ) return areaA > areaB;
+                    // Equal-area choices keep as much street frontage as possible.
+                    return frontageAlongX ? a.first > b.first : a.second > b.second;
+                } );
+                bool accepted = false;
+                for( size_t attempt = 0; attempt < ( options.shrinkForRelief ? scales.size() : 1 ); ++attempt )
                 {
-                    if( !unsupportedTerrain( error, denialBefore ) )
+                    lot = original;
+                    const auto scale = scales[attempt];
+                    if( attempt )
                     {
-                        throw std::runtime_error( error.c_str() );
+                        if( original.width * scale.first < options.minimumBuildingSpan ||
+                            original.depth * scale.second < options.minimumBuildingSpan ) continue;
+                        using Frontage = procedural::OpenCityLayout::Frontage;
+                        const float anchorX = lot.frontage == Frontage::West ? -1.f : lot.frontage == Frontage::East ? 1.f : 0.f;
+                        const float anchorZ = lot.frontage == Frontage::North ? -1.f : lot.frontage == Frontage::South ? 1.f : 0.f;
+                        lot.parcelX += anchorX * original.parcelWidth * ( 1 - scale.first ) * .5f;
+                        lot.parcelZ += anchorZ * original.parcelDepth * ( 1 - scale.second ) * .5f;
+                        lot.parcelWidth *= scale.first; lot.parcelDepth *= scale.second;
+                        lot.x = lot.parcelX + ( original.x - original.parcelX ) * scale.first;
+                        lot.z = lot.parcelZ + ( original.z - original.parcelZ ) * scale.second;
+                        lot.width *= scale.first; lot.depth *= scale.second;
+                        // Recheck even these mathematical subsets so float rounding
+                        // at large world coordinates cannot erode a road reservation.
+                        const Rectangle reduced{ lot.parcelX, lot.parcelZ, lot.parcelWidth, lot.parcelDepth };
+                        bool reserved = false;
+                        for( const auto &segment : segments )
+                        {
+                            require( ++clearanceVisits <= 32000000, "Parcel road-clearance work budget exceeded." );
+                            if( segmentRectangleSquared( segment, reduced ) <= segment.clearance * segment.clearance )
+                            { reserved = true; break; }
+                        }
+                        if( reserved || std::any_of( source.roundabouts.begin(), source.roundabouts.end(),
+                            [&]( const auto &junction ) { return junctionOverlap( reduced, junction ); } ) ||
+                            overlapsOrdinaryJunction( reduced ) ) continue;
                     }
-                    ++nextCulled;
-                    continue;
+                    ++nextChecks;
+                    auto &sweep = rectangle.roads[0];
+                    const bool alongX = lot.parcelWidth > lot.parcelDepth;
+                    sweep.width = std::min( lot.parcelWidth, lot.parcelDepth );
+                    const Vector3F span =
+                        alongX ? Vector3F( lot.parcelWidth, 0, 0 ) : Vector3F( 0, 0, lot.parcelDepth );
+                    const Vector3F center{ lot.parcelX, 0, lot.parcelZ };
+                    sweep.knots[0].position = center - span * .5f;
+                    sweep.knots[1].position = center + span * .5f;
+                    sweep.knots[0].outHandle = span / 3.f;
+                    sweep.knots[1].inHandle = -span / 3.f;
+                    const auto denialBefore = sourceBudgetDenialCount();
+                    procedural::CityRoadSplineBake rectangleBake;
+                    CityRoadTerrainMesh surface;
+                    if( !procedural::sampleCityRoadSplines( rectangle, {}, sampler, rectangleBake, error ) ||
+                        !buildCityRoadTerrainMesh( rectangle, rectangleBake, terrain, placement, surface,
+                                                   error, false ) )
+                    {
+                        if( !unsupportedTerrain( error, denialBefore ) )
+                        {
+                            throw std::runtime_error( error.c_str() );
+                        }
+                        // Missing/holed/steep support is a genuine exclusion. Only
+                        // excessive relief on an otherwise safe surface is resized.
+                        break;
+                    }
+                    fittedVertices += surface.vertices.size();
+                    require( fittedVertices <= 8000000,
+                             "Parcel cumulative terrain-fit work budget exceeded." );
+                    require( !surface.vertices.empty(),
+                             "Parcel full-footprint support unexpectedly produced no surface." );
+                    float minimum = std::numeric_limits<float>::max(), maximum = -minimum;
+                    for( const auto &vertex : surface.vertices )
+                    {
+                        minimum = std::min( minimum, vertex.position.y );
+                        maximum = std::max( maximum, vertex.position.y );
+                    }
+                    if( maximum - minimum > 1.25f + 1e-5f )
+                    {
+                        continue;
+                    }
+                    lot.groundHeight = maximum;
+                    lot.groundMinimumHeight = minimum;
+                    candidate.lots.push_back( lot );
+                    accepted = true;
+                    break;
                 }
-                fittedVertices += surface.vertices.size();
-                require( fittedVertices <= 8000000,
-                         "Parcel cumulative terrain-fit work budget exceeded." );
-                require( !surface.vertices.empty(),
-                         "Parcel full-footprint support unexpectedly produced no surface." );
-                float minimum = std::numeric_limits<float>::max(), maximum = -minimum;
-                for( const auto &vertex : surface.vertices )
-                {
-                    minimum = std::min( minimum, vertex.position.y );
-                    maximum = std::max( maximum, vertex.position.y );
-                }
-                if( maximum - minimum > 1.25f + 1e-5f )
-                {
-                    ++nextCulled;
-                    continue;
-                }
-                lot.groundHeight = maximum;
-                lot.groundMinimumHeight = minimum;
-                candidate.lots.push_back( lot );
+                if( !accepted ) ++nextCulled;
             }
             output.swap( candidate );
             culled = nextCulled;

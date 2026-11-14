@@ -3,6 +3,7 @@
 #include <Workphone/Interface/Procedural/OpenCityLayout.hpp>
 #include <Workphone/Scene/Components/LODGroup.hpp>
 #include <Workphone/Scene/Components/CityRoadAuthoring.hpp>
+#include <Workphone/Scene/Components/CityRoadTerrainFit.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
 #include <Workphone/Graphics/Terrain.hpp>
 #include <Workphone/System/SourceBudgetVector.hpp>
@@ -85,6 +86,9 @@ namespace workphone::scene::race
         procedural::OpenCityLayout cityLayout;
         u32 cityBuildingSupportChecks = 0, cityCulledParcels = 0;
         bool cityBuildingSupportValid = true, citySourceReused = false;
+        float cityTerrainRelief = 1.f;
+        bool cityTerrainFitted = false;
+        CityRoadTerrainFitReport cityTerrainFitReport;
         bool cityRaceRouteAvailable = true;
         String cityRaceRouteError;
         u64 cityAppliedSourceRevision = 0;

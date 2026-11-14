@@ -10,6 +10,7 @@
 #include <Workphone/Scene/Components/ProceduralSceneGeneration.hpp>
 
 #include <algorithm>
+#include <cmath>
 #include <stdexcept>
 
 namespace workphone::scene
@@ -126,6 +127,7 @@ namespace workphone::scene
         assets.cityBlocks = m_blocks;
         assets.cityRoute = m_route;
         assets.cityStreetDetail = m_streetDetail;
+        assets.cityTerrainRelief = m_terrainRelief;
         assets.cityBuildingStyle = m_buildingStyle;
         assets.cityBuildingMeshes = m_buildingMeshes;
         if( m_terrainRoads )
@@ -240,6 +242,9 @@ namespace workphone::scene
         properties.setProperty( "City Route", m_route );
         properties.setProperty( "City Natural Roads", m_naturalRoads );
         properties.setProperty( "City Terrain Roads", m_terrainRoads );
+        properties.setProperty( "City Terrain Relief", m_terrainRelief );
+        properties.getPropertyObject( "City Terrain Relief" ).setAttribute( "description",
+            "Initial terrain hills (0 to 2). Edit existing ground with the Terrain tools." );
         properties.setProperty( "City Street Detail", m_streetDetail );
         properties.setProperty( "City Building Style", m_buildingStyle );
         auto &buildingStyle = properties.getPropertyObject( "City Building Style" );
@@ -268,6 +273,10 @@ namespace workphone::scene
         properties.getPropertyValue( "City Blocks", m_blocks );
         properties.getPropertyValue( "City Route", m_route );
         properties.getPropertyValue( "City Natural Roads", m_naturalRoads );
+        f32 terrainRelief = m_terrainRelief;
+        if( properties.getPropertyValue( "City Terrain Relief", terrainRelief ) &&
+            std::isfinite( terrainRelief ) )
+            m_terrainRelief = std::clamp( terrainRelief, 0.f, 2.f );
         bool terrainMode = m_terrainRoads;
         properties.getPropertyValue( "City Terrain Roads", terrainMode );
         if( !terrainMode && m_terrainRoads && ( m_roadAuthoring || !m_roadAuthoringUUID.empty() ) )

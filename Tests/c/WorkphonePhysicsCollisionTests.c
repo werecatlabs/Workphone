@@ -289,6 +289,146 @@ static int test_track_raycast_normal_faces_suspension_ray( void )
     return 1;
 }
 
+static int test_city_roundabout_cap_raycast_precision( void )
+{
+    /* Exact emitted terrain-clipped triangles around the relief-2 road 5 cap.
+     * The original probe is inside triangle 2223 by barycentric 5.1694101e-8;
+     * the old float Moller-Trumbore predicate missed it and hit ground 25 mm down. */
+    const wp_f32 vertices[] = {
+        24, 6.0530600547790527f, 92,
+        27.169258117675781f, 6.1763992309570312f, 88,
+        25.486545562744141f, 6.0644311904907227f, 88,
+        24, 6.0530600547790527f, 92,
+        26.405654907226562f, 6.1604824066162109f, 89.594345092773438f,
+        27.169258117675781f, 6.1763992309570312f, 88,
+        24, 6.0530600547790527f, 92,
+        25.253477096557617f, 6.1364665031433105f, 92,
+        26.405654907226562f, 6.1604824066162109f, 89.594345092773438f,
+        28, 6.2316761016845703f, 88,
+        27.169258117675781f, 6.176398754119873f, 88,
+        26.405654907226562f, 6.1604824066162109f, 89.594345092773438f,
+        28, 6.2316761016845703f, 88,
+        25.253477096557617f, 6.1364665031433105f, 92,
+        28, 6.3192195892333984f, 92,
+        28, 6.2316761016845703f, 88,
+        26.405654907226562f, 6.1604824066162109f, 89.594345092773438f,
+        25.253477096557617f, 6.1364665031433105f, 92
+    };
+    const wp_f32 ground_vertices[] = {
+        20, 6.1350059509277344f, 84, 20, 6.1350059509277344f, 96,
+        32, 6.1350059509277344f, 96, 32, 6.1350059509277344f, 84
+    };
+    const wp_u32 ground_indices[] = { 0, 1, 2, 0, 2, 3 };
+    const wp_f32 offsets[5][2] = { { 0, 0 }, { .002f, 0 }, { -.002f, 0 },
+                                   { 0, .002f }, { 0, -.002f } };
+    const wp_f32 surface = 6.1600055694580078f;
+    wp_u32 indices[18];
+    wp_collision_mesh_data road_data;
+    wp_collision_mesh_data ground_data;
+    wp_u32 order, triangle, corner, sample, body_order;
+
+    road_data.vertices = vertices;
+    road_data.vertex_count = 18;
+    road_data.indices = indices;
+    road_data.triangle_count = 6;
+    ground_data.vertices = ground_vertices;
+    ground_data.vertex_count = 4;
+    ground_data.indices = ground_indices;
+    ground_data.triangle_count = 2;
+    for( order = 0; order < 4; ++order )
+    {
+        wp_triangle_mesh *mesh;
+        for( triangle = 0; triangle < 6; ++triangle )
+        {
+            const wp_u32 original = order & 1u ? 5u - triangle : triangle;
+            for( corner = 0; corner < 3; ++corner )
+                indices[triangle * 3u + corner] = original * 3u +
+                    ( ( order & 2u ) && corner ? 3u - corner : corner );
+        }
+        mesh = wp_triangle_mesh_create( vertices, 18, indices, 6 );
+        CHECK( mesh );
+        for( sample = 0; sample < 5; ++sample )
+        {
+            wp_f32 distance;
+            wp_vec3f normal;
+            wp_s32 hit_triangle = -1;
+            const wp_vec3f origin = vector3( 26.382787704467773f + offsets[sample][0],
+                surface + .25f, 89.64208984375f + offsets[sample][1] );
+            CHECK( wp_triangle_mesh_raycast( mesh, origin, vector3( 0, -1, 0 ), .5f,
+                                             &distance, &normal, &hit_triangle ) );
+            CHECK( fabsf( distance - .25f ) < .001f && fabsf( normal.y ) > .9f && hit_triangle >= 0 );
+        }
+        wp_triangle_mesh_destroy( mesh );
+        for( body_order = 0; body_order < 2; ++body_order )
+        {
+            wp_physics_scene *scene = wp_physics_scene_create();
+            wp_rigidbody *road = wp_rigidbody_create( WORKPHONE_RIGIDBODY_STATIC );
+            wp_rigidbody *ground = wp_rigidbody_create( WORKPHONE_RIGIDBODY_STATIC );
+            wp_collision_shape *road_shape = wp_collision_shape_create( WORKPHONE_COLLISION_SHAPE_MESH );
+            wp_collision_shape *ground_shape = wp_collision_shape_create( WORKPHONE_COLLISION_SHAPE_MESH );
+            CHECK( scene && road && ground && road_shape && ground_shape );
+            wp_collision_shape_set_mesh_data( road_shape, &road_data );
+            wp_collision_shape_set_mesh_data( ground_shape, &ground_data );
+            CHECK( wp_rigidbody_add_shape( road, road_shape ) >= 0 );
+            CHECK( wp_rigidbody_add_shape( ground, ground_shape ) >= 0 );
+            CHECK( wp_physics_scene_add_actor( scene, body_order ? road : ground ) );
+            CHECK( wp_physics_scene_add_actor( scene, body_order ? ground : road ) );
+            for( sample = 0; sample < 5; ++sample )
+            {
+                wp_rigidbody *hit_body = NULL;
+                wp_vec3f hit, normal;
+                const wp_f32 x = 26.382787704467773f + offsets[sample][0];
+                const wp_f32 z = 89.64208984375f + offsets[sample][1];
+                CHECK( wp_physics_scene_intersects_ex( scene, vector3( x, surface + .25f, z ),
+                    vector3( x, surface - .25f, z ), &hit, &normal, &hit_body, NULL, 0, 0 ) );
+                CHECK( hit_body == road && fabsf( hit.y - surface ) < .01f && normal.y > .9f );
+            }
+            wp_physics_scene_destroy( scene );
+            wp_rigidbody_destroy( road ); wp_rigidbody_destroy( ground );
+            wp_collision_shape_destroy( road_shape ); wp_collision_shape_destroy( ground_shape );
+        }
+    }
+    return 1;
+}
+
+static int test_mesh_raycast_strict_geometry_bounds( void )
+{
+    const wp_f32 vertices[] = { 0, 0, 0, 1, 0, 0, 0, 0, 1 };
+    const wp_f32 tiny_vertices[] = { 0, 0, 0, .0001f, 0, 0, 0, 0, .0001f };
+    const wp_f32 degenerate_vertices[] = { 0, 0, 0, 1, 0, 0, 2, 0, 0 };
+    const wp_u32 indices[] = { 0, 1, 2 };
+    wp_triangle_mesh *mesh = wp_triangle_mesh_create( vertices, 3, indices, 1 );
+    wp_f32 distance;
+    wp_vec3f normal;
+    wp_s32 triangle;
+    CHECK( mesh );
+    CHECK( wp_triangle_mesh_raycast( mesh, vector3( .5f, 1, .5f ), vector3( 0, -1, 0 ),
+                                     1, &distance, &normal, &triangle ) );
+    CHECK( distance == 1 );
+    CHECK( !wp_triangle_mesh_raycast( mesh, vector3( .500001f, 1, .500001f ), vector3( 0, -1, 0 ),
+                                      2, &distance, &normal, &triangle ) );
+    CHECK( !wp_triangle_mesh_raycast( mesh, vector3( .25f, 1, .25f ), vector3( 0, -1, 0 ),
+                                      .99999f, &distance, &normal, &triangle ) );
+    CHECK( !wp_triangle_mesh_raycast( mesh, vector3( .25f, 0, .25f ), vector3( 1, 0, 0 ),
+                                      2, &distance, &normal, &triangle ) );
+    CHECK( !wp_triangle_mesh_raycast( mesh, vector3( .25f, 1, .25f ), vector3( 0, 1, 0 ),
+                                      2, &distance, &normal, &triangle ) );
+    CHECK( !wp_triangle_mesh_raycast( mesh, vector3( .25f, 0, .25f ), vector3( 0, 0, 0 ),
+                                      2, &distance, &normal, &triangle ) );
+    wp_triangle_mesh_destroy( mesh );
+    mesh = wp_triangle_mesh_create( tiny_vertices, 3, indices, 1 );
+    CHECK( mesh );
+    CHECK( wp_triangle_mesh_raycast( mesh, vector3( .000025f, 1, .000025f ), vector3( 0, -1, 0 ),
+                                     1, &distance, &normal, &triangle ) && distance == 1 && fabsf( normal.y ) > .9f );
+    wp_triangle_mesh_destroy( mesh );
+    mesh = wp_triangle_mesh_create( degenerate_vertices, 3, indices, 1 );
+    CHECK( mesh );
+    CHECK( !wp_triangle_mesh_raycast( mesh, vector3( .5f, 1, 0 ), vector3( 0, -1, 0 ),
+                                      2, &distance, &normal, &triangle ) );
+    wp_triangle_mesh_destroy( mesh );
+    return 1;
+}
+
 static int test_fast_car_does_not_tunnel_through_track_mesh( void )
 {
     const wp_f32 vertices[] = { 0.0f, -5.0f, -5.0f, 0.0f, 5.0f, -5.0f,
@@ -567,6 +707,8 @@ int main( void )
     passed &= test_2d_box_contact_stays_in_plane();
     passed &= test_track_keeps_road_and_barrier_contacts();
     passed &= test_track_raycast_normal_faces_suspension_ray();
+    passed &= test_city_roundabout_cap_raycast_precision();
+    passed &= test_mesh_raycast_strict_geometry_bounds();
     passed &= test_fast_car_does_not_tunnel_through_track_mesh();
     passed &= test_moved_static_wakes_sleeping_contact_pair();
     if( passed )

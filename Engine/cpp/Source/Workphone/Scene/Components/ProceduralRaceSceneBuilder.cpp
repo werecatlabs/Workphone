@@ -59,6 +59,9 @@ namespace workphone::scene::race
         cityCulledParcels( other.cityCulledParcels ),
         cityBuildingSupportValid( other.cityBuildingSupportValid ),
         citySourceReused( other.citySourceReused ),
+        cityTerrainRelief( other.cityTerrainRelief ),
+        cityTerrainFitted( other.cityTerrainFitted ),
+        cityTerrainFitReport( other.cityTerrainFitReport ),
         cityRaceRouteAvailable( other.cityRaceRouteAvailable ),
         cityRaceRouteError( other.cityRaceRouteError ),
         cityAppliedSourceRevision( other.cityAppliedSourceRevision ),
@@ -124,6 +127,9 @@ namespace workphone::scene::race
         swap( cityCulledParcels, other.cityCulledParcels );
         swap( cityBuildingSupportValid, other.cityBuildingSupportValid );
         swap( citySourceReused, other.citySourceReused );
+        swap( cityTerrainRelief, other.cityTerrainRelief );
+        swap( cityTerrainFitted, other.cityTerrainFitted );
+        swap( cityTerrainFitReport, other.cityTerrainFitReport );
         swap( cityRaceRouteAvailable, other.cityRaceRouteAvailable );
         swap( cityRaceRouteError, other.cityRaceRouteError );
         swap( cityAppliedSourceRevision, other.cityAppliedSourceRevision );
@@ -2522,7 +2528,27 @@ namespace workphone::scene::race
             auto app = core::IApplicationManager::instance();
             auto manager = app->getGameManager();
             auto scene = manager->getCurrentScene();
-            const auto persistentActor = [&]( const String &name ) {
+            struct NewAnchorGuard
+            {
+                SceneAssets &assets;
+                SmartPtr<IGameManager> manager;
+                SmartPtr<IGameActor> roads, terrain;
+                bool accepted = false;
+                ~NewAnchorGuard()
+                {
+                    if( accepted ) return;
+                    // Failed initial grading must be retryable. Existing artist
+                    // anchors are never enrolled in this temporary ownership.
+                    if( roads ) assets.roadAuthoring = nullptr;
+                    if( terrain ) assets.roadTerrain = nullptr;
+                    for( auto actor : { roads, terrain } ) if( actor )
+                    {
+                        try { manager->destroyActor( actor ); }
+                        catch( const std::exception &failure ) { WP_LOG( failure.what() ); }
+                    }
+                }
+            } newAnchors{ assets, manager };
+            const auto persistentActor = [&]( const String &name, SmartPtr<IGameActor> &owned ) {
                 if( !detail::runtimeActorPublished( sourceOwner ) || sourceOwner->getScene() != scene )
                 {
                     throw std::runtime_error( "Attach the city source owner to the current scene before generating terrain roads." );
@@ -2532,6 +2558,7 @@ namespace workphone::scene::race
                 {
                     throw std::runtime_error( "Cannot create persistent city source actor." );
                 }
+                owned = actor;
                 actor->setName( name );
                 actor->setStatic( true );
                 actor->setPosition( Vector3F::zero() );
@@ -2542,10 +2569,11 @@ namespace workphone::scene::race
             };
             String error;
             const bool newSource = !assets.roadAuthoring;
+            CityRoadTerrainFitResult initialFit;
             if( newSource )
             {
-                assets.roadAuthoring = persistentActor( "Editable generated city roads" )
-                                           ->addComponent<CityRoadAuthoring>();
+                persistentActor( "Editable generated city roads", newAnchors.roads );
+                assets.roadAuthoring = newAnchors.roads->addComponent<CityRoadAuthoring>();
             }
             if( !assets.roadAuthoring )
             {
@@ -2553,7 +2581,7 @@ namespace workphone::scene::race
             }
             if( !assets.roadTerrain )
             {
-                auto actor = persistentActor( "Generated city terrain" );
+                auto actor = persistentActor( "Generated city terrain", newAnchors.terrain );
                 assets.roadTerrain = actor->addComponent<TerrainSystem>();
                 if( !assets.roadTerrain || !actor->addComponent<CollisionTerrain>() ||
                     !actor->addComponent<Rigidbody>() )
@@ -2610,48 +2638,16 @@ namespace workphone::scene::race
                     else WP_LOG( String( "City terrain surface uses procedural fallback: " ) + groundDiagnostic );
                 }
                 const float terrainPhase = float( seed % 997 ) * ( 6.28318530718f / 997.f );
-                float junctionDistrictRadius = 0;
-                if( city.naturalRoads )
-                {
-                    // Locate the same junctions before creating the new terrain.
-                    // Their whole footprints share a graded district plane so
-                    // draped approach caps meet the junctions without height steps.
-                    procedural::OpenCityRoadSourceOptions previewOptions;
-                    previewOptions.sourceId = assets.roadAuthoring->getSource().id;
-                    previewOptions.terrainResourceUuid = "00000000-0000-4000-8000-000000000001";
-                    previewOptions.seed = seed;
-                    previewOptions.maximumRoundabouts = 4;
-                    previewOptions.terrainCurves = false;
-                    procedural::OpenCityRoadSourceResult preview;
-                    if( !procedural::buildOpenCityRoadSource( city, previewOptions,
-                            []( const Vector3F &p, float &h ) { h = 2 + .005f * p.x + .003f * p.z; return true; },
-                            preview, error ) )
-                        throw std::runtime_error( error.c_str() );
-                    for( const auto &junction : preview.source.roundabouts )
-                    {
-                        float reach = junction.outerRadius;
-                        for( const auto &port : junction.ports )
-                            reach = std::max( reach, junction.outerRadius + port.length + port.width * .5f );
-                        // Eight metres keeps every covering 4 m terrain cell planar.
-                        junctionDistrictRadius = std::max( junctionDistrictRadius,
-                            std::hypot( junction.center.x, junction.center.z ) + reach + 8.f );
-                    }
-                }
+                const float hillScale = std::max( 1.f, assets.cityTerrainRelief );
                 const auto cityRelief = [&]( float x, float z ) {
-                    // The central tangent plane flows into broad outer relief.
-                    // This grades only newly generated terrain, never a bound
-                    // user terrain. The origin remains at its original height.
-                    const float rolling = 3.2f * ( std::sin( x / 320.f + terrainPhase ) *
-                                        std::cos( z / 420.f - terrainPhase ) -
-                                    std::sin( terrainPhase ) * std::cos( terrainPhase ) ) +
-                           1.6f * ( std::sin( ( x + z ) / 280.f + terrainPhase ) -
-                                    std::sin( terrainPhase ) );
-                    const float sine = std::sin( terrainPhase ), cosine = std::cos( terrainPhase );
-                    const float tangent = x * ( 3.2f / 320.f * cosine * cosine + 1.6f / 280.f * cosine ) +
-                                          z * ( 3.2f / 420.f * sine * sine + 1.6f / 280.f * cosine );
-                    const float t = std::clamp( ( std::hypot( x, z ) - junctionDistrictRadius ) /
-                        std::max( 96.f, junctionDistrictRadius * .65f ), 0.f, 1.f );
-                    return tangent + ( rolling - tangent ) * t * t * ( 3 - 2 * t );
+                    // Preserve broad hills across the centre. The fitting pass
+                    // below grades only road corridors and local junction pads.
+                    return assets.cityTerrainRelief *
+                        ( 14.f * ( std::sin( x / ( 240.f * hillScale ) + terrainPhase ) *
+                                       std::cos( z / ( 300.f * hillScale ) - terrainPhase ) -
+                                   std::sin( terrainPhase ) * std::cos( terrainPhase ) ) +
+                          5.f * ( std::sin( ( x + z ) / ( 180.f * hillScale ) + terrainPhase ) -
+                                  std::sin( terrainPhase ) ) );
                 };
                 for( u32 z = 0; z < side; ++z )
                 {
@@ -2663,12 +2659,31 @@ namespace workphone::scene::race
                             1.f );
                         data.heights[size_t( z ) * side + x] =
                             2 + .005f * px + .003f * pz +
-                            ( city.naturalRoads ? cityRelief( px, pz ) : 0.f ) +
+                            cityRelief( px, pz ) +
                             outside * outside * 3 * std::sin( px * .019f ) * std::cos( pz * .017f );
                         data.layerWeights[size_t( z ) * side + x] = { 1 - outside * .4f, outside * .4f,
                                                                       0, 0 };
                     }
                 }
+                // Prepare both candidates before publishing the new terrain.
+                // The planar planning surface establishes XZ topology only;
+                // the fitter derives road profiles and local pads from the hills.
+                procedural::OpenCityRoadSourceOptions initialOptions;
+                initialOptions.sourceId = assets.roadAuthoring->getSource().id;
+                initialOptions.terrainResourceUuid = "00000000-0000-4000-8000-000000000001";
+                initialOptions.seed = seed;
+                initialOptions.maximumRoundabouts = 4;
+                procedural::OpenCityRoadSourceResult planned;
+                if( !procedural::buildOpenCityRoadSource( city, initialOptions,
+                        []( const Vector3F &, float &h ) { h = 2; return true; }, planned, error ) )
+                    throw std::runtime_error( error.c_str() );
+                CityRoadTerrainFitOptions fitOptions;
+                if( !prepareCityRoadTerrainFit( planned.source,
+                        std::make_shared<render::TerrainData>( std::move( data ) ),
+                        Transform3<real_Num>(), fitOptions, initialFit, error ) )
+                    throw std::runtime_error( error.c_str() );
+                assets.cityTerrainFitted = true;
+                assets.cityTerrainFitReport = initialFit.report;
                 auto renderer =
                     dynamic_pointer_cast<render::Terrain>( assets.roadTerrain->getTerrain() );
                 const bool deferred = renderer && renderer->isTerrainPublicationDeferred();
@@ -2676,7 +2691,7 @@ namespace workphone::scene::race
                 {
                     renderer->setDeferredTerrainPublication( false );
                 }
-                const bool applied = assets.roadTerrain->applyTerrainData( data, error );
+                const bool applied = assets.roadTerrain->applyTerrainData( *initialFit.terrain, error );
                 if( deferred )
                 {
                     renderer->setDeferredTerrainPublication( true );
@@ -2720,7 +2735,16 @@ namespace workphone::scene::race
                 options.terrainRevision = terrain->revision;
                 options.maximumRoundabouts = 4;
                 procedural::OpenCityRoadSourceResult generated;
-                if( !procedural::buildOpenCityRoadSource( city, options, height, generated, error ) )
+                if( initialFit.terrain )
+                {
+                    generated.source = std::move( initialFit.source );
+                    generated.source.terrainResourceUuid = options.terrainResourceUuid;
+                    generated.source.terrainRevision = terrain->revision;
+                    if( !procedural::fitOpenCityRoadRoute( city, generated.source, height,
+                                                         generated.route, error ) )
+                        throw std::runtime_error( error.c_str() );
+                }
+                else if( !procedural::buildOpenCityRoadSource( city, options, height, generated, error ) )
                 {
                     throw std::runtime_error( error.c_str() );
                 }
@@ -2771,10 +2795,12 @@ namespace workphone::scene::race
                 route.pop_back();
             }
             OpenCityLayout supported;
+            CityRoadParcelSupportOptions parcelOptions;
+            parcelOptions.shrinkForRelief = true;
             if( !prepareCityRoadParcels( city, assets.roadAuthoring->getSource(),
                                          assets.roadAuthoring->getBake(), terrain, placement, supported,
                                          assets.cityCulledParcels, assets.cityBuildingSupportChecks,
-                                         error ) )
+                                         error, parcelOptions ) )
             {
                 throw std::runtime_error( error.c_str() );
             }
@@ -2791,6 +2817,7 @@ namespace workphone::scene::race
                                 u64( terrain->dimensions.x - 1 ) * ( terrain->dimensions.y - 1 ) * 2;
             if( !vehicle )
             {
+                newAnchors.accepted = true;
                 return route;
             }
             Vector3F spawn = route.empty() ? Vector3F( 0, 0, 0 ) : route.front();
@@ -2814,6 +2841,7 @@ namespace workphone::scene::race
                     body->setTransform( Transform3F( spawn, vehicle->getOrientation() ) );
                 }
             }
+            newAnchors.accepted = true;
             return route;
         }
 

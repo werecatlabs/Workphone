@@ -4,8 +4,10 @@
 #include <rapidjson/writer.h>
 #include <rapidjson/stringbuffer.h>
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
+#include <cstdio>
 #include <cstring>
 #include <initializer_list>
 #include <stdexcept>
@@ -380,11 +382,39 @@ namespace workphone::procedural
             flatten( m, bcd, cd, d, depth + 1, o, out, total );
         }
 
-        void grade( Vector3F a, Vector3F b, float limit )
+        void grade( Vector3F a, Vector3F b, const CityRoadSpline &road,
+                    float station, const char *part )
         {
             const float run = std::hypot( b.x - a.x, b.z - a.z );
-            require( run > 1e-5f && std::abs( b.y - a.y ) <= limit * run + 1e-5f,
-                     "Road profile exceeds grade or has zero horizontal span." );
+            if( run > 1e-5f && std::abs( b.y - a.y ) <= road.maxGrade * run + 1e-5f ) return;
+            char message[320];
+            std::snprintf( message, sizeof( message ),
+                "Road profile exceeds grade. Road %s %s near %.3g m is %.3g%% (limit %.3g%%); "
+                "smooth the terrain or lengthen the climb.", road.id.c_str(), part,
+                double( station ), double( run > 1e-5f ? std::abs( b.y - a.y ) / run * 100 : 0 ),
+                double( road.maxGrade * 100 ) );
+            require( run > 1e-5f, "Road profile has zero horizontal span." );
+            throw std::runtime_error( message );
+        }
+
+        Vector3F endpointDirection( const CityRoadSpline &road, bool atStart )
+        {
+            const auto &a = atStart ? road.knots[0] : road.knots[road.knots.size() - 2];
+            const auto &b = atStart ? road.knots[1] : road.knots.back();
+            // A zero first derivative does not mean the endpoint direction is
+            // the first sampled chord. Use the first nonzero control difference:
+            // the exact limiting Bezier direction, independent of subdivision.
+            const auto directions = atStart
+                ? std::array<Vector3F, 3>{ a.outHandle, b.position + b.inHandle - a.position,
+                                          b.position - a.position }
+                : std::array<Vector3F, 3>{ -b.inHandle, b.position - a.position - a.outHandle,
+                                          b.position - a.position };
+            for( auto direction : directions )
+            {
+                if( road.heightMode == CityRoadHeightMode::Drape ) direction.y = 0;
+                if( direction.lengthSquared() > 1e-10f ) return direction;
+            }
+            return {};
         }
     }  // namespace
 
@@ -678,14 +708,21 @@ namespace workphone::procedural
             {
                 CityRoadSplineSamples result;
                 result.roadId = r.id;
+                const auto authoredPoint = [&]( Vector3F point ) {
+                    // Drape retains the source controls, but their Y is not part
+                    // of the road's plan shape or its subdivision budget.
+                    if( r.heightMode == CityRoadHeightMode::Drape ) point.y = 0;
+                    return point;
+                };
                 CityRoadSplineSample first;
-                first.position = r.knots.front().position;
+                first.position = authoredPoint( r.knots.front().position );
                 require( ++total <= o.maximumSamples, "City spline sample budget exceeded." );
                 result.points.push_back( first );
                 for( size_t i = 0; i < ( r.closed ? r.knots.size() : r.knots.size() - 1 ); ++i )
                 {
                     const auto &a = r.knots[i], &b = r.knots[( i + 1 ) % r.knots.size()];
-                    flatten( a.position, a.position + a.outHandle, b.position + b.inHandle, b.position,
+                    flatten( authoredPoint( a.position ), authoredPoint( a.position + a.outHandle ),
+                             authoredPoint( b.position + b.inHandle ), authoredPoint( b.position ),
                              0, o, result.points, total );
                 }
                 const auto fit = [&]( Vector3F &p ) {
@@ -711,10 +748,11 @@ namespace workphone::procedural
                     auto tangent = result.points[after].position - result.points[previous].position;
                     if( !r.closed && ( i == 0 || i + 1 == result.points.size() ) )
                     {
-                        const auto authored =
-                            i == 0 ? r.knots.front().outHandle : -r.knots.back().inHandle;
+                        const auto authored = endpointDirection( r, i == 0 );
                         const float authoredRun = std::hypot( authored.x, authored.z ),
                                     sampledRun = std::hypot( tangent.x, tangent.z );
+                        require( authoredRun > 1e-5f,
+                                 "Road endpoint has a vertical or zero horizontal Bezier tangent." );
                         if( authoredRun > 1e-5f && sampledRun > 1e-5f )
                         {
                             const float rise = r.heightMode == CityRoadHeightMode::Drape
@@ -735,8 +773,9 @@ namespace workphone::procedural
                         p.left.y = p.right.y = 0;
                         fit( p.left );
                         fit( p.right );
-                        grade( p.left, p.position, r.maxGrade );
-                        grade( p.position, p.right, r.maxGrade );
+                        const float station = i ? result.points[i - 1].distance : 0.f;
+                        grade( p.left, p.position, r, station, "left crossfall" );
+                        grade( p.position, p.right, r, station, "right crossfall" );
                     }
                     if( i )
                     {
@@ -746,12 +785,18 @@ namespace workphone::procedural
                             return ( to.x - from.x ) * step.x + ( to.z - from.z ) * step.z >
                                    1e-5f * ( step.x * step.x + step.z * step.z );
                         };
-                        require(
-                            advances( a.left, p.left ) && advances( a.right, p.right ),
-                            "Road width folds a local offset edge; reduce width or loosen the curve." );
-                        grade( a.position, p.position, r.maxGrade );
-                        grade( a.left, p.left, r.maxGrade );
-                        grade( a.right, p.right, r.maxGrade );
+                        if( !advances( a.left, p.left ) || !advances( a.right, p.right ) )
+                        {
+                            char message[256];
+                            std::snprintf( message, sizeof( message ),
+                                "Road %s (width %.3g m) folds an offset edge near %.3g m; "
+                                "smooth the corner or reduce width.", r.id.c_str(), double( r.width ),
+                                double( a.distance ) );
+                            throw std::runtime_error( message );
+                        }
+                        grade( a.position, p.position, r, a.distance, "centre grade" );
+                        grade( a.left, p.left, r, a.distance, "left edge grade" );
+                        grade( a.right, p.right, r, a.distance, "right edge grade" );
                         p.distance = a.distance + step.length();
                     }
                     require( finite( p.left ) && finite( p.right ) && std::isfinite( p.distance ),

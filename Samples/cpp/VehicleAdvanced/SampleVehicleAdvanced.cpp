@@ -109,7 +109,7 @@ namespace workphone
             const auto &source = authoring.getSource();
             const auto &bake = authoring.getBake();
             size_t knots = 0, curvedSpans = 0, curvedRoads = 0;
-            float maximumDeviation = 0, maximumGrade = 0, maximumArterialDetour = 1;
+            float maximumDeviation = 0, maximumGrade = 0, maximumEdgeGrade = 0, maximumCrossfall = 0, maximumArterialDetour = 1;
             float minHeight = std::numeric_limits<float>::max(), maxHeight = -minHeight;
             bool valid = !source.roads.empty() && source.roads.size() == bake.roads.size();
             for( size_t r = 0; r < source.roads.size(); ++r )
@@ -136,12 +136,23 @@ namespace workphone
                     valid = valid && p.isFinite();
                     minHeight = std::min( minHeight, p.y ); maxHeight = std::max( maxHeight, p.y );
                     maximumDeviation = std::max( maximumDeviation, chordDeviation( p, first, last ) );
+                    for( const auto edge : { samples[i].left, samples[i].right } )
+                    {
+                        const float run = std::hypot( edge.x - p.x, edge.z - p.z );
+                        if( run > .00001f ) maximumCrossfall = std::max( maximumCrossfall, std::abs( edge.y - p.y ) / run );
+                    }
                     if( i )
                     {
                         const auto previous = samples[i - 1].position;
                         const float run = std::hypot( p.x - previous.x, p.z - previous.z );
                         horizontalLength += run;
                         if( run > .00001f ) maximumGrade = std::max( maximumGrade, std::abs( p.y - previous.y ) / run );
+                        for( const auto edge : { std::pair{ samples[i - 1].left, samples[i].left },
+                                                std::pair{ samples[i - 1].right, samples[i].right } } )
+                        {
+                            const float edgeRun = std::hypot( edge.second.x - edge.first.x, edge.second.z - edge.first.z );
+                            if( edgeRun > .00001f ) maximumEdgeGrade = std::max( maximumEdgeGrade, std::abs( edge.second.y - edge.first.y ) / edgeRun );
+                        }
                     }
                 }
                 const float chord = std::hypot( last.x - first.x, last.z - first.z );
@@ -153,6 +164,7 @@ namespace workphone
             output << ",\n  \"roadGeometry\": {\"editableKnots\":" << knots << ",\"curvedRoads\":" << curvedRoads
                    << ",\"curvedSpans\":" << curvedSpans << ",\"maximumCentrelineDeviationMetres\":" << maximumDeviation
                    << ",\"maximumCentrelineGrade\":" << maximumGrade << ",\"maximumArterialLengthRatio\":" << maximumArterialDetour
+                   << ",\"maximumEdgeGrade\":" << maximumEdgeGrade << ",\"maximumHalfCrossfall\":" << maximumCrossfall
                    << ",\"heightRangeMetres\":" << ( minHeight <= maxHeight ? maxHeight - minHeight : 0 )
                    << ",\"valid\":" << ( valid ? "true" : "false" ) << '}'
                    << ",\n  \"editableRoadSource\": " << ( json.empty() ? String( "null" ) : json );
@@ -216,6 +228,182 @@ namespace workphone
             return valid;
         }
 
+        bool writeCityTerrainInteraction( std::ostream &output, const scene::CityRoadAuthoring &authoring,
+                                          SmartPtr<physics::IPhysicsScene3> physics )
+        {
+            const auto terrain = authoring.getTerrainSnapshot();
+            const auto &placement = authoring.getTerrainPlacement();
+            const auto &source = authoring.getSource();
+            const auto &bake = authoring.getBake();
+            if( !terrain || source.roads.size() != bake.roads.size() )
+            { output << ",\n  \"terrainRoadInteraction\":{\"valid\":false}"; return false; }
+            float minimum = std::numeric_limits<float>::max(), maximum = -minimum;
+            bool finite = !terrain->heights.empty();
+            const auto pose = placement.getTransformationMatrix();
+            for( const auto height : terrain->heights )
+            {
+                const float y = pose.transformAffine( Vector3F( 0, height * terrain->heightScale, 0 ) ).y;
+                finite = finite && std::isfinite( y );
+                minimum = std::min( minimum, y ); maximum = std::max( maximum, y );
+            }
+            struct Probes
+            {
+                size_t attempted = 0, observed = 0, supported = 0, collision = 0;
+                float maximumClearance = 0, maximumSupportError = 0, maximumCollisionError = 0;
+                float minimumSignedClearance = std::numeric_limits<float>::max(), maximumSignedClearance = -std::numeric_limits<float>::max();
+            } roads, rings;
+            struct FailedProbe
+            {
+                int road = -1, station = -1;
+                Vector3F point, hit, normal;
+                float surface = 0, ground = 0;
+                bool hitFound = false;
+                std::array<float, 4> neighbourErrors{ -1, -1, -1, -1 };
+            };
+            std::array<FailedProbe, 8> failures;
+            size_t failureCount = 0;
+            int probeRoad = -1, probeStation = -1;
+            const auto probe = [&]( Vector3F p, float offset, float tolerance, Probes &checks ) {
+                ++checks.attempted;
+                float ground = 0, surface = 0; bool driveable = false;
+                if( !render::sampleTerrainHeight( *terrain, placement, p, ground ) ||
+                    !authoring.getRuntimeSurface( p.x, p.z, surface, driveable ) || !driveable ||
+                    !std::isfinite( ground ) || !std::isfinite( surface ) ) return;
+                const float clearance = surface - ground, supportError = std::abs( clearance - offset );
+                ++checks.observed;
+                checks.minimumSignedClearance = std::min( checks.minimumSignedClearance, clearance );
+                checks.maximumSignedClearance = std::max( checks.maximumSignedClearance, clearance );
+                checks.maximumClearance = std::max( checks.maximumClearance, std::abs( clearance ) );
+                checks.maximumSupportError = std::max( checks.maximumSupportError, supportError );
+                checks.supported += supportError <= tolerance;
+                Vector3F hit, normal; SmartPtr<ISharedObject> object;
+                const bool hitFound = physics && physics->intersects( { p.x, surface + .25f, p.z },
+                    { p.x, surface - .25f, p.z }, hit, normal, object ) && object && std::isfinite( hit.y );
+                bool collisionPassed = false;
+                if( hitFound )
+                {
+                    const float error = std::abs( hit.y - surface );
+                    checks.maximumCollisionError = std::max( checks.maximumCollisionError, error );
+                    collisionPassed = error < .01f && normal.y > .5f;
+                    checks.collision += collisionPassed;
+                }
+                if( !collisionPassed && failureCount < failures.size() )
+                {
+                    auto &failure = failures[failureCount++];
+                    failure.road = probeRoad; failure.station = probeStation; failure.point = p;
+                    failure.surface = surface; failure.ground = ground; failure.hitFound = hitFound;
+                    if( hitFound ) { failure.hit = hit; failure.normal = normal; }
+                    // Diagnostic rays never replace or excuse the original failure.
+                    // They distinguish an exact seam miss from a missing collider.
+                    const Vector3F offsets[] = { { .002f, 0, 0 }, { -.002f, 0, 0 },
+                                                { 0, 0, .002f }, { 0, 0, -.002f } };
+                    for( size_t i = 0; i < 4; ++i )
+                    {
+                        const auto q = p + offsets[i]; float nearby = 0; bool road = false;
+                        if( physics && authoring.getRuntimeSurface( q.x, q.z, nearby, road ) && road &&
+                            physics->intersects( { q.x, nearby + .25f, q.z }, { q.x, nearby - .25f, q.z }, hit, normal, object ) && object )
+                            failure.neighbourErrors[i] = std::abs( hit.y - nearby );
+                    }
+                }
+            };
+            // At most 96 distributed carriageway probes, concentrated on each
+            // selected road's steepest sampled segment and both lane interiors.
+            const size_t roadCount = std::min<size_t>( 32, bake.roads.size() );
+            for( size_t selected = 0; selected < roadCount; ++selected )
+            {
+                const size_t roadIndex = selected * bake.roads.size() / roadCount;
+                const auto &points = bake.roads[roadIndex].points;
+                if( points.size() < 2 ) { finite = false; continue; }
+                size_t station = points.size() / 2; float strongest = 0;
+                for( size_t i = 1; i < points.size(); ++i )
+                {
+                    const auto a = points[i - 1].position, b = points[i].position;
+                    const float run = std::hypot( b.x - a.x, b.z - a.z );
+                    const float grade = run > .00001f ? std::abs( b.y - a.y ) / run : 0;
+                    if( grade > strongest ) { strongest = grade; station = i; }
+                }
+                const auto &p = points[station]; const auto &road = source.roads[roadIndex];
+                probeRoad = int( roadIndex ); probeStation = int( station );
+                const bool drape = road.heightMode == procedural::CityRoadHeightMode::Drape;
+                for( const auto point : { p.position, p.position + ( p.left - p.position ) * .75f,
+                                        p.position + ( p.right - p.position ) * .75f } )
+                    probe( point, drape ? road.heightOffset : 0, drape ? .001f : .08f, roads );
+            }
+            size_t capSamples = 0, capSupported = 0; float maximumCapPlaneError = 0, maximumCapTerrainError = 0;
+            probeRoad = probeStation = -1;
+            for( const auto &junction : source.roundabouts )
+            {
+                float chord = junction.outerRadius;
+                for( const auto &port : junction.ports )
+                    chord = std::min( chord, std::sqrt( junction.outerRadius * junction.outerRadius - port.width * port.width * .25f ) );
+                const float radius = ( junction.islandRadius + chord ) * .5f;
+                for( size_t i = 0; i < 8; ++i )
+                {
+                    const float angle = float( i ) * 6.283185307179586f / 8;
+                    probe( junction.center + Vector3F( std::cos( angle ) * radius, 0, std::sin( angle ) * radius ),
+                           0, std::min( junction.maxTerrainDeviation, .08f ) + .00001f, rings );
+                }
+                for( const auto &port : junction.ports )
+                {
+                    auto direction = port.outward; direction.y = 0; direction.normalise();
+                    const auto center = junction.center + direction * ( junction.outerRadius + port.length );
+                    const Vector3F side( -direction.z, 0, direction.x );
+                    const auto road = std::find_if( source.roads.begin(), source.roads.end(), [&]( const auto &r ) { return r.id == port.approachId; } );
+                    for( const float across : { -.25f, 0.f, .25f } )
+                    {
+                        ++capSamples; const auto p = center + side * ( across * port.width );
+                        const float plane = junction.center.y + junction.gradeX * ( p.x - junction.center.x ) + junction.gradeZ * ( p.z - junction.center.z );
+                        float ground = 0, surface = 0; bool driveable = false;
+                        if( road == source.roads.end() || !render::sampleTerrainHeight( *terrain, placement, p, ground ) ||
+                            !authoring.getRuntimeSurface( p.x, p.z, surface, driveable ) || !driveable ) continue;
+                        const bool drape = road->heightMode == procedural::CityRoadHeightMode::Drape;
+                        const float error = std::abs( surface - plane );
+                        const float groundError = std::abs( ground + ( drape ? road->heightOffset : 0 ) - plane );
+                        maximumCapPlaneError = std::max( maximumCapPlaneError, error );
+                        maximumCapTerrainError = std::max( maximumCapTerrainError, groundError );
+                        capSupported += std::isfinite( error ) && std::isfinite( groundError ) && error <= .001f &&
+                            groundError <= ( drape ? .001f : .08f );
+                    }
+                }
+            }
+            const bool valid = finite && roads.attempted > 0 && roads.supported == roads.attempted &&
+                roads.collision == roads.attempted && rings.supported == rings.attempted &&
+                rings.collision == rings.attempted && capSupported == capSamples;
+            const auto write = [&]( const char *name, const Probes &p ) {
+                output << ",\"" << name << "\":{\"samples\":" << p.attempted << ",\"supported\":" << p.supported
+                       << ",\"observedSurfaces\":" << p.observed
+                       << ",\"nativeCollisionPassed\":" << p.collision << ",\"maximumAbsoluteClearanceMetres\":" << p.maximumClearance
+                       << ",\"minimumSignedClearanceMetres\":" << ( p.observed ? p.minimumSignedClearance : 0 )
+                       << ",\"maximumSignedClearanceMetres\":" << ( p.observed ? p.maximumSignedClearance : 0 )
+                       << ",\"maximumSupportErrorMetres\":" << p.maximumSupportError
+                       << ",\"maximumNativeHeightErrorMetres\":" << p.maximumCollisionError << '}';
+            };
+            output << ",\n  \"terrainRoadInteraction\":{\"heightfieldSamples\":" << terrain->heights.size()
+                   << ",\"minimumRetainedTerrainHeightMetres\":" << ( finite ? minimum : 0 )
+                   << ",\"maximumRetainedTerrainHeightMetres\":" << ( finite ? maximum : 0 )
+                   << ",\"retainedTerrainReliefMetres\":" << ( finite ? maximum - minimum : 0 );
+            write( "carriageway", roads ); write( "roundabouts", rings );
+            output << ",\"failedNativeProbes\":[";
+            const auto vector = [&]( Vector3F p ) { output << '[' << p.x << ',' << p.y << ',' << p.z << ']'; };
+            for( size_t i = 0; i < failureCount; ++i )
+            {
+                const auto &failure = failures[i]; if( i ) output << ',';
+                output << "{\"roadIndex\":" << failure.road << ",\"station\":" << failure.station << ",\"point\":";
+                vector( failure.point );
+                output << ",\"surface\":" << failure.surface << ",\"ground\":" << failure.ground
+                       << ",\"hitFound\":" << ( failure.hitFound ? "true" : "false" ) << ",\"hit\":";
+                vector( failure.hit ); output << ",\"normal\":"; vector( failure.normal );
+                output << ",\"nearbyNativeHeightErrorsMetres\":[";
+                for( size_t j = 0; j < 4; ++j ) { if( j ) output << ','; output << failure.neighbourErrors[j]; }
+                output << "]}";
+            }
+            output << "],\"roundaboutCapSamples\":" << capSamples << ",\"roundaboutCapsSupported\":" << capSupported
+                   << ",\"maximumRoundaboutCapPlaneErrorMetres\":" << maximumCapPlaneError
+                   << ",\"maximumRoundaboutCapTerrainErrorMetres\":" << maximumCapTerrainError
+                   << ",\"valid\":" << ( valid ? "true" : "false" ) << '}';
+            return valid;
+        }
+
         std::array<Vector3F, 2> cityRoadInspectionView( const advanced::SceneAssets &assets )
         {
             const auto &samples = assets.circuit.samples;
@@ -270,6 +458,77 @@ namespace workphone
                 if( !blocked ) break;
             }
             return { eye, target };
+        }
+
+        struct CityHillsideView
+        {
+            Vector3F eye{}, target{};
+            String roadId;
+            float rise = 0;
+        };
+
+        CityHillsideView cityHillsideInspectionView( const advanced::SceneAssets &assets )
+        {
+            if( !assets.roadAuthoring ) throw std::runtime_error( "Hillside view requires editable terrain roads." );
+            CityHillsideView view; float best = -1, width = 4;
+            Vector3F low{}, high{};
+            const auto &bake = assets.roadAuthoring->getBake();
+            const auto &source = assets.roadAuthoring->getSource();
+            for( size_t r = 0; r < bake.roads.size(); ++r )
+            {
+                const auto &road = bake.roads[r];
+                for( size_t i = 0; i + 1 < road.points.size(); i += std::max<size_t>( 1, road.points.size() / 32 ) )
+                {
+                    auto end = std::lower_bound( road.points.begin() + i, road.points.end(), road.points[i].distance + 80.f,
+                        []( const auto &point, float distance ) { return point.distance < distance; } );
+                    if( end == road.points.end() ) --end;
+                    const auto a = road.points[i].position, b = end->position;
+                    const float run = std::hypot( b.x - a.x, b.z - a.z );
+                    if( run < 25 ) continue;
+                    const float rise = std::abs( b.y - a.y ), score = rise + run * .001f;
+                    if( score <= best ) continue;
+                    best = score; view.rise = rise;
+                    low = a.y <= b.y ? a : b; high = a.y <= b.y ? b : a;
+                    view.roadId = String( road.roadId.data(), road.roadId.size() );
+                    if( r < source.roads.size() ) width = source.roads[r].width;
+                }
+            }
+            if( best < 0 ) throw std::runtime_error( "Hillside view requires a road with at least 25 m of horizontal span." );
+            auto along = high - low; along.y = 0; along.normalise();
+            const Vector3F side( -along.z, 0, along.x );
+            view.eye = low - along * 14.f + side * std::min( width * .25f, 2.f );
+            view.target = high + Vector3F( 0, 1.8f, 0 );
+            const auto terrain = assets.roadAuthoring->getTerrainSnapshot();
+            const auto &placement = assets.roadAuthoring->getTerrainPlacement();
+            float base = low.y, height = 0;
+            if( terrain && render::sampleTerrainHeight( *terrain, placement, view.eye, height ) ) base = std::max( base, height );
+            for( const float lift : { 6.f, 10.f, 16.f, 26.f, 40.f, 60.f, 84.f } )
+            {
+                view.eye.y = base + lift; bool blocked = false;
+                for( size_t i = 1; terrain && i < 16; ++i )
+                {
+                    const auto p = view.eye + ( view.target - view.eye ) * ( float( i ) / 16 );
+                    if( render::sampleTerrainHeight( *terrain, placement, p, height ) && p.y <= height + .5f )
+                    { blocked = true; break; }
+                }
+                for( const auto &lot : assets.cityLayout.lots )
+                {
+                    if( blocked || lot.park ) continue;
+                    float first = 0, last = 1;
+                    const auto axis = [&]( float a, float b, float minimum, float maximum ) {
+                        const float delta = b - a;
+                        if( std::abs( delta ) < .00001f ) return a >= minimum && a <= maximum;
+                        float start = ( minimum - a ) / delta, finish = ( maximum - a ) / delta;
+                        if( start > finish ) std::swap( start, finish );
+                        first = std::max( first, start ); last = std::min( last, finish ); return first <= last;
+                    };
+                    blocked = axis( view.eye.x, view.target.x, lot.x - lot.width * .5f - 1, lot.x + lot.width * .5f + 1 ) &&
+                        axis( view.eye.z, view.target.z, lot.z - lot.depth * .5f - 1, lot.z + lot.depth * .5f + 1 ) &&
+                        axis( view.eye.y, view.target.y, lot.groundMinimumHeight - 1, lot.groundHeight + lot.height + 6 );
+                }
+                if( !blocked ) break;
+            }
+            return view;
         }
 
         struct CityBuildingGeometryCheck
@@ -1356,6 +1615,13 @@ namespace workphone
                         evidence << ",\n  \"cityConnectionCamera\": {\"eye\":[" << m_cityConnectionEye.x << ',' << m_cityConnectionEye.y << ',' << m_cityConnectionEye.z
                                  << "],\"target\":[" << m_cityConnectionTarget.x << ',' << m_cityConnectionTarget.y << ',' << m_cityConnectionTarget.z << "]}";
                     }
+                    if( m_captureView == "hillside" )
+                    {
+                        evidence << ",\n  \"cityHillsideCamera\":{\"roadId\":" << advanced::jsonString( m_cityHillsideRoadId )
+                                 << ",\"selectedRoadRiseMetres\":" << m_cityHillsideRise
+                                 << ",\"eye\":[" << m_cityHillsideEye.x << ',' << m_cityHillsideEye.y << ',' << m_cityHillsideEye.z
+                                 << "],\"target\":[" << m_cityHillsideTarget.x << ',' << m_cityHillsideTarget.y << ',' << m_cityHillsideTarget.z << "]}";
+                    }
                 }
                 if(m_assets.cityTerrainRoads)
                 {
@@ -1383,10 +1649,19 @@ namespace workphone
                     auto authoring=m_assets.roadAuthoring;const auto snapshot=m_assets.roadTerrain?m_assets.roadTerrain->getTerrainSnapshot():nullptr;
                     if(authoring)cityValid=writeCityRoadGeometry(evidence,*authoring) && cityValid;
                     if(authoring)cityValid=writeCityConnections(evidence,*authoring,app->getPhysicsManager()->getPhysicsScene()) && cityValid;
+                    if(authoring)cityValid=writeCityTerrainInteraction(evidence,*authoring,app->getPhysicsManager()->getPhysicsScene()) && cityValid;
                     const auto &layout=m_assets.cityLayout;size_t parks=0;for(const auto &lot:layout.lots)parks+=lot.park?1:0;
                     evidence<<",\n  \"terrainCity\": {\"sourceId\":"<<advanced::jsonString(authoring?String(authoring->getSource().id.data(),authoring->getSource().id.size()):String())
                         <<",\"terrainBindingUUID\":"<<advanced::jsonString(authoring?authoring->getTerrainBindingUUID():String())
                         <<",\"bindingValid\":"<<(check.binding?"true":"false")<<",\"sourceReused\":"<<(m_assets.citySourceReused?"true":"false")
+                        <<",\"terrainReliefRequested\":"<<m_cityTerrainRelief<<",\"terrainReliefSetting\":"<<m_assets.cityTerrainRelief
+                        <<",\"terrainFitted\":"<<(m_assets.cityTerrainFitted?"true":"false")
+                        <<",\"terrainFit\":{\"changedSamples\":"<<m_assets.cityTerrainFitReport.changedSamples
+                        <<",\"maximumCutMetres\":"<<m_assets.cityTerrainFitReport.maxCut
+                        <<",\"maximumFillMetres\":"<<m_assets.cityTerrainFitReport.maxFill
+                        <<",\"maximumRoadGrade\":"<<m_assets.cityTerrainFitReport.maxRoadGrade
+                        <<",\"roadHeightSpanMetres\":"<<m_assets.cityTerrainFitReport.roadHeightSpan
+                        <<",\"attempts\":"<<m_assets.cityTerrainFitReport.attempts<<'}'
                         <<",\"sourceRevision\":"<<(authoring?authoring->getSourceRevision():0)<<",\"appliedSourceRevision\":"<<m_assets.cityAppliedSourceRevision
                         <<",\"activeRevision\":"<<(authoring?authoring->getActiveRevision():0)<<",\"terrainRevision\":"<<(snapshot?snapshot->revision:0)
                         <<",\"sourceBytes\":"<<(authoring?authoring->getSourceJSON().size():0)<<",\"roads\":"<<check.roads<<",\"roundabouts\":"<<check.junctions
@@ -2774,6 +3049,7 @@ namespace workphone
             properties->setProperty( "City Natural Roads", m_cityNaturalRoads );
             properties->setProperty( "Road Authoring Showcase", m_roadAuthoringShowcase );
             properties->setProperty( "City Terrain Roads", m_cityTerrainRoads );
+            properties->setProperty( "City Terrain Relief", m_cityTerrainRelief );
             if( m_cityStreetDetail >= 0 )
                 properties->setProperty( "City Street Detail", m_cityStreetDetail );
             if( m_cityBuildingStyle >= 0 )
@@ -3007,6 +3283,12 @@ namespace workphone
                 m_cityFrontageTarget.y += .97f;
             }
             selectFacade( layout );
+            if( m_captureView == "hillside" )
+            {
+                const auto view = cityHillsideInspectionView( m_assets );
+                m_cityHillsideEye = view.eye; m_cityHillsideTarget = view.target;
+                m_cityHillsideRoadId = view.roadId; m_cityHillsideRise = view.rise;
+            }
             if( m_captureView == "junction" )
             {
                 const auto connections = cityConnections( *m_assets.roadAuthoring );
@@ -3188,6 +3470,11 @@ namespace workphone
                     {
                         m_cameraActor->setPosition( m_cityConnectionEye );
                         m_cameraActor->lookAt( m_cityConnectionTarget, Vector3F::unitY() );
+                    }
+                    else if( m_captureView == "hillside" )
+                    {
+                        m_cameraActor->setPosition( m_cityHillsideEye );
+                        m_cameraActor->lookAt( m_cityHillsideTarget, Vector3F::unitY() );
                     }
                     else if( m_captureView == "track" )
                     {
@@ -3385,7 +3672,7 @@ int main( int argc, char **argv )
                    "  --track-smoke-test            Drive one full lap through the physics controller\n"
                    "  --collision-smoke-test        Verify native boxes; circuit garage impact or city road/sidewalk grades\n"
                    "  --validate-circuit           Validate 100 generated closed circuits\n"
-                   "  --capture PATH.bmp --view follow|car|track|corner|junction|street|boulevard|frontage|facade|building   Save a rendered view and "
+                   "  --capture PATH.bmp --view follow|car|track|corner|junction|hillside|street|boulevard|frontage|facade|building   Save a rendered view and "
                    "exit\n"
                    "  --no-hud --force-lod auto|0|1  Clean captures and tree LOD comparisons\n"
                    "  --force-vehicle-lod auto|0|1|2  Override the vehicle level (clamped for low)\n"
@@ -3401,12 +3688,14 @@ int main( int argc, char **argv )
                    "  --city-layout grid|lsystem     Road network layout (requires --city; default grid)\n"
                    "  --road-authoring-showcase       Terrain-fitted editable roads and roundabout (implies --city)\n"
                    "  --city-terrain-roads            Editable generated city roads fitted to terrain (implies --city)\n"
+                   "  --city-terrain-relief 0..2      Initial city terrain relief multiplier (default 1; retained terrain is preserved)\n"
                    "  --city-street-detail 0..100     Roadside detail density (requires --city-terrain-roads, default 100)\n"
                    "  --city-building-style STYLE    Built-in architecture: district, masonry, civic, modern,\n"
                    "                                 terrace, parisian, warehouse, mediterranean, artdeco, timber\n"
                    "  --city-building-mesh ROLE PATH  Replace a wall, window, entrance, corner or roof module (repeatable)\n"
                    "  --view street|boulevard       Opposite street-level city inspections; track is the overview\n"
                    "  --view frontage               Close sidewalk inspection (requires --city-terrain-roads)\n"
+                   "  --view hillside               Inspect a sustained road climb and its surrounding terrain\n"
                    "  --view facade                 Inspect a generated building facade from a fixed parcel camera\n"
                    "  --view building               Inspect a representative low-rise building and its roof silhouette\n"
                    "  --export-materials NEW_DIR    Bake asphalt maps and resource source descriptors\n"
@@ -3448,6 +3737,8 @@ int main( int argc, char **argv )
     bool cityNaturalRoads = false;
     bool roadAuthoringShowcase = false;
     bool cityTerrainRoads = false;
+    float cityTerrainRelief = 1.f;
+    bool cityTerrainReliefExplicit = false;
     s32 cityBlocks = 8, cityRoute = 0;
     s32 cityStreetDetail = -1;
     s32 cityBuildingStyle = -1;
@@ -3493,6 +3784,16 @@ int main( int argc, char **argv )
             { roadAuthoringShowcase = true; openCity = true; }
             else if( String( argv[i] ) == "--city-terrain-roads" )
             { cityTerrainRoads = true; openCity = true; }
+            else if( String( argv[i] ) == "--city-terrain-relief" && i + 1 < argc )
+            {
+                const std::string_view value = argv[++i];
+                const auto end = value.data() + value.size();
+                const auto parsed = std::from_chars( value.data(), end, cityTerrainRelief );
+                if( parsed.ec != std::errc{} || parsed.ptr != end || !std::isfinite( cityTerrainRelief ) ||
+                    cityTerrainRelief < 0 || cityTerrainRelief > 2 )
+                    throw std::runtime_error( "City terrain relief must be a finite number from 0 to 2." );
+                cityTerrainReliefExplicit = true;
+            }
             else if( String( argv[i] ) == "--city-street-detail" && i + 1 < argc )
             {
                 const std::string_view value = argv[++i];
@@ -3648,19 +3949,23 @@ int main( int argc, char **argv )
             { audioEnabled = false; hud = false; }
         }
         if( captureView != "follow" && captureView != "car" && captureView != "track" &&
-            captureView != "corner" && captureView != "junction" && captureView != "street" && captureView != "boulevard" &&
+            captureView != "corner" && captureView != "junction" && captureView != "hillside" && captureView != "street" && captureView != "boulevard" &&
             captureView != "frontage" && captureView != "facade" && captureView != "building" )
-            throw std::runtime_error( "View must be follow, car, track, corner, junction, street, boulevard, frontage, facade, or building." );
+            throw std::runtime_error( "View must be follow, car, track, corner, junction, hillside, street, boulevard, frontage, facade, or building." );
         if( ( cityOptionsExplicit || captureView == "street" || captureView == "boulevard" ) && !openCity )
             throw std::runtime_error( "City options and street-level views require --city." );
         if(roadAuthoringShowcase && foliageWorld)throw std::runtime_error("Road authoring showcase does not provide foliage-world generation.");
         if(roadAuthoringShowcase && cityTerrainRoads)throw std::runtime_error("Choose road-authoring-showcase or city-terrain-roads.");
         if( cityStreetDetail >= 0 && !cityTerrainRoads )
             throw std::runtime_error( "--city-street-detail requires --city-terrain-roads." );
+        if( cityTerrainReliefExplicit && !cityTerrainRoads )
+            throw std::runtime_error( "--city-terrain-relief requires --city-terrain-roads." );
         if( captureView == "frontage" && !cityTerrainRoads )
             throw std::runtime_error( "--view frontage requires --city-terrain-roads." );
         if( captureView == "junction" && !cityTerrainRoads )
             throw std::runtime_error( "--view junction requires --city-terrain-roads." );
+        if( captureView == "hillside" && !cityTerrainRoads )
+            throw std::runtime_error( "--view hillside requires --city-terrain-roads." );
         if( (cityBuildingMeshOverride || cityBuildingStyle >= 0 || captureView == "facade" || captureView == "building") &&
             (!openCity || roadAuthoringShowcase) )
             throw std::runtime_error( "City building mesh overrides, styles, and the facade/building views require a generated city." );
@@ -3775,6 +4080,7 @@ int main( int argc, char **argv )
         app->setCityOptions( openCity, cityBlocks, cityRoute, cityNaturalRoads );
         app->setRoadAuthoringShowcase( roadAuthoringShowcase );
         app->setCityTerrainRoads( cityTerrainRoads );
+        app->setCityTerrainRelief( cityTerrainRelief );
         app->setCityStreetDetail( cityStreetDetail );
         app->setCityBuildingMeshes( cityBuildingMeshes );
         app->setCityBuildingStyle( cityBuildingStyle );

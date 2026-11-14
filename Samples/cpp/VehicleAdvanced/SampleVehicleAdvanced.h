@@ -61,6 +61,7 @@ namespace workphone
         { m_openCity = enabled; m_cityBlocks = blocks; m_cityRoute = route; m_cityNaturalRoads = naturalRoads; }
         void setRoadAuthoringShowcase(bool enabled) { m_roadAuthoringShowcase=enabled; }
         void setCityTerrainRoads(bool enabled) { m_cityTerrainRoads=enabled; }
+        void setCityTerrainRelief( f32 relief ) { m_cityTerrainRelief = relief; }
         void setCityStreetDetail( s32 detail ) { m_cityStreetDetail = detail; }
         void setCityBuildingMeshes( const std::array<String, 5> &meshes ) { m_cityBuildingMeshes = meshes; }
         void setCityBuildingStyle( s32 style ) { m_cityBuildingStyle = style; }
@@ -174,6 +175,7 @@ namespace workphone
         bool m_cityNaturalRoads = false;
         bool m_roadAuthoringShowcase = false;
         bool m_cityTerrainRoads = false;
+        f32 m_cityTerrainRelief = 1.f;
         s32 m_cityBlocks = 8, m_cityRoute = 0;
         s32 m_cityStreetDetail = -1;
         s32 m_cityBuildingStyle = -1;
@@ -186,6 +188,9 @@ namespace workphone
         Vector3F m_cityFrontageEye{}, m_cityFrontageTarget{};
         Vector3F m_cityFacadeEye{}, m_cityFacadeTarget{};
         Vector3F m_cityConnectionEye{}, m_cityConnectionTarget{};
+        Vector3F m_cityHillsideEye{}, m_cityHillsideTarget{};
+        String m_cityHillsideRoadId;
+        f32 m_cityHillsideRise = 0;
         u64 m_cityFacadeLotId = 0;
         f64 m_cityBuildingStartupDeadline = 0;
         Vector3F m_generatedSpawnPosition{0,.42f,0};

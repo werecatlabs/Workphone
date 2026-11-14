@@ -1,5 +1,92 @@
 # WPProcedural implementation status
 
+## Terrain relief and connected road controls — 14 November 2026
+
+New terrain-city generation prepares a bounded road/terrain fit before adopting
+its road source. Broad hills remain outside road corridors; smoothed road
+profiles, feathered shoulders and local junction/roundabout pads provide support
+for carriageways and approach caps. The pure `prepareCityRoadTerrainFit` helper
+preserves road identities and horizontal Bezier controls, retains holes and
+materials, limits cut/fill and work, and requires the candidate to pass the
+existing spline and complete terrain-road mesh checks. It does not publish a
+live scene edit.
+
+**City Terrain Relief** is an initial-terrain setting from 0 to 2, default 1.
+Zero removes the broad hills; the base slope and outer boundary variation remain.
+Above one, hill height and wavelength increase together to keep larger landforms
+compatible with the main-road grade limit.
+It affects newly created terrain only. Changing it and regenerating an existing
+city preserves its bound terrain and canonical road controls; use the Terrain
+tools to sculpt that ground. Seed/size changes likewise retain promoted sources.
+
+The City Roads tool keeps existing roundabout mouth endpoints fixed. Moving one
+reports why it cannot detach; its handles project onto the port direction and
+grade plane, while free endpoints and interior controls remain editable. A drag
+across the mouth retains the last valid handle. Completed changes use the same
+Undo/Redo command, and rejected edits retain their draft with road/knot context.
+Draped curve subdivision now depends on horizontal controls rather than unused
+control elevations; exact endpoint tangents avoid sampled-chord angle noise.
+Actual grade, fold, terrain support and seam checks remain enforced.
+
+Debug builds of Workphone, VehicleAdvanced and Editor passed. Seven focused
+CTest suites passed in 219.27 seconds, including angled/reversed roundabout
+editing with real mesh preparation, Undo/Redo, unchanged anchors, relief-property
+persistence and two failed initial-candidate cleanup attempts. The fitting suite
+also covers transforms, holes, Fixed profiles, SourceCpu denial, deterministic
+results, local slope correction and bounded retries. Invalid combined vertical
+scales reject before staging; overflow, underflow and zero-scale regressions
+verify unchanged output and SourceCpu usage.
+
+Seed 42 / six blocks retains 29.01 m of road height variation with 3.11 m maximum
+cut and 4.99 m fill; seed 7 / eight blocks retains 32.30 m with 4.07 m cut and
+4.36 m fill. Relief 2 retains 36.42 m with 5.01 m cut and 6.52 m fill. These
+fixtures pass the existing 8% grade, 12 m earthwork and exact mesh support checks.
+Logs are under `artifacts/procedural/city-terrain-fit-20261114/`.
+
+The first native capture exposed a density regression: only 22 buildings survived
+because the original full-parcel 1.25 m relief limit rejected most hillsides.
+Generated terrain cities now opt into bounded, anisotropic parcel shrinking,
+anchored to the street-facing edge. The strict default API remains available.
+The seed 42 fixture recovers 117 supported lots, including 111 buildings and
+13 central buildings, with unchanged IDs/frontage, road reservations, whole-cell
+support, hole/slope checks and the same 1.25 m foundation bound. The recovered
+layout also passes the original strict fitter. A same-camera second iteration
+visibly restores the street enclosure and nearby junction buildings, with
+continuous road/kerb contact. The parcel fitter now reserves derived ordinary
+junction connector triangles and their actual rounded footway strips, with
+rotated mixed-width T regressions protecting clear neighbouring parcels.
+The stronger relief-2 capture exposed one native collision ray falling through
+a valid road/roundabout cap triangle onto terrain 25 mm below it. Exact emitted
+geometry proves strict coverage (minimum barycentric coordinate 5.17e-8); the
+old float ray predicate rounded it outside. Both BVH and fallback mesh rays now
+share strict double edge functions and normalized double cross products, without
+expanding the road probe's height or geometric tolerance. The native regression
+retains the exact six-triangle fan, neighbouring rays, reversed winding/order
+and underlying terrain. Outside, parallel, distance-limited, degenerate and tiny
+triangle checks remain explicit. A stale narrowphase fixture now verifies the
+current transactional rejection of invalid mesh indices.
+After this fix, native collision/narrowphase and terrain mesh/fit suites pass
+4/4 in 30.33 seconds. A post-fix capture exposed stale dynamically loaded physics
+DLLs: the sample target now explicitly depends on WPPhysics/WPVehiclePhysics.
+Both rebuilt after CMake regeneration, and capture evidence records their loaded
+module paths/hashes. Final native captures `iteration-04/junction` (relief 1) and
+`relief-2-accepted/hillside` (relief 2) both pass and exit 0. Each has 96/96 road
+and 32/32 roundabout native collision hits, 39/39 supported approach caps, and
+no failed probes; maximum native road height error is below 0.001 mm. The default
+hills retain 111 buildings; stronger hills retain 80, with 13 central buildings
+in both. Road height variation is 29.01/36.42 m respectively.
+`capture-integrity.json` verifies both sets against 1,416 current runtime source
+files, 11 binaries, 28 media assets, the loaded physics modules and retained new
+source files. See `visual-review.md` in the artifact directory for images and
+the rejected iterations. These are Microsoft Basic Render Driver captures;
+hardware performance and commercial visual acceptance remain open. Visible
+terrain contact improves, while frontage paths/stairs, planting and lighting
+still need work. The relief-2 camera differs from the matched density A/B.
+Live hand-drawn road commits do not automatically cut/fill terrain: that needs
+one combined terrain-and-road publication transaction, bounded undo patches,
+and rollback across deferred render/collision publication. The new initial
+generation path does not establish that editing contract.
+
 ## Scanned city surface materials — 14 November 2026
 
 The bundled [Poly Haven CC0 pack](../bin/Media/Procedural/City/Textures/README.md)

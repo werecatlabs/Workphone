@@ -1,5 +1,24 @@
 # Editable city roads and terrain placement
 
+Update, 14 November 2026 — Debug builds and seven focused suites pass (219.27 s):
+new generated terrain has a bounded road-corridor and local-junction fitting
+pass, controlled by **City Terrain Relief** (0..2, default 1) before its first
+generation. Existing bound terrain and editable road sources are preserved.
+Roundabout-connected endpoint moves now reject with a clear explanation;
+their handles follow the port ray and grade plane, including reversed and
+angled approaches. Free ends/interior controls remain editable with Undo/Redo.
+Terrain-city parcels can shrink along their frontage to retain buildings on hills,
+with the original exact support and 1.25 m foundation-relief limit. Ordinary
+junction reservations now include the actual connector and rounded pavement
+triangles, including rotated mixed-width T-junctions. Extreme combined vertical
+scales reject before changing terrain or source output. Final native junction
+and stronger-hills captures pass their original support/collision limits with
+matching source, binary and loaded-plugin hashes. A native shared-edge ray miss
+found by the stronger hills is fixed and regression-tested. See the implementation
+status for images, test results and the remaining visual limitations.
+Live hand-drawn terrain auto-grading and atomic terrain/city replacement remain
+open; the initial-generation fit does not implement that transaction.
+
 Status, 25 October 2026: the native **Window > City Roads** tool, strict v1/v2 source codec, terrain-cell road fitting and single-lane roundabout solver connect to generated grid/L-system cities through **City Terrain Roads**. Initial generation promotes roads once into the scene-owned canonical source; regeneration preserves road edits and the bound terrain. Whole-parcel support, fitted footways, connected roundabout pedestrian edges and production activation/readiness guards are implemented. Builds 28/29 complete the Sample/native dependencies, Editor and renderer-test target. The final authoring/viewport/anchor plus six Play cases pass 9/9 in 71.96 s; the renderer suite passes in 30.76 s. Nine other geometry cases passed tests 21. Final native run 16 passes functional retention/contact with exit 0 in 249.76 s; captures 13 grid street, 14 natural boulevard and 15 natural overview also validate and exit 0. All three capture inventories match snapshot 16's 11 runtime hashes. Native 09's historical shutdown fault remains unexplained, and the original 180-second timing gate remains open. Recorded Editor mouse/DPI acceptance, project source assets, terrain cut/fill, bridges, atomic terrain/city replacement, source-free reconstruction, hardware performance and AAA visual acceptance remain open. The independent grid review rates the scene a prototype with commercial quality **not met**. See [the production plan](WPPROCEDURAL_PRODUCTION_PLAN.md) and [implementation evidence](WPPROCEDURAL_IMPLEMENTATION_STATUS.md).
 
 The intended workflow is to generate a city, draw and edit road splines in the existing Editor viewport, preserve those edits through regeneration and save/reopen, and fit roads, junctions, building pads and collision to the selected terrain. A generated graph and its sampled meshes are derived caches. They must not become competing editable documents. The connected [river, road/rail bridge and train-track design](WPPROCEDURAL_CITY_TRANSPORT_WATER_PLAN.md) extends this same source and terrain publication model.
@@ -29,6 +48,25 @@ The intended workflow is to generate a city, draw and edit road splines in the e
 5. Use **Undo**/**Redo** or viewport Ctrl+Z/Ctrl+Y for committed edits. Regeneration rebuilds derived car, buildings, pads, dressing and foliage against the current source/terrain; it preserves hand edits and the bound terrain. Seed or city-size changes do not replace a promoted road source. **Save Scene** stores the canonical source, terrain binding and vehicle's source-anchor UUID; reopen resolves the anchors in the current scene and reconstructs disposable geometry.
 6. To add a junction, set **Roundabout outer radius**, **Island radius**, **Clockwise circulation** and a road width of 4..12 m, choose **Place Roundabout (4 approaches)**, then click terrain. The tool derives a local grade plane and four connected approach roads. It conservatively rejects holes, excessive slope/deviation, unsupported footprints or centre/edge join mismatches; it does not grade terrain to force a fit. Defaults are outer radius 14 m and island radius 8 m; the circulating lane must be 3..7 m wide.
 7. Set **City Street Detail** from 0 to 100 on `ProceduralRaceScene` and press **Regenerate**. `RacingGameOpenCity` exposes the same setting with **Generate**. Zero hides the additional pavement furniture. Higher values admit more placements on fitted sidewalks. The setting saves with the scene and the furniture is regenerated from the current roads and terrain.
+
+For new terrain-city generation, set **City Terrain Relief** before the first
+generation: 0 removes broad hills, 1 is the default and 2 doubles their amplitude
+and wavelength, keeping broader hills compatible with main-road grade limits.
+The base slope and outer boundary variation remain at 0. The generator fits
+road corridors and local junction pads subject to earthwork/support limits;
+this setting is not a live sculpting control. Regenerating with existing anchors
+preserves their terrain heights/materials and current road source. Use Terrain
+editing tools for existing ground; an incompatible edit can invalidate road
+support rather than silently regrade it.
+
+When editing a roundabout approach, its connected endpoint stays at the existing
+mouth. **Move Knot** reports this constraint and keeps the selection, so width,
+handle and deletion controls remain available. **In Handle**/**Out Handle**
+projects that endpoint's handle onto its port ray and grade plane; crossing the
+mouth retains the last valid handle. Edit an interior knot or the free end to
+bend the approach. A completed drag remains one Undo/Redo command. Rejected
+geometry retains the draft and identifies the road/knot for adjustment or
+cancellation; it does not move the roundabout or relax seam validation.
 
 Once terrain-city anchors are active, switching that component back to the flat city is explicitly unavailable; use a fresh scene for flat generation. This prevents two active ground worlds. If road edits no longer support the pinned generated race route, racing is unavailable with a diagnostic while the static city and authored source remain; no substitute route is invented.
 
@@ -165,7 +203,7 @@ A Fixed/Drape connection needs a solved common junction height; the example's au
 1. Resolve the bound terrain component, retain its immutable snapshot and validated placement, and evaluate the current world-metre source against it. A future city-local asset transform is part of the v3 design. Pick using `intersectTerrain`; never substitute a generic Y=0 plane after a terrain miss.
 2. Flatten each Bezier span with bounded geometric tolerance, maximum segment length, recursion/work limit and total sample budget. Preserve original controls/IDs; flattened points and cross-sections are disposable outputs.
 3. **Drape** samples terrain height and checks grade/crossfall, then the native terrain mesh helper clips the complete ribbon against the retained terrain's actual cell triangles and holes. Its supported surface bias is at most 0.03 m. **Fixed** retains the authored 3D profile and rejects unsupported floating/cut profiles instead of inventing a bridge. Roundabouts retain one grade plane and validate the entire supported footprint plus approach centre/edge seams. **Bridge** remains explicitly unavailable until deck, abutments, clearance and collision are implemented.
-4. A future optional cut/fill solver prepares a separate terrain candidate with bounded excavation/fill and feathered shoulders. Keep the underlying terrain source intact or store a reversible grading layer. Junction approaches solve one compatible elevation/crossfall; normal smoothing cannot fix a physical step.
+4. `prepareCityRoadTerrainFit` now prepares a separate bounded cut/fill candidate with feathered shoulders and local shared junction planes for initial generated terrain. It preserves horizontal controls/IDs, holes and materials, and runs the existing spline/mesh checks before returning. Live road editing does not invoke it automatically. That integration must prepare terrain and road resources together, commit through their common render/collision boundary, and register one bounded Undo/Redo patch only after successful publication. Chaining a terrain command and a road command cannot provide atomic rollback, especially when requested and active terrain snapshots differ. Junction approaches solve one compatible elevation/crossfall; normal smoothing cannot fix a physical step.
 5. [CityRoadParcelSupport](../Engine/cpp/Source/Workphone/Scene/Components/CityRoadParcelSupport.cpp) checks the entire parcel against actual terrain cells and edited road/roundabout reservations. Holes, uncovered cells, excessive cell grade or relief above 1.25 m cull the parcel. Accepted parcels retain minimum/maximum support heights for supported foundations and pads; new buildings are culled from edited road corridors. This does not cut or fill terrain.
 6. Rendering, collision, picking, surface queries and foliage exclusions consume the retained fitted source/terrain revision. Terrain-city mode uses the bound terrain rather than the broad flat-city ground. Existing foliage uses an identity standalone carrier with holes and no rendered ground, world positions and pad heights; it must not apply the bound terrain transform a second time. Road/terrain holes remove pick and collision surfaces consistently; elevation-separated crossings do not become intersections merely because XZ segments cross.
 

@@ -285,3 +285,11 @@ set_target_properties(VehicleAdvancedAudio PROPERTIES FOLDER Samples/cpp)
 if(TARGET WPAudio)
     add_dependencies(SampleVehicleAdvanced WPAudio)
 endif()
+
+# These modules are loaded by wp_plugins_samples.cfg, not linked by the sample.
+# Keep their native collision code current when building the capture executable.
+foreach(runtime_physics_plugin IN ITEMS WPPhysics WPVehiclePhysics)
+    if(TARGET ${runtime_physics_plugin})
+        add_dependencies(SampleVehicleAdvanced ${runtime_physics_plugin})
+    endif()
+endforeach()

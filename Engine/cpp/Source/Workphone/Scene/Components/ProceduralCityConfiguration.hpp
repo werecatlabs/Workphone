@@ -45,6 +45,7 @@ namespace workphone::scene
         s32 m_blocks = 8;
         s32 m_route = 0;
         s32 m_streetDetail = 100;
+        f32 m_terrainRelief = 1.f;
         s32 m_buildingStyle = 0;
         std::array<String, 5> m_buildingMeshes;
 

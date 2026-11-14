@@ -1,5 +1,7 @@
 #include <Workphone/Scene/Components/CityRoadParcelSupport.hpp>
 #include <Workphone/Scene/Components/CityRoadFootways.hpp>
+#include <Workphone/Scene/Components/CityRoadTerrainFit.hpp>
+#include <Workphone/Interface/Procedural/OpenCityRoadSource.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
 #include <algorithm>
 #include <cmath>
@@ -141,6 +143,103 @@ namespace
         require( output.lots.size() == 1 && std::abs( output.lots[0].groundHeight - 3 ) < .0001f &&
             std::abs( output.lots[0].groundMinimumHeight - 3 ) < .0001f, "Transformed terrain support used a second coordinate frame" );
     }
+    void containedAdaptation( const OpenCityLayout::Lot &original, const OpenCityLayout::Lot &adapted )
+    {
+        require( original.id == adapted.id && original.variant == adapted.variant && original.frontage == adapted.frontage &&
+            original.district == adapted.district && original.park == adapted.park && original.height == adapted.height,
+            "Terrain adaptation changed parcel identity, frontage or building style" );
+        require( std::abs( adapted.parcelX-original.parcelX ) + adapted.parcelWidth*.5f <= original.parcelWidth*.5f+.001f &&
+            std::abs( adapted.parcelZ-original.parcelZ ) + adapted.parcelDepth*.5f <= original.parcelDepth*.5f+.001f &&
+            std::abs( adapted.x-adapted.parcelX ) + adapted.width*.5f <= adapted.parcelWidth*.5f+.001f &&
+            std::abs( adapted.z-adapted.parcelZ ) + adapted.depth*.5f <= adapted.parcelDepth*.5f+.001f,
+            "Adapted parcel escaped its original road setback or its building escaped the supported envelope" );
+        using Frontage = OpenCityLayout::Frontage;
+        const bool x = original.frontage == Frontage::West || original.frontage == Frontage::East;
+        const float sign = original.frontage == Frontage::West || original.frontage == Frontage::North ? -1.f : 1.f;
+        const float before = x ? original.parcelX + sign*original.parcelWidth*.5f : original.parcelZ + sign*original.parcelDepth*.5f;
+        const float after = x ? adapted.parcelX + sign*adapted.parcelWidth*.5f : adapted.parcelZ + sign*adapted.parcelDepth*.5f;
+        require( std::abs( before-after ) < .001f, "Terrain adaptation moved the original street-facing parcel edge" );
+        require( std::isfinite( adapted.groundHeight ) && std::isfinite( adapted.groundMinimumHeight ) &&
+            adapted.groundHeight >= adapted.groundMinimumHeight && adapted.groundHeight-adapted.groundMinimumHeight <= 1.25001f,
+            "Adapted parcel waived the full-footprint1.25m foundation relief bound" );
+    }
+    void adaptiveFootprints()
+    {
+        CityRoadParcelSupportOptions options; options.shrinkForRelief = true;
+        auto input = city(); input.lots = { lot( 701, 0, 0, 20, 20 ) };
+        input.lots[0].frontage = OpenCityLayout::Frontage::North;
+        const auto original = input; auto data = terrain(); auto s = source(); const auto bake = sample( s );
+        for( int z = 0; z < 129; ++z ) for( int x = 0; x < 129; ++x ) data->heights[z*129+x] = .11f*(z-64);
+        OpenCityLayout strict, adapted; u32 culled = 0, checks = 0; String error;
+        check( prepareCityRoadParcels( input, s, bake, data, {}, strict, culled, checks, error ), error );
+        require( strict.lots.empty() && culled == 1 && checks == 1, "Default parcel policy silently enabled terrain resizing" );
+        check( prepareCityRoadParcels( input, s, bake, data, {}, adapted, culled, checks, error, options ), error );
+        require( adapted.lots.size() == 1 && culled == 0 && checks > 1 && checks <= 25,
+            "Supported hill parcel did not recover through bounded adaptation" );
+        containedAdaptation( input.lots[0], adapted.lots[0] );
+        require( std::abs( adapted.lots[0].parcelWidth-20 ) < .001f && std::abs( adapted.lots[0].parcelDepth-11 ) < .001f &&
+            std::abs( adapted.lots[0].groundMinimumHeight+1.1f ) < .001f && std::abs( adapted.lots[0].groundHeight-.11f ) < .001f,
+            "Anisotropic adaptation sacrificed safe frontage or missed exact supported extrema" );
+        OpenCityLayout repeated; check( prepareCityRoadParcels( input, s, bake, data, {}, repeated, culled, checks, error, options ), error );
+        sameCity( adapted, repeated ); sameCity( input, original );
+        for( auto facing : { OpenCityLayout::Frontage::West, OpenCityLayout::Frontage::East, OpenCityLayout::Frontage::South } )
+        {
+            input.lots[0].frontage = facing;
+            const bool alongX = facing != OpenCityLayout::Frontage::South;
+            for( int z = 0; z < 129; ++z ) for( int x = 0; x < 129; ++x ) data->heights[z*129+x] = .11f*(alongX?x-64:z-64);
+            check( prepareCityRoadParcels( input, s, bake, data, {}, repeated, culled, checks, error, options ), error );
+            require( repeated.lots.size() == 1, "A rotated street frontage could not adapt to its hill" );
+            containedAdaptation( input.lots[0], repeated.lots[0] );
+        }
+        data = terrain(); data->holes.assign( 128*128, 0 ); data->holes[65*128+65] = 1;
+        check( prepareCityRoadParcels( input, s, bake, data, {}, repeated, culled, checks, error, options ), error );
+        require( repeated.lots.empty() && culled == 1 && checks == 1, "Adaptive policy hid an unsupported terrain hole" );
+        data = terrain(); data->heights[65*129+65] = .7f;
+        check( prepareCityRoadParcels( input, s, bake, data, {}, repeated, culled, checks, error, options ), error );
+        require( repeated.lots.empty() && culled == 1 && checks == 1, "Adaptive policy waived the exact terrain-cell grade bound" );
+    }
+    void generatedHillsideDensity()
+    {
+        const auto input = OpenCityLayout::generate( 42, 6, 0, true ); const auto original = input;
+        OpenCityRoadSourceOptions options; options.seed = 42; options.maximumRoundabouts = 4;
+        options.sourceId = source().id; options.terrainResourceUuid = source().terrainResourceUuid;
+        OpenCityRoadSourceResult planned; String error;
+        check( buildOpenCityRoadSource( input, options, []( const Vector3F &, float &height ) { height = 2; return true; }, planned, error ), error );
+        const float radius = std::ceil( (input.extent+96)/4 )*4;
+        const int side = int(radius*.5f)+1;
+        auto data = std::make_shared<render::TerrainData>(); data->dimensions = {side,side};
+        data->origin = {-radius,-radius}; data->spacing = {4,4}; data->heights.resize(size_t(side)*side);
+        const float phase = 42.f*(6.28318530718f/997.f);
+        for( int z = 0; z < side; ++z ) for( int x = 0; x < side; ++x )
+        {
+            const float px=-radius+x*4, pz=-radius+z*4;
+            const float outside=std::clamp((std::max(std::abs(px),std::abs(pz))-input.extent-20)/76,0.f,1.f);
+            data->heights[size_t(z)*side+x]=2+.005f*px+.003f*pz+
+                14*(std::sin(px/240+phase)*std::cos(pz/300-phase)-std::sin(phase)*std::cos(phase))+
+                5*(std::sin((px+pz)/180+phase)-std::sin(phase))+
+                outside*outside*3*std::sin(px*.019f)*std::cos(pz*.017f);
+        }
+        CityRoadTerrainFitResult fitted;
+        check( prepareCityRoadTerrainFit(planned.source,data,{},{},fitted,error),error );
+        OpenCityLayout strict,adapted,verified; u32 culled=0,checks=0;
+        check( prepareCityRoadParcels(input,fitted.source,fitted.bake,fitted.terrain,{},strict,culled,checks,error),error );
+        CityRoadParcelSupportOptions adaptation; adaptation.shrinkForRelief=true;
+        check( prepareCityRoadParcels(input,fitted.source,fitted.bake,fitted.terrain,{},adapted,culled,checks,error,adaptation),error );
+        size_t central=0,buildings=0;
+        for( const auto &lot:adapted.lots )
+        {
+            const auto before=std::find_if(input.lots.begin(),input.lots.end(),[&](const auto &item){return item.id==lot.id;});
+            require(before!=input.lots.end(),"Adaptive city invented parcel identities");containedAdaptation(*before,lot);
+            buildings+=!lot.park;central+=!lot.park && std::hypot(lot.x,lot.z)<input.extent*.34f;
+        }
+        std::cout << "Hilly seed42 parcels: strict=" << strict.lots.size() << " adapted=" << adapted.lots.size()
+                  << " buildings=" << buildings << " central=" << central << " checks=" << checks << '\n';
+        require(adapted.lots.size()>=input.lots.size()/2 && adapted.lots.size()>=strict.lots.size()+30 && central>=4,
+            "Hilly generated city did not recover substantial building density and a populated centre");
+        check(prepareCityRoadParcels(adapted,fitted.source,fitted.bake,fitted.terrain,{},verified,culled,checks,error),error);
+        require(culled==0 && checks==adapted.lots.size(),"Adapted city cannot pass unchanged strict terrain support and reservations");
+        sameCity(adapted,verified);sameCity(input,original);
+    }
     void junctions()
     {
         auto s = source(); CityRoadRoundaboutSpec junction;
@@ -217,6 +316,69 @@ namespace
         require( culled == 1 && checks == 1 && output.lots.size() == 1 && output.lots[0].id == 604,
             "Roundabout port admitted a parcel inside its real sidewalk shoulder beyond the circle" );
     }
+    void ordinaryJunctionReservations()
+    {
+        for( bool rotated : { false, true } )
+        {
+            const float cosine = rotated ? .8f : 1.f, sine = rotated ? .6f : 0.f;
+            const auto transform = [&]( float x, float z ) {
+                return Vector3F( x * cosine - z * sine, 0, x * sine + z * cosine );
+            };
+            auto s = source();
+            addRoad( s, 0, transform( -24, 0 ), transform( 24, 0 ), 12 );
+            addRoad( s, 1, transform( 0, 0 ), transform( 0, 24 ), 7 );
+            for( auto &road : s.roads ) road.heightMode = CityRoadHeightMode::Drape;
+            const CityRoadHeightSampler flat = []( const Vector3F &, float &height ) { height = 0; return true; };
+            CityRoadSplineBake bake; String error;
+            check( sampleCityRoadSplines( s, {}, flat, bake, error ), error );
+            SourceBudgetText originalSource; check( serializeCityRoadSplineSource( s, originalSource, error ), error );
+            const auto data = terrain(); CityRoadTerrainMesh footways;
+            check( buildCityRoadFootways( s, bake, data, {}, footways, error ), error );
+            const auto pavementPoint = transform( 6.38f, 8.88f );
+            const auto clearPoint = transform( 7.5f, 10.f );
+            auto input = city(); input.lots = {
+                lot( 801, pavementPoint.x, pavementPoint.z, .5f, .5f ),
+                lot( 802, clearPoint.x, clearPoint.z, .5f, .5f ) };
+            const auto original = input;
+            // Both parcels are wholly outside the original road+walk capsules.
+            // The first still intersects the actual fillet's outer sidewalk;
+            // the second sits in the clear pocket a junction disk would erase.
+            for( const auto &parcel : input.lots ) for( float x : { -.25f, .25f } ) for( float z : { -.25f, .25f } )
+            {
+                const float worldX = parcel.x + x, worldZ = parcel.z + z;
+                require( worldX * cosine + worldZ * sine > 5.95f &&
+                         -worldX * sine + worldZ * cosine > 8.45f,
+                         "Ordinary junction regression already intersects a straight-road reservation" );
+            }
+            const auto covered = [&]( Vector3F p ) {
+                const auto cross = []( Vector3F a, Vector3F b, Vector3F c ) {
+                    return double( b.x - a.x ) * ( c.z - a.z ) - double( b.z - a.z ) * ( c.x - a.x );
+                };
+                for( size_t i = 0; i < footways.indices.size(); i += 3 )
+                {
+                    const auto a = footways.vertices[footways.indices[i]].position,
+                               b = footways.vertices[footways.indices[i + 1]].position,
+                               c = footways.vertices[footways.indices[i + 2]].position;
+                    const double area = cross( a, b, c );
+                    if( std::abs( area ) > 1e-8 && cross( a, b, p ) * area >= -1e-9 &&
+                        cross( b, c, p ) * area >= -1e-9 && cross( c, a, p ) * area >= -1e-9 ) return true;
+                }
+                return false;
+            };
+            require( covered( pavementPoint ) && !covered( clearPoint ),
+                     "Mixed-width T regression does not distinguish actual rounded pavement from its clear pocket" );
+            OpenCityLayout output; u32 culled = 91, checks = 92;
+            check( prepareCityRoadParcels( input, s, bake, data, {}, output, culled, checks, error ), error );
+            require( culled == 1 && checks == 1 && output.lots.size() == 1 && output.lots[0].id == 802,
+                     "Ordinary rounded junction pavement overlaps a retained parcel, or a clear neighbour was over-culled" );
+            const auto retained = output;
+            CityRoadParcelSupportOptions options; options.shrinkForRelief = true;
+            check( prepareCityRoadParcels( input, s, bake, data, {}, output, culled, checks, error, options ), error );
+            sameCity( retained, output ); sameCity( original, input );
+            SourceBudgetText after; check( serializeCityRoadSplineSource( s, after, error ), error );
+            require( originalSource == after, "Parcel junction reservations changed canonical editable roads" );
+        }
+    }
     void transactionalFailures()
     {
         auto input = city(); input.lots = { lot( 501, 0, 0, 20, 20 ) }; auto s = source(); auto bake = sample( s );
@@ -256,7 +418,7 @@ namespace
 int main()
 {
     int result = 0;
-    try { canonicalRoads(); fullTerrain(); junctions(); pavementReservations(); transactionalFailures(); std::cout << "City parcels: canonical road/junction/pavement clearances, full terrain support/heights, stable order and transactional budgets PASS\n"; }
+    try { canonicalRoads(); fullTerrain(); adaptiveFootprints(); generatedHillsideDensity(); junctions(); pavementReservations(); ordinaryJunctionReservations(); transactionalFailures(); std::cout << "City parcels: canonical road/junction/pavement clearances, full terrain support/heights, stable order and transactional budgets PASS\n"; }
     catch( const std::exception &e ) { std::cerr << "City parcel support: " << e.what() << '\n'; result = 1; }
     WorldStreamingScheduler::shutdownShared(); return result;
 }

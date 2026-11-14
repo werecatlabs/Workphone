@@ -94,7 +94,7 @@ namespace workphone::editor
         u64 m_draftRevision=0;
         size_t m_road=0,m_knot=0;
         Mode m_mode=Mode::Move;
-        bool m_enabled=false,m_drafting=false,m_dragging=false,m_selected=false;
+        bool m_enabled=false,m_drafting=false,m_dragging=false,m_selected=false,m_portHandleDrag=false;
         struct Input { SourceBudgetText phase; Vector3F origin{},direction{};u64 epoch=0; };
         mutable RecursiveMutex m_toolMutex;
         SourceBudgetVector<Input> m_inputs;
