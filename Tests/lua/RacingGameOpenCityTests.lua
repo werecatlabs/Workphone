@@ -71,9 +71,16 @@ game:update()
 assert(game.gameState=="results")
 properties.values["City Natural Roads"]=false
 root=game.generatedRoot
+local legacyNaturalPath = game.routeRecordsPath:gsub("%.records$", ".lsystem.records")
+local legacyNatural = RacingRecords.new(legacyNaturalPath)
+assert(legacyNatural:record(23, 12.5) and legacyNatural:save())
 game.cityNaturalRoads=true;game:startRace()
 assert(game.generatedRoot~=root and race.cityOptions["City Natural Roads"] and game.records:getBest(23)==0,
     "Switching to natural roads must rebuild and use separate records")
+assert(game.routeRecordsPath:match("%.lsystem%-v3%.records$"),
+    "Changed natural topology must use a new record namespace")
+assert(legacyNatural:load() and legacyNatural:getBest(23)==12.5,
+    "Upgrading natural roads must preserve historical record files")
 game.cityNaturalRoads=false;game:startRace()
 assert(not race.cityOptions["City Natural Roads"],"Switching back to grid must clear natural layout state")
 

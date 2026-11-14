@@ -1,5 +1,52 @@
 # WPProcedural implementation status
 
+## Natural road districts — 14 November 2026
+
+Natural layout revision 3 replaces the three nearly identical nested loops with
+a compact eastern district, a western neighbourhood and a wider eastern perimeter
+around a shared avenue. The L-system grows streets along district directions,
+uses 80–100 degree branch turns, stops at existing connections and closes suitable
+dead ends. New connections require 24 m junction spacing, a 50 degree incident
+angle and 18 m clearance from unrelated road centrelines. Seeded trunk corners
+have a separate 45 degree regression floor. Junctions have at most four arms;
+generation stops at 120 edges, below the canonical source's 128-road capacity.
+
+All three routes retain the origin/−Z start and deterministic closure without
+changing the graph or parcels when the route selector changes. Existing authored
+terrain-road sources are not replaced. If their roads no longer cover the current
+pinned route, the builder also validates the exact revision-2 route against the
+current authored surface. Neither route is accepted without continuous road and
+roundabout coverage. Flat natural-city lap records use a new filename namespace;
+old files remain intact. [Usage](RacingGameOpenCity.md)
+
+The seed-42 six-block graph changes from 83 nodes/101 edges to 40 nodes/51 edges,
+with 23 dead ends reduced to zero. Its shortest segment increases from 4.80 m to
+25.72 m and its smallest incident angle from 4.29 to 51.85 degrees. These graph
+measurements are CPU diagnostics, separate from native capture validation.
+[Graph comparison](../artifacts/procedural/city-natural-layout-20261114/graph-comparison.png)
+
+Workphone and SampleVehicleAdvanced Debug builds pass. Six focused native CTests
+pass in 123.96 s: layout, street details, road network, road-source conversion,
+parcel support and footways. They include 204 seed/size graph cases with all three
+routes, 72 additional source conversions using the runtime roundabout limit, and frozen revision-2
+route compatibility with edited/missing/malformed roads. The Lua fixture also
+passes, including separation from historical natural-city lap records.
+[Native test log](../artifacts/procedural/city-natural-layout-20261114/tests-native.log)
+
+Fresh matched High-quality overview and boulevard captures pass and exit 0 on
+the Microsoft Basic Render Driver. The revised scene has 42 editable roads,
+four roundabouts, 141 supported parcels (previously 117), 266/266 ready building
+meshes and four passing native collision probes in each view. Source CPU,
+Working CPU and GPU reservation rejections are all zero. All 1,352 inventoried
+source files and 11 binaries still match the final capture hashes. The overview
+shows more balanced connected districts and fewer narrow asphalt wedges; the
+boulevard retains large grass gaps, dark windows and simple surfaces.
+[Captures and visual review](../artifacts/procedural/city-natural-layout-20261114/visual-review.md)
+
+Streets still use straight spans, buildings remain axis aligned, and terrain
+fitting does not yet choose horizontal routes by terrain cost. Rivers, bridges,
+rail routing and continuous curved collectors remain separate work.
+
 ## Expanded built-in building styles — 14 November 2026
 
 The built-in selector adds **European Terrace**, **Parisian Mansard**,

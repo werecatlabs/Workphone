@@ -13,6 +13,7 @@
 #include <Workphone/Interface/Procedural/IRoadSystem.hpp>
 #include <Workphone/Interface/Procedural/OpenCityStreetDetails.hpp>
 #include <Workphone/Interface/Procedural/OpenCityRoadSource.hpp>
+#include <Workphone/Interface/Procedural/OpenCityLegacyRoute.hpp>
 #include <Workphone/Interface/Procedural/ISkyAtmosphere.hpp>
 #include <Workphone/Scene/Components/Cubemap.hpp>
 #include <Workphone/Scene/Components/CityRoadAuthoring.hpp>
@@ -2613,6 +2614,29 @@ namespace workphone::scene::race
             {
                 assets.cityRaceRouteAvailable = procedural::fitOpenCityRoadRoute(
                     city, assets.roadAuthoring->getSource(), height, route, error );
+                if( !assets.cityRaceRouteAvailable && city.naturalRoads )
+                {
+                    // Saved sources precede the new district layout and do not
+                    // store generator provenance or their pinned race path.
+                    // Keep their edits and validate the exact previous path;
+                    // never replace their roads or bypass surface coverage.
+                    OpenCityLayout legacy;
+                    legacy.route = procedural::legacyOpenCityNaturalRoute(
+                        seed, city.blocks, assets.cityRoute );
+                    String legacyError;
+                    assets.cityRaceRouteAvailable = procedural::fitOpenCityRoadRoute(
+                        legacy, assets.roadAuthoring->getSource(), height, route, legacyError );
+                    if( assets.cityRaceRouteAvailable )
+                    {
+                        error.clear();
+                        assets.cityRaceRouteError.clear();
+                        WP_LOG( "Terrain city: retained the validated revision-2 natural race route." );
+                    }
+                    else
+                    {
+                        error += String( " Legacy route: " ) + legacyError;
+                    }
+                }
                 if( !assets.cityRaceRouteAvailable )
                 {
                     assets.cityRaceRouteError = error;

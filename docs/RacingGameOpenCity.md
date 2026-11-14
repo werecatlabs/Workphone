@@ -21,19 +21,31 @@ Inspector options: Seed, Appearance Quality (0-3), Laps (1-10), City Blocks
 City Street Detail (0-100), City Building Style (0-9), five building mesh slots,
 and Generate. Grid streets are 88-104 metres
 apart according to seed. Dense central buildings, quieter outer districts and
-park lots use the same deterministic CPU layout. Layout revision 2 gives parcels
-stable IDs, street frontages and coherent commercial, residential and civic
+park lots use the same deterministic CPU layout. Layout revision 3 retains
+stable parcel IDs, street frontages and coherent commercial, residential and civic
 districts. Building footprints retain an 11 metre road-centre setback and a
 4 metre service gap through the block centre. Road and route coordinates remain
 independent of appearance quality and route selection does not reshuffle parcels.
 
 **City Natural Roads** selects a bounded seeded L-system instead of the grid.
-Rewritten turtle branches connect to three shared trunk circuits; snapped crossings
-split graph edges. The graph is capped at 160 nodes/240 edges. Full footprint-to-road
-distance tests keep buildings and parks outside the 11 metre buffer. Route selection
-changes the chosen circuit without reshuffling the graph or parcels. Buildings remain
-axis aligned in this first kit. Acute/short segments can omit sidewalks where a safe
-raised ribbon will not fit; continuous pedestrian junction paving is not yet implemented.
+Revision 3 gives the old-town, western neighbourhood and eastern perimeter distinct
+proportions around a shared main avenue. Local streets branch at near-right angles;
+growth stops at existing connections, rejects cramped or acute junctions, and closes
+nearby dead ends where there is room. Generated roads remain within the editable
+source's 128-road limit. Full footprint-to-road distance tests keep buildings and
+parks outside the 11 metre buffer. Route selection changes the chosen circuit
+without reshuffling the graph or parcels. Natural-city lap records use a new
+revision namespace because route lengths changed; historical files are preserved.
+Buildings remain axis aligned and streets use straight spans between junctions.
+
+To see the new layout, enable **City Natural Roads** on a new **ProceduralCityScene**
+actor and press **Regenerate**. Enable **City Terrain Roads** for terrain fitting
+and editable splines. Existing terrain-road sources remain canonical: regeneration
+preserves hand edits rather than replacing their layout with the new generator.
+When reopening a saved natural city, the builder can reuse its original race
+route if that route still fits the edited roads. If neither the new nor original
+route remains supported, racing is unavailable while free driving and road
+editing remain available.
 
 Grid roads and intersections reuse WPProcedural's IRoadSystem; natural streets
 render the buffered graph with matching conservative sidewalk prisms. A shared flat city

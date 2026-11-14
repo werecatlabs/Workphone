@@ -219,7 +219,9 @@ function RacingGameOpenCity:startRace()
     local project = self.application:getProjectPath()
     if project == "" then project = "." end
     local path = string.format("%s/RacingGameOpenCity.%d.%d.records", project, self.generatedBlocks, self.generatedRoute)
-    if self.generatedNaturalRoads then path = path:gsub("%.records$", ".lsystem.records") end
+    -- Revision 3 changes natural street topology and route lengths. Keep the old
+    -- files intact, but never compare laps on different generated road networks.
+    if self.generatedNaturalRoads then path = path:gsub("%.records$", ".lsystem-v3.records") end
     if self.routeRecordsPath ~= path then
         self.records = RacingRecords.new(path)
         self.records:load()

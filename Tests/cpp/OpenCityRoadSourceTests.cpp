@@ -1,5 +1,6 @@
 #include <Workphone/Interface/Procedural/OpenCityRoadSource.hpp>
 #include <Workphone/Interface/Procedural/OpenCityLayout.hpp>
+#include <Workphone/Interface/Procedural/OpenCityLegacyRoute.hpp>
 #include <Workphone/Scene/Components/CityRoadTerrainMesh.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
 #include <algorithm>
@@ -160,6 +161,38 @@ namespace
             " roads=" << converted.source.roads.size() << " junctions=" << converted.source.roundabouts.size() <<
             " longApproaches=" << longApproaches << " route=" << converted.route.size() << " merged=" << converted.mergedChains << '\n';
     }
+    void naturalJunctionCorpus()
+    {
+        // Exercise the four-roundabout runtime policy on less familiar seeds,
+        // including every route, without spending this topology test on parcels.
+        for( const u32 seed : { 1u, 3u, 19u, 137u, 7919u, 0x9e3779b9u, 0x80000000u, 0xfffffffeu } )
+            for( const int blocks : { 6, 8, 10 } )
+            {
+                SourceBudgetText firstSource;
+                for( int route = 0; route < 3; ++route )
+                {
+                    OpenCityLayout city;
+                    city.naturalRoads = true;
+                    city.roads = OpenCityRoadNetwork::generate( seed, blocks, route );
+                    city.blocks = city.roads.blocks;
+                    city.spacing = city.roads.spacing;
+                    city.extent = city.roads.extent;
+                    for( const auto &point : city.roads.route ) city.route.push_back( { point.x, point.z } );
+                    auto policy = options( seed ); policy.maximumRoundabouts = 4;
+                    OpenCityRoadSourceResult result; String error;
+                    check( buildOpenCityRoadSource( city, policy, plane, result, error ), error );
+                    uniqueIds( result.source );
+                    approachContracts( result.source );
+                    routeContracts( result );
+                    need( !result.source.roundabouts.empty() && result.source.roads.size() <= 128,
+                          "Natural districts lost roundabouts or exceeded editable source capacity" );
+                    const auto serialized = encoded( result.source );
+                    if( route == 0 ) firstSource = serialized;
+                    else need( firstSource == serialized, "Route selection changed natural editable roads" );
+                }
+            }
+        std::cout << "Natural editable-source corpus: 72 seed/size/route conversions PASS\n";
+    }
     void failures()
     {
         auto city = OpenCityLayout::generate( 42, 6, 0, false ); auto policy = options( 42 ); policy.maximumRoundabouts = 2;
@@ -203,6 +236,56 @@ namespace
             { ++shared; need( ak.id != bk.id, "Shared graph endpoints reused a road-owned control identity" ); }
         }
         need( shared >= 4 && parallel > 4, "Identity regression fixture lost shared endpoints or equal-span parallel streets" );
+    }
+    void legacyNaturalRouteCompatibility()
+    {
+        // Frozen revision-2 seed 42 / six-block circuit corners and sample
+        // offsets: this must not silently track future generator changes.
+        const std::array<OpenCityLayout::Point, 8> oldCorners = {
+            OpenCityLayout::Point{ 0, 0 }, { 0, -51.31281662f },
+            { 41.78147507f, -93.97827911f }, { 117.69773102f, -73.19597626f },
+            { 148.42094421f, -9.39504910f }, { 103.36475372f, 69.53980255f },
+            { 33.65814590f, 86.60691833f }, { 0, 41.00782394f }
+        };
+        const std::array<size_t, 8> cornerSamples{ 0, 26, 56, 96, 132, 178, 214, 243 };
+        OpenCityLayout legacy;
+        legacy.naturalRoads = true; legacy.blocks = 6; legacy.spacing = 96; legacy.extent = 288;
+        legacy.route = legacyOpenCityNaturalRoute( 42, 6, 0 );
+        need( legacy.route.size() == 264, "Legacy natural route changed its persisted circuit sampling" );
+        need( legacyOpenCityNaturalRoute( 42, 6, 1 ).size() == 356 &&
+              legacyOpenCityNaturalRoute( 42, 6, 2 ).size() == 446,
+              "Legacy natural route choice changed its original circuit" );
+        for( size_t i = 0; i < oldCorners.size(); ++i )
+        {
+            const auto expected = oldCorners[i], actual = legacy.route[cornerSamples[i]];
+            need( std::hypot( expected.x - actual.x, expected.z - actual.z ) < .00002f,
+                  "Legacy natural route no longer reproduces revision-2 coordinates" );
+            legacy.roads.nodes.push_back( { expected.x, expected.z } );
+            legacy.roads.edges.push_back( { u32( i ), u32( ( i + 1 ) % oldCorners.size() ) } );
+        }
+        auto policy = options( 42 ); policy.maximumRoundabouts = 0;
+        OpenCityRoadSourceResult saved; String error;
+        check( buildOpenCityRoadSource( legacy, policy, plane, saved, error ), error );
+        saved.source.roads.front().width = 11.75f; // An authored edit must survive the fallback.
+        const auto unchangedSource = encoded( saved.source );
+        SourceBudgetVector<Vector3F> route;
+        const auto current = OpenCityLayout::generate( 42, 6, 0, true );
+        need( !fitOpenCityRoadRoute( current, saved.source, plane, route, error ),
+              "Migration fixture no longer distinguishes old saved roads from the new layout" );
+        check( fitOpenCityRoadRoute( legacy, saved.source, plane, route, error ), error );
+        need( error.empty() && !route.empty() && encoded( saved.source ) == unchangedSource,
+              "Legacy route validation changed authored roads or retained a stale failure" );
+        const auto retained = route;
+        auto broken = saved.source; broken.roads.erase( broken.roads.begin() + 1 );
+        need( !fitOpenCityRoadRoute( legacy, broken, plane, route, error ),
+              "Legacy compatibility bypassed missing-road coverage validation" );
+        sameRoute( retained, route );
+        auto malformed = saved.source;
+        malformed.roads.front().knots.front().position.x = std::numeric_limits<float>::quiet_NaN();
+        need( !fitOpenCityRoadRoute( legacy, malformed, plane, route, error ),
+              "Legacy compatibility accepted malformed authored geometry" );
+        sameRoute( retained, route );
+        need( encoded( saved.source ) == unchangedSource, "Legacy failure modified the saved canonical source" );
     }
     void editedRouteContinuity()
     {
@@ -259,7 +342,8 @@ int main()
         sharedEndpointIdentity(); generated( false, 6, 42, true ); generated( true, 6, 42, true );
         for( bool natural : { false, true } ) for( int blocks : { 6, 8, 10 } ) for( u32 seed : { 0u, 7u, 42u, 4294967295u } )
             generated( natural, blocks, seed, false );
-        failures(); editedRouteContinuity(); std::cout << "Open city editable source and island-avoiding pinned route PASS\n";
+        naturalJunctionCorpus(); legacyNaturalRouteCompatibility(); failures(); editedRouteContinuity();
+        std::cout << "Open city editable source and island-avoiding pinned route PASS\n";
     }
     catch( const std::exception &e ) { std::cerr << "Open city road source: " << e.what() << '\n'; result = 1; }
     WorldStreamingScheduler::shutdownShared(); return result;

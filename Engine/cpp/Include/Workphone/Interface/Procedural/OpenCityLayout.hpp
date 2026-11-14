@@ -51,7 +51,7 @@ namespace workphone::procedural
         };
 
         static constexpr float roadHalfWidth = 6.f;
-        static constexpr std::uint32_t generatorRevision = 2;
+        static constexpr std::uint32_t generatorRevision = 3;
         static constexpr float roadSetback = 11.f;
         static constexpr float serviceGap = 4.f;
         int blocks = 0;
