@@ -1,6 +1,7 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Scene/Components/CityRoadFootways.hpp>
 #include <Workphone/Scene/Components/CityRoadJunctions.hpp>
+#include "CityRoadTerminals.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -903,6 +904,7 @@ namespace workphone::scene
             {
                 throw std::runtime_error( error.c_str() );
             }
+            const auto terminals = buildCityRoadTerminals( source, bake, connections, *terrain, placement );
             for( size_t r = 0; r < connections.roadRuns.size(); ++r )
             {
                 const auto &samples = connections.roadRuns[r];
@@ -929,6 +931,15 @@ namespace workphone::scene
                     // A triangle with a collinear fourth vertex uses the same
                     // bounded convex obstacle index as road ribbons.
                     builder.obstacles.insert( quad( a, b, interpolate( b, c, .5 ), c, true ), builder.work );
+                }
+            }
+            for( const auto &terminal : terminals )
+            {
+                const auto center = point( terminal.center );
+                for( size_t i = 1; i < terminal.edge.size(); ++i )
+                {
+                    const auto a = point( terminal.edge[i - 1] ), b = point( terminal.edge[i] );
+                    builder.obstacles.insert( quad( center, a, interpolate( a, b, .5 ), b, true ), builder.work );
                 }
             }
             for( const auto &junction : source.roundabouts )
@@ -984,6 +995,16 @@ namespace workphone::scene
                     strip( add( ea, na, side * gap ), add( ea, na, side * ( gap + width ) ),
                            add( eb, nb, side * gap ), add( eb, nb, side * ( gap + width ) ),
                            road.maxGrade );
+                }
+            }
+            for( const auto &terminal : terminals )
+            {
+                for( size_t i = 1; i < terminal.edge.size(); ++i )
+                {
+                    const auto a = point( terminal.edge[i - 1] ), b = point( terminal.edge[i] );
+                    const auto na = point( terminal.outward[i - 1] ), nb = point( terminal.outward[i] );
+                    strip( add( a, na, gap ), add( a, na, gap + width ),
+                           add( b, nb, gap ), add( b, nb, gap + width ), source.roads[terminal.roadIndex].maxGrade );
                 }
             }
             for( const auto &connection : connections.junctions )

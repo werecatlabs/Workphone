@@ -550,6 +550,171 @@ BOOST_AUTO_TEST_CASE(city_road_viewport_authoring_test)
         BOOST_CHECK( actual.knots[i].inHandle == expected.knots[i].inHandle );
         BOOST_CHECK( actual.knots[i].outHandle == expected.knots[i].outHandle );
     }
+
+    // Use the normal viewport and history commands on a separate ridge. The
+    // earlier planar edits must keep their legacy source-only history behavior.
+    auto ridge = *restoredTerrain->getTerrainSnapshot();
+    for( int z=0; z<ridge.dimensions.y; ++z )
+        for( int x=0; x<ridge.dimensions.x; ++x )
+        {
+            const float px=ridge.origin.x+x*ridge.spacing.x;
+            const float pz=ridge.origin.y+z*ridge.spacing.y;
+            const float falloff=std::max(0.f,1.f-std::abs(pz-72.f)/24.f);
+            ridge.heights[size_t(z)*ridge.dimensions.x+x]+=
+                2.8f*falloff*std::max(0.f,1.f-std::abs(px)/12.f);
+        }
+    BOOST_REQUIRE_MESSAGE(restoredTerrain->applyTerrainData(ridge,error),error);
+    BOOST_REQUIRE_MESSAGE(restored->rebuild(error),error);
+    auto beforeGrade=restoredTerrain->getTerrainSnapshot();
+    const auto beforeGradeRoad=restored->getSourceJSON();
+    window->setWindowVisible(true);
+    selection->clearSelection();selection->addSelectedObject(restoredActor);window->updateSelection();
+    activate("Draw Road");
+    ray("begin",-40,72);ray("commit",-40,72);
+    ray("begin",40,72);ray("commit",40,72);
+    ray("finish",40,72);
+    const auto graded=restoredTerrain->getTerrainSnapshot();
+    BOOST_REQUIRE_MESSAGE(restored->getSource().roads.size()==2u,restored->getError());
+    BOOST_REQUIRE(graded->heights!=beforeGrade->heights);
+    BOOST_CHECK(graded==restored->getTerrainSnapshot());
+    BOOST_CHECK_EQUAL(graded->heights.front(),beforeGrade->heights.front());
+    auto gradeBinding=restored->getSource().roads.back().id;
+    activate("Undo");
+    BOOST_REQUIRE_EQUAL(restored->getSource().roads.size(),1u);
+    BOOST_CHECK(restoredTerrain->getTerrainSnapshot()->heights==beforeGrade->heights);
+    activate("Redo");
+    BOOST_REQUIRE_EQUAL(restored->getSource().roads.size(),2u);
+    BOOST_CHECK(restored->getSource().roads.back().id==gradeBinding);
+    BOOST_CHECK(restoredTerrain->getTerrainSnapshot()->heights==graded->heights);
+
+    const auto beforeMove=restored->getSource().roads.back().knots.front().position;
+    activate("Move Knot");
+    ray("begin",beforeMove.x,beforeMove.z);
+    ray("update",-43,67);ray("commit",-43,67);
+    const auto afterMove=restored->getSource().roads.back().knots.front().position;
+    BOOST_REQUIRE_MESSAGE(std::abs(afterMove.x+43.f)<.01f,restored->getError());
+    const auto movedTerrain=restoredTerrain->getTerrainSnapshot();
+    activate("Undo");
+    BOOST_CHECK(restored->getSource().roads.back().knots.front().position==beforeMove);
+    BOOST_CHECK(restoredTerrain->getTerrainSnapshot()->heights==graded->heights);
+    activate("Undo");
+    BOOST_REQUIRE_EQUAL(restored->getSource().roads.size(),1u);
+    BOOST_CHECK(restoredTerrain->getTerrainSnapshot()->heights==beforeGrade->heights);
+    activate("Redo");activate("Redo");
+    BOOST_REQUIRE_EQUAL(restored->getSource().roads.size(),2u);
+    BOOST_CHECK(restored->getSource().roads.back().knots.front().position==afterMove);
+    BOOST_CHECK(restoredTerrain->getTerrainSnapshot()->heights==movedTerrain->heights);
+    // Leave the graded draw as the next Undo, even if the move reused its ground.
+    activate("Undo");
+
+    // Moving the entire road beyond the ridge releases its old influence.
+    auto relocatedSource=restored->getSource();
+    for(auto &knot:relocatedSource.roads.back().knots)knot.position.z+=42.f;
+    auto relocate=make_ptr<CityRoadEditCommand>();
+    BOOST_REQUIRE_MESSAGE(relocate->configure(restored,roadJSON(relocatedSource),error),error);
+    relocate->execute();
+    BOOST_REQUIRE_MESSAGE(relocate->applied(),relocate->error());
+    commands->addCommand(relocate);
+    const auto relocatedGround=restoredTerrain->getTerrainSnapshot();
+    const size_t ridgePeak=25u*33+16;
+    BOOST_CHECK_EQUAL(relocatedGround->heights[ridgePeak],beforeGrade->heights[ridgePeak]);
+    activate("Undo");
+    BOOST_CHECK(restoredTerrain->getTerrainSnapshot()->heights==graded->heights);
+    activate("Redo");
+    BOOST_CHECK(restoredTerrain->getTerrainSnapshot()->heights==relocatedGround->heights);
+    activate("Undo");
+
+    activate("Select Road");ray("begin",0,72);
+    activate("Delete Selected Road");
+    BOOST_REQUIRE_EQUAL(restored->getSource().roads.size(),1u);
+    BOOST_CHECK(restoredTerrain->getTerrainSnapshot()->heights==beforeGrade->heights);
+    activate("Undo");
+    BOOST_REQUIRE_EQUAL(restored->getSource().roads.size(),2u);
+    BOOST_CHECK(restoredTerrain->getTerrainSnapshot()->heights==graded->heights);
+    activate("Redo");
+    BOOST_REQUIRE_EQUAL(restored->getSource().roads.size(),1u);
+    BOOST_CHECK(restoredTerrain->getTerrainSnapshot()->heights==beforeGrade->heights);
+    activate("Undo");
+
+    // A stale history record must leave both authoritative sources as it found them.
+    auto externalTerrain=*restoredTerrain->getTerrainSnapshot();
+    externalTerrain.heights.front()+=.25f;
+    BOOST_REQUIRE_MESSAGE(restoredTerrain->applyTerrainData(externalTerrain,error),error);
+    const auto staleRoad=roadJSON(restored->getSource());
+    const auto staleTerrain=restoredTerrain->getTerrainSnapshot();
+    BOOST_CHECK(!CityRoadEditCommand::dispatchHistory(commands,false,error));
+    BOOST_CHECK(error.find("Terrain changed")!=String::npos);
+    BOOST_CHECK(roadJSON(restored->getSource())==staleRoad);
+    BOOST_CHECK(restoredTerrain->getTerrainSnapshot()==staleTerrain);
+
+    // A dependent publication failure after terrain preparation must leave
+    // both revisions intact and must not add a history entry.
+    BOOST_REQUIRE_MESSAGE(restoredTerrain->applyTerrainData(*beforeGrade,error),error);
+    BOOST_REQUIRE_MESSAGE(restored->setSourceJSON(beforeGradeRoad,error),error);
+    commands->clearAll();
+    const auto rejectedRoad=roadJSON(restored->getSource());
+    const auto rejectedTerrain=restoredTerrain->getTerrainSnapshot();
+    bool reachedAdmission=false;
+    restored->setPublishCallback([&](const auto &,const auto &,auto candidate,const auto &,String &failure) {
+        reachedAdmission=candidate && candidate->heights!=rejectedTerrain->heights;
+        failure="Injected road admission failure.";
+        return false;
+    });
+    activate("Draw Road");
+    ray("begin",-40,72);ray("commit",-40,72);
+    ray("begin",40,72);ray("commit",40,72);
+    ray("finish",40,72);
+    BOOST_CHECK(reachedAdmission);
+    BOOST_CHECK(roadJSON(restored->getSource())==rejectedRoad);
+    BOOST_CHECK(restoredTerrain->getTerrainSnapshot()==rejectedTerrain);
+    BOOST_CHECK(restoredTerrain->getActiveTerrainSnapshot()==rejectedTerrain);
+    BOOST_CHECK(!commands->getPreviousCommand());
+    restored->setPublishCallback([](const auto &,const auto &,auto,const auto &,String &){return true;});
+    activate("Commit Road");
+    BOOST_REQUIRE_EQUAL(restored->getSource().roads.size(),2u);
+    BOOST_REQUIRE(restored->getTerrainGrading());
+    const auto savedGrade=(temporary.path/"Assets"/"GradedRoadTool.scene").generic_u8string();
+    reopened->saveScene(savedGrade);
+    commands->clearAll();
+    window->setWindowVisible(false);
+    selection->clearSelection();
     reopened->clear( true );
+
+    auto reloaded=app->getFactoryManager()->make_ptr<scene::GameScene>();
+    BOOST_REQUIRE(reloaded);
+    reloaded->load(nullptr);
+    manager->setCurrentScene(reloaded);
+    reloaded->loadScene(savedGrade,false);
+    BOOST_REQUIRE(reloaded->getSceneLoadingState()==scene::IGameScene::SceneLoadingState::Loaded);
+    auto reloadedActor=reloaded->findActorByName("City tool test source");
+    auto reloadedGround=reloaded->findActorByName("City tool test terrain");
+    BOOST_REQUIRE(reloadedActor && reloadedGround);
+    auto gradedSource=reloadedActor->getComponent<scene::CityRoadAuthoring>();
+    auto gradedGround=reloadedGround->getComponent<scene::TerrainSystem>();
+    BOOST_REQUIRE(gradedSource && gradedGround);
+    gradedSource->setPublishCallback([](const auto &,const auto &,auto,const auto &,String &){return true;});
+    flush();
+    if(auto renderer=dynamic_pointer_cast<render::Terrain>(gradedGround->getTerrain()))
+    {
+        // The test uses the CPU road adapter and does not pump a renderer
+        // frame. Finish the same initial integration gate before editing.
+        BOOST_REQUIRE_MESSAGE(renderer->publishPendingTerrain(gradedGround->getTerrainSnapshot(),{},error),error);
+        renderer->setDeferredTerrainPublication(false);
+    }
+    BOOST_REQUIRE_MESSAGE(gradedSource->rebuild(error),error);
+    BOOST_REQUIRE(gradedSource->getTerrainGrading());
+    auto reopenedDeletion=gradedSource->getSource();
+    BOOST_REQUIRE_EQUAL(reopenedDeletion.roads.size(),2u);
+    reopenedDeletion.roads.pop_back();
+    auto deleteAfterReload=make_ptr<CityRoadEditCommand>();
+    BOOST_REQUIRE_MESSAGE(deleteAfterReload->configure(gradedSource,roadJSON(reopenedDeletion),error),error);
+    deleteAfterReload->execute();
+    BOOST_REQUIRE_MESSAGE(deleteAfterReload->applied(),deleteAfterReload->error());
+    BOOST_REQUIRE_EQUAL(gradedSource->getSource().roads.size(),1u);
+    BOOST_CHECK(gradedGround->getTerrainSnapshot()->heights==beforeGrade->heights);
+    window->setWindowVisible(false);
+    selection->clearSelection();
+    commands->clearAll();
+    reloaded->clear(true);
 }
 #endif

@@ -115,6 +115,139 @@ namespace
                   "Identical fit inputs produced different terrain or roundabout profiles" );
         }
     }
+    void localEdits()
+    {
+        auto ground = std::make_shared<render::TerrainData>();
+        ground->dimensions = { 33, 33 }; ground->spacing = { 8, 8 }; ground->origin = { -128, -128 };
+        ground->heights.assign( 33*33, 0.f ); ground->revision = 29;
+        for( int z = 0; z < 33; ++z ) for( int x = 0; x < 33; ++x )
+        {
+            const float px = float( -128+8*x ), pz = float( -128+8*z );
+            const float ridge = 2.8f * std::max( 0.f, 1.f - std::abs( px ) / 12.f ) *
+                                std::max( 0.f, 1.f - std::abs( pz - 72.f ) / 16.f );
+            ground->heights[z*33+x] = .01f*pz + ridge;
+        }
+        auto before = source(); before.version = 2;
+        before.roads.push_back( road( 1, { -40, 0, -64 }, { 40, 0, -64 }, 12 ) );
+        before.roads.push_back( road( 2, { -40, 0, 24 }, { 40, 0, 24 }, 12 ) );
+        const auto original = checksum( *ground ); const auto originalSource = encoded( before );
+        CityRoadTerrainFitResult result; String error;
+        auto compatible = before;
+        compatible.roads[0].width = 10;
+        check( prepareCityRoadTerrainEdit( before, compatible, ground, {}, {}, result, error ), error );
+        need( result.terrain == ground && !result.report.changedSamples && encoded( result.source ) == encoded( compatible ),
+              "Compatible road edit unexpectedly changed existing terrain" );
+
+        auto draft = before;
+        draft.roads.push_back( road( 3, { -40, 41, 72 }, { 40, 41, 72 }, 12 ) );
+        check( prepareCityRoadTerrainEdit( before, draft, ground, {}, {}, result, error ), error );
+        need( result.terrain != ground && encoded( result.source ) == encoded( draft ),
+              "An edited road crossing a ridge did not grade terrain while retaining authored controls" );
+        preserved( draft, result, *ground );
+        const float supportRadius = 6.f + std::hypot( 8.f, 8.f ) + 3.f;
+        const float fitRadius = supportRadius + CityRoadTerrainFitOptions{}.shoulderWidth;
+        for( int z = 0; z < 33; ++z ) for( int x = 0; x < 33; ++x )
+        {
+            const float px = float( -128 + 8*x ), pz = float( -128 + 8*z );
+            const float endpointDistance = std::max( 0.f, std::abs( px ) - 40.f );
+            const bool outside = std::hypot( endpointDistance, pz - 72.f ) > fitRadius;
+            const bool neighbour = std::hypot( endpointDistance, pz - 24.f ) <= supportRadius;
+            if( ( outside || neighbour ) && result.terrain->heights[z*33+x] != ground->heights[z*33+x] )
+            {
+                char message[180];
+                std::snprintf( message, sizeof( message ), "Local road grading modified %s terrain at %.1f, %.1f",
+                               neighbour ? "protected neighbouring" : "outside-corridor", double( px ), double( pz ) );
+                throw std::runtime_error( message );
+            }
+        }
+
+        CityRoadTerrainFitResult repeat;
+        check( prepareCityRoadTerrainEdit( before, draft, ground, {}, {}, repeat, error ), error );
+        need( checksum( *repeat.terrain ) == checksum( *result.terrain ) && checksum( *ground ) == original &&
+              encoded( before ) == originalSource, "Local grading was nondeterministic or modified retained input" );
+        const auto afterCut = result.terrain;
+        auto deletion = draft; deletion.roads.pop_back();
+        check( prepareCityRoadTerrainEdit( draft, deletion, afterCut, {}, {}, repeat, error ), error );
+        need( repeat.terrain == afterCut && !repeat.report.changedSamples,
+              "Deleting a supported road regraded terrain" );
+    }
+    void terrainGradingOwnership()
+    {
+        auto original = terrain();
+        auto s = source();
+        s.version = 2;
+        s.roads.push_back( road( 1, { -50, 0, 0 }, { 50, 0, 0 } ) );
+        s.roads.push_back( road( 2, { -50, 0, 32 }, { 50, 0, 32 } ) );
+        const auto index = []( int x, int z ) { return size_t( ( z + 128 ) / 2 ) * 129 + ( x + 128 ) / 2; };
+        const auto exclusive = index( 0, 0 ), shared = index( 0, 16 ), brushed = index( 0, -8 );
+        const auto second = index( 0, 32 ), distant = index( 60, -90 );
+        auto graded = std::make_shared<render::TerrainData>( *original );
+        graded->heights[exclusive] += .19f;
+        graded->heights[shared] += .26f;
+        graded->heights[brushed] -= .37f;
+        graded->heights[second] += .43f;
+        CityRoadTerrainGrading provenance;
+        const std::string_view uuid( s.terrainResourceUuid.data(), s.terrainResourceUuid.size() );
+        String error;
+        check( retainCityRoadTerrainGrading( uuid, original, graded, {}, {}, provenance, error ), error );
+        need( bool( provenance ), "Initial grading retained no original samples" );
+
+        SourceBudgetText saved, repeated;
+        check( serializeCityRoadTerrainGrading( provenance, saved, error ), error );
+        CityRoadTerrainGrading loaded;
+        check( deserializeCityRoadTerrainGrading( std::string_view( saved.data(), saved.size() ),
+                                                 uuid, loaded, error ), error );
+        check( serializeCityRoadTerrainGrading( loaded, repeated, error ), error );
+        need( saved == repeated, "Grading provenance changed during serialization round trip" );
+        const auto loadedBeforeRejection = loaded;
+        need( !deserializeCityRoadTerrainGrading( std::string_view( saved.data(), saved.size() - 1 ),
+                                                  uuid, loaded, error ) && loaded == loadedBeforeRejection,
+              "A truncated grading record modified existing provenance" );
+
+        auto brush = std::make_shared<render::TerrainData>( *graded );
+        brush->heights[brushed] += .92f;     // Overrides an earlier road-applied height.
+        brush->heights[distant] -= .51f;    // Outside either graded footprint.
+        auto deleteFirst = s;
+        deleteFirst.roads.erase( deleteFirst.roads.begin() );
+        render::TerrainSnapshot restored;
+        check( prepareCityRoadTerrainRestoration( deleteFirst, brush, {}, loaded, restored, error ), error );
+        need( restored->heights[exclusive] == original->heights[exclusive] &&
+              restored->heights[shared] == graded->heights[shared] &&
+              restored->heights[second] == graded->heights[second],
+              "Deleting one road failed to restore only its abandoned terrain" );
+        need( restored->heights[brushed] == brush->heights[brushed] &&
+              restored->heights[distant] == brush->heights[distant] &&
+              restored->holes == brush->holes && restored->surfaceMasks == brush->surfaceMasks,
+              "Road restoration overwrote independent terrain edits" );
+
+        auto movedPose = Transform3<real_Num>();
+        movedPose.setPosition( { 4, 0, 0 } );
+        render::TerrainSnapshot dormant;
+        check( prepareCityRoadTerrainRestoration( deleteFirst, brush, movedPose, loaded, dormant, error ), error );
+        need( dormant == brush, "Grading provenance applied to a different terrain placement" );
+
+        auto refitted = std::make_shared<render::TerrainData>( *restored );
+        refitted->heights[shared] -= .08f;
+        refitted->heights[brushed] -= .12f;
+        CityRoadTerrainGrading afterMove;
+        check( retainCityRoadTerrainGrading( uuid, brush, refitted, {}, loaded, afterMove, error ), error );
+        auto deleteAll = s;
+        deleteAll.roads.clear();
+        render::TerrainSnapshot final;
+        check( prepareCityRoadTerrainRestoration( deleteAll, refitted, {}, afterMove, final, error ), error );
+        need( final->heights[exclusive] == original->heights[exclusive] &&
+              final->heights[shared] == original->heights[shared] &&
+              final->heights[second] == original->heights[second],
+              "Removing the final shared road failed to recover the earliest original heights" );
+        need( final->heights[brushed] == brush->heights[brushed] &&
+              final->heights[distant] == brush->heights[distant],
+              "Regrading a brushed sample did not preserve the brush edit as its new baseline" );
+
+        CityRoadTerrainGrading afterDelete;
+        check( retainCityRoadTerrainGrading( uuid, refitted, final, {}, afterMove, afterDelete, error ), error );
+        need( !afterDelete, "A complete restoration retained obsolete provenance records" );
+    }
+
     void junctions()
     {
         auto data = terrain(); auto s = source();
@@ -342,6 +475,8 @@ int main()
     try
     {
         run( "hills, controls, masks, transforms and determinism", hillsAndTransforms );
+        run( "local road edits, unchanged neighbours and compatible edits", localEdits );
+        run( "persistent terrain grading ownership and external brush edits", terrainGradingOwnership );
         run( "ordinary junction and roundabout local planes", junctions );
         run( "Fixed profiles and transactional failure/budget denial", fixedAndFailureTransactions );
         run( "extreme vertical scales reject transactionally", extremeVerticalScaleTransactions );

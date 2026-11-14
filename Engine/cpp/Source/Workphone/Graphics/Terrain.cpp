@@ -315,6 +315,56 @@ namespace workphone::render
         return gate ? gate( expected, publish, error ) : publish( {}, error );
     }
 
+    bool Terrain::prepareTerrainEditRenderer( TerrainSnapshot, std::function<void()> &commitRenderer,
+                                               String &error )
+    {
+        if( isTerrainPublicationDeferred() )
+        {
+            error = "This terrain renderer cannot prepare a road grading edit.";
+            return false;
+        }
+        commitRenderer = {};
+        error.clear();
+        return true;
+    }
+
+    bool Terrain::publishPreparedTerrainEdit( TerrainSnapshot expected, TerrainSnapshot candidate,
+                                               const Transform3<real_Num> &placement,
+                                               const std::function<void()> &commitRenderer,
+                                               const TerrainPublication &publishDependents,
+                                               String &error )
+    {
+        SmartPtr<IMesh> retiredMesh;
+        std::lock_guard<std::mutex> lock( m_terrainDataMutex );
+        if( !expected || !candidate || getTerrainSnapshot() != expected ||
+            getActiveTerrainSnapshot() != expected || m_terrainWorldTransform != placement ||
+            m_activeTerrainWorldTransform != placement )
+        {
+            error = "Terrain render source or placement changed during road grading.";
+            return false;
+        }
+        if( !publishDependents || ( m_deferredTerrainPublication && !commitRenderer ) )
+        {
+            error = "Road grading requires prepared terrain consumers.";
+            return false;
+        }
+        return publishDependents(
+            [&] {
+                if( commitRenderer )
+                {
+                    commitRenderer();
+                }
+                std::atomic_store( &m_terrainSnapshot, candidate );
+                std::atomic_store( &m_activeTerrainSnapshot, candidate );
+                m_heightMapSize = candidate->dimensions;
+                m_heightScale = candidate->heightScale;
+                retiredMesh = m_cpuTerrainMesh;
+                m_cpuTerrainMesh = nullptr;
+                m_cpuTerrainMeshRevision = 0;
+            },
+            error );
+    }
+
     bool Terrain::applyTerrainData( const TerrainData &data, String &error, u64 expectedRevision )
     {
         if( !validateTerrainData( data, error ) )

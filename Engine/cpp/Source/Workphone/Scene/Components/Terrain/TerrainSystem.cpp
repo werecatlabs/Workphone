@@ -2079,6 +2079,188 @@ namespace workphone::scene
         auto snapshot=getTerrainSnapshot();return snapshot?snapshot->revision:0;
     }
 
+    bool TerrainSystem::publishTerrainRoadEdit( render::TerrainSnapshot expected,
+                                                render::TerrainSnapshot candidate,
+                                                const Transform3<real_Num> &placement,
+                                                const TerrainRoadEditPublication &publishRoad,
+                                                String &error )
+    {
+        if( Thread::getCurrentTask() == TaskId::Render || Thread::getCurrentTask() == TaskId::Physics ||
+            terrainIntegrationIsNotifying( this ) || m_runtimeAssetsMode || m_editStroke )
+        {
+            error = "Road grading requires editable terrain on the Application task with no active brush stroke.";
+            return false;
+        }
+        if( !expected || !candidate || !publishRoad ||
+            expected->revision == std::numeric_limits<u64>::max() ||
+            candidate->revision != expected->revision + 1 )
+        {
+            error = "Road grading requires a terrain candidate at the next source revision.";
+            return false;
+        }
+        if( candidate->dimensions != expected->dimensions || candidate->spacing != expected->spacing ||
+            candidate->origin != expected->origin || candidate->heightScale != expected->heightScale ||
+            candidate->layers != expected->layers || candidate->layerWeights != expected->layerWeights ||
+            !( candidate->appearance == expected->appearance ) ||
+            !( candidate->autoMaterial == expected->autoMaterial ) || candidate->holes != expected->holes ||
+            candidate->surfaceMasks != expected->surfaceMasks )
+        {
+            error = "Road grading can only change terrain heights.";
+            return false;
+        }
+
+        TerrainIntegrationNotice notice{ this };
+        Array<SmartPtr<physics::IPhysicsShape3>> retiredShapes;
+        std::function<void()> commitRenderer;
+        try
+        {
+            if( !render::validateTerrainData( *candidate, error ) ||
+                !render::validateTerrainPlacement( *candidate, placement, error ) )
+            {
+                return false;
+            }
+            std::lock_guard<std::mutex> guard( m_terrainDataMutex );
+            if( m_terrainData != expected || m_activeTerrainData != expected ||
+                m_integrationPlacement != placement || !m_integrationAvailable || m_integrationDetached ||
+                m_integrationSerial == std::numeric_limits<u64>::max() )
+            {
+                error = "Terrain changed during road grading or another terrain publication is pending.";
+                return false;
+            }
+            auto renderer = dynamic_cast<render::Terrain *>( m_terrain.get() );
+            if( m_terrain && !renderer )
+            {
+                error = "This renderer does not support authoritative terrain grading.";
+                return false;
+            }
+            if( renderer && !renderer->prepareTerrainEditRenderer( candidate, commitRenderer, error ) )
+            {
+                return false;
+            }
+
+            auto actor = getActor();
+            const auto collisions = actor ? actor->getComponentsByType<CollisionTerrain>()
+                                          : Array<SmartPtr<CollisionTerrain>>{};
+            TerrainPhysicsBoundary boundary;
+            if( !validateTerrainCollisionRequest( collisions, *candidate, error ) ||
+                !boundary.acquire( true, error ) ||
+                !validateTerrainBodyCapacity( collisions, error ) )
+            {
+                return false;
+            }
+            struct TerrainPreparation
+            {
+                Array<SmartPtr<CollisionTerrain>> prepared;
+                ~TerrainPreparation()
+                {
+                    for( auto collision : prepared )
+                    {
+                        collision->discardPreparedTerrain();
+                    }
+                }
+            } preparation;
+            Array<SmartPtr<physics::IPhysicsScene3>> scenes;
+            if( auto scene = boundary.manager->getPhysicsScene() )
+            {
+                scenes.push_back( scene );
+            }
+            const auto registerBody = [&]( const SmartPtr<physics::IPhysicsBody3> &body ) {
+                if( body )
+                {
+                    auto scene = body->getScene();
+                    if( scene && std::find( scenes.begin(), scenes.end(), scene ) == scenes.end() )
+                    {
+                        scenes.push_back( scene );
+                    }
+                }
+            };
+            if( actor )
+            {
+                for( const auto &bodyComponent : actor->getComponentsByType<Rigidbody>() )
+                {
+                    SmartPtr<physics::IPhysicsBody3> body = bodyComponent->getRigidStatic();
+                    if( !body )
+                    {
+                        body = bodyComponent->getRigidDynamic();
+                    }
+                    registerBody( body );
+                }
+            }
+            for( auto collision : collisions )
+            {
+                preparation.prepared.push_back( collision );
+                if( !collision->prepareTerrain( candidate, placement, error ) )
+                {
+                    return false;
+                }
+                if( auto shape = collision->getShape() )
+                {
+                    registerBody( shape->getActor() );
+                    retiredShapes.push_back( shape );
+                }
+            }
+            std::sort( scenes.begin(), scenes.end(), []( const auto &a, const auto &b ) {
+                return std::less<physics::IPhysicsScene3 *>()( a.get(), b.get() );
+            } );
+            Array<std::unique_lock<ISharedObject>> locks;
+            for( const auto &scene : scenes )
+            {
+                locks.emplace_back( *scene, std::try_to_lock );
+                if( !locks.back().owns_lock() )
+                {
+                    error = "Road grading is waiting for the physics scene boundary.";
+                    return false;
+                }
+            }
+
+            const auto serial = m_integrationSerial + 1;
+            const render::Terrain::TerrainPublication publish =
+                [&]( const std::function<void()> &publishRenderer, String &failure ) {
+                    return publishRoad(
+                        [&] {
+                            if( notice.ready )
+                            {
+                                return;
+                            }
+                            if( publishRenderer )
+                            {
+                                publishRenderer();
+                            }
+                            for( auto collision : collisions )
+                            {
+                                collision->commitTerrain();
+                            }
+                            m_terrainData = candidate;
+                            m_activeTerrainData = candidate;
+                            notice.source = candidate;
+                            notice.placement = placement;
+                            notice.serial = serial;
+                            m_integrationSerial = serial;
+                            notice.ready = true;
+                        },
+                        serial, failure );
+                };
+            const bool published = renderer ? renderer->publishPreparedTerrainEdit(
+                                                   expected, candidate, placement, commitRenderer, publish, error )
+                                             : publish( {}, error );
+            if( !notice.ready )
+            {
+                if( published || error.empty() )
+                {
+                    error = "The prepared road edit did not publish its terrain candidate.";
+                }
+                return false;
+            }
+            error.clear();
+            return true;
+        }
+        catch( const std::exception &exception )
+        {
+            error = String( "Unable to publish road grading: " ) + exception.what();
+            return false;
+        }
+    }
+
     bool TerrainSystem::applyTerrainData( const render::TerrainData &data, String &error,
                                           u64 expectedRevision )
     {

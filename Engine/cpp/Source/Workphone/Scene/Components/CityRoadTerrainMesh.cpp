@@ -2,6 +2,7 @@
 #include <Workphone/Scene/Components/CityRoadTerrainMesh.hpp>
 #include <Workphone/Scene/Components/CityRoadJunctions.hpp>
 #include <Workphone/Interface/Procedural/CityRoadRoundabout.hpp>
+#include "CityRoadTerminals.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -37,6 +38,21 @@ namespace workphone::scene
             {
                 throw std::runtime_error( message );
             }
+        }
+
+        struct UnsupportedFootprint : std::runtime_error
+        {
+            using std::runtime_error::runtime_error;
+        };
+
+        struct FootprintWorkLimit : std::runtime_error
+        {
+            FootprintWorkLimit() : std::runtime_error( "Road terrain clipping work budget exceeded." ) {}
+        };
+
+        void requireFootprint( bool supported, const char *message )
+        {
+            if( !supported ) throw UnsupportedFootprint( message );
         }
 
         size_t straightRunEnd( const SourceBudgetVector<procedural::CityRoadSplineSample> &points,
@@ -317,7 +333,11 @@ namespace workphone::scene
                                           .crossProduct( polygon[i + 1].position - polygon[0].position );
                     const float faceLength = face.length();
                     require( std::isfinite( faceLength ), "Road triangle normal is nonfinite." );
-                    if( faceLength <= 1e-8f ) continue;
+                    // Float conversion can put the three XZ points of a
+                    // clipped sliver on one line even though their interpolated
+                    // elevations still produce a nonzero 3D cross product.
+                    // That is a vertical seam, not a usable road surface.
+                    if( faceLength <= 1e-8f || face.y == 0 ) continue;
                     require( mesh.indices.size() + 3 <= maximumVertices,
                              "Road terrain mesh triangle budget exceeded." );
                     const auto a = vertex( 0 ), b = vertex( i ), c = vertex( i + 1 );
@@ -377,8 +397,8 @@ namespace workphone::scene
                             {
                                 continue;
                             }
-                            require( !render::terrainCellIsHole( terrain, x, z ),
-                                     "A road or junction footprint intersects a terrain hole." );
+                            requireFootprint( !render::terrainCellIsHole( terrain, x, z ),
+                                              "A road or junction footprint intersects a terrain hole." );
                             coveredArea += covered;
                             std::array<CityRoadTerrainVertex, 10> fitted{};
                             for( size_t i = 0; i < count; ++i )
@@ -403,11 +423,11 @@ namespace workphone::scene
                             {
                                 const double horizontal =
                                     std::hypot( double( normal.x ), double( normal.z ) );
-                                require( std::abs( normal.y ) > 1e-10 &&
-                                             horizontal <= std::abs( double( normal.y ) ) *
-                                                               ( policy.maxGrade + 1e-5 ),
-                                         "Covered terrain or junction carriageway exceeds the road "
-                                         "grade limit." );
+                                requireFootprint( std::abs( normal.y ) > 1e-10 &&
+                                                      horizontal <= std::abs( double( normal.y ) ) *
+                                                                        ( policy.maxGrade + 1e-5 ),
+                                                  "Covered terrain or junction carriageway exceeds the road "
+                                                  "grade limit." );
                             }
                             // Every clipped polygon lies in exactly one terrain
                             // or Fixed source plane. Its fan can share vertices
@@ -417,14 +437,14 @@ namespace workphone::scene
                         }
                     }
                 }
-                require( std::abs( coveredArea - originalArea ) <= std::max( 1e-5, originalArea * 2e-5 ),
-                         "Road footprint is not completely supported by terrain cells." );
+                requireFootprint( std::abs( coveredArea - originalArea ) <= std::max( 1e-5, originalArea * 2e-5 ),
+                                  "Road footprint is not completely supported by terrain cells." );
             }
 
         private:
             void visit()
             {
-                require( ++visits <= maximumCellVisits, "Road terrain clipping work budget exceeded." );
+                if( ++visits > maximumCellVisits ) throw FootprintWorkLimit();
             }
 
             void bounds( const Polygon &points, size_t size, int &x0, int &z0, int &x1, int &z1 ) const
@@ -441,9 +461,9 @@ namespace workphone::scene
                     minZ = std::min( minZ, points[i].z );
                     maxZ = std::max( maxZ, points[i].z );
                 }
-                require( minX >= terrain.origin.x - 1e-4 && maxX <= right + 1e-4 &&
-                             minZ >= terrain.origin.y - 1e-4 && maxZ <= farBound + 1e-4,
-                         "Road or junction footprint extends outside its bound terrain." );
+                requireFootprint( minX >= terrain.origin.x - 1e-4 && maxX <= right + 1e-4 &&
+                                      minZ >= terrain.origin.y - 1e-4 && maxZ <= farBound + 1e-4,
+                                  "Road or junction footprint extends outside its bound terrain." );
                 x0 = std::clamp( int( std::floor( ( minX - terrain.origin.x ) / terrain.spacing.x ) ), 0,
                                  terrain.dimensions.x - 2 );
                 x1 = std::clamp( int( std::floor( ( maxX - terrain.origin.x ) / terrain.spacing.x ) ), 0,
@@ -452,8 +472,8 @@ namespace workphone::scene
                                  terrain.dimensions.y - 2 );
                 z1 = std::clamp( int( std::floor( ( maxZ - terrain.origin.y ) / terrain.spacing.y ) ), 0,
                                  terrain.dimensions.y - 2 );
-                require( u64( x1 - x0 + 1 ) * u64( z1 - z0 + 1 ) <= maximumCellVisits - visits,
-                         "Road terrain clipping work budget exceeded." );
+                if( u64( x1 - x0 + 1 ) * u64( z1 - z0 + 1 ) > maximumCellVisits - visits )
+                    throw FootprintWorkLimit();
             }
 
             void supported( Point point, Vector3F ground, const Policy &policy ) const
@@ -562,6 +582,191 @@ namespace workphone::scene
         triangleKinds.swap( other.triangleKinds );
         std::swap( sourceRevision, other.sourceRevision );
         std::swap( terrainRevision, other.terrainRevision );
+    }
+
+    SourceBudgetVector<CityRoadTerminal> buildCityRoadTerminals(
+        const procedural::CityRoadSplineSource &source, const procedural::CityRoadSplineBake &bake,
+        const CityRoadJunctionBake &connections, const render::TerrainData &terrain,
+        const Transform3<real_Num> &placement, CityRoadTerrainMesh *asphalt )
+    {
+        // A connected run starts or ends at the original knot only when that
+        // end was not consumed by an ordinary junction trim.
+        SourceBudgetVector<std::array<bool, 2>> freeEnds( source.roads.size() );
+        for( const auto &run : connections.roadRuns )
+        {
+            const auto &road = bake.roads[run.roadIndex].points;
+            auto &free = freeEnds[run.roadIndex];
+            free[0] = free[0] || run.points.front().distance == road.front().distance;
+            free[1] = free[1] || run.points.back().distance == road.back().distance;
+        }
+        SourceBudgetVector<CityRoadTerminal> result;
+        CityRoadTerrainMesh probe;
+        Builder builder( terrain, placement, probe );
+        u64 visits = 0;
+        size_t capIndices = 0;
+        constexpr size_t maximumCapIndices = 24000;
+        constexpr float pavement = 2.45f;
+        constexpr float pi = 3.14159265358979323846f;
+        const auto scale = placement.getScale();
+        const double smallestCell = std::min( double( scale.x ) * terrain.spacing.x,
+                                              double( scale.z ) * terrain.spacing.y );
+        const auto distanceSquared = []( Vector3F p, Vector3F a, Vector3F b ) {
+            const double dx = double( b.x ) - a.x, dz = double( b.z ) - a.z;
+            const double x = double( p.x ) - a.x, z = double( p.z ) - a.z;
+            const double lengthSquared = dx * dx + dz * dz;
+            const double t = lengthSquared > 0 ? std::clamp( ( x * dx + z * dz ) / lengthSquared, 0., 1. ) : 0;
+            const double separationX = x - dx * t, separationZ = z - dz * t;
+            return separationX * separationX + separationZ * separationZ;
+        };
+        const auto horizontalTangent = []( const procedural::CityRoadSplineSample &sample ) {
+            auto tangent = sample.tangent;
+            tangent.y = 0;
+            tangent.normalise();
+            return tangent;
+        };
+        for( u32 r = 0; r < source.roads.size(); ++r )
+        {
+            const auto &road = source.roads[r];
+            const auto &samples = bake.roads[r].points;
+            if( road.closed || road.heightMode != procedural::CityRoadHeightMode::Drape || road.width < 4 ||
+                samples.back().distance - samples.front().distance < road.width ) continue;
+            const float radius = road.width * .5f, clearance = radius + pavement;
+            // Finer terrain can tessellate an optional cap into more faces
+            // than its size warrants. Keep the existing ribbon in that case.
+            if( road.width / smallestCell > 32 ) continue;
+            for( const bool atStart : { true, false } )
+            {
+                if( !freeEnds[r][atStart ? 0 : 1] ) continue;
+                if( result.size() >= 128 ) return result;
+                const auto &end = atStart ? samples.front() : samples.back();
+                const auto &adjacent = atStart ? samples[1] : samples[samples.size() - 2];
+                const auto tangentChange = horizontalTangent( end ) - horizontalTangent( adjacent );
+                const auto chord = end.position - adjacent.position;
+                // A wraparound walk needs room on both sides of its approach.
+                // At a tighter turn, the inner longitudinal walk already
+                // folds and must not reappear as a disconnected cap at the tip.
+                if( std::hypot( chord.x, chord.z ) <= clearance * tangentChange.length() ) continue;
+                // Roundabout approaches are explicit, separate from ordinary
+                // junction trimming. Reserve their paved reaches as well.
+                bool nearJunction = false;
+                for( const auto &junction : source.roundabouts )
+                {
+                    const float reach = junction.outerRadius + clearance + pavement;
+                    if( distanceSquared( end.position, junction.center, junction.center ) < reach * reach )
+                    {
+                        nearJunction = true;
+                        break;
+                    }
+                    for( const auto &port : junction.ports )
+                    {
+                        auto direction = port.outward;
+                        direction.y = 0;
+                        direction.normalise();
+                        const auto inner = junction.center + direction * junction.outerRadius;
+                        const auto outer = inner + direction * port.length;
+                        const float minimum = clearance + port.width * .5f + pavement;
+                        if( distanceSquared( end.position, inner, outer ) < minimum * minimum )
+                        {
+                            nearJunction = true;
+                            break;
+                        }
+                    }
+                    if( nearJunction ) break;
+                }
+                if( nearJunction ) continue;
+                bool nearRoad = false;
+                for( u32 other = 0; other < source.roads.size() && !nearRoad; ++other )
+                {
+                    const auto &points = bake.roads[other].points;
+                    const float minimum = clearance + source.roads[other].width * .5f + pavement;
+                    for( size_t i = 1; i < points.size(); ++i )
+                    {
+                        if( ++visits > 2000000 ) return result;
+                        if( other == r )
+                        {
+                            const auto nearest = atStart ? points[i - 1].distance : points[i].distance;
+                            if( std::abs( nearest - end.distance ) < minimum * 1.25f ) continue;
+                        }
+                        if( distanceSquared( end.position, points[i - 1].position, points[i].position ) < minimum * minimum )
+                        {
+                            nearRoad = true;
+                            break;
+                        }
+                    }
+                }
+                if( nearRoad ) continue;
+
+                auto side = end.left - end.right;
+                side.y = 0;
+                side.normalise();
+                auto forward = Vector3F( side.z, 0, -side.x );
+                const float direction = atStart ? -1.f : 1.f;
+                if( forward.dotProduct( end.tangent ) * direction < 0 ) forward = -forward;
+                CityRoadTerminal terminal;
+                terminal.roadIndex = r;
+                terminal.atStart = atStart;
+                terminal.center = end.position;
+                Policy policy;
+                policy.drape = true;
+                policy.offset = road.heightOffset;
+                policy.maxGrade = road.maxGrade;
+                bool supported = false;
+                for( const float depthScale : { 1.f, .5f } )
+                {
+                    const float depth = std::min( 3.f, radius ) * depthScale;
+                    terminal.edge.front() = end.left;
+                    terminal.edge.back() = end.right;
+                    terminal.outward.front() = side;
+                    terminal.outward.back() = -side;
+                    const size_t sections = terminal.edge.size() - 1;
+                    for( size_t i = 1; i < sections; ++i )
+                    {
+                        const float angle = float( i ) * pi / float( sections );
+                        const float c = std::cos( angle ), s = std::sin( angle );
+                        terminal.edge[i] = end.position + side * ( radius * c ) + forward * ( depth * s );
+                        auto normal = side * ( c / radius ) + forward * ( s / depth );
+                        normal.normalise();
+                        terminal.outward[i] = normal;
+                    }
+                    probe.vertices.clear();
+                    probe.indices.clear();
+                    probe.triangleKinds.clear();
+                    try
+                    {
+                        const auto uv = []( Vector3F p ) { return Vector2F( p.x * .125f, p.z * .125f ); };
+                        for( size_t i = 1; i < terminal.edge.size(); ++i )
+                        {
+                            const auto a = terminal.edge[i - 1], b = terminal.edge[i];
+                            builder.triangle( { terminal.center, a, b },
+                                              { uv( terminal.center ), uv( a ), uv( b ) }, policy );
+                        }
+                        supported = true;
+                        break;
+                    }
+                    catch( const UnsupportedFootprint & )
+                    {
+                        // The original authored ribbon is still usable. Try a
+                        // shorter return, then keep its original straight end.
+                    }
+                    catch( const FootprintWorkLimit & ) { return result; }
+                }
+                if( !supported ) continue;
+                if( capIndices + probe.indices.size() > maximumCapIndices ) return result;
+                if( asphalt )
+                {
+                    if( asphalt->vertices.size() + probe.vertices.size() > maximumVertices ||
+                        asphalt->indices.size() + probe.indices.size() > maximumVertices ) return result;
+                    const auto base = u32( asphalt->vertices.size() );
+                    asphalt->vertices.insert( asphalt->vertices.end(), probe.vertices.begin(), probe.vertices.end() );
+                    for( const auto index : probe.indices ) asphalt->indices.push_back( base + index );
+                    asphalt->triangleKinds.insert( asphalt->triangleKinds.end(), probe.triangleKinds.begin(),
+                                                   probe.triangleKinds.end() );
+                }
+                capIndices += probe.indices.size();
+                result.push_back( terminal );
+            }
+        }
+        return result;
     }
 
     bool buildCityRoadTerrainMesh( const procedural::CityRoadSplineSource &source,
@@ -703,6 +908,8 @@ namespace workphone::scene
                     builder.triangle( positions, uvs, policy, normal );
                 }
             }
+            if( connectRoads )
+                buildCityRoadTerminals( source, bake, connected, *terrain, placement, &candidate );
             output.swap( candidate );
             error.clear();
             return true;

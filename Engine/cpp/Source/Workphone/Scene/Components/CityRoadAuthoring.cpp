@@ -1,17 +1,25 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Scene/Components/CityRoadAuthoring.hpp>
+#include <Workphone/Scene/Components/CityRoadTerrainFit.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
 #include <Workphone/Core/Properties.hpp>
 #include <Workphone/Core/StringUtil.hpp>
 #include <Workphone/Interface/IApplicationManager.hpp>
+#include <Workphone/Interface/Physics/IPhysicsManager.hpp>
+#include <Workphone/Interface/Physics/IPhysicsScene3.hpp>
 #include <Workphone/Interface/Scene/IGameManager.hpp>
 #include <Workphone/Interface/Scene/IGameActor.hpp>
 #include <Workphone/Interface/Scene/ITransform.hpp>
+#include <Workphone/Interface/System/ITask.hpp>
+#include <Workphone/Interface/System/ITaskManager.hpp>
 #include <Workphone/Core/Handle.hpp>
+#include <Workphone/System/TaskLock.hpp>
+#include <Workphone/Thread/Thread.hpp>
 #include "../RuntimeSceneMembership.hpp"
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <mutex>
 #include <stdexcept>
 
 namespace workphone::scene
@@ -284,6 +292,7 @@ namespace workphone::scene
                 m_terrainSerial = serial;
             }
             cancelDraft();
+            if( previousUuid != uuid ) m_terrainGrading.reset();
             error.clear();
             m_error.clear();
             return true;
@@ -355,6 +364,187 @@ namespace workphone::scene
             return false;
         }
         return applySource( std::move( candidate ), expectedRevision, false, error );
+    }
+
+    bool CityRoadAuthoring::applyTerrainRoadEdit( const String &json, u64 expectedRoadRevision,
+        render::TerrainSnapshot expectedTerrain, render::TerrainSnapshot restoreTerrain,
+        bool fitTerrain, String &error, SourceBudgetText *committedSource,
+        const CityRoadTerrainGrading *restoreGrading )
+    {
+        try
+        {
+            const auto revision = getSourceRevision();
+            if( Thread::getCurrentTask() != TaskId::Application || !getActor() )
+                throw std::runtime_error( "Terrain road edits require a scene actor on the Application task." );
+            if( revision != expectedRoadRevision || revision == std::numeric_limits<u64>::max() )
+                throw std::runtime_error( "The road source changed or its revision is exhausted." );
+            auto bound = getTerrain();
+            render::TerrainSnapshot active;
+            Transform3<real_Num> placement;
+            u64 serial = 0;
+            if( !bound || !expectedTerrain || !captureTerrain( active, placement, serial, error ) ||
+                active != expectedTerrain || bound->getTerrainSnapshot() != expectedTerrain )
+                throw std::runtime_error( "Terrain changed or is awaiting publication. Refresh the road draft and try again." );
+
+            procedural::CityRoadSplineSource candidate;
+            if( !procedural::deserializeCityRoadSplineSource( std::string_view( json.data(), json.size() ),
+                                                              candidate, error ) )
+                throw std::runtime_error( error.c_str() );
+            if( candidate.id != m_source.id || !matches( candidate.terrainResourceUuid, m_terrainBindingUUID ) )
+                throw std::runtime_error( "A terrain road edit must keep its source and terrain binding." );
+            if( fitTerrain && ( restoreTerrain || restoreGrading ) )
+                throw std::runtime_error( "Terrain history replay and automatic grading cannot be combined." );
+            if( restoreTerrain && m_terrainGrading && !restoreGrading )
+                throw std::runtime_error( "Terrain history replay also requires its saved road grading record." );
+            candidate.revision = revision + 1;
+
+            auto snapshot = active;
+            auto grading = m_terrainGrading;
+            if( restoreTerrain || restoreGrading )
+            {
+                if( restoreTerrain ) snapshot = std::move( restoreTerrain );
+                if( restoreGrading ) grading = *restoreGrading;
+            }
+            else
+            {
+                if( !prepareCityRoadTerrainRestoration( candidate, active, placement, grading, snapshot, error ) )
+                    throw std::runtime_error( error.c_str() );
+                if( fitTerrain )
+                {
+                    CityRoadTerrainFitResult fitted;
+                    if( !prepareCityRoadTerrainEdit( m_source, candidate, snapshot, placement, {}, fitted, error ) )
+                        throw std::runtime_error( error.c_str() );
+                    candidate.swap( fitted.source );
+                    snapshot = std::move( fitted.terrain );
+                }
+                const auto &uuid = candidate.terrainResourceUuid;
+                if( !retainCityRoadTerrainGrading( std::string_view( uuid.data(), uuid.size() ),
+                        active, snapshot, placement, m_terrainGrading, grading, error ) )
+                    throw std::runtime_error( error.c_str() );
+            }
+            if( snapshot != active )
+            {
+                if( active->revision == std::numeric_limits<u64>::max() )
+                    throw std::runtime_error( "Terrain revision is exhausted." );
+                auto next = std::make_shared<render::TerrainData>( *snapshot );
+                next->revision = active->revision + 1;
+                snapshot = std::move( next );
+                if( !render::validateTerrainPlacement( *snapshot, placement, error ) )
+                    throw std::runtime_error( error.c_str() );
+            }
+            candidate.terrainRevision = snapshot->revision;
+            procedural::CityRoadSplineBake bake;
+            const auto sample = [&]( const Vector3F &point, f32 &height ) {
+                return render::sampleTerrainHeight( *snapshot, placement, point, height );
+            };
+            SourceBudgetText canonical, receipt;
+            if( !procedural::sampleCityRoadSplines( candidate, {}, sample, bake, error ) ||
+                !procedural::serializeCityRoadSplineSource( candidate, canonical, error ) )
+                throw std::runtime_error( error.c_str() );
+            if( committedSource ) receipt = canonical;
+
+            const auto accept = [&]( u64 terrainSerial ) {
+                m_source.swap( candidate );
+                m_sourceJSON.swap( canonical );
+                m_bake.roads.swap( bake.roads );
+                std::swap( m_bake.sourceRevision, bake.sourceRevision );
+                m_terrainSnapshot = snapshot;
+                m_terrainGrading.swap( grading );
+                m_terrainPlacement = placement;
+                m_terrainSerial = terrainSerial;
+                m_activeRevision = m_source.revision;
+                m_hasAcceptedSource = true;
+                m_pendingPublication = false;
+                if( committedSource ) committedSource->swap( receipt );
+            };
+            const RuntimePublication publication = [&]( const auto &admit, const auto &commitRoad, String &failure ) {
+                if( getSourceRevision() != revision || getTerrain() != bound )
+                {
+                    failure = "Road source or terrain binding changed during preparation.";
+                    return false;
+                }
+                if( snapshot == active )
+                {
+                    render::TerrainSnapshot current;
+                    Transform3<real_Num> currentPlacement;
+                    u64 currentSerial = 0;
+                    if( !captureTerrain( current, currentPlacement, currentSerial, failure ) ||
+                        current != active || currentSerial != serial || currentPlacement != placement ||
+                        bound->getTerrainSnapshot() != active )
+                    {
+                        failure = "Terrain changed during road preparation.";
+                        return false;
+                    }
+                    auto app = core::IApplicationManager::instancePtr();
+                    auto physics = app ? app->getPhysicsManager() : nullptr;
+                    auto scene = physics ? physics->getPhysicsScene() : nullptr;
+                    std::unique_lock<ISharedObject> sceneLock;
+                    if( scene ) sceneLock = std::unique_lock<ISharedObject>( *scene );
+                    admit();
+                    commitRoad();
+                    accept( currentSerial );
+                    return true;
+                }
+                // TaskLock pauses future updates. Verify the current owner
+                // update has actually left its mutex before staging GPU data.
+                auto app = core::IApplicationManager::instancePtr();
+                auto tasks = app ? app->getTaskManager() : nullptr;
+                if( tasks ) for( const auto owner : { TaskId::Render, TaskId::Physics } )
+                {
+                    if( auto task = tasks->getTask( owner ) )
+                    {
+                        if( !task->try_lock() )
+                        {
+                            failure = "Road grading is waiting for the render or physics task. Commit the draft again.";
+                            return false;
+                        }
+                        task->unlock();
+                    }
+                }
+                return bound->publishTerrainRoadEdit( active, snapshot, placement,
+                    [&]( const std::function<void()> &commitTerrain, u64 nextSerial, String & ) {
+                        admit();
+                        commitTerrain();
+                        commitRoad();
+                        accept( nextSerial );
+                        return true;
+                    }, failure );
+            };
+            if( m_publishCallback )
+            {
+                auto app = core::IApplicationManager::instancePtr();
+                auto tasks = app ? app->getTaskManager() : nullptr;
+                auto renderLock = tasks ? tasks->lockTask( TaskId::Render ) : TaskLock();
+                auto physicsLock = tasks ? tasks->lockTask( TaskId::Physics ) : TaskLock();
+                const auto admit = [&] {
+                    if( !m_publishCallback( candidate, bake, snapshot, placement, error ) )
+                        throw std::runtime_error( error.empty() ? "Road publication was rejected." : error.c_str() );
+                };
+                if( !publication( admit, [] {}, error ) ) throw std::runtime_error( error.c_str() );
+            }
+            else if( !publishRuntimePrepared( candidate, bake, snapshot, placement, publication, error ) )
+                throw std::runtime_error( error.c_str() );
+            error.clear();
+            m_error.clear();
+            return true;
+        }
+        catch( const std::exception &exception )
+        {
+            error = m_error = exception.what();
+            return false;
+        }
+    }
+
+    CityRoadTerrainGrading CityRoadAuthoring::getTerrainGrading() const
+    {
+        return m_terrainGrading;
+    }
+
+    bool CityRoadAuthoring::rememberInitialTerrainGrading( render::TerrainSnapshot original, String &error )
+    {
+        const auto &uuid = m_source.terrainResourceUuid;
+        return retainCityRoadTerrainGrading( std::string_view( uuid.data(), uuid.size() ),
+            std::move( original ), m_terrainSnapshot, m_terrainPlacement, {}, m_terrainGrading, error );
     }
 
     bool CityRoadAuthoring::applySource( procedural::CityRoadSplineSource candidate,
@@ -452,6 +642,8 @@ namespace workphone::scene
                                                         : error.c_str() );
             }
 
+            if( candidate.id != m_source.id || candidate.terrainResourceUuid != m_source.terrainResourceUuid )
+                m_terrainGrading.reset();
             m_source.swap( candidate );
             m_bake.roads.swap( bake.roads );
             std::swap( m_bake.sourceRevision, bake.sourceRevision );
@@ -621,6 +813,20 @@ namespace workphone::scene
         return properties;
     }
 
+    SmartPtr<ISharedObject> CityRoadAuthoring::toData() const
+    {
+        auto properties = static_pointer_cast<Properties>( Component::toData() );
+        if( m_terrainGrading )
+        {
+            SourceBudgetText encoded;
+            String error;
+            if( !serializeCityRoadTerrainGrading( m_terrainGrading, encoded, error ) )
+                throw std::runtime_error( error.c_str() );
+            properties->setProperty( "Terrain Grading V1", String( encoded.data(), encoded.size() ) );
+        }
+        return properties;
+    }
+
     void CityRoadAuthoring::setProperties( SmartPtr<Properties> properties )
     {
         if( !properties )
@@ -641,6 +847,16 @@ namespace workphone::scene
         }
         const auto oldTerrain = getTerrain();
         const auto oldBinding = m_terrainBindingUUID;
+        auto grading = m_terrainGrading;
+        if( binding != oldBinding || candidate.id != m_source.id ) grading.reset();
+        String encodedGrading;
+        if( properties->getPropertyValue( "Terrain Grading V1", encodedGrading ) &&
+            !deserializeCityRoadTerrainGrading( std::string_view( encodedGrading.data(), encodedGrading.size() ),
+                std::string_view( binding.data(), binding.size() ), grading, error ) )
+        {
+            m_error = error;
+            return;
+        }
         if( binding != m_terrainBindingUUID )
         {
             m_terrain = nullptr;
@@ -651,6 +867,7 @@ namespace workphone::scene
         {
             if( applySource( candidate, 0, !m_hasAcceptedSource, error ) )
             {
+                m_terrainGrading.swap( grading );
                 cancelDraft();
                 return;
             }
@@ -670,6 +887,7 @@ namespace workphone::scene
             {
                 m_source.swap( candidate );
                 m_sourceJSON.swap( canonical );
+                m_terrainGrading.swap( grading );
                 m_hasAcceptedSource = true;
                 m_pendingPublication = true;
                 m_bake.roads.clear();

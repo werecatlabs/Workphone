@@ -129,6 +129,18 @@ namespace workphone
              */
             bool publishPendingTerrain( TerrainSnapshot expected,
                                         const std::function<void()> &commitRenderer, String &error );
+            /** Prepare a replacement without changing the requested or active snapshot.
+             * The caller must hold the render task boundary through preparation,
+             * publication and retirement. The returned renderer swap must not fail.
+             */
+            virtual bool prepareTerrainEditRenderer( TerrainSnapshot candidate,
+                                                     std::function<void()> &commitRenderer,
+                                                     String &error );
+            bool publishPreparedTerrainEdit( TerrainSnapshot expected, TerrainSnapshot candidate,
+                                             const Transform3<real_Num> &placement,
+                                             const std::function<void()> &commitRenderer,
+                                             const TerrainPublication &publishDependents,
+                                             String &error );
 
             /**
              * @brief Register the terrain state data in the state context.

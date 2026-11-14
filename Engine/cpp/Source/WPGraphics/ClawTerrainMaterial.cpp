@@ -392,6 +392,33 @@ namespace workphone::render
         m_data->active.swap( candidate );
     }
 
+    std::shared_ptr<const ClawTerrainMaterial::Candidate> ClawTerrainMaterial::stageHeightEdit(
+        ClawRendererDX11 &renderer, TerrainSnapshot expected, TerrainSnapshot replacement,
+        String &error ) const
+    {
+        const auto &active = m_data->active;
+        if( !active || active->snapshot != expected || !replacement ||
+            active->device.Get() != nativeDevice( renderer ) ||
+            FAILED( active->device->GetDeviceRemovedReason() ) )
+        {
+            error = "Road grading requires the current terrain material on the active device.";
+            return {};
+        }
+        // Add references to the already published immutable GPU resources. The
+        // native render thread still owns texture staging and binding.
+        auto staged = std::make_shared<Candidate>( *active );
+        staged->snapshot = std::move( replacement );
+        error.clear();
+        return staged;
+    }
+
+    void ClawTerrainMaterial::swapHeightEdit( std::shared_ptr<const Candidate> &candidate ) noexcept
+    {
+        assert( candidate && m_data->active && candidate->publisher == m_data->publisher &&
+                candidate->ticket == m_data->active->ticket );
+        m_data->active.swap( candidate );
+    }
+
     bool ClawTerrainMaterial::bind( ClawRendererDX11 &renderer, String &error ) const
     {
         error.clear();

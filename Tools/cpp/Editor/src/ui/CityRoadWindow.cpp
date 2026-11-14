@@ -5,6 +5,7 @@
 #include <jobs/SaveSceneJob.hpp>
 #include <Workphone/Workphone.hpp>
 #include <Workphone/Scene/Components/CityRoadAuthoring.hpp>
+#include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
 #include <Workphone/Graphics/TerrainData.hpp>
 #include <algorithm>
 #include <array>
@@ -71,6 +72,22 @@ namespace workphone::editor
             a.revision=b.revision=0;a.terrainRevision=b.terrainRevision=0;SourceBudgetText left,right;
             if(!procedural::serializeCityRoadSplineSource(a,left,error) || !procedural::serializeCityRoadSplineSource(b,right,error))return false;
             if(left!=right){error="Road source changed outside this history step; undo/redo was rejected.";return false;}return true;
+        }
+
+        bool sameTerrain(const render::TerrainData &a,const render::TerrainData &b)
+        {
+            return a.dimensions==b.dimensions && a.spacing==b.spacing && a.origin==b.origin &&
+                   a.heightScale==b.heightScale && a.heights==b.heights && a.layers==b.layers &&
+                   a.layerWeights==b.layerWeights && a.appearance==b.appearance &&
+                   a.autoMaterial==b.autoMaterial && a.surfaceMasks==b.surfaceMasks && a.holes==b.holes;
+        }
+
+        u64 terrainHistoryBytes(const render::TerrainData &data)
+        {
+            u64 bytes=sizeof(data)+data.heights.size()*sizeof(f32)+data.layerWeights.size()*sizeof(Vector4F)+
+                data.surfaceMasks.size()*sizeof(Vector2F)+data.holes.size()+data.appearance.detailNormal.size();
+            for(const auto &layer:data.layers)bytes+=layer.albedo.size()+layer.normal.size()+layer.orm.size();
+            return bytes;
         }
 
         using CubicControls = std::array<Vector3F, 4>;
@@ -170,15 +187,15 @@ namespace workphone::editor
         }
     }
     CityRoadEditCommand::CityRoadEditCommand(){setPrimary(true);}
-    bool CityRoadEditCommand::configure(SmartPtr<scene::CityRoadAuthoring> target,const String &after,String &error)
+    bool CityRoadEditCommand::configure(SmartPtr<scene::CityRoadAuthoring> target,const String &after,String &error,bool gradeTerrain)
     {
         auto app=core::IApplicationManager::instancePtr();auto scene=activeScene();
         if(!target || !scene || !target->getActor() || target->getActor()->getScene()!=scene)
         {error="Road command target is not in the active scene.";return false;}
         m_target=target;m_scene=scene;const auto before=target->getSourceJSON();m_before.assign(before.data(),before.size());m_after.assign(after.data(),after.size());
-        m_project=app->getProjectPath();error.clear();return true;
+        m_project=app->getProjectPath();m_gradeTerrain=gradeTerrain;error.clear();return true;
     }
-    bool CityRoadEditCommand::apply(const SourceBudgetText &value,const SourceBudgetText &expected)
+    bool CityRoadEditCommand::apply(bool forward)
     {
         if(Thread::getCurrentTask()!=TaskId::Application){m_error="Road publication requires the Application task.";return false;}
         auto app=core::IApplicationManager::instancePtr();auto target=m_target.load().lock();auto scene=m_scene.load().lock();
@@ -188,12 +205,72 @@ namespace workphone::editor
         // Each successful history step increments the source revision. Compare authored
         // state, then CAS the current token so A/B edits can undo and redo in sequence.
         const auto revision=target->getSourceRevision();
+        const auto &expected=forward?m_before:m_after;
+        const auto &value=forward?m_after:m_before;
         if(!sameAuthoredState(target->getSourceJSON(),expected,m_error)){WP_LOG_ERROR(m_error);return false;}
-        if(!target->setSourceJSON(String(value.data(),value.size()),revision,m_error)){WP_LOG_ERROR(m_error);return false;}
-        target->getActor()->setDirty(true);return true;
+        try
+        {
+            const bool first=!m_committed;
+            auto bound=target->getTerrain();
+            if((first && bound) || m_terrainAfter || m_hasGradingHistory)
+            {
+                if(!bound){m_error="The terrain for this road history step is unavailable.";return false;}
+                auto active=bound->getTerrainSnapshot();
+                if(!active){m_error="The bound terrain has no active samples.";return false;}
+                const auto currentGrading=target->getTerrainGrading();
+                if(!first && currentGrading!=(forward?m_gradingBefore:m_gradingAfter))
+                {m_error="Road grading changed outside this history step.";return false;}
+                if(m_terrainAfter)
+                {
+                    const auto &expectedTerrain=forward?m_terrainBefore:m_terrainAfter;
+                    render::TerrainSnapshot integrated;
+                    Transform3<real_Num> pose;
+                    u64 serial=0;
+                    bool detached=false;
+                    bound->getTerrainIntegrationState(integrated,pose,serial,detached);
+                    if(detached || integrated!=active || pose!=m_placement ||
+                       (active!=expectedTerrain && !sameTerrain(*active,*expectedTerrain)))
+                    {m_error="Terrain changed outside this road history step.";return false;}
+                }
+                StreamBudget budget;
+                if(first)
+                {
+                    budget=WorldStreamingScheduler::shared()->reserve(StreamMemoryClass::SourceCpu,
+                        2*terrainHistoryBytes(*active),m_error);
+                    if(!budget)return false;
+                }
+                SourceBudgetText accepted;
+                const auto restore=first?render::TerrainSnapshot{}:(forward?m_terrainAfter:m_terrainBefore);
+                const auto &replay=forward?m_gradingAfter:m_gradingBefore;
+                if(!target->applyTerrainRoadEdit(String(value.data(),value.size()),revision,active,restore,
+                                                 first && m_gradeTerrain,m_error,first?&accepted:nullptr,
+                                                 first?nullptr:&replay))return false;
+                if(first)
+                {
+                    m_after.swap(accepted);
+                    m_gradingBefore=currentGrading;
+                    m_gradingAfter=target->getTerrainGrading();
+                    m_hasGradingHistory=m_gradingBefore!=m_gradingAfter;
+                    auto published=target->getTerrainSnapshot();
+                    if(published!=active)
+                    {
+                        m_terrainHistoryBudget=std::move(budget);
+                        m_terrainBefore=std::move(active);
+                        m_terrainAfter=std::move(published);
+                        m_placement=target->getTerrainPlacement();
+                    }
+                }
+                if(m_terrainAfter && bound->getActor())bound->getActor()->setDirty(true);
+            }
+            else if(!target->setSourceJSON(String(value.data(),value.size()),revision,m_error))return false;
+            target->getActor()->setDirty(true);
+            m_committed=true;
+            return true;
+        }
+        catch(const std::exception &failure){m_error=failure.what();return false;}
     }
-    void CityRoadEditCommand::execute(){if(!m_applied)m_applied=apply(m_after,m_before);setState(State::Finished);}
-    void CityRoadEditCommand::undo(){if(m_applied && apply(m_before,m_after))m_applied=false;}
+    void CityRoadEditCommand::execute(){if(!m_applied)m_applied=apply(true);setState(State::Finished);}
+    void CityRoadEditCommand::undo(){if(m_applied && apply(false))m_applied=false;}
     void CityRoadEditCommand::redo(){execute();}
     bool CityRoadEditCommand::dispatchHistory(SmartPtr<ICommandManager> manager,bool redo,String &error)
     {
@@ -238,6 +315,7 @@ namespace workphone::editor
         const auto input=[&](const String &label,Widget id,const String &value){auto p=ui->addElementByType<ui::IUILabelTextInputPair>();p->setLabel(label);p->setValue(value);p->setElementId(id);window->addChild(p);return p;};
         m_width=input("Road width (m)",Width,"12");m_grade=input("Maximum grade (rise/run)",Grade,"0.08");
         m_closed=ui->addElementByType<ui::IUILabelTogglePair>();m_closed->setLabel("Closed spline");m_closed->setValue(false);window->addChild(m_closed);
+        m_gradeTerrain=ui->addElementByType<ui::IUILabelTogglePair>();m_gradeTerrain->setLabel("Grade terrain under roads");m_gradeTerrain->setValue(true);window->addChild(m_gradeTerrain);
         m_outerRadius=input("Roundabout outer radius (m)",OuterRadius,"14");m_islandRadius=input("Island radius (m)",IslandRadius,"8");
         m_clockwise=ui->addElementByType<ui::IUILabelTogglePair>();m_clockwise->setLabel("Clockwise circulation");m_clockwise->setValue(true);window->addChild(m_clockwise);
         button("Place Roundabout (4 approaches)",Roundabout);
@@ -261,7 +339,7 @@ namespace workphone::editor
         m_viewport=nullptr;if(m_listener)m_listener->setOwner(nullptr);m_listener=nullptr;
         auto app=core::IApplicationManager::instancePtr();auto ui=app?app->getUI():nullptr;
         if(auto window=getParentWindow()){if(ui){for(auto child:window->getChildren())ui->removeElement(child);ui->removeElement(window);}setParentWindow(nullptr);}
-        m_width=nullptr;m_grade=nullptr;m_closed=nullptr;m_outerRadius=nullptr;m_islandRadius=nullptr;m_clockwise=nullptr;m_status=nullptr;m_authoring=nullptr;m_scene=nullptr;EditorWindow::unload(data);
+        m_width=nullptr;m_grade=nullptr;m_closed=nullptr;m_gradeTerrain=nullptr;m_outerRadius=nullptr;m_islandRadius=nullptr;m_clockwise=nullptr;m_status=nullptr;m_authoring=nullptr;m_scene=nullptr;EditorWindow::unload(data);
     }
     void CityRoadWindow::setWindowVisible(bool visible)
     {if(!visible){{RecursiveMutex::ScopedLock lock(m_toolMutex);++m_toolEpoch;m_cachedEnabled=false;m_cachedPreview={};}cancelDraft();m_enabled=false;}else attachViewport();EditorWindow::setWindowVisible(visible);}
@@ -307,11 +385,13 @@ namespace workphone::editor
         String error;if(!target || !target->bindTerrain(terrain,error)){status(error);return false;}
         m_authoring=target;m_scene=scene;m_enabled=true;status("Terrain bound. Draw Road starts one editable Bezier spline.");return true;
     }
-    void CityRoadWindow::cancelDraft(){m_draft={};m_manualHandles.clear();m_drafting=m_dragging=m_portHandleDrag=false;}
+    void CityRoadWindow::cancelDraft(){m_draft={};m_draftTerrain.reset();m_manualHandles.clear();m_drafting=m_dragging=m_portHandleDrag=false;}
     bool CityRoadWindow::beginDraft()
     {
         auto target=current();if(!target){status("Bind a terrain or select a City Road Authoring component first.");return false;}
-        m_draft=target->getSource();m_draftRevision=target->getSourceRevision();m_drafting=true;m_portHandleDrag=false;return true;
+        m_draft=target->getSource();m_draftRevision=target->getSourceRevision();
+        m_draftTerrain=target->getTerrainSnapshot();m_draftTerrainPlacement=target->getTerrainPlacement();
+        m_drafting=true;m_portHandleDrag=false;return true;
     }
     bool CityRoadWindow::beginDraw()
     {
@@ -421,12 +501,23 @@ namespace workphone::editor
     {
         auto target=current();if(!target || !m_drafting)return false;
         if(target->getSourceRevision()!=m_draftRevision){status("Source changed during this edit. Cancel the draft and reload before committing.");return false;}
+        if(auto bound=target->getTerrain())
+        {
+            render::TerrainSnapshot integrated;
+            Transform3<real_Num> placement;
+            u64 serial=0;
+            bool detached=false;
+            bound->getTerrainIntegrationState(integrated,placement,serial,detached);
+            if(detached || integrated!=m_draftTerrain || placement!=m_draftTerrainPlacement ||
+               bound->getTerrainSnapshot()!=m_draftTerrain)
+            {status("Terrain changed during this edit. Cancel and start a new draft.");return false;}
+        }
         String error;const auto after=json(m_draft,error);if(after.empty()){status(error);return false;}
         String comparisonError;const SourceBudgetText intended(after.data(),after.size());
         if(sameAuthoredState(target->getSourceJSON(),intended,comparisonError)){cancelDraft();status("Selection retained; no road fields changed.");return true;}
         auto app=core::IApplicationManager::instancePtr();auto history=app?app->getCommandManager():nullptr;
         if(!history){status("Command history is unavailable; draft retained.");return false;}
-        auto command=make_ptr<CityRoadEditCommand>();if(!command->configure(target,after,error)){status(error);return false;}
+        auto command=make_ptr<CityRoadEditCommand>();if(!command->configure(target,after,error,m_gradeTerrain->getValue())){status(error);return false;}
         command->execute();if(!command->applied())
         {
             String context;
@@ -441,7 +532,7 @@ namespace workphone::editor
             status(context+command->error()+" Draft retained; adjust the control or Cancel.");return false;
         }
         history->addCommand(command);
-        cancelDraft();status("Road edit committed. Ctrl+Z/Redo use scene command history; Save Scene persists source and terrain binding.");return true;
+        cancelDraft();status(command->gradedTerrain()?"Road and terrain committed together. Undo and Redo restore both.":"Road edit committed. Undo and Redo use scene command history.");return true;
     }
     bool CityRoadWindow::addRoundabout(Vector3F center)
     {
@@ -462,6 +553,9 @@ namespace workphone::editor
            !render::sampleTerrainHeight(*snapshot,placement,center+Vector3F(0,0,step),zp) || !render::sampleTerrainHeight(*snapshot,placement,center-Vector3F(0,0,step),zm))
         {status("Roundabout approaches leave the terrain or cross a hole. Choose a covered location.");cancelDraft();return false;}
         spec.gradeX=(xp-xm)/(2*step);spec.gradeZ=(zp-zm)/(2*step);
+        const float slope=std::hypot(spec.gradeX,spec.gradeZ);
+        if(m_gradeTerrain->getValue() && slope>spec.maxGrade*.985f)
+        {const auto fraction=spec.maxGrade*.985f/slope;spec.gradeX*=fraction;spec.gradeZ*=fraction;}
         for(const auto direction:{Vector3F(1,0,0),Vector3F(0,0,1),Vector3F(-1,0,0),Vector3F(0,0,-1)})
         {
             procedural::CityRoadSpline road;road.id=newId();road.width=settings.width;road.maxGrade=settings.maxGrade;road.heightMode=procedural::CityRoadHeightMode::Drape;road.heightOffset=.025f;

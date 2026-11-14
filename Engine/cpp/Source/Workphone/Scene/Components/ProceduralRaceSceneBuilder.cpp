@@ -2261,6 +2261,269 @@ namespace workphone::scene::race
             assets.cityStreetDetailCount = static_cast<u32>( admitted.size() );
         }
 
+        void buildTerrainCityVerges( SceneAssets &assets, const CityRoadTerrainMesh &walks, u32 seed,
+                                     VehicleAppearanceQuality quality )
+        {
+            const auto ground = assets.roadAuthoring->getTerrainSnapshot();
+            if( !ground ) return;
+            const auto &placement = assets.roadAuthoring->getTerrainPlacement();
+            const auto &source = assets.roadAuthoring->getSource();
+            const auto &roads = assets.roadAuthoring->getBake().roads;
+            if( source.roads.size() != roads.size() ) return;
+            const auto scalar = []( u64 key ) {
+                return float( render::foliageStableHash( key ) >> 40 ) / 16777216.f;
+            };
+            const auto locationKey = [seed]( Vector3F point ) {
+                const auto x = static_cast<u32>( static_cast<s32>( std::floor( point.x * 2 ) ) );
+                const auto z = static_cast<u32>( static_cast<s32>( std::floor( point.z * 2 ) ) );
+                return render::foliageStableHash( ( u64( x ) << 32 ) | z ) ^ seed;
+            };
+            const auto distanceSquared = []( Vector3F p, Vector3F a, Vector3F b ) {
+                const float x = b.x - a.x, z = b.z - a.z;
+                const float d = x * x + z * z;
+                const float t = d > 0 ? std::clamp( ( ( p.x - a.x ) * x + ( p.z - a.z ) * z ) / d, 0.f, 1.f ) : 0;
+                const float rx = p.x - ( a.x + t * x ), rz = p.z - ( a.z + t * z );
+                return rx * rx + rz * rz;
+            };
+            struct Site
+            {
+                Vector3F position;
+                u64 key;
+                float radius;
+                bool scrub, blocked = false;
+            };
+            const size_t limit = quality == VehicleAppearanceQuality::Preview ? 520 : 1440;
+            SourceBudgetVector<Site> sites;
+            sites.reserve( limit );
+            const auto plant = [&]( Vector3F centre, Vector3F along, float roadWidth, u64 key,
+                                    bool outer, bool terminal ) {
+                const Vector3F side( -along.z, 0, along.x );
+                const unsigned members = terminal ? 8 : 5;
+                for( const float sign : { -1.f, 1.f } )
+                {
+                    const auto sideKey = key ^ ( sign > 0 ? 0xdfe493b9u : 0xbc6b2fbdu );
+                    if( !terminal && scalar( sideKey ) < ( outer ? .18f : .5f ) ) continue;
+                    for( unsigned i = 0; i < members && sites.size() < limit; ++i )
+                    {
+                        const auto variation = render::foliageStableHash( sideKey + i );
+                        const bool scrub = outer && i > 1 && scalar( variation ) > .64f;
+                        const float radius = scrub ? .82f + .49f * scalar( variation + 3 )
+                                                   : .36f + .27f * scalar( variation + 3 );
+                        // Leave the short, mown strip next to the kerb clear. Offset
+                        // and elongate patches so they do not repeat like street furniture.
+                        const float across = roadWidth * .5f + 3.1f + radius + ( scrub ? 1.5f : 0 ) +
+                                             scalar( variation + 1 ) * ( outer ? 4.2f : 1.8f );
+                        const float offset = ( scalar( variation + 2 ) - .5f ) * ( terminal ? 9.f : 7.f );
+                        auto point = centre + side * ( sign * across ) + along * offset;
+                        if( !render::sampleTerrainHeight( *ground, placement, point, point.y ) ) continue;
+                        bool supported = true;
+                        for( const auto direction : { Vector3F( 1, 0, 0 ), Vector3F( -1, 0, 0 ),
+                                                      Vector3F( 0, 0, 1 ), Vector3F( 0, 0, -1 ) } )
+                        {
+                            float height = 0;
+                            supported = supported && render::sampleTerrainHeight(
+                                *ground, placement, point + direction * radius, height ) &&
+                                std::abs( height - point.y ) < .42f * radius;
+                        }
+                        if( supported ) sites.push_back( { point, variation, radius, scrub } );
+                    }
+                }
+            };
+            const float outerRadius = assets.cityLayout.extent * .76f;
+            // Reserve budget for the outskirts first, including the last few
+            // metres of a free approach viewed from outside the city.
+            for( bool endsOnly : { true, false } )
+                for( size_t r = 0; r < roads.size() && sites.size() < limit; ++r )
+                {
+                    const auto &points = roads[r].points;
+                    if( points.size() < 2 ) continue;
+                    if( endsOnly )
+                    {
+                        if( source.roads[r].closed ) continue;
+                        for( unsigned end = 0; end < 2; ++end )
+                        {
+                            const auto &sample = end ? points.back() : points.front();
+                            const auto &p = sample.position;
+                            if( std::max( std::abs( p.x ), std::abs( p.z ) ) < outerRadius ) continue;
+                            Vector3F inward( sample.tangent.x, 0, sample.tangent.z );
+                            inward.normalise();
+                            inward *= end ? -1.f : 1.f;
+                            // Keep the endpoint's forward vehicle approach clear.
+                            for( unsigned group = 0; group < 3; ++group )
+                                plant( p + inward * ( 1.6f + group * 7.5f ), inward,
+                                       source.roads[r].width,
+                                       locationKey( p ) ^ ( u64( group + 1 ) << 19 ), true, true );
+                        }
+                    }
+                    else
+                    {
+                        float station = 9.f + 8.f * scalar( locationKey( points.front().position ) );
+                        for( size_t j = 1; j < points.size() && sites.size() < limit; ++j )
+                        {
+                            const auto &a = points[j - 1], &b = points[j];
+                            const float length = b.distance - a.distance;
+                            if( length <= 0 || station > b.distance ) continue;
+                            const float t = ( station - a.distance ) / length;
+                            const auto p = a.position + ( b.position - a.position ) * t;
+                            Vector3F direction( b.position.x - a.position.x, 0, b.position.z - a.position.z );
+                            direction.normalise();
+                            const bool outer = std::max( std::abs( p.x ), std::abs( p.z ) ) >= outerRadius;
+                            const auto key = locationKey( p ) ^ 0x93c9e1f0u;
+                            plant( p, direction, source.roads[r].width, key, outer, false );
+                            station += ( outer ? 13.f : 25.f ) + 10.f * scalar( key );
+                        }
+                    }
+                }
+
+            constexpr float bucketSize = 12.f;
+            constexpr float maxRadius = 1.55f;  // Largest plant plus separation from paving.
+            using Bucket = std::pair<int, int>;
+            SourceBudgetMap<Bucket, SourceBudgetVector<size_t>> buckets;
+            const auto cell = [bucketSize]( float value ) { return int( std::floor( value / bucketSize ) ); };
+            for( size_t i = 0; i < sites.size(); ++i )
+                buckets[{ cell( sites[i].position.x ), cell( sites[i].position.z ) }].push_back( i );
+            const auto visit = [&]( float minX, float minZ, float maxX, float maxZ, const auto &test ) {
+                // Probe only populated rows. Long source segments cannot turn a
+                // sparse planting pass into a scan over empty world cells.
+                const int x0 = cell( minX ), x1 = cell( maxX ), z0 = cell( minZ ), z1 = cell( maxZ );
+                for( auto entry = buckets.lower_bound( { x0, std::numeric_limits<int>::min() } );
+                     entry != buckets.end() && entry->first.first <= x1; ++entry )
+                    if( entry->first.second >= z0 && entry->first.second <= z1 )
+                        for( const auto index : entry->second )
+                            if( !sites[index].blocked ) sites[index].blocked = test( sites[index] );
+            };
+            for( size_t r = 0; r < roads.size(); ++r )
+            {
+                const auto &points = roads[r].points;
+                const float reserve = source.roads[r].width * .5f + 2.45f;
+                const float extent = reserve + maxRadius;
+                for( size_t i = 1; i < points.size(); ++i )
+                {
+                    const auto a = points[i - 1].position, b = points[i].position;
+                    visit( std::min( a.x, b.x ) - extent, std::min( a.z, b.z ) - extent,
+                           std::max( a.x, b.x ) + extent, std::max( a.z, b.z ) + extent,
+                           [&]( const Site &site ) {
+                               const float clearance = reserve + site.radius;
+                               return distanceSquared( site.position, a, b ) < clearance * clearance;
+                           } );
+                }
+            }
+            for( const auto &junction : source.roundabouts )
+            {
+                const auto centre = junction.center;
+                const float reserve = junction.outerRadius + 2.45f;
+                const float extent = reserve + maxRadius;
+                visit( centre.x - extent, centre.z - extent, centre.x + extent, centre.z + extent,
+                       [&]( const Site &site ) {
+                           const float clearance = reserve + site.radius;
+                           return distanceSquared( site.position, centre, centre ) < clearance * clearance;
+                       } );
+            }
+            const auto cross = []( Vector3F a, Vector3F b, Vector3F p ) {
+                return ( b.x - a.x ) * ( p.z - a.z ) - ( b.z - a.z ) * ( p.x - a.x );
+            };
+            for( size_t i = 0; i < walks.indices.size(); i += 3 )
+            {
+                const auto a = walks.vertices[walks.indices[i]].position;
+                const auto b = walks.vertices[walks.indices[i + 1]].position;
+                const auto c = walks.vertices[walks.indices[i + 2]].position;
+                if( std::abs( cross( a, b, c ) ) < 1e-6f ) continue;
+                visit( std::min( { a.x, b.x, c.x } ) - maxRadius, std::min( { a.z, b.z, c.z } ) - maxRadius,
+                       std::max( { a.x, b.x, c.x } ) + maxRadius, std::max( { a.z, b.z, c.z } ) + maxRadius,
+                       [&]( const Site &site ) {
+                           const auto p = site.position;
+                           const auto u = cross( a, b, p ), v = cross( b, c, p ), w = cross( c, a, p );
+                           const float radius = site.radius + .2f;
+                           return ( u <= 0 && v <= 0 && w <= 0 ) || ( u >= 0 && v >= 0 && w >= 0 ) ||
+                                  std::min( { distanceSquared( p, a, b ), distanceSquared( p, b, c ),
+                                              distanceSquared( p, c, a ) } ) < radius * radius;
+                       } );
+            }
+
+            Geometry grasses[2], seeds, leaves[2], stems;
+            SourceBudgetVector<Vector3F> scrubCentres;
+            for( const auto &site : sites )
+            {
+                const auto p = site.position;
+                if( site.blocked || std::any_of( assets.cityLayout.lots.begin(), assets.cityLayout.lots.end(),
+                    [&]( const auto &lot ) {
+                        return std::abs( p.x - lot.parcelX ) < lot.parcelWidth * .5f + site.radius &&
+                               std::abs( p.z - lot.parcelZ ) < lot.parcelDepth * .5f + site.radius;
+                    } ) )
+                {
+                    continue;
+                }
+                if( site.scrub )
+                {
+                    if( std::any_of( scrubCentres.begin(), scrubCentres.end(), [&]( Vector3F existing ) {
+                            return distanceSquared( p, existing, existing ) < 1.6f * 1.6f;
+                        } ) ) continue;
+                    scrubCentres.push_back( p );
+                }
+                const unsigned blades = site.scrub ? 19 : 11;
+                const float rotation = scalar( site.key ) * 2.f * pi;
+                for( unsigned blade = 0; blade < blades; ++blade )
+                {
+                    const auto variation = render::foliageStableHash( site.key + blade + 37 );
+                    const float angle = rotation + blade * 2.39996323f;
+                    const Vector3F direction( std::cos( angle ), 0, std::sin( angle ) );
+                    const Vector3F across( -direction.z, 0, direction.x );
+                    auto root = p + direction * ( site.radius * .19f * scalar( variation ) );
+                    if( !render::sampleTerrainHeight( *ground, placement, root, root.y ) ) continue;
+                    root.y -= .015f;
+                    if( site.scrub )
+                    {
+                        const auto crown = root + direction * ( site.radius * (.21f + .24f * scalar( variation + 1 ) ) ) +
+                                           Vector3F( 0, site.radius * ( .46f + .61f * scalar( variation + 2 ) ), 0 );
+                        if( blade % 3 == 0 ) stems.beam( root, crown, .018f );
+                        for( unsigned leaf = 0; leaf < 7; ++leaf )
+                        {
+                            const float turn = angle + leaf * 2.39996323f;
+                            const Vector3F tipDirection( std::cos( turn ), .14f + .36f * scalar( variation + leaf ), std::sin( turn ) );
+                            const Vector3F width( -tipDirection.z * .065f * site.radius, .025f,
+                                                  tipDirection.x * .065f * site.radius );
+                            const auto base = crown - direction * ( .14f * leaf / 7.f );
+                            const auto tip = base + tipDirection * ( site.radius * ( .16f + .12f * scalar( variation + 23 + leaf ) ) );
+                            const auto centre = ( base + tip ) * .5f;
+                            auto normal = tipDirection.crossProduct( width ).normaliseCopy();
+                            if( normal.y < 0 ) normal = -normal;
+                            leaves[variation & 1].quad( base, centre + width, tip, centre - width, normal );
+                        }
+                    }
+                    else
+                    {
+                        const float height = .21f + .35f * scalar( variation + 1 );
+                        const auto middle = root + direction * ( site.radius * (.13f + .18f * scalar( variation + 2 )) ) +
+                                            Vector3F( 0, height * .7f, 0 );
+                        const auto tip = middle + direction * ( site.radius * .31f ) + Vector3F( 0, height * .3f, 0 );
+                        const auto width = across * ( .014f + .009f * scalar( variation + 3 ) );
+                        auto normal = ( width.crossProduct( middle - root ) + Vector3F( 0, .013f, 0 ) ).normaliseCopy();
+                        auto &grass = grasses[variation & 1];
+                        grass.quad( root - width, root + width, middle + width * .55f, middle - width * .55f, normal );
+                        grass.quad( middle - width * .55f, middle + width * .55f, tip + width * .04f, tip - width * .04f, normal );
+                        if( blade < 3 && scalar( variation + 5 ) > .55f )
+                        {
+                            const auto head = tip + Vector3F( 0, .12f, 0 );
+                            seeds.beam( root, head, .006f );
+                            seeds.beam( head - Vector3F( 0, .055f, 0 ), head + direction * .045f, .015f );
+                        }
+                    }
+                }
+            }
+            const auto publish = [&]( const char *name, const Geometry &geometry, ColourF tint, bool twoSided ) {
+                if( geometry.indices.empty() ) return;
+                auto surface = material( assets, tint, .94f );
+                if( !twoSided ) surface->setCullMode( 2 );
+                mesh( assets, String( "Terrain city verge " ) + name, geometry, surface );
+            };
+            publish( "fresh meadow grass", grasses[0], { .24f, .32f, .11f, 1 }, true );
+            publish( "dry meadow grass", grasses[1], { .33f, .35f, .135f, 1 }, true );
+            publish( "seed heads", seeds, { .45f, .365f, .18f, 1 }, false );
+            publish( "scrub leaves", leaves[0], { .16f, .285f, .085f, 1 }, true );
+            publish( "scrub shoots", leaves[1], { .225f, .33f, .105f, 1 }, true );
+            publish( "scrub stems", stems, { .20f, .145f, .072f, 1 }, false );
+        }
+
         void buildNaturalCityStreets( SceneAssets &assets, const OpenCityLayout &city, Geometry &asphalt,
                                       Geometry &pavement, Geometry &markings, Geometry &streetMetal,
                                       Geometry &lampGlass, VehicleAppearanceQuality quality )
@@ -2570,6 +2833,7 @@ namespace workphone::scene::race
             String error;
             const bool newSource = !assets.roadAuthoring;
             CityRoadTerrainFitResult initialFit;
+            render::TerrainSnapshot originalTerrain;
             if( newSource )
             {
                 persistentActor( "Editable generated city roads", newAnchors.roads );
@@ -2678,8 +2942,8 @@ namespace workphone::scene::race
                         []( const Vector3F &, float &h ) { h = 2; return true; }, planned, error ) )
                     throw std::runtime_error( error.c_str() );
                 CityRoadTerrainFitOptions fitOptions;
-                if( !prepareCityRoadTerrainFit( planned.source,
-                        std::make_shared<render::TerrainData>( std::move( data ) ),
+                originalTerrain = std::make_shared<render::TerrainData>( std::move( data ) );
+                if( !prepareCityRoadTerrainFit( planned.source, originalTerrain,
                         Transform3<real_Num>(), fitOptions, initialFit, error ) )
                     throw std::runtime_error( error.c_str() );
                 assets.cityTerrainFitted = true;
@@ -2753,6 +3017,10 @@ namespace workphone::scene::race
                     !assets.roadAuthoring->setSourceJSON( String( json.data(), json.size() ),
                                                           assets.roadAuthoring->getSourceRevision(),
                                                           error ) )
+                {
+                    throw std::runtime_error( error.c_str() );
+                }
+                if( originalTerrain && !assets.roadAuthoring->rememberInitialTerrainGrading( originalTerrain, error ) )
                 {
                     throw std::runtime_error( error.c_str() );
                 }
@@ -4330,6 +4598,7 @@ namespace workphone::scene::race
                     }
                 }
                 buildTerrainCityStreetDressing( assets, fitted, terrainStreetLamps, quality );
+                buildTerrainCityVerges( assets, fitted, seed, quality );
             }
             mesh( assets, "City street furniture", streetMetal,
                   material( assets, { .16f, .19f, .20f, 1 }, .48f, .6f ) );

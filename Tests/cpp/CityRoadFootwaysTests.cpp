@@ -129,6 +129,30 @@ namespace
         check( buildCityRoadFootways( s, sample( s, transformed, placement ), transformed, placement, mesh, error ), error );
         agreement( mesh, transformed, placement );
     }
+
+    void roundedStreetEnd()
+    {
+        auto s = source();
+        addRoad( s, 0, { 0, 0, -20 }, { 0, 0, 20 } );
+        auto data = terrain();
+        const auto bake = sample( s, data );
+        CityRoadTerrainMesh asphalt, walks;
+        String error;
+        check( buildCityRoadTerrainMesh( s, bake, data, {}, asphalt, error ), error );
+        check( buildCityRoadFootways( s, bake, data, {}, walks, error ), error );
+        agreement( walks, data );
+        require( topAt( asphalt, 0, 22 ) && !topAt( asphalt, 5.85, 22.5 ),
+                 "A free road end does not form a rounded extension inside its clearance." );
+        require( topAt( walks, 0, 24 ) && topAt( walks, -7, 20 ) && topAt( walks, 7, 20 ) &&
+                     !topAt( walks, 0, 22 ), "Terminal footway fails to wrap the asphalt and join both pavement sides." );
+
+        data->holes.assign( 128 * 128, 0 );
+        data->holes[85 * 128 + 64] = 1;  // x [0,1], z [21,22], beyond the authored endpoint.
+        check( buildCityRoadTerrainMesh( s, bake, data, {}, asphalt, error ), error );
+        check( buildCityRoadFootways( s, bake, data, {}, walks, error ), error );
+        require( topAt( asphalt, 0, 19 ) && !topAt( asphalt, 0, 22 ) && !topAt( walks, 0, 24 ) &&
+                     topAt( walks, 0, -24 ), "An unsupported terminal must retain the original road and omit only its own cap." );
+    }
     void roundabout()
     {
         auto s = source(); CityRoadRoundaboutSpec junction; junction.junctionId = "50000000-0000-4000-8000-000000000001";
@@ -289,6 +313,8 @@ namespace
     void coalescedStraightAdmission()
     {
         auto data = terrain( 65, 4 ); auto s = source(); addRoad( s, 0, { 0, 0, -120 }, { 0, 0, 120 } );
+        // Flat-cap Fixed source isolates coalescing of the two parallel strips.
+        s.roads[0].heightMode = CityRoadHeightMode::Fixed;
         CityRoadTerrainMesh mesh, dense; String error;
         check( buildCityRoadFootways( s, sample( s, data ), data, {}, mesh, error ), error ); agreement( mesh, data );
         auto unmerged = source(); CityRoadSplineBake unmergedBake; unmergedBake.sourceRevision = unmerged.revision;
@@ -331,6 +357,7 @@ namespace
         // 400m gives more than128 admitted4m pieces across both footways. The
         // shifted/oblique footprint exercises F32 precision and cell crossings.
         addRoad( s, 0, { 240, 0, 130 }, { 560, 0, 370 } );
+        s.roads[0].heightMode = CityRoadHeightMode::Fixed;
         CityRoadTerrainMesh mesh; String error;
         check( buildCityRoadFootways( s, sample( s, data ), data, {}, mesh, error ), error ); agreement( mesh, data );
         size_t skirtTriangles = 0, skirtVertices = 0;
@@ -418,6 +445,7 @@ int main()
     try
     {
         run( "streets and exact terrain", streetsAndTerrain ); run( "four-port roundabout", roundabout );
+        run( "rounded dead-end and unsupported fallback", roundedStreetEnd );
         run( "tight editable curve", tightEditableCurve );
         run( "ordinary unequal-width T/X pedestrian joins", ordinaryJunctionWalks );
         run( "coalesced straight admission", coalescedStraightAdmission );

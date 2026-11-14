@@ -2,13 +2,35 @@
 #include <Workphone/Scene/Components/CityRoadTerrainFit.hpp>
 #include <Workphone/Scene/Components/CityRoadJunctions.hpp>
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <limits>
 #include <stdexcept>
 
 namespace workphone::scene
 {
+    struct CityRoadTerrainGradeData
+    {
+        struct Sample
+        {
+            u32 index;
+            f32 original, applied;
+            bool operator==( const Sample &other ) const
+            {
+                return index == other.index && original == other.original && applied == other.applied;
+            }
+        };
+
+        SourceBudgetText terrainUuid;
+        Vector2I dimensions;
+        Vector2F origin, spacing;
+        f32 heightScale = 1;
+        std::array<double, 10> placement{};
+        SourceBudgetVector<Sample> samples;
+    };
+
     namespace
     {
         using namespace procedural;
@@ -129,6 +151,175 @@ namespace workphone::scene
             return to;
         }
 
+        constexpr size_t maximumGradingSamples = 262144;
+        constexpr std::string_view gradingPrefix = "wp-road-grade-v1:";
+        constexpr size_t gradingHeaderBytes = gradingPrefix.size() + 36 + 7 * 8 + 10 * 16;
+        constexpr size_t gradingRecordBytes = 3 * 8;
+
+        bool gradingUuid( std::string_view uuid )
+        {
+            if( uuid.size() != 36 ) return false;
+            for( size_t i = 0; i < uuid.size(); ++i )
+            {
+                const auto c = uuid[i];
+                if( i == 8 || i == 13 || i == 18 || i == 23 )
+                {
+                    if( c != '-' ) return false;
+                }
+                else if( !( ( c >= '0' && c <= '9' ) || ( c >= 'a' && c <= 'f' ) ) ) return false;
+            }
+            return true;
+        }
+
+        std::array<double, 10> placementKey( const Transform3<real_Num> &placement )
+        {
+            const auto &p = placement.getPosition(), &s = placement.getScale();
+            const auto &q = placement.getOrientation();
+            return { p.x, p.y, p.z, s.x, s.y, s.z, q.W(), q.X(), q.Y(), q.Z() };
+        }
+
+        template<class A, class B>
+        bool sameGradingGrid( const A &a, const B &b )
+        {
+            return a.dimensions.x == b.dimensions.x && a.dimensions.y == b.dimensions.y &&
+                   a.spacing.x == b.spacing.x && a.spacing.y == b.spacing.y &&
+                   a.origin.x == b.origin.x && a.origin.y == b.origin.y && a.heightScale == b.heightScale;
+        }
+
+        bool gradingMatches( const CityRoadTerrainGradeData &grading, std::string_view uuid,
+                             const render::TerrainData &data, const Transform3<real_Num> &placement )
+        {
+            return std::string_view( grading.terrainUuid.data(), grading.terrainUuid.size() ) == uuid &&
+                   sameGradingGrid( grading, data ) && grading.placement == placementKey( placement );
+        }
+
+        template<class T, class U>
+        T gradeBits( U value )
+        {
+            static_assert( sizeof( T ) == sizeof( U ) );
+            T result;
+            std::memcpy( &result, &value, sizeof( result ) );
+            return result;
+        }
+
+        template<class T>
+        void writeGradeHex( SourceBudgetText &out, T value )
+        {
+            constexpr char digits[] = "0123456789abcdef";
+            for( size_t i = sizeof( T ) * 2; i != 0; --i )
+                out.push_back( digits[( value >> ( ( i - 1 ) * 4 ) ) & 0xf] );
+        }
+
+        template<class T>
+        T readGradeHex( std::string_view &text )
+        {
+            constexpr size_t count = sizeof( T ) * 2;
+            T value = 0;
+            for( size_t i = 0; i < count; ++i )
+            {
+                const auto c = text[i];
+                const auto nibble = c >= '0' && c <= '9' ? c - '0' : c >= 'a' && c <= 'f' ? c - 'a' + 10 : -1;
+                require( nibble >= 0, "Invalid terrain grading data digit." );
+                value = ( value << 4 ) | T( nibble );
+            }
+            text.remove_prefix( count );
+            return value;
+        }
+
+        bool samePoint( Vector3F a, Vector3F b, bool horizontal = false )
+        {
+            return a.x == b.x && a.z == b.z && ( horizontal || a.y == b.y );
+        }
+
+        struct Bounds
+        {
+            float minX, maxX, minZ, maxZ;
+            bool meets( Vector3F a, Vector3F b, float margin ) const
+            {
+                return std::max( a.x, b.x ) + margin >= minX && std::min( a.x, b.x ) - margin <= maxX &&
+                       std::max( a.z, b.z ) + margin >= minZ && std::min( a.z, b.z ) - margin <= maxZ;
+            }
+        };
+
+        struct EditedRoad
+        {
+            bool all = false;
+            SourceBudgetVector<Bounds> spans;
+            bool meets( Vector3F a, Vector3F b, float margin ) const
+            {
+                return all || std::any_of( spans.begin(), spans.end(), [&]( const auto &span ) {
+                    return span.meets( a, b, margin );
+                } );
+            }
+        };
+
+        SourceBudgetVector<EditedRoad> editedRoads( const CityRoadSplineSource &before,
+                                                   const CityRoadSplineSource &draft )
+        {
+            SourceBudgetVector<EditedRoad> edits( draft.roads.size() );
+            for( size_t r = 0; r < draft.roads.size(); ++r )
+            {
+                const auto &road = draft.roads[r];
+                auto &edit = edits[r];
+                const auto old = std::find_if( before.roads.begin(), before.roads.end(),
+                    [&]( const auto &other ) { return other.id == road.id; } );
+                if( old == before.roads.end() || road.width != old->width || road.maxGrade != old->maxGrade ||
+                    road.heightOffset != old->heightOffset || road.heightMode != old->heightMode )
+                {
+                    edit.all = true;
+                    continue;
+                }
+
+                const bool drape = road.heightMode == CityRoadHeightMode::Drape;
+                SourceBudgetMap<SourceBudgetText, size_t> oldIndices;
+                for( size_t i = 0; i < old->knots.size(); ++i ) oldIndices.emplace( old->knots[i].id, i );
+                for( size_t i = 0; i < road.knots.size() - ( road.closed ? 0 : 1 ); ++i )
+                {
+                    const auto &a = road.knots[i], &b = road.knots[( i + 1 ) % road.knots.size()];
+                    const auto found = oldIndices.find( a.id );
+                    if( found != oldIndices.end() )
+                    {
+                        const auto &oldA = old->knots[found->second];
+                        const auto index = found->second + 1;
+                        if( index < old->knots.size() || old->closed )
+                        {
+                            const auto &oldB = old->knots[index % old->knots.size()];
+                            if( b.id == oldB.id && samePoint( a.position, oldA.position, drape ) &&
+                                samePoint( a.outHandle, oldA.outHandle, drape ) &&
+                                samePoint( b.inHandle, oldB.inHandle, drape ) &&
+                                samePoint( b.position, oldB.position, drape ) ) continue;
+                        }
+                    }
+                    // The whole cubic lies inside its control hull. Limit grading
+                    // to sampled pieces crossing an edited span's footprint.
+                    const auto p = a.position + a.outHandle, q = b.position + b.inHandle;
+                    edit.spans.push_back( { std::min( { a.position.x, p.x, q.x, b.position.x } ),
+                                            std::max( { a.position.x, p.x, q.x, b.position.x } ),
+                                            std::min( { a.position.z, p.z, q.z, b.position.z } ),
+                                            std::max( { a.position.z, p.z, q.z, b.position.z } ) } );
+                }
+            }
+            return edits;
+        }
+
+        bool editedRoundabout( const CityRoadSplineSource &before, const CityRoadRoundaboutSpec &draft )
+        {
+            const auto old = std::find_if( before.roundabouts.begin(), before.roundabouts.end(),
+                [&]( const auto &other ) { return other.junctionId == draft.junctionId; } );
+            if( old == before.roundabouts.end() || !samePoint( old->center, draft.center ) ||
+                old->outerRadius != draft.outerRadius || old->islandRadius != draft.islandRadius ||
+                old->gradeX != draft.gradeX || old->gradeZ != draft.gradeZ || old->maxGrade != draft.maxGrade ||
+                old->ports.size() != draft.ports.size() ) return true;
+            for( const auto &port : draft.ports )
+            {
+                const auto other = std::find_if( old->ports.begin(), old->ports.end(),
+                    [&]( const auto &entry ) { return entry.approachId == port.approachId; } );
+                if( other == old->ports.end() || !samePoint( other->outward, port.outward ) ||
+                    other->width != port.width || other->length != port.length ) return true;
+            }
+            return false;
+        }
+
         struct Pad
         {
             Vector3F center{};
@@ -136,6 +327,7 @@ namespace workphone::scene
             int roundabout = -1;
             float offset = 0;
             size_t group = 0;
+            bool active = true;
             float at( Vector3F point ) const
             {
                 return height + gx * ( point.x - center.x ) + gz * ( point.z - center.z );
@@ -144,7 +336,8 @@ namespace workphone::scene
 
         SourceBudgetVector<Pad> preparePads( const CityRoadSplineSource &source,
             const CityRoadSplineSource &flatSource, const CityRoadSplineBake &flatBake,
-            const Grid &grid, bool connectRoads )
+            const Grid &grid, bool connectRoads, const CityRoadSplineSource *before,
+            const SourceBudgetVector<EditedRoad> &edits )
         {
             SourceBudgetVector<Pad> pads;
             String error;
@@ -161,6 +354,10 @@ namespace workphone::scene
                     if( fixed ) continue;
                     Pad pad; pad.center = junction.center; pad.maxGrade = junction.maxGrade;
                     for( auto point : junction.boundary ) pad.radius = std::max( pad.radius, distance( pad.center, point ) );
+                    if( before ) pad.active = std::any_of( junction.ports.begin(), junction.ports.end(),
+                        [&]( const auto &port ) {
+                            return edits[port.roadIndex].meets( pad.center, pad.center, pad.radius + .1f );
+                        } );
                     pad.radius += grid.apron; pads.push_back( pad );
                 }
             }
@@ -168,6 +365,7 @@ namespace workphone::scene
             {
                 const auto &junction = source.roundabouts[j];
                 Pad pad; pad.center = junction.center; pad.roundabout = int( j ); pad.maxGrade = junction.maxGrade;
+                pad.active = !before || editedRoundabout( *before, junction );
                 pad.radius = junction.outerRadius; bool first = true;
                 for( const auto &port : junction.ports )
                 {
@@ -189,6 +387,7 @@ namespace workphone::scene
             // enclosing district-sized disc is introduced between separate junctions.
             for( size_t i = 0; i < pads.size(); ++i ) for( size_t j = 0; j < i; ++j )
             {
+                if( !pads[i].active || !pads[j].active ) continue;
                 // Different pinned planes may not occupy vertices of the same
                 // terrain triangle, even when their continuous discs miss.
                 if( distance( pads[i].center, pads[j].center ) >
@@ -200,10 +399,77 @@ namespace workphone::scene
             return pads;
         }
 
+        CityRoadSplineSource flattenRoadSource( const CityRoadSplineSource &source )
+        {
+            auto flat = source;
+            for( auto &road : flat.roads )
+            {
+                require( road.heightMode != CityRoadHeightMode::Bridge, "Bridge terrain fitting is unsupported." );
+                road.heightMode = CityRoadHeightMode::Drape;
+                road.heightOffset = 0;
+                for( auto &knot : road.knots )
+                {
+                    knot.position.y = 0;
+                    knot.inHandle.y = 0;
+                    knot.outHandle.y = 0;
+                }
+            }
+            for( auto &junction : flat.roundabouts )
+            {
+                junction.center.y = 0;
+                junction.gradeX = 0;
+                junction.gradeZ = 0;
+            }
+            return flat;
+        }
+
+        SourceBudgetVector<u8> terrainGradingCoverage( const CityRoadSplineSource &source,
+                                                       const Grid &grid, String &error )
+        {
+            SourceBudgetVector<u8> covered( grid.data.heights.size(), 0 );
+            if( source.roads.empty() && source.roundabouts.empty() ) return covered;
+
+            const auto flat = flattenRoadSource( source );
+            const CityRoadTerrainFitOptions options;
+            CityRoadSplineBake bake;
+            const auto zero = []( const Vector3F &, float &height ) { height = 0; return true; };
+            checked( sampleCityRoadSplines( flat, options.sampling, zero, bake, error ), error );
+            u64 visits = 0;
+            for( size_t i = 0; i < bake.roads.size(); ++i )
+            {
+                const auto &points = bake.roads[i].points;
+                const float radius = source.roads[i].width * .5f + grid.apron + options.shoulderWidth;
+                for( size_t j = 1; j < points.size(); ++j )
+                {
+                    const auto a = points[j - 1].position, b = points[j].position;
+                    const float dx = b.x - a.x, dz = b.z - a.z, length2 = dx * dx + dz * dz;
+                    if( length2 < 1e-10f ) continue;
+                    grid.visit( a, b, radius, [&]( size_t index, Vector3F point ) {
+                        require( ++visits <= 64000000, "Road terrain restoration work budget exceeded." );
+                        const float t = std::clamp( ( ( point.x - a.x ) * dx + ( point.z - a.z ) * dz ) / length2,
+                                                    0.f, 1.f );
+                        if( std::hypot( point.x - a.x - t * dx, point.z - a.z - t * dz ) < radius ) covered[index] = 1;
+                    } );
+                }
+            }
+            // The complete influence envelopes also keep shared transition
+            // shoulders smooth until the last road in that area moves away.
+            const auto pads = preparePads( source, flat, bake, grid, options.connectRoads, nullptr, {} );
+            for( const auto &pad : pads )
+            {
+                const float radius = pad.radius + options.shoulderWidth;
+                grid.visit( pad.center, pad.center, radius, [&]( size_t index, Vector3F point ) {
+                    require( ++visits <= 64000000, "Road terrain restoration work budget exceeded." );
+                    if( distance( point, pad.center ) < radius ) covered[index] = 1;
+                } );
+            }
+            return covered;
+        }
+
         void setPadPlanes( SourceBudgetVector<Pad> &pads, const Grid &grid,
                            const SourceBudgetVector<float> &field, u64 &visited )
         {
-            for( size_t i = 0; i < pads.size(); ++i ) if( pads[i].group == i )
+            for( size_t i = 0; i < pads.size(); ++i ) if( pads[i].active && pads[i].group == i )
             {
                 // Least-squares plane from every supported grid vertex of this local
                 // connected group. Double precision keeps kilometre placements stable.
@@ -380,6 +646,17 @@ namespace workphone::scene
             }
             return result;
         }
+
+        void setHeightSpan( CityRoadTerrainFitResult &candidate )
+        {
+            float minimum = std::numeric_limits<float>::max(), maximum = -minimum;
+            for( const auto &road : candidate.bake.roads ) for( const auto &point : road.points )
+            {
+                minimum = std::min( minimum, point.position.y );
+                maximum = std::max( maximum, point.position.y );
+            }
+            candidate.report.roadHeightSpan = maximum >= minimum ? maximum - minimum : 0;
+        }
     }
 
     void CityRoadTerrainFitResult::swap( CityRoadTerrainFitResult &other ) noexcept
@@ -388,9 +665,10 @@ namespace workphone::scene
         using std::swap; swap( bake.sourceRevision, other.bake.sourceRevision ); swap( report, other.report );
     }
 
-    bool prepareCityRoadTerrainFit( const procedural::CityRoadSplineSource &source,
+    static bool prepareFit( const procedural::CityRoadSplineSource &source,
         render::TerrainSnapshot terrain, const Transform3<real_Num> &placement,
-        const CityRoadTerrainFitOptions &options, CityRoadTerrainFitResult &output, String &error )
+        const CityRoadTerrainFitOptions &options, const CityRoadSplineSource *before,
+        CityRoadTerrainFitResult &output, String &error )
     {
         try
         {
@@ -400,6 +678,32 @@ namespace workphone::scene
             require( std::isfinite( combinedVerticalScale ) && combinedVerticalScale > 0,
                      "Road terrain fitting requires a finite positive combined vertical scale." );
             checked( procedural::validateCityRoadSplineSource( source, error ), error );
+            String originalError;
+            if( before )
+            {
+                checked( validateCityRoadSplineSource( *before, error ), error );
+                require( before->id == source.id && before->terrainResourceUuid == source.terrainResourceUuid,
+                         "Road terrain fitting requires the same source and terrain binding." );
+                const auto sampler = [&]( const Vector3F &point, float &height ) {
+                    return render::sampleTerrainHeight( *terrain, placement,
+                        { real_Num( point.x ), real_Num( point.y ), real_Num( point.z ) }, height );
+                };
+                CityRoadTerrainFitResult candidate;
+                CityRoadTerrainMesh mesh;
+                const auto denials = sourceBudgetDenialCount();
+                if( sampleCityRoadSplines( source, options.sampling, sampler, candidate.bake, originalError ) &&
+                    buildCityRoadTerrainMesh( source, candidate.bake, terrain, placement, mesh, originalError, options.connectRoads ) )
+                {
+                    // Retain the exact snapshot for supported drawings, deletions
+                    // and curve-preserving knot insertion.
+                    candidate.source = source;
+                    candidate.terrain = terrain;
+                    candidate.report.maxRoadGrade = maximumGrade( candidate.bake );
+                    setHeightSpan( candidate );
+                    output.swap( candidate ); error.clear(); return true;
+                }
+                if( denials != sourceBudgetDenialCount() ) throw std::bad_alloc();
+            }
             require( std::isfinite( options.shoulderWidth ) && options.shoulderWidth >= 1 && options.shoulderWidth <= 128 &&
                      std::isfinite( options.smoothingRadius ) && options.smoothingRadius >= 1 && options.smoothingRadius <= 256 &&
                      std::isfinite( options.maximumEarthwork ) && options.maximumEarthwork > 0 && options.maximumEarthwork <= 100 &&
@@ -408,17 +712,7 @@ namespace workphone::scene
             require( terrain->heights.size() <= options.maximumTerrainSamples,
                      "Road terrain fitting exceeds the selected terrain sample budget." );
             Grid grid( *terrain, placement );
-            auto flatSource = source;
-            for( auto &road : flatSource.roads )
-            {
-                require( road.heightMode != CityRoadHeightMode::Bridge, "Bridge terrain fitting is unsupported." );
-                road.heightMode = CityRoadHeightMode::Drape; road.heightOffset = 0;
-                for( auto &knot : road.knots ) { knot.position.y = 0; knot.inHandle.y = 0; knot.outHandle.y = 0; }
-            }
-            for( auto &junction : flatSource.roundabouts )
-            {
-                junction.center.y = 0; junction.gradeX = 0; junction.gradeZ = 0;
-            }
+            const auto flatSource = flattenRoadSource( source );
             const auto zero = []( const Vector3F &, float &y ) { y = 0; return true; };
             CityRoadSplineBake flatBake;
             checked( sampleCityRoadSplines( flatSource, options.sampling, zero, flatBake, error ), error );
@@ -426,16 +720,75 @@ namespace workphone::scene
             // Validates authored Fixed grades independently of terrain. Drape control
             // elevations are unused and are never rewritten by this helper.
             checked( sampleCityRoadSplines( source, options.sampling, zero, authoredBake, error ), error );
-            auto pads = preparePads( source, flatSource, flatBake, grid, options.connectRoads );
+            const auto edits = before ? editedRoads( *before, source ) : SourceBudgetVector<EditedRoad>{};
+            auto pads = preparePads( source, flatSource, flatBake, grid, options.connectRoads, before, edits );
+            require( !before || std::any_of( edits.begin(), edits.end(), []( const auto &entry ) {
+                         return entry.all || !entry.spans.empty(); } ) ||
+                     std::any_of( pads.begin(), pads.end(), []( const auto &pad ) { return pad.active; } ),
+                     originalError.c_str() );
+            SourceBudgetVector<SourceBudgetVector<u8>> activeSegments;
+            SourceBudgetVector<u8> protectedRoads, protectedPads;
+            u64 protectionVisits = 0;
+            if( before )
+            {
+                activeSegments.resize( source.roads.size() );
+                protectedRoads.resize( terrain->heights.size(), 0 );
+                protectedPads.resize( terrain->heights.size(), 0 );
+                for( const auto &pad : pads ) if( !pad.active )
+                    grid.visit( pad.center, pad.center, pad.radius, [&]( size_t i, Vector3F point ) {
+                        require( ++protectionVisits <= 64000000, "Road terrain fit protection work budget exceeded." );
+                        if( distance( point, pad.center ) <= pad.radius ) protectedPads[i] = 1;
+                    } );
+                for( size_t r = 0; r < source.roads.size(); ++r )
+                {
+                    const size_t oldRoad = [&] {
+                        const auto old = std::find_if( before->roads.begin(), before->roads.end(),
+                            [&]( const auto &entry ) { return entry.id == source.roads[r].id; } );
+                        return size_t( old - before->roads.begin() );
+                    }();
+                    const bool fixed = source.roads[r].heightMode == CityRoadHeightMode::Fixed;
+                    const bool retainedRoad = oldRoad < before->roads.size();
+                    const auto &points = fixed ? authoredBake.roads[r].points : flatBake.roads[r].points;
+                    const float width = source.roads[r].width * .5f;
+                    activeSegments[r].resize( points.size() );
+                    for( size_t j = 1; j < points.size(); ++j )
+                    {
+                        const auto a = points[j-1].position, b = points[j].position;
+                        if( edits[r].meets( a, b, options.shoulderWidth + grid.apron ) )
+                        {
+                            activeSegments[r][j] = 1;
+                            continue;
+                        }
+                        if( !retainedRoad ) continue;
+                        const float radius = width + grid.apron;
+                        const float vx = b.x - a.x, vz = b.z - a.z, length2 = vx*vx + vz*vz;
+                        if( length2 < 1e-10f ) continue;
+                        grid.visit( a, b, radius, [&]( size_t i, Vector3F point ) {
+                            require( ++protectionVisits <= 64000000, "Road terrain fit protection work budget exceeded." );
+                            const float t = std::clamp( ( ( point.x - a.x )*vx + ( point.z - a.z )*vz ) / length2, 0.f, 1.f );
+                            if( std::hypot( point.x - a.x - t*vx, point.z - a.z - t*vz ) <= radius )
+                                protectedRoads[i] = fixed ? 2 : std::max( protectedRoads[i], u8( 1 ) );
+                        } );
+                    }
+                }
+            }
             SourceBudgetVector<float> smoothed( terrain->heights.size() );
             for( size_t i = 0; i < smoothed.size(); ++i ) smoothed[i] = grid.original( i );
             smooth( smoothed, grid.width, grid.depth,
                 int( std::clamp( std::ceil( double( options.smoothingRadius ) / ( 2 * grid.dx ) ), 1., double( grid.width - 1 ) ) ),
                 int( std::clamp( std::ceil( double( options.smoothingRadius ) / ( 2 * grid.dz ) ), 1., double( grid.depth - 1 ) ) ) );
             double totalHeight = 0, totalPoints = 0;
-            for( const auto &road : flatBake.roads ) for( const auto &point : road.points )
-            { totalHeight += grid.sample( smoothed, point.position ); totalPoints += 1; }
-            for( const auto &pad : pads ) { totalHeight += grid.sample( smoothed, pad.center ); totalPoints += 1; }
+            for( size_t r = 0; r < flatBake.roads.size(); ++r )
+            {
+                const auto &points = flatBake.roads[r].points;
+                for( size_t j = 0; j < points.size(); ++j )
+                {
+                    if( before && !activeSegments[r][std::max( size_t( 1 ), j )] ) continue;
+                    totalHeight += grid.sample( smoothed, points[j].position ); totalPoints += 1;
+                }
+            }
+            for( const auto &pad : pads ) if( pad.active )
+            { totalHeight += grid.sample( smoothed, pad.center ); totalPoints += 1; }
             const float anchor = totalPoints ? float( totalHeight / totalPoints ) : smoothed.front();
             // Start with all of the broad hill profile. Only failed continuous
             // support/grade checks can request a bounded gentler candidate.
@@ -460,7 +813,7 @@ namespace workphone::scene
                 auto fitted = copyTerrain( *terrain );
                 SourceBudgetVector<float> field( smoothed.size() );
                 for( size_t i = 0; i < field.size(); ++i ) field[i] = anchor + ( smoothed[i] - anchor ) * gains[attempt];
-                u64 visited = 0;
+                u64 visited = protectionVisits;
                 setPadPlanes( pads, grid, field, visited );
                 SourceBudgetVector<Accumulator> roads( field.size() );
                 struct FixedTarget { float distance2 = std::numeric_limits<float>::max(), height = 0, influence = 0; };
@@ -474,6 +827,7 @@ namespace workphone::scene
                     const float core = road.width * .5f + grid.apron;
                     for( size_t j = 1; j < points.size(); ++j )
                     {
+                        if( before && !activeSegments[r][j] ) continue;
                         const auto a = points[j-1].position, b = points[j].position;
                         const float vx = b.x-a.x, vz = b.z-a.z, length2 = vx*vx+vz*vz;
                         if( length2 < 1e-10f ) continue;
@@ -502,6 +856,7 @@ namespace workphone::scene
                 SourceBudgetVector<u8> padCore( field.size(), 0 );
                 for( const auto &pad : pads )
                 {
+                    if( !pad.active ) continue;
                     grid.visit( pad.center, pad.center, pad.radius + options.shoulderWidth,
                         [&]( size_t index, Vector3F point ) {
                             require( ++visited <= 64000000, "Road terrain fit pad work budget exceeded." );
@@ -527,6 +882,18 @@ namespace workphone::scene
                 for( size_t i = 0; i < fitted->heights.size(); ++i )
                 {
                     const auto original = grid.original( i ); float height = original;
+                    // An edited ordinary junction owns its new intersection
+                    // footprint, but remote supports and locked existing
+                    // roundabout planes remain fixed during grade projection.
+                    const bool protect = before && ( protectedPads[i] || protectedRoads[i] == 2 ||
+                                                     ( protectedRoads[i] && !padCore[i] ) );
+                    if( protect )
+                    {
+                        roadCore[i] = roads[i].influence >= 1.f || padCore[i];
+                        pinned[i] = 1;
+                        field[i] = original;
+                        continue;
+                    }
                     if( roads[i].weight > 0 ) height += ( float( roads[i].target / roads[i].weight ) - height ) * roads[i].influence;
                     if( !fixedTargets.empty() && fixedTargets[i].influence > 0 )
                         height += ( fixedTargets[i].height - height ) * fixedTargets[i].influence;
@@ -537,12 +904,21 @@ namespace workphone::scene
                     field[i] = height;
                 }
                 float gradeLimit = .35f;
-                for( const auto &road : source.roads ) gradeLimit = std::min( gradeLimit, road.maxGrade );
-                for( const auto &junction : source.roundabouts ) gradeLimit = std::min( gradeLimit, junction.maxGrade );
+                for( size_t r = 0; r < source.roads.size(); ++r )
+                    if( !before || edits[r].all || !edits[r].spans.empty() )
+                        gradeLimit = std::min( gradeLimit, source.roads[r].maxGrade );
+                if( before )
+                {
+                    for( const auto &pad : pads ) if( pad.active ) gradeLimit = std::min( gradeLimit, pad.maxGrade );
+                }
+                else for( const auto &junction : source.roundabouts )
+                    gradeLimit = std::min( gradeLimit, junction.maxGrade );
                 projection = relaxRoadGrades( field, grid, roadCore, pinned, gradeLimit, visited );
                 bool earthworkExceeded = false;
                 for( size_t i = 0; i < fitted->heights.size(); ++i )
                 {
+                    if( before && ( protectedPads[i] || protectedRoads[i] == 2 ||
+                                    ( protectedRoads[i] && !padCore[i] ) ) ) continue;
                     if( roads[i].influence == 0 && padValues[i].influence == 0 &&
                         ( fixedTargets.empty() || fixedTargets[i].influence == 0 ) ) continue;
                     const auto original = grid.original( i ), height = field[i];
@@ -559,7 +935,7 @@ namespace workphone::scene
                     rejected( "earthwork" );
                     continue;
                 }
-                candidate.terrain = fitted;
+                candidate.terrain = before && !candidate.report.changedSamples ? terrain : fitted;
                 const auto sampler = [fitted, placement]( const Vector3F &point, float &height ) {
                     return render::sampleTerrainHeight( *fitted, placement,
                         { real_Num( point.x ), real_Num( point.y ), real_Num( point.z ) }, height );
@@ -570,10 +946,7 @@ namespace workphone::scene
                 CityRoadTerrainMesh mesh;
                 if( !buildCityRoadTerrainMesh( candidate.source, candidate.bake, fitted, placement, mesh, lastError, options.connectRoads ) )
                 { rejected( "continuous terrain mesh" ); continue; }
-                float minimum = std::numeric_limits<float>::max(), maximum = -minimum;
-                for( const auto &road : candidate.bake.roads ) for( const auto &point : road.points )
-                { minimum = std::min( minimum, point.position.y ); maximum = std::max( maximum, point.position.y ); }
-                candidate.report.roadHeightSpan = maximum >= minimum ? maximum - minimum : 0;
+                setHeightSpan( candidate );
                 candidate.report.rejectedAttempts.swap( attempts );
                 output.swap( candidate ); error.clear(); return true;
             }
@@ -582,5 +955,205 @@ namespace workphone::scene
         }
         catch( const std::bad_alloc & ) { error = "Road terrain fit exceeded the shared SourceCpu budget."; return false; }
         catch( const std::exception &exception ) { error = exception.what(); return false; }
+    }
+
+    bool prepareCityRoadTerrainRestoration( const procedural::CityRoadSplineSource &draft,
+        render::TerrainSnapshot active, const Transform3<real_Num> &placement,
+        const CityRoadTerrainGrading &grading, render::TerrainSnapshot &output, String &error )
+    {
+        try
+        {
+            require( bool( active ), "Road terrain restoration requires an active heightfield." );
+            const std::string_view uuid( draft.terrainResourceUuid.data(), draft.terrainResourceUuid.size() );
+            if( !grading || !gradingMatches( *grading, uuid, *active, placement ) )
+            {
+                output = std::move( active );
+                error.clear();
+                return true;
+            }
+            checked( render::validateTerrainPlacement( *active, placement, error ), error );
+            checked( procedural::validateCityRoadSplineSource( draft, error ), error );
+            const auto covered = terrainGradingCoverage( draft, Grid( *active, placement ), error );
+            std::shared_ptr<render::TerrainData> restored;
+            for( const auto &sample : grading->samples )
+            {
+                if( covered[sample.index] || active->heights[sample.index] != sample.applied ) continue;
+                if( !restored ) restored = copyTerrain( *active );
+                restored->heights[sample.index] = sample.original;
+            }
+            output = restored ? render::TerrainSnapshot( std::move( restored ) ) : std::move( active );
+            error.clear();
+            return true;
+        }
+        catch( const std::bad_alloc & ) { error = "Road terrain restoration exceeded the shared SourceCpu budget."; }
+        catch( const std::exception &failure ) { error = failure.what(); }
+        return false;
+    }
+
+    bool retainCityRoadTerrainGrading( std::string_view terrainUuid, render::TerrainSnapshot active,
+        render::TerrainSnapshot prepared, const Transform3<real_Num> &placement,
+        const CityRoadTerrainGrading &previous, CityRoadTerrainGrading &output, String &error )
+    {
+        try
+        {
+            require( gradingUuid( terrainUuid ) && active && prepared && sameGradingGrid( *active, *prepared ) &&
+                     active->heights.size() == prepared->heights.size(),
+                     "Terrain grading records require matching terrain identity and grids." );
+            const auto matching = previous && gradingMatches( *previous, terrainUuid, *active, placement );
+            if( active == prepared && !matching )
+            {
+                // A changed placement does not invalidate the old samples if
+                // the terrain later returns to that placement with its data.
+                output = previous && std::string_view( previous->terrainUuid.data(), previous->terrainUuid.size() ) == terrainUuid
+                             ? previous : nullptr;
+                error.clear();
+                return true;
+            }
+            require( active->heights.size() <= maximumGradingSamples && active->dimensions.x >= 2 &&
+                     active->dimensions.y >= 2 && u64( active->dimensions.x ) * active->dimensions.y == active->heights.size(),
+                     "Terrain grading exceeds the original sample record budget." );
+            checked( render::validateTerrainPlacement( *active, placement, error ), error );
+            auto next = std::allocate_shared<CityRoadTerrainGradeData>( SourceBudgetAllocator<CityRoadTerrainGradeData>{} );
+            next->terrainUuid.assign( terrainUuid.data(), terrainUuid.size() );
+            next->dimensions = active->dimensions;
+            next->origin = active->origin;
+            next->spacing = active->spacing;
+            next->heightScale = active->heightScale;
+            next->placement = placementKey( placement );
+            size_t old = 0;
+            for( size_t i = 0; i < active->heights.size(); ++i )
+            {
+                const auto current = active->heights[i];
+                auto original = current;
+                if( matching && old < previous->samples.size() && previous->samples[old].index == i )
+                {
+                    const auto &entry = previous->samples[old++];
+                    // A brush edit starts a new baseline if this transaction
+                    // grades that sample again. It is never put back silently.
+                    if( current == entry.applied ) original = entry.original;
+                }
+                const auto applied = prepared->heights[i];
+                require( std::isfinite( applied ), "Prepared road terrain has an invalid height." );
+                if( applied != original ) next->samples.push_back( { u32( i ), original, applied } );
+            }
+            if( next->samples.empty() ) output.reset();
+            else if( matching && next->samples == previous->samples ) output = previous;
+            else output = std::move( next );
+            error.clear();
+            return true;
+        }
+        catch( const std::bad_alloc & ) { error = "Road terrain records exceeded the shared SourceCpu budget."; }
+        catch( const std::exception &failure ) { error = failure.what(); }
+        return false;
+    }
+
+    bool serializeCityRoadTerrainGrading( const CityRoadTerrainGrading &grading,
+                                         SourceBudgetText &output, String &error )
+    {
+        try
+        {
+            SourceBudgetText encoded;
+            if( grading )
+            {
+                // Fixed-width hexadecimal records round-trip exact heights
+                // without building a second JSON tree for large terrain grids.
+                const auto &data = *grading;
+                encoded.reserve( gradingHeaderBytes + gradingRecordBytes * data.samples.size() );
+                encoded.append( gradingPrefix.data(), gradingPrefix.size() );
+                encoded.append( data.terrainUuid.data(), data.terrainUuid.size() );
+                writeGradeHex( encoded, u32( data.dimensions.x ) );
+                writeGradeHex( encoded, u32( data.dimensions.y ) );
+                for( auto value : { data.origin.x, data.origin.y, data.spacing.x, data.spacing.y, data.heightScale } )
+                    writeGradeHex( encoded, gradeBits<u32>( value ) );
+                for( auto value : data.placement ) writeGradeHex( encoded, gradeBits<u64>( value ) );
+                for( const auto &sample : data.samples )
+                {
+                    writeGradeHex( encoded, sample.index );
+                    writeGradeHex( encoded, gradeBits<u32>( sample.original ) );
+                    writeGradeHex( encoded, gradeBits<u32>( sample.applied ) );
+                }
+            }
+            output.swap( encoded );
+            error.clear();
+            return true;
+        }
+        catch( const std::bad_alloc & ) { error = "Road terrain serialization exceeded the shared SourceCpu budget."; }
+        catch( const std::exception &failure ) { error = failure.what(); }
+        return false;
+    }
+
+    bool deserializeCityRoadTerrainGrading( std::string_view value, std::string_view terrainUuid,
+                                           CityRoadTerrainGrading &output, String &error )
+    {
+        try
+        {
+            if( value.empty() )
+            {
+                output.reset();
+                error.clear();
+                return true;
+            }
+            require( gradingUuid( terrainUuid ) && value.size() >= gradingHeaderBytes + gradingRecordBytes &&
+                     value.size() <= gradingHeaderBytes + gradingRecordBytes * maximumGradingSamples &&
+                     ( value.size() - gradingHeaderBytes ) % gradingRecordBytes == 0 &&
+                     value.substr( 0, gradingPrefix.size() ) == gradingPrefix,
+                     "Invalid terrain grading data version or size." );
+            value.remove_prefix( gradingPrefix.size() );
+            require( value.substr( 0, 36 ) == terrainUuid, "Terrain grading data belongs to a different terrain." );
+            value.remove_prefix( 36 );
+            auto decoded = std::allocate_shared<CityRoadTerrainGradeData>( SourceBudgetAllocator<CityRoadTerrainGradeData>{} );
+            decoded->terrainUuid.assign( terrainUuid.data(), terrainUuid.size() );
+            const auto width = readGradeHex<u32>( value ), depth = readGradeHex<u32>( value );
+            const auto gridSize = u64( width ) * depth;
+            require( width >= 2 && depth >= 2 && width <= render::terrainMaximumDimension &&
+                     depth <= render::terrainMaximumDimension && gridSize <= maximumGradingSamples,
+                     "Terrain grading source grid exceeds its dimensions budget." );
+            decoded->dimensions = { s32( width ), s32( depth ) };
+            const auto height = [&] { return gradeBits<f32>( readGradeHex<u32>( value ) ); };
+            decoded->origin = { height(), height() };
+            decoded->spacing = { height(), height() };
+            decoded->heightScale = height();
+            require( std::isfinite( decoded->origin.x ) && std::isfinite( decoded->origin.y ) &&
+                     std::isfinite( decoded->spacing.x ) && std::isfinite( decoded->spacing.y ) &&
+                     decoded->spacing.x > 0 && decoded->spacing.y > 0 && std::isfinite( decoded->heightScale ) &&
+                     decoded->heightScale > 0, "Terrain grading data has invalid grid metadata." );
+            auto &pose = decoded->placement;
+            for( auto &component : pose ) component = gradeBits<double>( readGradeHex<u64>( value ) );
+            const auto p = [&]( size_t i ) { return real_Num( pose[i] ); };
+            const Transform3<real_Num> placement( { p( 0 ), p( 1 ), p( 2 ) }, { p( 6 ), p( 7 ), p( 8 ), p( 9 ) },
+                                                  { p( 3 ), p( 4 ), p( 5 ) } );
+            checked( render::validateTerrainTransform( placement, error ), error );
+            require( value.size() / gradingRecordBytes <= gridSize, "Terrain grading record count exceeds its grid." );
+            decoded->samples.reserve( value.size() / gradingRecordBytes );
+            while( !value.empty() )
+            {
+                const auto index = readGradeHex<u32>( value );
+                const auto original = height(), applied = height();
+                require( index < gridSize && ( decoded->samples.empty() || decoded->samples.back().index < index ) &&
+                         std::isfinite( original ) && std::isfinite( applied ) && original != applied,
+                         "Invalid or duplicate terrain grading sample record." );
+                decoded->samples.push_back( { index, original, applied } );
+            }
+            output = std::move( decoded );
+            error.clear();
+            return true;
+        }
+        catch( const std::bad_alloc & ) { error = "Road terrain deserialization exceeded the shared SourceCpu budget."; }
+        catch( const std::exception &failure ) { error = failure.what(); }
+        return false;
+    }
+
+    bool prepareCityRoadTerrainFit( const CityRoadSplineSource &source, render::TerrainSnapshot terrain,
+        const Transform3<real_Num> &placement, const CityRoadTerrainFitOptions &options,
+        CityRoadTerrainFitResult &output, String &error )
+    {
+        return prepareFit( source, std::move( terrain ), placement, options, nullptr, output, error );
+    }
+
+    bool prepareCityRoadTerrainEdit( const CityRoadSplineSource &before, const CityRoadSplineSource &draft,
+        render::TerrainSnapshot terrain, const Transform3<real_Num> &placement,
+        const CityRoadTerrainFitOptions &options, CityRoadTerrainFitResult &output, String &error )
+    {
+        return prepareFit( draft, std::move( terrain ), placement, options, &before, output, error );
     }
 }

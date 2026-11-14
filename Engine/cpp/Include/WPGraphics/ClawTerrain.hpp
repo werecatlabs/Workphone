@@ -147,6 +147,8 @@ namespace workphone
              * demand replaces the retained previous generation only after all
              * native and GPU allocations succeed. */
             bool prepareRenderTiles( ClawRendererDX11 &, const Array<TerrainTileView> &, String & );
+            bool prepareTerrainEditRenderer( TerrainSnapshot, std::function<void()> &,
+                                             String & ) override;
 
             Array<wp_graphics_mesh *> getNativeRenderTiles() const;
 

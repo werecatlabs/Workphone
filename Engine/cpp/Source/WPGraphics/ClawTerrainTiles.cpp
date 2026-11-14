@@ -8,6 +8,7 @@
 #include <workphone_graphics_renderer_dx11.h>
 #include <algorithm>
 #include <Workphone/Interface/IApplicationManager.hpp>
+#include <Workphone/Interface/Graphics/IGraphicsSystem.hpp>
 #include <Workphone/Core/Properties.hpp>
 
 namespace workphone::render
@@ -71,6 +72,154 @@ namespace workphone::render
         m_tiles->maximumTiles = tiles;
         m_tiles->maximumBytes = bytes;
         m_tiles->uploadsPerUpdate = uploads;
+        error.clear();
+        return true;
+    }
+
+    bool ClawTerrain::prepareTerrainEditRenderer( TerrainSnapshot candidate,
+                                                   std::function<void()> &commitRenderer,
+                                                   String &error )
+    {
+        commitRenderer = {};
+        auto &state = *m_tiles;
+        if( !isTerrainPublicationDeferred() && !state.active && state.resident.empty() )
+        {
+            return Terrain::prepareTerrainEditRenderer( std::move( candidate ), commitRenderer, error );
+        }
+        const auto previous = getActiveTerrainSnapshot();
+        if( !candidate || !previous || hasPendingTerrainPublication() || state.active != previous ||
+            state.requested != previous || !state.activeSourceBudget )
+        {
+            error = "Wait for the current terrain render generation before grading a road.";
+            return false;
+        }
+        auto app = core::IApplicationManager::instancePtr();
+        auto graphics = app ? app->getGraphicsSystem() : nullptr;
+        auto renderer = graphics ? dynamic_pointer_cast<ClawRendererDX11>( graphics->getRenderer() )
+                                 : nullptr;
+        auto native = renderer && renderer->isLoaded()
+                          ? wp_renderer_get_dx11( renderer->getNativeRenderer() )
+                          : nullptr;
+        if( !native || state.device != wp_renderer_dx11_get_device( native ) )
+        {
+            error = "Road grading requires the active DX11 terrain renderer.";
+            return false;
+        }
+
+        struct HeightEdit
+        {
+            StreamBudget sourceBudget;
+            StreamBudget retiredActiveBudget;
+            TerrainSnapshot source;
+            Array<TerrainTileInfo> descriptions;
+            Array<TerrainTileKey> residentDemand;
+            ClawTerrainTileState::Meshes tiles, retiredStaging;
+            std::shared_ptr<const ClawTerrainMaterial::Candidate> material, retiredMaterial;
+            u64 uploadedBytes = 0;
+        };
+        auto edit = std::make_shared<HeightEdit>();
+        edit->source = candidate;
+        auto scheduler = WorldStreamingScheduler::shared();
+        edit->sourceBudget = scheduler->reserve( StreamMemoryClass::SourceCpu,
+                                                 terrainSourceBytes( *candidate ), error );
+        if( !edit->sourceBudget || !describeTerrainTiles( *candidate, edit->descriptions, error ) )
+        {
+            return false;
+        }
+        const auto working = scheduler->reserve( StreamMemoryClass::WorkingCpu, 1ull << 20, error );
+        if( !working )
+        {
+            return false;
+        }
+        const auto result = scheduler->reserve( StreamMemoryClass::ResultCpu, 1ull << 20, error );
+        if( !result )
+        {
+            return false;
+        }
+
+        edit->residentDemand.reserve( state.resident.size() );
+        for( const auto &entry : state.resident )
+        {
+            const u32 tile = u32( entry.first >> 32 );
+            const u32 lod = u32( entry.first );
+            if( tile >= edit->descriptions.size() || lod >= terrainTileLods )
+            {
+                error = "Road grading cannot reuse the existing terrain tile layout.";
+                return false;
+            }
+            edit->residentDemand.push_back( { tile, lod } );
+            const auto &description = edit->descriptions[tile];
+            bool changed = false;
+            // Normals use one sample beyond the tile boundary. Retain tiles
+            // outside that halo and replace each affected resident tile at its
+            // current LOD so no frame can mix old ground with the new road.
+            const auto width = candidate->dimensions.x;
+            const auto depth = candidate->dimensions.y;
+            const auto firstX = std::max( 0, description.first.x - 1 );
+            const auto lastX = std::min( width - 1, description.last.x + 1 );
+            for( auto z = std::max( 0, description.first.y - 1 );
+                 z <= std::min( depth - 1, description.last.y + 1 ) && !changed; ++z )
+            {
+                for( auto x = firstX; x <= lastX; ++x )
+                {
+                    const auto sample = size_t( z ) * width + x;
+                    if( previous->heights[sample] != candidate->heights[sample] )
+                    {
+                        changed = true;
+                        break;
+                    }
+                }
+            }
+            if( !changed )
+            {
+                edit->tiles.emplace( entry.first, entry.second );
+                continue;
+            }
+            TerrainMeshData mesh;
+            if( !buildTerrainTile( *candidate, description, lod, mesh, error ) )
+            {
+                return false;
+            }
+            auto uploaded = uploadTile( *renderer, mesh, error );
+            if( !uploaded )
+            {
+                return false;
+            }
+            edit->uploadedBytes += uploaded->bytes;
+            edit->tiles.emplace( entry.first, std::move( uploaded ) );
+        }
+        if( ClawTerrainTileState::bytes( edit->tiles ) > state.maximumBytes )
+        {
+            error = "Road grading exceeds the terrain tile residency budget.";
+            return false;
+        }
+        edit->material = m_terrainMaterial->stageHeightEdit( *renderer, previous, candidate, error );
+        if( !edit->material )
+        {
+            return false;
+        }
+        // Cancel old camera-demand jobs after all replacement resources have
+        // been admitted. If road admission fails, normal rendering can retry
+        // its previous demand; the active terrain never moved.
+        state.stream.cancel();
+        state.demand.clear();
+        commitRenderer = [this, edit] {
+            auto &tiles = *m_tiles;
+            m_terrainMaterial->swapHeightEdit( edit->material );
+            tiles.resident.swap( edit->tiles );
+            tiles.staged.swap( edit->retiredStaging );
+            tiles.materialCandidate.swap( edit->retiredMaterial );
+            tiles.descriptions.swap( edit->descriptions );
+            tiles.demand.swap( edit->residentDemand );
+            tiles.activeSourceBudget.swap( edit->retiredActiveBudget );
+            tiles.requestedSourceBudget.swap( edit->sourceBudget );
+            tiles.activeSourceBudget = tiles.requestedSourceBudget;
+            tiles.requested = tiles.active = edit->source;
+            tiles.usedCookedTileManifest = false;
+            tiles.uploadedBytes += edit->uploadedBytes;
+            tiles.lastError.clear();
+            tiles.preparationError.clear();
+        };
         error.clear();
         return true;
     }

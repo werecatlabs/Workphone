@@ -141,6 +141,9 @@ namespace workphone
         void updateSmokeTest();
         void updateVehicleAudio();
         void updateVehicleEffects();
+        void prepareRoadTerrainEditReview();
+        void adoptRoadTerrainEditReview();
+        bool writeRoadTerrainEditReview( std::ostream &output ) const;
         bool validateTerrainGameplaySurfaces();
         bool m_terrainGameplay = false, m_terrainSurfacesValidated = false,
              m_terrainGameplayExportOnly = false;
@@ -191,6 +194,16 @@ namespace workphone
         Vector3F m_cityHillsideEye{}, m_cityHillsideTarget{};
         String m_cityHillsideRoadId;
         f32 m_cityHillsideRise = 0;
+        Vector3F m_roadTerrainEditEye{}, m_roadTerrainEditTarget{};
+        Vector3F m_roadTerrainEditBeforeKnot{}, m_roadTerrainEditAfterKnot{}, m_roadTerrainEditProbe{};
+        size_t m_roadTerrainEditRoad = 0, m_roadTerrainEditChangedSamples = 0;
+        size_t m_roadTerrainEditMoveRestored = 0, m_roadTerrainEditDeleteRestored = 0;
+        f32 m_roadTerrainEditCut = 0, m_roadTerrainEditFill = 0;
+        f32 m_roadTerrainEditBeforeHeight = 0, m_roadTerrainEditAfterHeight = 0;
+        u64 m_roadTerrainEditInitialRevision = 0, m_roadTerrainEditCommittedRevision = 0,
+            m_roadTerrainEditUndoRevision = 0, m_roadTerrainEditRedoRevision = 0;
+        bool m_roadTerrainEditTerrainReady = false, m_roadTerrainEditApplied = false,
+             m_roadTerrainEditPrepared = false;
         u64 m_cityFacadeLotId = 0;
         f64 m_cityBuildingStartupDeadline = 0;
         Vector3F m_generatedSpawnPosition{0,.42f,0};

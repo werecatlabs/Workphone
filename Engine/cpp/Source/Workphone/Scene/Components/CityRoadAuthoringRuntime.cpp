@@ -2,6 +2,7 @@
 #include <Workphone/Scene/Components/CityRoadAuthoring.hpp>
 #include <Workphone/Scene/Components/CityRoadTerrainMesh.hpp>
 #include <Workphone/Scene/Components/CityRoadJunctions.hpp>
+#include "CityRoadTerminals.hpp"
 #include <Workphone/Scene/Components/CitySurfaceLibrary.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
 #include <Workphone/Scene/Components/Mesh.hpp>
@@ -38,6 +39,7 @@
 #include <array>
 #include <cmath>
 #include <limits>
+#include <mutex>
 #include <stdexcept>
 
 namespace workphone::scene
@@ -412,6 +414,9 @@ namespace workphone::scene
             {
                 throw std::runtime_error( connectionError.c_str() );
             }
+            const auto terminals = buildCityRoadTerminals( source, bake, connections, *terrain, placement );
+            SourceBudgetVector<std::array<bool, 2>> rounded( source.roads.size() );
+            for( const auto &terminal : terminals ) rounded[terminal.roadIndex][terminal.atStart ? 0 : 1] = true;
             const auto straightRunEnd =
                 []( const SourceBudgetVector<procedural::CityRoadSplineSample> &points, size_t first ) {
                     auto direction = points[first + 1].position - points[first].position;
@@ -706,6 +711,11 @@ namespace workphone::scene
             {
                 const auto &recipe = source.roads[run.roadIndex];
                 const auto &points = run.points;
+                const auto &authored = bake.roads[run.roadIndex].points;
+                const float firstDash = points.front().distance +
+                    ( rounded[run.roadIndex][0] && points.front().distance == authored.front().distance ? 1.5f : 0.f );
+                const float lastDash = points.back().distance -
+                    ( rounded[run.roadIndex][1] && points.back().distance == authored.back().distance ? 1.5f : 0.f );
                 for( size_t first = 0; first + 1 < points.size(); )
                 {
                     // Paint is projected onto exact fitted triangles, so only
@@ -730,8 +740,8 @@ namespace workphone::scene
                     const float length = b.distance - a.distance;
                     for( float dash = std::floor( a.distance / 6 ) * 6; dash < b.distance; dash += 6 )
                     {
-                        const float start = std::max( dash, a.distance ),
-                                    end = std::min( dash + 3, b.distance );
+                        const float start = std::max( { dash, a.distance, firstDash } ),
+                                    end = std::min( { dash + 3, b.distance, lastDash } );
                         if( end - start < .01f )
                         {
                             continue;
@@ -742,6 +752,20 @@ namespace workphone::scene
                             a.position + ( b.position - a.position ) * ( ( end - a.distance ) / length );
                         strip( p, q, across, .12f );
                     }
+                }
+            }
+            // Match the existing edge line's inset and width on the return.
+            // This also leaves an unmarked turning area at the true free end.
+            for( const auto &terminal : terminals )
+            {
+                for( size_t i = 1; i < terminal.edge.size(); ++i )
+                {
+                    const auto &a = terminal.edge[i - 1], &b = terminal.edge[i];
+                    const auto &na = terminal.outward[i - 1], &nb = terminal.outward[i];
+                    const auto ai = a - na * .26f, ao = a - na * .14f,
+                               bi = b - nb * .26f, bo = b - nb * .14f;
+                    triangle( ai, bi, bo );
+                    triangle( ai, bo, ao );
                 }
             }
             // The connector owns the mouth. Keep ordinary centre dashes out of
@@ -841,6 +865,13 @@ namespace workphone::scene
                                             render::TerrainSnapshot terrain,
                                             const Transform3<real_Num> &placement, String &error )
     {
+        return publishRuntimePrepared( source, bake, std::move( terrain ), placement, {}, error );
+    }
+
+    bool CityRoadAuthoring::publishRuntimePrepared( const procedural::CityRoadSplineSource &source,
+        const procedural::CityRoadSplineBake &bake, render::TerrainSnapshot terrain,
+        const Transform3<real_Num> &placement, const RuntimePublication &publication, String &error )
+    {
         try
         {
             const auto task = Thread::getCurrentTask();
@@ -856,11 +887,94 @@ namespace workphone::scene
                     std::abs( pose.getOrientation().W() ) > .999999,
                 "Road controls use world metres. Reset the authoring actor transform before "
                 "publishing." );
+            auto game = app->getGameManager();
+            auto scene = game ? game->getCurrentScene() : nullptr;
+            auto physics = app->getPhysicsManager();
+            const auto publish = [&]( std::shared_ptr<CityRoadRuntimeState> &candidate ) {
+                auto tasks = app->getTaskManager();
+                auto renderLock = tasks ? tasks->lockTask( TaskId::Render ) : TaskLock();
+                auto physicsLock = tasks ? tasks->lockTask( TaskId::Physics ) : TaskLock();
+                auto physicsScene = physics ? physics->getPhysicsScene() : nullptr;
+                const auto detachBodies = [&]( const std::shared_ptr<CityRoadRuntimeState> &runtime ) {
+                    if( physicsScene && runtime )
+                        for( const auto &body : runtime->bodies ) physicsScene->removeActor( body );
+                };
+                const auto admit = [&] {
+                    requireRuntime( getActor()->getScene() == scene && detail::runtimeActorPublished( getActor() ),
+                                    "The authoring scene changed during preparation." );
+                    if( m_runtime ) for( const auto &body : m_runtime->bodies )
+                        requireRuntime( !body->getScene() || body->getScene() == physicsScene,
+                                        "The active road bodies belong to a different physics scene." );
+                    if( !candidate ) return;
+                    requireRuntime( bool( physicsScene ), "The road physics scene is unavailable." );
+                    getActor()->addChild( candidate->root );
+                    for( auto actor : candidate->actors )
+                    {
+                        actor->setScene( scene );
+                        actor->setState( getActor()->getState() );
+                        scene->registerAllUpdates( actor );
+                    }
+                    try
+                    {
+                        for( const auto &body : candidate->bodies )
+                        {
+                            physicsScene->addActor( body );
+                            requireRuntime( body->getScene() == physicsScene, "Road static body admission failed." );
+                        }
+                    }
+                    catch( ... )
+                    {
+                        // A native insertion can precede the wrapper's actor
+                        // record. Remove directly from the intended scene.
+                        detachBodies( candidate );
+                        throw;
+                    }
+                };
+                const auto commit = [&] {
+                    m_runtime.swap( candidate );
+                    // Retire native contacts before the terrain gate releases
+                    // its scene lock and notifies terrain consumers.
+                    detachBodies( candidate );
+                };
+                try
+                {
+                    if( publication )
+                    {
+                        const bool published = publication( admit, commit, error );
+                        candidate.reset();
+                        return published;
+                    }
+                    if( candidate ) if( auto bound = getTerrain() )
+                    {
+                        render::TerrainSnapshot current;
+                        Transform3<real_Num> currentPlacement;
+                        u64 serial = 0;
+                        bool detached = false;
+                        bound->getTerrainIntegrationState( current, currentPlacement, serial, detached );
+                        requireRuntime( !detached && current == terrain && currentPlacement == placement,
+                                        "Terrain changed before road publication." );
+                    }
+                    if( candidate )
+                    {
+                        std::unique_lock<ISharedObject> sceneLock( *physicsScene );
+                        admit();
+                        commit();
+                    }
+                    else m_runtime.swap( candidate );
+                    candidate.reset();
+                    error.clear();
+                    return true;
+                }
+                catch( ... )
+                {
+                    candidate.reset();
+                    throw;
+                }
+            };
             if( source.roads.empty() && source.roundabouts.empty() )
             {
-                clearRuntime();
-                error.clear();
-                return true;
+                std::shared_ptr<CityRoadRuntimeState> empty;
+                return publish( empty );
             }
             requireRuntime( bool( terrain ),
                             "A retained terrain snapshot is required for native road publication." );
@@ -877,9 +991,6 @@ namespace workphone::scene
             candidate->textures.reserve( 16 );
             candidate->shapes.reserve( 3 );
             candidate->bodies.reserve( 3 );
-            auto game = app->getGameManager();
-            auto scene = game ? game->getCurrentScene() : nullptr;
-            auto physics = app->getPhysicsManager();
             requireRuntime(
                 bool( game ) && bool( scene ) && bool( physics ) && bool( physics->getPhysicsScene() ),
                 "Roads require the scene and physics services." );
@@ -957,46 +1068,7 @@ namespace workphone::scene
             }
             requireRuntime( !candidate->bodies.empty(),
                             "Road candidate contains no collision surface." );
-            auto tasks = app->getTaskManager();
-            auto renderLock = tasks ? tasks->lockTask( TaskId::Render ) : TaskLock();
-            auto physicsLock = tasks ? tasks->lockTask( TaskId::Physics ) : TaskLock();
-            try
-            {
-                if( auto bound = getTerrain() )
-                {
-                    render::TerrainSnapshot current;
-                    Transform3<real_Num> currentPlacement;
-                    u64 serial = 0;
-                    bool detached = false;
-                    bound->getTerrainIntegrationState( current, currentPlacement, serial, detached );
-                    requireRuntime( !detached && current == terrain && currentPlacement == placement,
-                                    "Terrain changed before road publication." );
-                }
-                requireRuntime( getActor()->getScene() == scene && detail::runtimeActorPublished( getActor() ),
-                                "The authoring scene changed during preparation." );
-                getActor()->addChild( candidate->root );
-                for( auto actor : candidate->actors )
-                {
-                    actor->setScene( scene );
-                    actor->setState( getActor()->getState() );
-                    scene->registerAllUpdates( actor );
-                }
-                for( const auto &body : candidate->bodies )
-                {
-                    physics->getPhysicsScene()->addActor( body );
-                }
-                // The inventories are prepared before the swap. A failed scene/body
-                // publication destroys the staged generation before releasing task locks.
-                m_runtime.swap( candidate );
-                candidate.reset();
-            }
-            catch( ... )
-            {
-                candidate.reset();
-                throw;
-            }
-            error.clear();
-            return true;
+            return publish( candidate );
         }
         catch( const std::exception &e )
         {

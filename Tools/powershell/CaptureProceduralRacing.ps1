@@ -11,7 +11,7 @@ param(
     [ValidateSet('grid', 'lsystem')][string]$CityLayout = 'grid',
     [ValidatePattern('^\d+x\d+$')][string]$Resolution = '1280x720',
     [ValidateRange(0.1, 3600)][double]$Seconds = 10,
-    [ValidateSet('follow', 'car', 'track', 'corner', 'junction', 'hillside', 'street', 'boulevard', 'frontage', 'facade', 'building')][string[]]$Views = @('car', 'track', 'corner', 'follow'),
+    [ValidateSet('follow', 'car', 'track', 'corner', 'junction', 'hillside', 'street', 'boulevard', 'frontage', 'facade', 'building', 'road-edit-before', 'road-edit-after')][string[]]$Views = @('car', 'track', 'corner', 'follow'),
     [string]$Replay,
     [switch]$NoEffects,
     [switch]$FoliageWorld,
@@ -32,6 +32,8 @@ if ($streetDetailExplicit -and !$CityTerrainRoads) { throw '-CityStreetDetail re
 if ($Views -contains 'frontage' -and !$CityTerrainRoads) { throw '-Views frontage requires -CityTerrainRoads.' }
 if ($Views -contains 'junction' -and !$CityTerrainRoads) { throw '-Views junction requires -CityTerrainRoads.' }
 if (($Views -contains 'hillside' -or $PSBoundParameters.ContainsKey('CityTerrainRelief')) -and !$CityTerrainRoads) { throw 'The hillside view and terrain relief require -CityTerrainRoads.' }
+$roadEditViews = @($Views | Where-Object { $_ -in @('road-edit-before', 'road-edit-after') })
+if ($roadEditViews.Count -and !$CityTerrainRoads) { throw 'Road edit views require -CityTerrainRoads.' }
 if (($CityBuildingStyle -or $CityBuildingMeshes.Count -or $Views -contains 'facade' -or $Views -contains 'building') -and
     ($Scene -ne 'city' -or $RoadAuthoringShowcase)) { throw 'Building styles, mesh overrides, and the facade/building views require a generated city.' }
 if ($RoadAuthoringShowcase -and $CityTerrainRoads) { throw 'Choose -RoadAuthoringShowcase or -CityTerrainRoads.' }
@@ -164,6 +166,13 @@ try {
                 $run.passed = $run.passed -and $null -ne $street -and $street.streetDetailValid -eq $true -and
                     $null -ne $street.cityStreetDetailCount -and $street.cityStreetDetail -eq $CityStreetDetail
             }
+            if ($view -in $roadEditViews) {
+                $edit = $run.evidence.roadTerrainEdit
+                $expectedStage = if ($view -eq 'road-edit-before') { 'undo' } else { 'redo' }
+                $run.passed = $run.passed -and $null -ne $edit -and $edit.valid -eq $true -and
+                    $edit.stage -eq $expectedStage -and $edit.changedSamples -gt 0 -and $edit.collisionMatched -eq $true -and
+                    $edit.moveRestoredSamples -gt 0 -and $edit.deleteRestoredSamples -gt 0
+            }
             $kit = $run.evidence.cityBuildingKit
             if ($CityBuildingStyle) {
                 $run.passed = $run.passed -and $null -ne $kit -and $kit.styleApplied -eq $true -and $kit.style -ieq $CityBuildingStyle
@@ -180,6 +189,18 @@ try {
         }
         $manifest.runs += $run
         if (!$run.passed) { $failed = $true }
+    }
+    if ($roadEditViews -contains 'road-edit-before' -and $roadEditViews -contains 'road-edit-after') {
+        $before = ($manifest.runs | Where-Object { $_.view -eq 'road-edit-before' }).evidence.roadTerrainEdit
+        $after = ($manifest.runs | Where-Object { $_.view -eq 'road-edit-after' }).evidence.roadTerrainEdit
+        $manifest.matchedRoadEdit = $null -ne $before -and $null -ne $after -and
+            $before.roadIndex -eq $after.roadIndex -and $before.changedSamples -eq $after.changedSamples -and
+            $before.moveRestoredSamples -eq $after.moveRestoredSamples -and
+            $before.deleteRestoredSamples -eq $after.deleteRestoredSamples -and
+            ($before.eye -join ',') -eq ($after.eye -join ',') -and ($before.target -join ',') -eq ($after.target -join ',') -and
+            ($before.oldKnot -join ',') -eq ($after.oldKnot -join ',') -and ($before.newKnot -join ',') -eq ($after.newKnot -join ',') -and
+            ($before.probe -join ',') -eq ($after.probe -join ',')
+        if (!$manifest.matchedRoadEdit) { $failed = $true }
     }
 } finally {
     $manifest.completedUtc = [DateTime]::UtcNow.ToString('o')

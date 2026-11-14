@@ -36,6 +36,14 @@ namespace workphone::render
         /** As commitPrevalidated, retaining the retired publication in candidate so
          * its GPU references can be released after leaving the publication gate. */
         void swapPrevalidated( std::shared_ptr<const Candidate> &candidate ) noexcept;
+        /** Reuse immutable GPU maps across a height-only edit. The terrain owner
+         * has verified that appearance and maps match and suspended rendering.
+         */
+        std::shared_ptr<const Candidate> stageHeightEdit( ClawRendererDX11 &renderer,
+                                                         TerrainSnapshot expected,
+                                                         TerrainSnapshot replacement,
+                                                         String &error ) const;
+        void swapHeightEdit( std::shared_ptr<const Candidate> &candidate ) noexcept;
         bool bind( ClawRendererDX11 &renderer, String &error ) const;
         static void unbind( ClawRendererDX11 &renderer );
         TerrainSnapshot snapshot() const;

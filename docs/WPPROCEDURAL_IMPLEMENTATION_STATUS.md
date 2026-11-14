@@ -1,5 +1,67 @@
 # WPProcedural implementation status
 
+## Restorable road grading, road ends and verges — 14 November 2026
+
+Terrain city generation and accepted City Roads edits record the original and
+applied values of changed height samples. Moving or deleting a road restores
+recorded samples outside the remaining road network's grading footprint. Shared
+ground remains available to adjacent roads and junctions. Restoration preserves
+subsequent terrain brush edits. An Editor command restores
+the road, the exact terrain snapshot and the grading record together. Save Scene
+persists the sparse record with the road component. Earlier scenes without a
+record can only restore grading recorded by later edits.
+
+Free road ends can receive terrain-clipped rounded asphalt, edge markings and
+wraparound pavement. Connected approaches keep their existing joins. Terminal
+geometry must meet the existing terrain support and grade checks. Verge batches
+place varied grass, seed heads and low scrub on terrain outside carriageways,
+pavements and building plots. They regenerate from the accepted road alignment.
+
+Six focused engine suites and the Editor viewport and saved scene fixture pass.
+The seed 42 relief 2 capture restores four samples when the bend moves and 232
+when the test deletes the road. Both matched native views validate the exact
+history states, 96 carriageway hits, 32 roundabout hits, 39 approach caps and six
+uploaded verge batches. The same-camera comparison shows rounded pavement and
+planting at the formerly square, bare endpoint. The plants remain stylized and
+the captures use Microsoft Basic Render Driver. Evidence is in
+`artifacts/procedural/city-road-restoration-20261114/`.
+
+## Editable road grading and history — 14 November 2026
+
+**Window > City Roads** enables **Grade terrain under roads** by default. An
+edit that already meets terrain support and grade checks uses the current
+ground. A failing grade can trigger cut/fill under the changed spline spans,
+feathered shoulders and connected junctions. Bounds, holes, unchanged road
+support, authored material data and the earthwork limit remain enforced.
+
+One Editor command stores the accepted road content and the exact before/after
+terrain samples. Undo and Redo restore those samples and advance revision
+tokens. Admission failures keep the editable draft and committed scene. A stale
+history step cannot overwrite a newer terrain edit. The Claw renderer stages
+replacement tiles at their resident levels of detail before publishing terrain
+collision and admitting the edited road. Regenerate refreshes the derived city
+pavements, buildings and street dressing against the accepted sources. This pass
+preceded the sparse terrain restoration described above.
+
+The Debug Editor viewport fixture passed and checks ridge drawing, knot motion,
+exact multi-step Undo/Redo, stale terrain history and failing road admission.
+The spline source, terrain mesh, grading, road authoring and terrain/city
+save/reload suites also passed. The sample capture uses the same engine
+transaction and normal derived-city refresh. Earlier capture runs exposed a
+sample deadline based on a cached frame timestamp, which expired during city
+regeneration. The upload deadline now uses the live monotonic clock.
+
+The final matched native captures use seed 42, six blocks and terrain relief 2.
+Moving the arterial endpoint changed 279 height samples, with up to 1.43 m of
+cut and 5.09 m of fill. The same native ray hit ground after Undo and the edited
+carriageway after Redo. Both views passed 96 carriageway, 32 roundabout and 39
+approach-cap checks, and all 198 building meshes uploaded. The rebuilt pavement
+follows the edited curve. The capture manifest verifies the same camera, edit
+and current runtime hashes. The images use Microsoft Basic Render Driver and
+still show a bare road end and sparse verge planting.
+
+Evidence is in `artifacts/procedural/city-live-road-grading-20261114/`.
+
 ## Terrain relief and connected road controls — 14 November 2026
 
 New terrain-city generation prepares a bounded road/terrain fit before adopting
@@ -82,10 +144,7 @@ the rejected iterations. These are Microsoft Basic Render Driver captures;
 hardware performance and commercial visual acceptance remain open. Visible
 terrain contact improves, while frontage paths/stairs, planting and lighting
 still need work. The relief-2 camera differs from the matched density A/B.
-Live hand-drawn road commits do not automatically cut/fill terrain: that needs
-one combined terrain-and-road publication transaction, bounded undo patches,
-and rollback across deferred render/collision publication. The new initial
-generation path does not establish that editing contract.
+This initial-generation pass preceded the live road grading and history above.
 
 ## Scanned city surface materials — 14 November 2026
 

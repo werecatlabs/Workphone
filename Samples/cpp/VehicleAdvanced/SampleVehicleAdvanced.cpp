@@ -19,6 +19,7 @@
 #include <Workphone/Core/Properties.hpp>
 #include <Workphone/Scene/Components/CityRoadAuthoring.hpp>
 #include <Workphone/Scene/Components/CityRoadJunctions.hpp>
+#include <Workphone/Scene/Components/CityRoadTerrainFit.hpp>
 #include <Workphone/Scene/Components/CityBuildingStyles.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
@@ -77,6 +78,11 @@ namespace workphone
             "City Wall Mesh", "City Window Mesh", "City Entrance Mesh", "City Corner Mesh", "City Roof Mesh"
         };
         constexpr auto &cityBuildingStyles = scene::race::cityBuildingStyleKeys;
+
+        bool isRoadTerrainEditView( std::string_view view )
+        {
+            return view == "road-edit-before" || view == "road-edit-after";
+        }
 
         void writeSharedMemoryLedger( std::ostream &output )
         {
@@ -1171,7 +1177,7 @@ namespace workphone
         };
         if(generationFailed())return;
         if( Thread::getCurrentTask() == TaskId::Render && m_cityBuildingStartupDeadline > 0 &&
-            !m_captureAttempted && core::IApplicationManager::instance()->getTimer()->getTimeSinceSceneLoad() > m_cityBuildingStartupDeadline )
+            !m_captureAttempted && core::IApplicationManager::instance()->getTimer()->now() > m_cityBuildingStartupDeadline )
         {
             m_cityBuildingStartupDeadline = 0;
             const auto check = checkCityBuildingGeometry( m_assets, m_quality != procedural::VehicleAppearanceQuality::Preview );
@@ -1284,6 +1290,14 @@ namespace workphone
            Thread::getCurrentTask()==TaskId::Application && m_physicsConfigured &&
            core::IApplicationManager::instance()->getTimer()->getTimeSinceSceneLoad()>3)
             prepareCityRetentionSmoke();
+        if( isRoadTerrainEditView( m_captureView ) && !m_roadTerrainEditPrepared &&
+            Thread::getCurrentTask() == TaskId::Application )
+        {
+            if( m_roadTerrainEditApplied )
+                adoptRoadTerrainEditReview();
+            else if( m_physicsConfigured && m_roadTerrainEditTerrainReady )
+                prepareRoadTerrainEditReview();
+        }
         if ( m_audioSmokeTest && m_audioEnabled && Thread::getCurrentTask() == TaskId::Physics )
             updateVehicleAudio();
         if( m_collisionSmokeTest && Thread::getCurrentTask() == TaskId::Physics )
@@ -1295,6 +1309,18 @@ namespace workphone
 
         if( Thread::getCurrentTask() == TaskId::Render )
         {
+            if( isRoadTerrainEditView( m_captureView ) && !m_roadTerrainEditApplied )
+            {
+                auto terrain = m_assets.roadTerrain;
+                const auto snapshot = terrain ? terrain->getActiveTerrainSnapshot() : nullptr;
+#if WP_GRAPHICS_SYSTEM_CLAW
+                auto renderer = terrain ? dynamic_pointer_cast<render::ClawTerrain>( terrain->getTerrain() ) : nullptr;
+                m_roadTerrainEditTerrainReady = snapshot && renderer &&
+                    renderer->getRenderedTerrainSnapshot() == snapshot;
+#else
+                m_roadTerrainEditTerrainReady = bool( snapshot );
+#endif
+            }
             updateRenderCamera();
             if ( m_effectsSmokeTest && m_effectsEnabled ) updateVehicleEffects();
             if( m_smokeTest && m_smokePhase > 0 )
@@ -1366,9 +1392,12 @@ namespace workphone
             if( m_reviewStart < 0 ) m_reviewStart = sceneTime;
             const auto profileNow = std::max( 0.0, sceneTime - m_reviewStart );
             ++m_reviewFrames;
+            const bool roadEditReady = !isRoadTerrainEditView( m_captureView ) ||
+                ( m_roadTerrainEditPrepared &&
+                  checkCityBuildingGeometry( m_assets, m_quality != procedural::VehicleAppearanceQuality::Preview ).valid );
             bool profileStartedThisFrame = false;
             if( profileNow > 5 && m_reviewFrames >= 30 && !m_benchmarkStarted &&
-                ( !m_terrainGameplay || m_terrainSurfacesValidated ) )
+                ( !m_terrainGameplay || m_terrainSurfacesValidated ) && roadEditReady )
             {
                 m_benchmarkStarted = true;
                 m_profileStart = profileNow;
@@ -1489,6 +1518,8 @@ namespace workphone
                              << ",\n  \"terrainGameplaySourceFree\": " << (!m_terrainGameplayPackageDirectory.empty()?"true":"false")
                              << ",\n  \"vehicleRecipeHash\": " << advanced::jsonString(StringUtil::toString(m_assets.vehicle.contentHash));
                 bool cityValid = m_assets.openCity == m_openCity && m_assets.cityRoadShowcase==m_roadAuthoringShowcase && m_assets.cityTerrainRoads==m_cityTerrainRoads;
+                if( isRoadTerrainEditView( m_captureView ) )
+                    cityValid = writeRoadTerrainEditReview( evidence ) && cityValid;
                 if( m_assets.openCity && m_assets.cityNaturalRoads && !m_assets.cityRoadShowcase )
                 {
                     const auto &layout = m_assets.cityLayout;
@@ -1626,6 +1657,29 @@ namespace workphone
                 if(m_assets.cityTerrainRoads)
                 {
                     const auto check=checkTerrainCity(m_assets,app->getPhysicsManager()->getPhysicsScene());cityValid=cityValid && check.valid;
+                    size_t vergeBatches = 0, vergeReady = 0, vergeTriangles = 0;
+                    for( const auto &actor : m_assets.actors )
+                    {
+                        if( !actor || actor->getName().find( "Terrain city verge " ) != 0 ) continue;
+                        ++vergeBatches;
+                        const auto renderer = actor->getComponent<scene::MeshRenderer>();
+                        const auto graphics = renderer ? renderer->getGraphicsObject() : nullptr;
+#if WP_GRAPHICS_SYSTEM_CLAW
+                        const auto mesh = dynamic_pointer_cast<render::ClawMesh>( graphics );
+                        const auto native = mesh ? mesh->getNativeMesh() : nullptr;
+                        if( native && mesh->isLoaded() )
+                        {
+                            ++vergeReady;
+                            vergeTriangles += wp_graphics_mesh_get_index_count( native ) / 3;
+                        }
+#else
+                        if( graphics && graphics->isLoaded() ) ++vergeReady;
+#endif
+                    }
+                    evidence << ",\n  \"cityVerges\":{\"batches\":" << vergeBatches
+                             << ",\"readyBatches\":" << vergeReady << ",\"nativeTriangles\":" << vergeTriangles << '}';
+                    if( isRoadTerrainEditView( m_captureView ) )
+                        cityValid = cityValid && vergeBatches > 0 && vergeReady == vergeBatches;
                     const auto expectedDetail = m_cityStreetDetail >= 0 ? m_cityStreetDetail : 100;
                     const bool expectStreetDetail = m_cityStreetDetail == 100 && m_seed == 42 &&
                         m_cityBlocks == 6 && m_cityRoute == 0 && m_quality == procedural::VehicleAppearanceQuality::High;
@@ -2263,6 +2317,373 @@ namespace workphone
         }
         ++m_audioSmokePhase;
         m_audioSmokeTime = 0;
+    }
+
+    void SampleVehicleAdvanced::prepareRoadTerrainEditReview()
+    {
+        auto app = core::IApplicationManager::instancePtr();
+        auto authoring = m_assets.roadAuthoring;
+        auto terrain = m_assets.roadTerrain;
+        const auto originalTerrain = terrain ? terrain->getActiveTerrainSnapshot() : nullptr;
+        if( !originalTerrain || !authoring || originalTerrain != authoring->getTerrainSnapshot() ||
+            originalTerrain != terrain->getTerrainSnapshot() )
+            return; // Wait for initial terrain render/collision publication.
+        try
+        {
+            String error;
+            const auto original = authoring->getSource();
+            const auto originalJson = authoring->getSourceJSON();
+            const auto originalGrading = authoring->getTerrainGrading();
+            const auto originalBake = authoring->getBake();
+            const auto placement = authoring->getTerrainPlacement();
+            m_roadTerrainEditInitialRevision = originalTerrain->revision;
+            const auto sampleHeight = [&]( const Vector3F &point, f32 &height ) {
+                return render::sampleTerrainHeight( *originalTerrain, placement, point, height );
+            };
+            const auto sameGround = []( const render::TerrainData &a, const render::TerrainData &b ) {
+                return a.dimensions == b.dimensions && a.spacing == b.spacing && a.origin == b.origin &&
+                       a.heightScale == b.heightScale && a.heights == b.heights && a.layers == b.layers &&
+                       a.layerWeights == b.layerWeights && a.appearance == b.appearance &&
+                       a.autoMaterial == b.autoMaterial && a.surfaceMasks == b.surfaceMasks &&
+                       a.holes == b.holes;
+            };
+            const auto canonical = [&]( procedural::CityRoadSplineSource source ) {
+                source.revision = 1;
+                source.terrainRevision = 0;
+                SourceBudgetText bytes;
+                if( !procedural::serializeCityRoadSplineSource( source, bytes, error ) )
+                    throw std::runtime_error( error.c_str() );
+                return bytes;
+            };
+            const auto originalCanonical = canonical( original );
+            const auto lineDistance = []( Vector3F point, Vector3F a, Vector3F b ) {
+                point.y = a.y = b.y = 0;
+                const auto direction = b - a;
+                const auto denominator = direction.lengthSquared();
+                const float t = denominator > 0 ? std::clamp(
+                    ( point - a ).dotProduct( direction ) / denominator, 0.f, 1.f ) : 0.f;
+                return ( point - ( a + direction * t ) ).length();
+            };
+            SourceBudgetSet<SourceBudgetText> junctionRoads;
+            for( const auto &junction : original.roundabouts )
+                for( const auto &port : junction.ports )
+                    junctionRoads.insert( port.approachId );
+            bool committed = false;
+            unsigned gradingAttempts = 0;
+            String lastFailure = "No isolated draped free end needed terrain fitting.";
+            for( size_t index = 0; index < original.roads.size() && !committed && gradingAttempts < 8; ++index )
+            {
+                const auto &road = original.roads[index];
+                if( road.closed || road.knots.size() < 3 || road.heightMode != procedural::CityRoadHeightMode::Drape ||
+                    junctionRoads.count( road.id ) )
+                    continue;
+                for( const bool first : { true, false } )
+                {
+                    const auto end = first ? 0 : road.knots.size() - 1;
+                    const auto adjacent = first ? 1 : end - 1;
+                    auto start = road.knots[end].position;
+                    auto inward = road.knots[adjacent].position - start;
+                    inward.y = 0;
+                    if( inward.length() < 8.f )
+                        continue;
+                    inward.normalise();
+                    const Vector3F across( -inward.z, 0, inward.x );
+                    bool nearAnotherRoad = false;
+                    for( size_t other = 0; other < originalBake.roads.size() && !nearAnotherRoad; ++other )
+                    {
+                        if( other == index )
+                            continue;
+                        const auto &points = originalBake.roads[other].points;
+                        for( size_t i = 1; i < points.size() && !nearAnotherRoad; ++i )
+                            nearAnotherRoad = lineDistance( start, points[i - 1].position, points[i].position ) < 22.f;
+                    }
+                    if( nearAnotherRoad || !sampleHeight( start, start.y ) )
+                        continue;
+
+                    // Move the control sideways and lengthen its exit so the new
+                    // curve keeps a gradual heading change through the hillside.
+                    for( const float lateral : { 11.f, -11.f, 15.f, -15.f } )
+                    {
+                        if( gradingAttempts >= 8 )
+                            break;
+                        auto draft = original;
+                        auto &edit = draft.roads[index];
+                        auto &knot = edit.knots[end];
+                        auto shifted = start + across * lateral - inward * 11.f;
+                        if( !sampleHeight( shifted, shifted.y ) )
+                            continue;
+                        const auto &neighbour = edit.knots[adjacent];
+                        auto connector = neighbour.position - shifted;
+                        connector.y = 0;
+                        const float handleLength = connector.length() / 3.f;
+                        connector.normalise();
+                        knot.position = shifted;
+                        ( first ? knot.outHandle : knot.inHandle ) = connector * handleLength;
+                        auto &oldHandle = first ? edit.knots[adjacent].inHandle : edit.knots[adjacent].outHandle;
+                        oldHandle = -inward * handleLength;
+                        procedural::CityRoadSplineBake unsupported;
+                        if( procedural::sampleCityRoadSplines( draft, {}, sampleHeight, unsupported, error ) ||
+                            error.find( "Road profile exceeds grade." ) != 0 )
+                            continue;
+                        ++gradingAttempts;
+                        SourceBudgetText json;
+                        if( !procedural::serializeCityRoadSplineSource( draft, json, error ) )
+                            throw std::runtime_error( error.c_str() );
+                        if( !authoring->applyTerrainRoadEdit( String( json.data(), json.size() ),
+                                authoring->getSourceRevision(), originalTerrain, nullptr, true, error ) )
+                        {
+                            if( terrain->getActiveTerrainSnapshot() != originalTerrain ||
+                                authoring->getSourceJSON() != originalJson )
+                                throw std::runtime_error( "Rejected review candidate changed live terrain or roads." );
+                            lastFailure = error;
+                            continue;
+                        }
+                        const auto &editedPoints = authoring->getBake().roads[index].points;
+                        if( editedPoints.size() < 3 )
+                            throw std::runtime_error( "Fitted review road has too few samples." );
+                        bool clearProbe = false;
+                        for( size_t i = 1; i < std::min<size_t>( 10, editedPoints.size() - 1 ); ++i )
+                        {
+                            const auto p = ( first ? editedPoints[i] : editedPoints[editedPoints.size() - 1 - i] ).position;
+                            const auto &oldPoints = originalBake.roads[index].points;
+                            const bool clearOldRoad = std::adjacent_find( oldPoints.begin(), oldPoints.end(), [&]( const auto &a, const auto &b ) {
+                                return lineDistance( p, a.position, b.position ) < road.width * .5f + 2.6f;
+                            } ) == oldPoints.end();
+                            if( !clearOldRoad )
+                                continue;
+                            const auto &lots = m_assets.cityLayout.lots;
+                            if( std::any_of( lots.begin(), lots.end(), [&]( const auto &lot ) {
+                                    return std::abs( p.x - lot.parcelX ) <= lot.parcelWidth * .5f + .2f &&
+                                           std::abs( p.z - lot.parcelZ ) <= lot.parcelDepth * .5f + .2f;
+                                } ) )
+                                continue;
+                            m_roadTerrainEditProbe = p;
+                            clearProbe = true;
+                            break;
+                        }
+                        if( !clearProbe )
+                            throw std::runtime_error( "Fitted review road has no collision probe clear of the original road and parcels." );
+                        m_roadTerrainEditRoad = index;
+                        m_roadTerrainEditBeforeKnot = start;
+                        m_roadTerrainEditAfterKnot = shifted;
+                        const auto side = across * ( lateral > 0 ? 1.f : -1.f );
+                        m_roadTerrainEditEye = start - inward * 29.f + side * 14.f;
+                        m_roadTerrainEditTarget = start + inward * 15.f + side * 4.f;
+                        if( !sampleHeight( m_roadTerrainEditEye, m_roadTerrainEditEye.y ) ||
+                            !sampleHeight( m_roadTerrainEditTarget, m_roadTerrainEditTarget.y ) )
+                            throw std::runtime_error( "Road review camera falls outside the terrain." );
+                        m_roadTerrainEditEye.y += 9.f;
+                        m_roadTerrainEditTarget.y += .7f;
+                        committed = true;
+                        break;
+                    }
+                    if( committed || gradingAttempts >= 8 )
+                        break;
+                }
+            }
+            if( !committed )
+                throw std::runtime_error( lastFailure.c_str() );
+
+            const auto fittedTerrain = terrain->getActiveTerrainSnapshot();
+            const auto fittedJson = authoring->getSourceJSON();
+            const auto fittedGrading = authoring->getTerrainGrading();
+            const auto fittedCanonical = canonical( authoring->getSource() );
+            if( !fittedTerrain || fittedTerrain != authoring->getTerrainSnapshot() ||
+                fittedTerrain->revision <= originalTerrain->revision ||
+                fittedTerrain->heights.size() != originalTerrain->heights.size() ||
+                fittedCanonical == originalCanonical )
+                throw std::runtime_error( "Road grading did not publish a new matched source and terrain." );
+            m_roadTerrainEditCommittedRevision = fittedTerrain->revision;
+            render::TerrainSnapshot vacated;
+            if( !scene::prepareCityRoadTerrainRestoration( authoring->getSource(), originalTerrain,
+                    placement, originalGrading, vacated, error ) )
+                throw std::runtime_error( error.c_str() );
+            for( size_t i = 0; i < originalTerrain->heights.size(); ++i )
+            {
+                const float delta = ( fittedTerrain->heights[i] - originalTerrain->heights[i] ) *
+                                    originalTerrain->heightScale * placement.getScale().y;
+                if( delta != 0 ) ++m_roadTerrainEditChangedSamples;
+                if( vacated->heights[i] != originalTerrain->heights[i] &&
+                    fittedTerrain->heights[i] == vacated->heights[i] ) ++m_roadTerrainEditMoveRestored;
+                m_roadTerrainEditFill = std::max( m_roadTerrainEditFill, delta );
+                m_roadTerrainEditCut = std::max( m_roadTerrainEditCut, -delta );
+            }
+            if( !m_roadTerrainEditChangedSamples || !m_roadTerrainEditMoveRestored ||
+                !sampleHeight( m_roadTerrainEditProbe, m_roadTerrainEditBeforeHeight ) ||
+                !render::sampleTerrainHeight( *fittedTerrain, placement, m_roadTerrainEditProbe, m_roadTerrainEditAfterHeight ) )
+                throw std::runtime_error( "The selected edit did not grade and restore the expected terrain." );
+
+            auto deletion = authoring->getSource();
+            deletion.roads.erase( deletion.roads.begin() + m_roadTerrainEditRoad );
+            SourceBudgetText deletionJson;
+            if( !procedural::serializeCityRoadSplineSource( deletion, deletionJson, error ) ||
+                !authoring->applyTerrainRoadEdit( String( deletionJson.data(), deletionJson.size() ),
+                    authoring->getSourceRevision(), fittedTerrain, nullptr, false, error ) )
+                throw std::runtime_error( error.c_str() );
+            const auto deleted = terrain->getActiveTerrainSnapshot();
+            if( !deleted || deleted->heights.size() != fittedTerrain->heights.size() )
+                throw std::runtime_error( "Road deletion did not publish a matching terrain grid." );
+            for( size_t i = 0; i < deleted->heights.size(); ++i )
+                m_roadTerrainEditDeleteRestored += deleted->heights[i] != fittedTerrain->heights[i];
+            if( !m_roadTerrainEditDeleteRestored || authoring->getSource().roads.size() != deletion.roads.size() ||
+                !authoring->applyTerrainRoadEdit( fittedJson, authoring->getSourceRevision(), deleted,
+                    fittedTerrain, false, error, nullptr, &fittedGrading ) )
+                throw std::runtime_error( error.empty() ? "Road deletion did not restore the graded ground." : error.c_str() );
+            const auto restoredAfterDelete = terrain->getActiveTerrainSnapshot();
+            if( !restoredAfterDelete || !sameGround( *restoredAfterDelete, *fittedTerrain ) ||
+                authoring->getTerrainGrading() != fittedGrading || canonical( authoring->getSource() ) != fittedCanonical )
+                throw std::runtime_error( "Undo did not restore the deleted road and its grading." );
+            if( !authoring->applyTerrainRoadEdit( originalJson, authoring->getSourceRevision(),
+                    restoredAfterDelete, originalTerrain, false, error, nullptr, &originalGrading ) )
+                throw std::runtime_error( error.c_str() );
+            const auto undone = terrain->getActiveTerrainSnapshot();
+            if( !undone || undone != authoring->getTerrainSnapshot() || undone->revision <= fittedTerrain->revision ||
+                !sameGround( *originalTerrain, *undone ) || authoring->getTerrainGrading() != originalGrading ||
+                canonical( authoring->getSource() ) != originalCanonical )
+                throw std::runtime_error( "Undo did not restore exact original terrain and road content." );
+            m_roadTerrainEditUndoRevision = undone->revision;
+
+            if( m_captureView == "road-edit-after" )
+            {
+                if( !authoring->applyTerrainRoadEdit( fittedJson, authoring->getSourceRevision(),
+                        undone, fittedTerrain, false, error, nullptr, &fittedGrading ) )
+                    throw std::runtime_error( error.c_str() );
+                const auto redone = terrain->getActiveTerrainSnapshot();
+                if( !redone || redone != authoring->getTerrainSnapshot() || redone->revision <= undone->revision ||
+                    !sameGround( *fittedTerrain, *redone ) || authoring->getTerrainGrading() != fittedGrading ||
+                    canonical( authoring->getSource() ) != fittedCanonical )
+                    throw std::runtime_error( "Redo did not restore exact committed terrain and road content." );
+                m_roadTerrainEditRedoRevision = redone->revision;
+            }
+
+            // The race scene observes the committed source/snapshot and refreshes
+            // the derived city during its normal next Application update.
+            std::cout << "Road terrain edit verified at road " << m_roadTerrainEditRoad
+                      << ": samples=" << m_roadTerrainEditChangedSamples
+                      << " move-restored=" << m_roadTerrainEditMoveRestored
+                      << " delete-restored=" << m_roadTerrainEditDeleteRestored
+                      << " cut=" << m_roadTerrainEditCut << "m fill=" << m_roadTerrainEditFill
+                      << "m revisions=" << m_roadTerrainEditInitialRevision << '/'
+                      << m_roadTerrainEditCommittedRevision << '/' << m_roadTerrainEditUndoRevision
+                      << '/' << m_roadTerrainEditRedoRevision << std::endl;
+            m_roadTerrainEditApplied = true;
+            m_physicsConfigured = false;
+            m_cityBuildingStartupDeadline = 0;
+        }
+        catch( const std::exception &failure )
+        {
+            std::cerr << "Road terrain edit review: " << failure.what() << '\n';
+            const auto json = "{\"schema\":\"workphone.vehicle-review.v1\",\"validationPassed\":false,\"failure\":" +
+                              advanced::jsonString( failure.what() ) + "}";
+            if( !m_evidencePath.empty() ) advanced::writeReviewEvidence( m_evidencePath, json );
+            m_captureAttempted = true;
+            app->setQuit( true );
+        }
+    }
+
+    void SampleVehicleAdvanced::adoptRoadTerrainEditReview()
+    {
+        auto app = core::IApplicationManager::instancePtr();
+        auto authoring = m_assets.roadAuthoring;
+        auto terrain = m_assets.roadTerrain;
+        const auto revision = m_captureView == "road-edit-after" ? m_roadTerrainEditRedoRevision :
+                                                                    m_roadTerrainEditUndoRevision;
+        const auto &next = m_raceScene->getAssets();
+        if( next.roadAuthoring != authoring || next.roadTerrain != terrain ||
+            next.cityAppliedSourceRevision != authoring->getActiveRevision() ||
+            !m_raceScene->isPhysicsConfigured() )
+            return;
+        try
+        {
+            const auto snapshot = terrain->getActiveTerrainSnapshot();
+            if( !snapshot || snapshot->revision != revision || snapshot != authoring->getTerrainSnapshot() )
+                throw std::runtime_error( "Derived city refresh discarded the committed terrain or road edit." );
+            m_assets = next;
+            m_boxGround = m_assets.ground;
+            m_chassisMeshActor = m_assets.body;
+            m_wheelActors = m_assets.wheels;
+            m_generatedSpawnPosition = m_vehicleActor->getPosition();
+#if WP_GRAPHICS_SYSTEM_CLAW
+            if( auto scene = dynamic_pointer_cast<render::ClawScene>( app->getGraphicsSystem()->getGraphicsScene() ) )
+                if( !scene->setPrimaryDirectionalLight( m_assets.sun ) )
+                    throw std::runtime_error( "Refreshed city sunlight could not be selected." );
+#endif
+            if( m_assets.vehicleLOD ) m_assets.vehicleLOD->setForcedLOD( m_forcedVehicleLOD );
+            for( auto &group : m_assets.treeLODs ) group->setForcedLOD( m_forcedLOD );
+            String error;
+            if( m_assets.foliageTerrain && !m_assets.foliageTerrain->setFoliageForcedLod( m_forcedLOD, error ) )
+                throw std::runtime_error( error.c_str() );
+            m_raceScene->initializePresentation();
+            // A rebuild can consume more wall time than the upload allowance.
+            // The Application task's scene-time stamp predates that rebuild.
+            m_cityBuildingStartupDeadline = app->getTimer()->now() + 30;
+            m_reviewStart = -1;
+            m_reviewFrames = 0;
+            m_roadTerrainEditPrepared = true;
+        }
+        catch( const std::exception &failure )
+        {
+            std::cerr << "Road terrain edit review: " << failure.what() << '\n';
+            const auto json = "{\"schema\":\"workphone.vehicle-review.v1\",\"validationPassed\":false,\"failure\":" +
+                              advanced::jsonString( failure.what() ) + "}";
+            if( !m_evidencePath.empty() ) advanced::writeReviewEvidence( m_evidencePath, json );
+            m_captureAttempted = true;
+            app->setQuit( true );
+        }
+    }
+
+    bool SampleVehicleAdvanced::writeRoadTerrainEditReview( std::ostream &output ) const
+    {
+        const auto authoring = m_assets.roadAuthoring;
+        const auto terrain = m_assets.roadTerrain;
+        const auto current = terrain ? terrain->getActiveTerrainSnapshot() : nullptr;
+        const bool edited = m_captureView == "road-edit-after";
+        const auto expectedRevision = edited ? m_roadTerrainEditRedoRevision : m_roadTerrainEditUndoRevision;
+        const float ground = edited ? m_roadTerrainEditAfterHeight : m_roadTerrainEditBeforeHeight;
+        float roadHeight = 0;
+        bool driveable = false;
+        const auto point = m_roadTerrainEditProbe;
+        const bool roadPresent = authoring &&
+            authoring->getRuntimeSurface( point.x, point.z, roadHeight, driveable ) && driveable;
+        const float expectedHeight = edited ? roadHeight : ground;
+        const auto app = core::IApplicationManager::instancePtr();
+        auto physics = app->getPhysicsManager()->getPhysicsScene();
+        Vector3F hit, normal;
+        SmartPtr<ISharedObject> object;
+        const bool collision = physics && physics->intersects(
+            { point.x, expectedHeight + .2f, point.z }, { point.x, expectedHeight - .2f, point.z },
+            hit, normal, object ) && object && std::isfinite( hit.y ) &&
+            std::abs( hit.y - expectedHeight ) < .01f && normal.y > .5f;
+        const bool valid = m_roadTerrainEditPrepared && current &&
+            current->revision == expectedRevision && current == authoring->getTerrainSnapshot() &&
+            edited == roadPresent && collision;
+        const auto vector = [&]( Vector3F p ) { output << '[' << p.x << ',' << p.y << ',' << p.z << ']'; };
+        output << ",\n  \"roadTerrainEdit\": {\"stage\":\"" << ( edited ? "redo" : "undo" )
+               << "\",\"roadIndex\":" << m_roadTerrainEditRoad
+               << ",\"initialTerrainRevision\":" << m_roadTerrainEditInitialRevision
+               << ",\"editedTerrainRevision\":" << m_roadTerrainEditCommittedRevision
+               << ",\"undoTerrainRevision\":" << m_roadTerrainEditUndoRevision
+               << ",\"redoTerrainRevision\":" << m_roadTerrainEditRedoRevision
+               << ",\"changedSamples\":" << m_roadTerrainEditChangedSamples
+               << ",\"moveRestoredSamples\":" << m_roadTerrainEditMoveRestored
+               << ",\"deleteRestoredSamples\":" << m_roadTerrainEditDeleteRestored
+               << ",\"maxCutMetres\":" << m_roadTerrainEditCut << ",\"maxFillMetres\":" << m_roadTerrainEditFill
+               << ",\"oldKnot\":";
+        vector( m_roadTerrainEditBeforeKnot );
+        output << ",\"newKnot\":";
+        vector( m_roadTerrainEditAfterKnot );
+        output << ",\"probe\":";
+        vector( point );
+        output << ",\"beforeGroundMetres\":" << m_roadTerrainEditBeforeHeight
+               << ",\"editedGroundMetres\":" << m_roadTerrainEditAfterHeight
+               << ",\"roadPresent\":" << ( roadPresent ? "true" : "false" )
+               << ",\"collisionMatched\":" << ( collision ? "true" : "false" )
+               << ",\"eye\":";
+        vector( m_roadTerrainEditEye );
+        output << ",\"target\":";
+        vector( m_roadTerrainEditTarget );
+        output << ",\"valid\":" << ( valid ? "true" : "false" ) << '}';
+        return valid;
     }
 
     void SampleVehicleAdvanced::prepareCityRetentionSmoke()
@@ -3080,7 +3501,7 @@ namespace workphone
         {
             std::cout << "VehicleAdvanced generated city memory ledger: ";
             writeSharedMemoryLedger( std::cout ); std::cout << std::endl;
-            m_cityBuildingStartupDeadline = applicationManager->getTimer()->getTimeSinceSceneLoad() + 30;
+            m_cityBuildingStartupDeadline = applicationManager->getTimer()->now() + 30;
         }
 #if WP_TERRAIN_GAMEPLAY_PACKAGE && WP_GRAPHICS_SYSTEM_CLAW
         if( m_terrainGameplay && !m_terrainGameplayPackage && !m_terrainGameplayExportOnly )
@@ -3476,6 +3897,11 @@ namespace workphone
                         m_cameraActor->setPosition( m_cityHillsideEye );
                         m_cameraActor->lookAt( m_cityHillsideTarget, Vector3F::unitY() );
                     }
+                    else if( isRoadTerrainEditView( m_captureView ) && m_roadTerrainEditPrepared )
+                    {
+                        m_cameraActor->setPosition( m_roadTerrainEditEye );
+                        m_cameraActor->lookAt( m_roadTerrainEditTarget, Vector3F::unitY() );
+                    }
                     else if( m_captureView == "track" )
                     {
                         if( m_terrainGameplay )
@@ -3696,6 +4122,7 @@ int main( int argc, char **argv )
                    "  --view street|boulevard       Opposite street-level city inspections; track is the overview\n"
                    "  --view frontage               Close sidewalk inspection (requires --city-terrain-roads)\n"
                    "  --view hillside               Inspect a sustained road climb and its surrounding terrain\n"
+                   "  --view road-edit-before|road-edit-after   Fixed camera after Undo or Redo of a graded road edit\n"
                    "  --view facade                 Inspect a generated building facade from a fixed parcel camera\n"
                    "  --view building               Inspect a representative low-rise building and its roof silhouette\n"
                    "  --export-materials NEW_DIR    Bake asphalt maps and resource source descriptors\n"
@@ -3950,8 +4377,9 @@ int main( int argc, char **argv )
         }
         if( captureView != "follow" && captureView != "car" && captureView != "track" &&
             captureView != "corner" && captureView != "junction" && captureView != "hillside" && captureView != "street" && captureView != "boulevard" &&
-            captureView != "frontage" && captureView != "facade" && captureView != "building" )
-            throw std::runtime_error( "View must be follow, car, track, corner, junction, hillside, street, boulevard, frontage, facade, or building." );
+            captureView != "frontage" && captureView != "facade" && captureView != "building" &&
+            !isRoadTerrainEditView( captureView ) )
+            throw std::runtime_error( "View must be follow, car, track, corner, junction, hillside, street, boulevard, frontage, facade, building, road-edit-before, or road-edit-after." );
         if( ( cityOptionsExplicit || captureView == "street" || captureView == "boulevard" ) && !openCity )
             throw std::runtime_error( "City options and street-level views require --city." );
         if(roadAuthoringShowcase && foliageWorld)throw std::runtime_error("Road authoring showcase does not provide foliage-world generation.");
@@ -3966,6 +4394,8 @@ int main( int argc, char **argv )
             throw std::runtime_error( "--view junction requires --city-terrain-roads." );
         if( captureView == "hillside" && !cityTerrainRoads )
             throw std::runtime_error( "--view hillside requires --city-terrain-roads." );
+        if( isRoadTerrainEditView( captureView ) && ( !cityTerrainRoads || orbit || capturePath.empty() ) )
+            throw std::runtime_error( "Road edit views require --city-terrain-roads and a fixed capture camera." );
         if( (cityBuildingMeshOverride || cityBuildingStyle >= 0 || captureView == "facade" || captureView == "building") &&
             (!openCity || roadAuthoringShowcase) )
             throw std::runtime_error( "City building mesh overrides, styles, and the facade/building views require a generated city." );

@@ -323,6 +323,18 @@ namespace workphone
             u64 getTerrainRevision() const;
             bool applyTerrainData( const render::TerrainData &data, String &error,
                                    u64 expectedRevision = 0 );
+            /** Publish an immutable height edit and a prepared road generation together.
+             * The Application caller holds the Render and Physics task boundaries.
+             * The road callback may fail while staging its scene admission. Once it
+             * calls commitTerrain, it must only perform no-fail publication swaps.
+             * Use the provided serial for the road's accepted integration state.
+             */
+            using TerrainRoadEditPublication =
+                std::function<bool( const std::function<void()> &commitTerrain, u64 serial, String & )>;
+            bool publishTerrainRoadEdit( render::TerrainSnapshot expected,
+                                         render::TerrainSnapshot candidate,
+                                         const Transform3<real_Num> &placement,
+                                         const TerrainRoadEditPublication &publishRoad, String &error );
             String exportTerrainData() const;
             bool importTerrainData( const String &json, String &error );
             bool beginEditStroke( SmartPtr<ICommandManager> commands, String &error );

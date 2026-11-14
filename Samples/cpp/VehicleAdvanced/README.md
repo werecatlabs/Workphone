@@ -77,6 +77,15 @@ accepts 0–2 and affects newly created terrain; regenerating a retained city
 preserves its edited terrain. The hillside camera is cached for the capture and
 its road ID, selected rise, eye and target are written to the evidence JSON.
 
+The capture harness accepts `-Views road-edit-before,road-edit-after` with
+`-CityTerrainRoads`. Both views apply the same live spline edit and check exact
+terrain and road restoration. The first records Undo and the second records
+Redo from the same camera. The evidence also checks native collision at a point
+covered only by the edited road and records its terrain height in both stages.
+The fixture also verifies restoration of the vacated grade after moving and
+deleting the road, then replays the exact saved grade. The capture evidence
+includes native verge geometry readiness.
+
 Terrain-city evidence includes retained heightfield relief, centreline and edge
 grades, half-crossfalls, and the terrain fitter's changed-sample/cut/fill report.
 Up to 96 distributed carriageway probes and eight probes per roundabout compare

@@ -2,12 +2,14 @@
 #include <ui/EditorWindow.hpp>
 #include <commands/Command.hpp>
 #include <Workphone/Interface/Procedural/CityRoadSplineSource.hpp>
+#include <Workphone/Graphics/TerrainData.hpp>
+#include <Workphone/System/WorldStreamingScheduler.hpp>
 #include <Workphone/Interface/UI/IUILabelTextInputPair.hpp>
 #include <Workphone/Interface/UI/IUILabelTogglePair.hpp>
 #include <Workphone/Interface/UI/IUIText.hpp>
 #include <Workphone/System/Job.hpp>
 
-namespace workphone::scene { class CityRoadAuthoring; class TerrainSystem; }
+namespace workphone::scene { class CityRoadAuthoring; class TerrainSystem; struct CityRoadTerrainGradeData; }
 namespace workphone::editor
 {
     // One source transaction per completed draw/drag. History never stores preview actors.
@@ -15,21 +17,27 @@ namespace workphone::editor
     {
     public:
         CityRoadEditCommand();
-        bool configure(SmartPtr<scene::CityRoadAuthoring>, const String &after, String &error);
+        bool configure(SmartPtr<scene::CityRoadAuthoring>, const String &after, String &error,
+                       bool gradeTerrain = true);
         void execute() override;
         void undo() override;
         void redo() override;
         bool applied() const { return m_applied; }
+        bool gradedTerrain() const { return bool(m_terrainAfter); }
         const String &error() const { return m_error; }
         static bool dispatchHistory(SmartPtr<ICommandManager>,bool redo,String &error);
         WP_CLASS_REGISTER_DECL;
     private:
-        bool apply(const SourceBudgetText &,const SourceBudgetText &expected);
+        bool apply(bool forward);
         AtomicWeakPtr<scene::CityRoadAuthoring> m_target;
         AtomicWeakPtr<scene::IGameScene> m_scene;
         SourceBudgetText m_before,m_after;
+        render::TerrainSnapshot m_terrainBefore,m_terrainAfter;
+        std::shared_ptr<const scene::CityRoadTerrainGradeData> m_gradingBefore,m_gradingAfter;
+        Transform3<real_Num> m_placement;
+        StreamBudget m_terrainHistoryBudget;
         String m_project,m_error;
-        bool m_applied=false;
+        bool m_applied=false,m_committed=false,m_gradeTerrain=true,m_hasGradingHistory=false;
     };
 
     class CityRoadWindow : public EditorWindow
@@ -86,12 +94,14 @@ namespace workphone::editor
         AtomicWeakPtr<scene::IGameScene> m_scene;
         SmartPtr<ui::IUILabelTextInputPair> m_width,m_grade;
         SmartPtr<ui::IUILabelTextInputPair> m_outerRadius,m_islandRadius;
-        SmartPtr<ui::IUILabelTogglePair> m_closed,m_clockwise;
+        SmartPtr<ui::IUILabelTogglePair> m_closed,m_clockwise,m_gradeTerrain;
         SmartPtr<ui::IUIText> m_status;
         procedural::CityRoadSplineSource m_draft;
         SourceBudgetText m_selectedRoadId,m_selectedKnotId;
         SourceBudgetSet<SourceBudgetText> m_manualHandles;
         u64 m_draftRevision=0;
+        render::TerrainSnapshot m_draftTerrain;
+        Transform3<real_Num> m_draftTerrainPlacement;
         size_t m_road=0,m_knot=0;
         Mode m_mode=Mode::Move;
         bool m_enabled=false,m_drafting=false,m_dragging=false,m_selected=false,m_portHandleDrag=false;

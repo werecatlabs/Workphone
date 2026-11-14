@@ -11,6 +11,8 @@ namespace workphone::scene
 {
     class TerrainSystem;
     struct CityRoadRuntimeState;
+    struct CityRoadTerrainGradeData;
+    using CityRoadTerrainGrading = std::shared_ptr<const CityRoadTerrainGradeData>;
 
     /** Scene-owned road source. All editing/publication runs on the owner thread.
      * The first tier stores controls and road widths in world metres; actor pose
@@ -29,11 +31,21 @@ namespace workphone::scene
         void unload( SmartPtr<ISharedObject> data ) override;
         void update() override;
         SmartPtr<Properties> getProperties() const override;
+        SmartPtr<ISharedObject> toData() const override;
         void setProperties( SmartPtr<Properties> properties ) override;
 
         String getSourceJSON() const;
         bool setSourceJSON( const String &json, String &error );
         bool setSourceJSON( const String &json, u64 expectedRevision, String &error );
+        /** Publish one road edit against the active terrain snapshot. History can
+         * replay exact terrain samples by supplying restoreTerrain with fitTerrain false. */
+        bool applyTerrainRoadEdit( const String &json, u64 expectedRoadRevision,
+                                   render::TerrainSnapshot expectedTerrain,
+                                   render::TerrainSnapshot restoreTerrain, bool fitTerrain,
+                                   String &error, SourceBudgetText *committedSource = nullptr,
+                                   const CityRoadTerrainGrading *restoreGrading = nullptr );
+        CityRoadTerrainGrading getTerrainGrading() const;
+        bool rememberInitialTerrainGrading( render::TerrainSnapshot original, String &error );
         const procedural::CityRoadSplineSource &getSource() const;
         const procedural::CityRoadSplineBake &getBake() const;
         u64 getSourceRevision() const;
@@ -72,6 +84,14 @@ namespace workphone::scene
         WP_CLASS_REGISTER_DECL;
 
     private:
+        using RuntimePublication = std::function<bool( const std::function<void()> &admit,
+                                                       const std::function<void()> &commit,
+                                                       String & )>;
+        bool publishRuntimePrepared( const procedural::CityRoadSplineSource &source,
+                                     const procedural::CityRoadSplineBake &bake,
+                                     render::TerrainSnapshot terrain,
+                                     const Transform3<real_Num> &placement,
+                                     const RuntimePublication &publication, String &error );
         bool captureTerrain( render::TerrainSnapshot &snapshot, Transform3<real_Num> &placement,
                              u64 &serial, String &error ) const;
         bool applySource( procedural::CityRoadSplineSource candidate, u64 expectedRevision,
@@ -92,5 +112,6 @@ namespace workphone::scene
         bool m_hasDraft = false, m_hasAcceptedSource = false, m_pendingPublication = false;
         PublishCallback m_publishCallback;
         std::shared_ptr<CityRoadRuntimeState> m_runtime;
+        CityRoadTerrainGrading m_terrainGrading;
     };
 }  // namespace workphone::scene
