@@ -227,7 +227,9 @@ namespace workphone::scene
             return a * ( 1 - sy ) + b * sy;
         }
 
-        constexpr u32 asphaltTiles = 4;
+        // The 1024px runtime maps hold two 512px scans. Their 2.1m physical
+        // aggregate scale stays fixed while close views gain 4.1mm texels.
+        constexpr u32 asphaltTiles = 2;
 
         enum class PaintWear : u32 { Edge, Lane, Zebra, Wheel };
         constexpr u32 paintBand = 64, paintProfiles = 4, paintWidth = 256;
@@ -261,22 +263,28 @@ namespace workphone::scene
                         const float v = ( ( y + .5f ) / paintBand - paintPadding ) / ( 1.f - 2.f * paintPadding );
                         const float grain = roadGrain( key, x, y, paintWidth );
                         const float broad = roadVariation( key ^ 0xa1b1fu, u, std::clamp( v, 0.f, 1.f ), 9 );
-                        // Sub-centimetre pores group under wear without a correlated dark cloud.
+                        // Small losses cluster into worn patches instead of peppering
+                        // every stripe evenly. Most scuffing only thins the paint.
+                        const float cluster = smooth( ( roadVariation( key ^ 0xa6731u, u,
+                            std::clamp( v, 0.f, 1.f ), 13 ) - .34f ) / .38f );
                         const float gx = u * 64.f, gy = std::clamp( v, 0.f, .9999f ) * 18.f;
                         const u32 ix = u32( gx ), iy = u32( gy );
+                        const float poreCluster = smooth( ( roadVariation( key ^ 0xa6731u,
+                            ( ix + .5f ) / 64.f, ( iy + .5f ) / 18.f, 13 ) - .34f ) / .38f );
                         const float shape = roadGrain( key ^ 0xb872u, ix, iy, 64 );
                         const float dx = ( gx - ix - ( .34f + .32f * shape ) ) / ( .22f + .13f * shape );
                         const float dy = ( gy - iy - ( .39f + .23f * roadGrain( key ^ 0xeb72u, ix, iy, 64 ) ) ) / .29f;
-                        const bool open = roadGrain( key ^ 0x8d741u, ix, iy, 64 ) < .075f + .18f * traffic;
+                        const bool open = roadGrain( key ^ 0x8d741u, ix, iy, 64 ) < .018f + .20f * traffic * poreCluster;
                         const float loss = open ? smooth( ( 1.05f - dx * dx - dy * dy + .18f * ( grain - .5f ) ) * 2.5f ) : 0.f;
                         const u32 line = u32( u * 56.f );
                         const u32 side = v > .5f ? 1u : 0u;
                         const float rough = roadGrain( key ^ 0x93133u, line, side, 56 );
-                        const float nick = rough > .88f ? .018f * traffic : 0.f;
+                        const float nick = rough > .90f ? ( .012f + .013f * cluster ) * traffic : 0.f;
                         const float setback = .003f + .007f * rough + nick;
                         const float edge = smooth( ( std::min( v, 1.f - v ) - setback ) / .023f );
-                        const float base = .736f - .028f * traffic + .028f * ( broad - .5f ) + .049f * ( grain - .5f );
-                        const float alpha = edge * ( .997f - .88f * loss );
+                        const float base = .736f - .028f * traffic + .028f * ( broad - .5f ) + .032f * ( grain - .5f );
+                        const float scuff = ( .012f + .045f * traffic ) * cluster * ( .35f + .65f * grain );
+                        const float alpha = edge * ( .997f - ( .50f + .27f * traffic ) * loss - scuff );
                         auto *pixel = result.pixel( x, band * paintBand + y );
                         pixel[0] = encoded( base );
                         pixel[1] = encoded( base * .991f );
@@ -372,7 +380,7 @@ namespace workphone::scene
                                                                          : CitySurface::Concrete;
                 SurfaceBakeResult scanned;
                 String diagnostic;
-                if( loadCitySurface( family, asphalt ? 256 : 512, scanned, diagnostic ) )
+                if( loadCitySurface( family, 512, scanned, diagnostic ) )
                 {
                     if( asphalt ) weatherScannedAsphalt( scanned );
                     if( turf ) finishIslandTurf( scanned.albedo, seed );

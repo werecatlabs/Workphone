@@ -1,5 +1,32 @@
 # WPProcedural implementation status
 
+## Sharper road and paving materials — 15 November 2026
+
+Terrain-city asphalt now uses a 512-pixel source scan in the existing 1024-pixel
+runtime maps. The underlying scan still spans 2.1 m; effective texel spacing
+improves from 8.2 mm to 4.1 mm without enlarging the asphalt maps. Road paint
+groups chips into worn patches and uses lighter scuffs between them, reducing
+the previous uniform dark speckling.
+
+Generated pavement maps increase from 512² to 1024², with finer mineral grain,
+sparse pores, narrower joints and restrained dirt near slab edges. Physical
+slab dimensions and the fitted road, footway, collision and terrain geometry
+remain unchanged. The matched native capture measured an additional 9 MiB of
+SourceCpu and 12 MiB of GPU reservations; the existing budgets were sufficient.
+
+The fresh utilities comparison passed identical-camera, lighting and geometry
+checks with only the explicit asphalt material retile allowed. Same-build
+junction and hillside views passed native validation and independent static
+visual review. Both streaming probes restored 441 detail meshes across 15
+patches while retaining 15 ready imposters. Their measured near-away-return
+cycles restored the same source/GPU ledger values, with zero pose errors,
+visibility mismatches or rejected reservations. All four focused road, surface,
+terrain and city CTest targets passed, as did the actual-material helper probes.
+See the [material review and fresh captures](../artifacts/procedural/city-road-materials-20261115/visual-review.md).
+These are software-rendered stills; moving-camera and physical-GPU review remain
+open. Soft kerb faces, diagonal slab cuts around curves and abrupt grass edges
+remain useful targets for the next road/sidewalk pass.
+
 ## Close junction fitting and streaming regression coverage — 15 November 2026
 
 An eight-block, seed-42 terrain-city capture exposed a connection failure between

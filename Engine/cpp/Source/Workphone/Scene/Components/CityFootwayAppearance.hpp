@@ -120,7 +120,9 @@
 
             SmartPtr<render::IMaterial> pavingMaterial( SceneAssets &assets, u32 seed )
             {
-                constexpr u32 width = 512, height = 512;
+                // Keep the slab dimensions fixed while resolving their aggregate
+                // and narrow joints at street-view distances.
+                constexpr u32 width = 1024, height = 1024;
                 constexpr float longSlab = .52f;
                 TextureBuffer colour( width, height ), roughness( width, height );
                 SourceBudgetVector<float> level( size_t( width ) * height );
@@ -142,24 +144,35 @@
                         const float slabDistance = shortSlab ? std::min( withinPair - longSlab,
                                                                        pavingPairMetres - withinPair ) :
                                                               std::min( withinPair, longSlab - withinPair );
-                        const float fine = aggregateNoise( seed + 221u, u, v, 184, 152 );
+                        const float fine = aggregateNoise( seed + 221u, u, v, 768, 640 );
+                        const float mineral = aggregateNoise( seed + 467u, u, v, 167, 139 );
                         const float bloom = aggregateNoise( seed + 463u, u, v, 49, 39 );
                         const auto slab = ( row * pavingPairs + pair % pavingPairs ) * 2u + u32( shortSlab );
                         const u64 slabKey = ( u64( seed ) << 32 ) | slab;
                         const float variation = unit( slabKey );
                         const float wear = unit( slabKey ^ 0x9829a1u );
                         const float distance = std::min( rowDistance, slabDistance );
-                        const float face = ramp( .0035f, .0145f, distance - .0035f * fine );
+                        const float face = ramp( .0015f, .0075f, distance - .001f * fine );
                         const float patina = ramp( .55f, .88f, bloom ) * ( 1.f - wear );
                         const float grain = unit( ( u64( seed + 529u ) << 32 ) | ( y * width + x ) );
-                        const float concrete = 155.f + 16.f * variation + 10.f * ( fine - .5f ) +
-                                               6.f * ( grain - .5f ) - 9.f * patina;
-                        stonePixels( colour, roughness, x, y, concrete, 138.f + 8.f * bloom, face, wear, fine, 4.f );
+                        const float lightMineral = ramp( .67f, .86f, fine );
+                        const float pore = 1.f - ramp( .045f, .17f, fine );
+                        const float edgeDirt = ( 1.f - ramp( .008f, .035f, distance ) ) *
+                                               ( .35f + .65f * mineral ) * ( .30f + .70f * ( 1.f - wear ) );
+                        const float concrete = 150.f + 15.f * variation + 10.f * ( fine - .5f ) +
+                                               5.f * ( mineral - .5f ) + 4.f * ( grain - .5f ) +
+                                               5.f * lightMineral - 8.f * pore - 6.f * patina - 6.f * edgeDirt;
+                        stonePixels( colour, roughness, x, y, concrete, 120.f + 6.f * bloom,
+                                     face, wear, fine, 4.f );
+                        auto rough = roughness.pixel( x, y );
+                        rough[0] = rough[1] = rough[2] = asByte(
+                            232.f - face * ( 8.f + 11.f * wear ) + 4.f * pore - 7.f * lightMineral );
                         level[size_t( y ) * width + x] =
-                            face * ( .0026f + .0016f * variation + .0008f * fine + .00025f * grain );
+                            face * ( .0026f + .0011f * variation + .00042f * fine + .00018f * grain -
+                                     .00040f * pore + .00012f * lightMineral );
                     }
                 }
-                return stoneMaterial( assets, colour, roughness, level, pavingTileU, pavingTileV, true, .73f );
+                return stoneMaterial( assets, colour, roughness, level, pavingTileU, pavingTileV, true, .64f );
             }
 
             SmartPtr<render::IMaterial> sharedTopMaterial( SceneAssets &assets, SmartPtr<render::IMaterial> shared )
