@@ -6,6 +6,7 @@
 #include <Workphone/Scene/Components/Mesh.hpp>
 #include <Workphone/Scene/Components/MeshRenderer.hpp>
 #include <Workphone/Scene/Components/Rigidbody.hpp>
+#include <Workphone/Scene/Systems/LODSystem.hpp>
 #include <Workphone/Core/StringUtil.hpp>
 #include <Workphone/IO/FileDataStream.hpp>
 #include <Workphone/IO/MemoryFile.hpp>
@@ -531,6 +532,40 @@ namespace workphone::scene::race
             error = failure.what();
             return false;
         }
+    }
+
+    bool CityStreaming::updateFromActiveCamera( String &error ) try
+    {
+        SmartPtr<LODSystem> lodSystem;
+        {
+            std::lock_guard<std::mutex> lock( m_mutex );
+            if( !m_impl )
+            {
+                error.clear();
+                return false;
+            }
+            for( const auto &patch : m_impl->patches )
+            {
+                lodSystem = dynamic_pointer_cast<LODSystem>( patch.lod->getComponentSystem() );
+                if( lodSystem ) break;
+            }
+        }
+
+        // Do not hold the residency lock while acquiring the LOD system's view lock.
+        // Raw render cameras publish a view override; managed cameras are resolved live.
+        Array<Vector3F> observers{ Allocator<Vector3F>( sourceBudget ) };
+        LODSystem::View view;
+        if( lodSystem && lodSystem->getView( view ) )
+        {
+            const Vector3F position{ f32( view.position.x ), f32( view.position.y ), f32( view.position.z ) };
+            if( position.isFinite() ) observers.push_back( position );
+        }
+        return update( observers, error );
+    }
+    catch( const std::exception &failure )
+    {
+        error = failure.what();
+        return false;
     }
 
     bool CityStreaming::update( const Array<Vector3F> &observers, String &error ) try

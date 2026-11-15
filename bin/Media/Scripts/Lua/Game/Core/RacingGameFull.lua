@@ -408,8 +408,7 @@ function RacingGameFull:update()
             end
         end
     end
-    self.raceScene:setView(self.cameraActor:getPosition(), self.camera:getFOV() * math.pi / 180,
-        self.camera:getNearClipDistance(), 1)
+    -- The active Camera component drives LOD and streaming, including Editor camera switches.
 end
 
 -- StartMenu's native button listeners target this Script's methods.

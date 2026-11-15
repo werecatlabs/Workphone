@@ -66,8 +66,8 @@ namespace workphone::scene
         void updateShadow();
 
         /**
-         * Update view-dependent parameters for the generated scene such as LOD
-         * bias, near clip and field-of-view for rendering.
+         * Publish the view of a renderer without a scene Camera component for LOD
+         * and city streaming. Managed Camera components use automatic discovery.
          */
         void setView( const Vector3F &position, f32 fovRadians, f32 nearClip, f32 lodBias );
 

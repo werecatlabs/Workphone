@@ -2,9 +2,6 @@
 #include <Workphone/Scene/Components/ProceduralScene.hpp>
 #include <Workphone/Scene/Components/ProceduralCircuitScene.hpp>
 #include <Workphone/Scene/Components/ProceduralCityStreaming.hpp>
-#include <Workphone/Scene/Components/Camera.hpp>
-#include <Workphone/Scene/Components/FourWheelVehicle.hpp>
-#include <Workphone/Interface/Scene/ICameraManager.hpp>
 #include <Workphone/Interface/System/ITaskManager.hpp>
 #include <Workphone/System/TaskLock.hpp>
 #include <Workphone/Workphone.hpp>
@@ -100,35 +97,13 @@ namespace workphone::scene
         ScopedLock graphicsLock( graphics );
         std::unique_lock<std::recursive_mutex> lock( m_generationMutex, std::try_to_lock );
         if( !lock.owns_lock() || !m_generated || m_activationPending || m_assets.cityStreaming != streaming ) return;
-        const auto updateStreaming = [&]( const Array<Vector3F> &observers ) {
-            String error;
-            if( !streaming->update( observers, error ) && !error.empty() )
-                m_generationError = "City streaming: " + error;
-        };
         try
         {
-            if( m_cityStreamingObserverOverride )
-            {
-                updateStreaming( m_cityStreamingObservers );
-                return;
-            }
-            auto observers = makeSourceBudgetSnapshot<Vector3F>();
-            const auto owner = getActor();
-            const auto observe = [&]( SmartPtr<IGameActor> actor ) {
-                if( !actor || !actor->isEnabledInScene() ) return;
-                const auto p = actor->getWorldTransform().getPosition();
-                observers.push_back( { float( p.x ), float( p.y ), float( p.z ) } );
-            };
-            if( app->isEditor() && !app->isPlaying() )
-            {
-                if( auto cameras = app->getCameraManager() ) observe( cameras->getEditorCamera() );
-            }
-            if( observers.empty() && owner && owner->getScene() )
-                for( const auto &camera : owner->getScene()->getComponents<Camera>() )
-                    if( camera && camera->isEnabled() && camera->isActive() )
-                    { observe( camera->getActor() ); if( !observers.empty() ) break; }
-            if( observers.empty() || ( owner && owner->getComponent<FourWheelVehicle>() ) ) observe( owner );
-            updateStreaming( observers );
+            String error;
+            const auto updated = m_cityStreamingObserverOverride
+                ? streaming->update( m_cityStreamingObservers, error )
+                : streaming->updateFromActiveCamera( error );
+            if( !updated && !error.empty() ) m_generationError = "City streaming: " + error;
         }
         catch( const std::bad_alloc & )
         {

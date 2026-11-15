@@ -2,12 +2,109 @@
 #include <Workphone/Scene/Systems/LODSystem.hpp>
 #include <Workphone/Scene/Components/LODGroup.hpp>
 #include <Workphone/Scene/Components/Renderer.hpp>
+#include <Workphone/Scene/Components/Camera.hpp>
+#include <Workphone/Scene/Components/RenderTexture.hpp>
+#include <Workphone/Scene/CameraManager.hpp>
 #include <limits>
 #include <boost/test/unit_test.hpp>
 #include <boost/test/tools/floating_point_comparison.hpp>
 
 using namespace workphone;
 using namespace workphone::scene;
+
+namespace
+{
+    struct ActiveCameraLODFixture : TestGuard
+    {
+        SmartPtr<ICameraManager> previousCameras = applicationManager->getCameraManager();
+        SmartPtr<Properties> previousSettings = applicationManager->getPlayerSettings();
+        const bool wasEditor = applicationManager->isEditor();
+        const bool wasPlaying = applicationManager->isPlaying();
+        const bool wasEditorCamera = applicationManager->isEditorCamera();
+        SmartPtr<CameraManager> cameras = make_ptr<CameraManager>();
+        SmartPtr<LODGroup> group;
+        SmartPtr<Renderer> detailed, distant;
+        SmartPtr<LODSystem> system;
+        bool ownsSystem = false;
+
+        ActiveCameraLODFixture()
+        {
+            scene->clear( true );
+            cameras->load( nullptr );
+            applicationManager->setCameraManager( cameras );
+            applicationManager->setEditor( false );
+            applicationManager->setEditorCamera( false );
+            auto settings = make_ptr<Properties>();
+            settings->setProperty( "quality.mesh", 2 );
+            settings->setProperty( "quality.lodBias", 1.f );
+            applicationManager->setPlayerSettings( settings );
+
+            auto actor = createBasicActor();
+            auto nearActor = createBasicActor();
+            auto farActor = createBasicActor();
+            scene->addActor( actor );
+            scene->addActor( nearActor );
+            scene->addActor( farActor );
+            detailed = nearActor->addComponent<Renderer>();
+            distant = farActor->addComponent<Renderer>();
+            group = actor->addComponent<LODGroup>();
+            group->addLevel( .05f, { detailed } );
+            group->addLevel( 0.f, { distant } );
+            group->setLocalReferencePoint( { 0, 0, 10 } );
+            group->setSize( 2.f );
+            group->setCullBelowLastLOD( false );
+            group->setHysteresis( 0.f );
+            group->load( nullptr );
+            system = dynamic_pointer_cast<LODSystem>( group->getComponentSystem() );
+            ownsSystem = !system;
+            if( ownsSystem )
+            {
+                system = make_ptr<LODSystem>();
+                system->load( nullptr );
+                system->addComponent( group );
+            }
+            system->clearViewOverride();
+        }
+
+        ~ActiveCameraLODFixture()
+        {
+            system->clearViewOverride();
+            if( ownsSystem )
+            {
+                system->removeComponent( static_pointer_cast<IComponent>( group ) );
+                system->unload( nullptr );
+            }
+            scene->clear( true );
+            cameras->unload( nullptr );
+            applicationManager->setCameraManager( previousCameras );
+            applicationManager->setPlayerSettings( previousSettings );
+            applicationManager->setEditor( wasEditor );
+            applicationManager->setPlaying( wasPlaying );
+            applicationManager->setEditorCamera( wasEditorCamera );
+        }
+
+        SmartPtr<Camera> addCamera( f32 z, u32 order = 1 )
+        {
+            auto actor = createBasicActor();
+            scene->addActor( actor );
+            auto camera = actor->addComponent<Camera>();
+            camera->setFOV( 90.f );
+            camera->setZOrder( order );
+            actor->setPosition( { 0, 0, z } );
+            actor->updateTransform();
+            cameras->addCamera( actor );
+            camera->setActive( true );
+            return camera;
+        }
+
+        void checkDetail( bool expected )
+        {
+            system->update();
+            BOOST_CHECK_EQUAL( detailed->isLODVisible(), expected );
+            BOOST_CHECK_EQUAL( distant->isLODVisible(), !expected );
+        }
+    };
+}
 
 BOOST_AUTO_TEST_SUITE( LODSystemTests )
 
@@ -171,6 +268,111 @@ BOOST_AUTO_TEST_CASE( runtime_mesh_quality_changes_authored_lod_visibility )
         system->removeComponent( static_pointer_cast<IComponent>( group ) );
         system->unload( nullptr );
     }
+}
+
+BOOST_FIXTURE_TEST_CASE( active_camera_movement_switching_and_priority_update_visibility,
+                         ActiveCameraLODFixture )
+{
+    auto first = addCamera( 0 );
+    checkDetail( true );
+    first->getActor()->setPosition( { 0, 0, 100 } );
+    first->getActor()->updateTransform();
+    checkDetail( false );
+
+    auto second = addCamera( 0, 2 );
+    checkDetail( true );
+    second->setActive( false );
+    checkDetail( false );
+    second->setActive( true );
+    checkDetail( true );
+    // Equal priorities keep registration order; explicit priority changes win.
+    second->setZOrder( first->getZOrder() );
+    checkDetail( false );
+    second->setZOrder( 3 );
+    checkDetail( true );
+    second->getActor()->setEnabled( false );
+    checkDetail( false );
+}
+
+BOOST_FIXTURE_TEST_CASE( active_camera_editor_play_override_and_offscreen_views,
+                         ActiveCameraLODFixture )
+{
+    applicationManager->setEditor( true );
+    applicationManager->setPlaying( true );
+    auto game = addCamera( 100 );
+    auto offscreen = addCamera( 0, 50 );
+    offscreen->setOutputRenderTexture( make_ptr<RenderTexture>() );
+    auto editor = addCamera( 0, 100 );
+    editor->getActor()->setFlag( IGameActor::ActorFlagIsEditor, true );
+    cameras->setEditorCamera( editor->getActor() );
+
+    cameras->reset();
+    BOOST_CHECK( !editor->isActive() );
+    checkDetail( false );
+    applicationManager->setEditorCamera( true );
+    cameras->reset();
+    BOOST_CHECK( editor->isActive() );
+    checkDetail( true );
+    applicationManager->setEditorCamera( false );
+    cameras->reset();
+    checkDetail( false );
+
+    // A UI-only scene activates the editor render fallback even in Play.
+    game->setEnabled( false );
+    cameras->reset();
+    BOOST_CHECK( editor->isActive() );
+    BOOST_CHECK( !applicationManager->isEditorCamera() );
+    checkDetail( true );
+    editor->setActive( false );
+    LODSystem::View view;
+    BOOST_CHECK( !system->getView( view ) ); // Offscreen camera is still active.
+    checkDetail( true ); // Missing view retains the previous selection.
+}
+
+BOOST_FIXTURE_TEST_CASE( active_camera_projection_and_explicit_override_are_shared,
+                         ActiveCameraLODFixture )
+{
+    auto camera = addCamera( 100 );
+    checkDetail( false );
+    camera->setFOV( 10.f );
+    checkDetail( true );
+    camera->setFOV( 90.f );
+    checkDetail( false );
+    camera->setOrthoWindowHeight( 10.f );
+    camera->setNearClipDistance( .75f );
+    checkDetail( true );
+    LODSystem::View view;
+    BOOST_REQUIRE( system->getView( view ) );
+    BOOST_CHECK( view.orthographic );
+    BOOST_CHECK_EQUAL( view.orthographicHeight, 10.f );
+    BOOST_CHECK_EQUAL( view.nearClipDistance, .75f );
+    BOOST_CHECK_CLOSE( view.verticalFovRadians, Math<f32>::DegToRad( 90.f ), .01f );
+
+    LODSystem::View override;
+    override.position = { 0, 0, 100 };
+    override.verticalFovRadians = Math<f32>::DegToRad( 90.f );
+    system->setViewOverride( override );
+    checkDetail( false );
+    BOOST_REQUIRE( system->getView( view ) );
+    BOOST_CHECK( !view.orthographic );
+    BOOST_CHECK_EQUAL( view.position.z, 100.f );
+    override.position.x = std::numeric_limits<real_Num>::quiet_NaN();
+    system->setViewOverride( override );
+    view.position = { 7, 8, 9 };
+    BOOST_CHECK( !system->getView( view ) );
+    BOOST_CHECK_EQUAL( view.position.z, 9.f );
+    checkDetail( false ); // An invalid observer cannot replace the valid selection.
+    override.position.x = 0;
+    system->setViewOverride( override );
+    camera->setActive( false );
+    checkDetail( false ); // Explicit render-only views do not need Camera components.
+    system->clearViewOverride();
+    view.position = { 7, 8, 9 };
+    BOOST_CHECK( !system->getView( view ) );
+    BOOST_CHECK_EQUAL( view.position.z, 9.f );
+    checkDetail( false );
+    camera->setActive( true );
+    checkDetail( true );
 }
 
 BOOST_AUTO_TEST_SUITE_END()

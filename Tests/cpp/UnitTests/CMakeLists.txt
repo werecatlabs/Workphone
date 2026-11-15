@@ -798,7 +798,7 @@ endif()
 add_executable(WPActorSceneTests main.cpp UnitTests.cpp UnitTestsFixture.cpp
     TypeManagerFixture.cpp GameTestFixture.cpp GraphicsTestFixture.cpp TestGuard.cpp
     SceneWorldStreamingTests.cpp ActorTransformTests.cpp ActorSmoothMotionTests.cpp ComponentTestsMeshRenderer.cpp
-    GameManagerRegistrationTests.cpp CameraManagerFallbackTests.cpp
+    GameManagerRegistrationTests.cpp CameraManagerFallbackTests.cpp LODSystemTests.cpp
     GraphicsSceneNodeTests.cpp GameSceneAsyncLoadingTests.cpp GameSceneLoadingTests.cpp MeshTest.cpp
     MeshAssetBudgetTests.cpp
     ProgressiveMeshOptionsTests.cpp
@@ -830,6 +830,10 @@ add_test(NAME Workphone.camera_manager_fallback COMMAND WPActorSceneTests
     --run_test=CameraManagerFallbackTests)
 set_tests_properties(Workphone.camera_manager_fallback PROPERTIES TIMEOUT 60
     WORKING_DIRECTORY "$<TARGET_FILE_DIR:WPActorSceneTests>" LABELS "scene;camera;headless")
+add_test(NAME Workphone.lod_active_camera COMMAND WPActorSceneTests
+    --run_test=LODSystemTests)
+set_tests_properties(Workphone.lod_active_camera PROPERTIES TIMEOUT 60
+    WORKING_DIRECTORY "$<TARGET_FILE_DIR:WPActorSceneTests>" LABELS "scene;camera;lod;headless")
 add_test(NAME Workphone.mesh_import_streaming COMMAND WPActorSceneTests
     --run_test=MeshImportStreamingTests,MeshImportStreamingIntegrationTests,SceneWorldIdentityTests,SceneWorldStreamingPrefabTests,ResourceDatabaseLifetimeTests)
 set_tests_properties(Workphone.mesh_import_streaming PROPERTIES TIMEOUT 120

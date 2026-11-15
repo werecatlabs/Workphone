@@ -473,6 +473,5 @@ function SampleVehicleAdvanced:update()
     if self.performanceTest then self:updatePerformanceTest() end
     self:updateDebugText()
     if self.smokeTest then self:updateSmokeTest() end
-    self.raceScene:setView(self.cameraActor:getPosition(), self.camera:getFOV() * math.pi / 180,
-        self.camera:getNearClipDistance(), 1)
+    -- The active Camera component drives LOD and streaming, including Editor camera switches.
 end

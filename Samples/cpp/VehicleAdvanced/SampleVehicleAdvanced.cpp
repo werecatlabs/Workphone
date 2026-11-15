@@ -1614,6 +1614,9 @@ namespace workphone
             m_citySmokeDeadline = {};
             m_citySmokeCamera = m_citySmokeVehicle = m_citySmokeAway = {};
             m_citySmokeNear = m_citySmokeEvicted = m_citySmokeReturned = m_citySmokeFinal = m_citySmokeLast = {};
+            m_citySmokeCameraNear = m_citySmokeCameraEvicted = m_citySmokeCameraReturned = {};
+            m_citySmokeCameraOrientation = {};
+            m_citySmokeMaximumVehicleDisplacement = 0;
             m_replayTick = 0;
             setLoadingState( LoadingState::Loaded );
         }
@@ -1724,6 +1727,8 @@ namespace workphone
                 m_raceScene->setCityStreamingObservers( { m_citySmokeAway } );
                 break;
             case CitySmokeObserver::Automatic:
+            case CitySmokeObserver::CameraAway:
+            case CitySmokeObserver::CameraReturn:
                 m_raceScene->clearCityStreamingObservers();
                 break;
             case CitySmokeObserver::Failed:
@@ -1784,6 +1789,34 @@ namespace workphone
         m_citySmokeLast.visibleDetailMeshes = native.visibleDetailMeshes;
         m_citySmokeLast.visibilityMismatches = native.visibilityMismatches;
         m_citySmokeLast.maximumPoseError = native.maximumPoseError;
+        if( m_cameraActor && m_vehicleActor )
+        {
+            const auto camera = m_cameraActor->getWorldTransform().getPosition();
+            const auto vehicle = m_vehicleActor->getWorldTransform().getPosition();
+            m_citySmokeLast.cameraPosition = { float( camera.x ), float( camera.y ), float( camera.z ) };
+            m_citySmokeLast.vehiclePosition = { float( vehicle.x ), float( vehicle.y ), float( vehicle.z ) };
+            auto system = m_assets.vehicleLOD ? dynamic_pointer_cast<scene::LODSystem>(
+                m_assets.vehicleLOD->getComponentSystem() ) : nullptr;
+            scene::LODSystem::View view;
+            if( system && system->getView( view ) && view.position.isFinite() && m_cameraSceneNode )
+            {
+                m_citySmokeLast.lodViewPosition = { float( view.position.x ), float( view.position.y ), float( view.position.z ) };
+                m_citySmokeLast.cameraViewMatches =
+                    ( view.position - camera ).length() <= .01 &&
+                    ( m_cameraSceneNode->getPosition() - camera ).length() <= .01;
+            }
+        }
+        for( const auto &actor : m_assets.actors )
+        {
+            if( !actor || actor->getName() != "City LOD patch" ) continue;
+            const auto group = actor->getComponent<scene::LODGroup>();
+            if( !group ) continue;
+            const auto level = group->getDisplayedLOD();
+            const auto levels = group->getLevels();
+            if( level < 0 || levels.size() < 2 ) continue;
+            if( size_t( level ) + 1 == levels.size() ) ++m_citySmokeLast.imposterLodGroups;
+            else ++m_citySmokeLast.detailedLodGroups;
+        }
 #if WP_GRAPHICS_SYSTEM_CLAW
         if( auto nativeScene = dynamic_pointer_cast<render::ClawScene>( app->getGraphicsSystem()->getGraphicsScene() ) )
         {
@@ -1801,6 +1834,18 @@ namespace workphone
         {
             failCityStreamingSmoke( "A city detail patch failed during the streaming probe" );
             return false;
+        }
+        if( m_citySmokePhase == CitySmokePhase::CameraColdAway || m_citySmokePhase == CitySmokePhase::CameraNear ||
+            m_citySmokePhase == CitySmokePhase::CameraAway || m_citySmokePhase == CitySmokePhase::CameraReturn )
+        {
+            const auto displacement = float( ( m_citySmokeLast.vehiclePosition - m_citySmokeFinal.vehiclePosition ).length() );
+            if( !std::isfinite( displacement ) || displacement > .25f )
+            {
+                failCityStreamingSmoke( "The vehicle moved during the camera-only streaming probe" );
+                return false;
+            }
+            m_citySmokeMaximumVehicleDisplacement = std::max( m_citySmokeMaximumVehicleDisplacement, displacement );
+            if( !m_citySmokeLast.cameraViewMatches ) return false;
         }
         if( streaming.pendingPatches || streaming.retiringPatches || !native.valid ||
             native.imposterMeshes == 0 || native.readyImposterMeshes != native.imposterMeshes )
@@ -1889,8 +1934,54 @@ namespace workphone
             break;
         case CitySmokePhase::Automatic:
             if( !detailReady || native.readyImposterMeshes != m_citySmokeNear.readyImposters ||
-                ( m_citySmokeNear.visibleDetailMeshes && !native.visibleDetailMeshes ) ) return false;
+                ( m_citySmokeNear.visibleDetailMeshes && !native.visibleDetailMeshes ) ||
+                !m_citySmokeLast.cameraViewMatches || !m_citySmokeLast.detailedLodGroups ) return false;
             m_citySmokeFinal = m_citySmokeLast;
+            m_citySmokeCameraOrientation = m_cameraActor->getWorldTransform().getOrientation();
+            // The preceding observer override can retain vehicle-near patches
+            // outside the camera load radius. Establish camera-only demand cold.
+            transition( CitySmokePhase::CameraColdAway, CitySmokeObserver::CameraAway );
+            break;
+        case CitySmokePhase::CameraColdAway:
+            if( !detailEvicted ||
+                ( m_citySmokeLast.cameraPosition - m_citySmokeAway ).length() > .01f ||
+                streaming.evictedPatches <= m_citySmokeFinal.streaming.evictedPatches ) return false;
+            transition( CitySmokePhase::CameraNear, CitySmokeObserver::CameraReturn );
+            break;
+        case CitySmokePhase::CameraNear:
+            if( !detailReady ||
+                ( m_citySmokeLast.cameraPosition - m_citySmokeFinal.cameraPosition ).length() > .01f ||
+                !native.visibleDetailMeshes || !m_citySmokeLast.detailedLodGroups ) return false;
+            m_citySmokeCameraNear = m_citySmokeLast;
+            transition( CitySmokePhase::CameraAway, CitySmokeObserver::CameraAway );
+            break;
+        case CitySmokePhase::CameraAway:
+            if( !detailEvicted ||
+                ( m_citySmokeLast.cameraPosition - m_citySmokeAway ).length() > .01f ||
+                m_citySmokeLast.detailedLodGroups >= m_citySmokeCameraNear.detailedLodGroups ||
+                m_citySmokeLast.imposterLodGroups <= m_citySmokeCameraNear.imposterLodGroups ||
+                native.readyImposterMeshes != m_citySmokeCameraNear.readyImposters ||
+                native.visibleDetailMeshes >= m_citySmokeCameraNear.visibleDetailMeshes ||
+                streaming.evictedPatches <= m_citySmokeCameraNear.streaming.evictedPatches ||
+                streaming.nativeMeshUnloads <= m_citySmokeCameraNear.streaming.nativeMeshUnloads ||
+                usedSource( m_citySmokeLast ) >= usedSource( m_citySmokeCameraNear ) ) return false;
+            m_citySmokeCameraEvicted = m_citySmokeLast;
+            transition( CitySmokePhase::CameraReturn, CitySmokeObserver::CameraReturn );
+            break;
+        case CitySmokePhase::CameraReturn:
+            if( !detailReady ||
+                ( m_citySmokeLast.cameraPosition - m_citySmokeFinal.cameraPosition ).length() > .01f ||
+                streaming.residentMeshes != m_citySmokeCameraNear.streaming.residentMeshes ||
+                streaming.residentPatches != m_citySmokeCameraNear.streaming.residentPatches ||
+                native.readyMeshes != m_citySmokeCameraNear.readyMeshes ||
+                native.readyImposterMeshes != m_citySmokeCameraNear.readyImposters ||
+                native.triangles != m_citySmokeCameraNear.nativeTriangles ||
+                m_citySmokeLast.nativeObjectCount != m_citySmokeCameraNear.nativeObjectCount ||
+                m_citySmokeLast.nativeNodeCount != m_citySmokeCameraNear.nativeNodeCount ||
+                !native.visibleDetailMeshes || !m_citySmokeLast.detailedLodGroups ||
+                streaming.reloadedPatches <= m_citySmokeCameraEvicted.streaming.reloadedPatches ||
+                streaming.nativeMeshLoads <= m_citySmokeCameraEvicted.streaming.nativeMeshLoads ) return false;
+            m_citySmokeCameraReturned = m_citySmokeLast;
             m_citySmokePhase = CitySmokePhase::Passed;
             return true;
         case CitySmokePhase::Passed:
@@ -1917,10 +2008,17 @@ namespace workphone
                    << ",\"nativeObjectCount\":" << snapshot.nativeObjectCount << ",\"nativeNodeCount\":" << snapshot.nativeNodeCount
                    << ",\"visibleMeshes\":" << snapshot.visibleMeshes
                    << ",\"visibleDetailMeshes\":" << snapshot.visibleDetailMeshes
+                   << ",\"cameraViewMatches\":" << ( snapshot.cameraViewMatches ? "true" : "false" )
+                   << ",\"detailedLodGroups\":" << snapshot.detailedLodGroups
+                   << ",\"imposterLodGroups\":" << snapshot.imposterLodGroups
                    << ",\"visibilityMismatches\":" << snapshot.visibilityMismatches << ",\"maximumPoseError\":" << snapshot.maximumPoseError
                    << ",\"readyMeshes\":" << snapshot.readyMeshes << ",\"streamedOutMeshes\":" << snapshot.streamedOutMeshes
                    << ",\"imposterMeshes\":" << snapshot.imposterMeshes << ",\"readyImposters\":" << snapshot.readyImposters
-                   << ",\"nativeTriangles\":" << snapshot.nativeTriangles << '}';
+                   << ",\"nativeTriangles\":" << snapshot.nativeTriangles << ",\"cameraPosition\":";
+            position( snapshot.cameraPosition );
+            output << ",\"lodViewPosition\":"; position( snapshot.lodViewPosition );
+            output << ",\"vehiclePosition\":"; position( snapshot.vehiclePosition );
+            output << '}';
         };
         output << "{\"passed\":" << ( m_citySmokePhase == CitySmokePhase::Passed ? "true" : "false" )
                << ",\"coldStartPrepared\":" << ( m_citySmokeNear.recorded ? "true" : "false" )
@@ -1932,6 +2030,14 @@ namespace workphone
         output << ",\"evicted\":"; stage( m_citySmokeEvicted );
         output << ",\"returned\":"; stage( m_citySmokeReturned );
         output << ",\"automatic\":"; stage( m_citySmokeFinal );
+        output << ",\"cameraOnly\":{\"passed\":" << ( m_citySmokePhase == CitySmokePhase::Passed ? "true" : "false" )
+               << ",\"coldStartPrepared\":" << ( m_citySmokeCameraNear.recorded ? "true" : "false" )
+               << ",\"explicitObserverOverride\":false,\"vehicleMovementToleranceMetres\":0.25,\"maximumVehicleDisplacementMetres\":"
+               << m_citySmokeMaximumVehicleDisplacement << ",\"near\":";
+        stage( m_citySmokeCameraNear );
+        output << ",\"evicted\":"; stage( m_citySmokeCameraEvicted );
+        output << ",\"returned\":"; stage( m_citySmokeCameraReturned );
+        output << '}';
         if( m_citySmokePhase == CitySmokePhase::Failed )
         {
             output << ",\"lastObservation\":";
@@ -1942,8 +2048,16 @@ namespace workphone
 
     void SampleVehicleAdvanced::failCityStreamingSmoke( const std::string &reason )
     {
-        const char *phases[] = { "startup", "coldAway", "near", "away", "return", "automatic", "passed", "failed" };
+        const char *phases[] = { "startup", "coldAway", "near", "away", "return", "automatic", "cameraColdAway", "cameraNear", "cameraAway", "cameraReturn", "passed", "failed" };
         const std::string failedPhase = phases[size_t( m_citySmokePhase )];
+        if( ( m_citySmokePhase == CitySmokePhase::CameraColdAway || m_citySmokePhase == CitySmokePhase::CameraNear ||
+              m_citySmokePhase == CitySmokePhase::CameraAway || m_citySmokePhase == CitySmokePhase::CameraReturn ) && m_cameraActor )
+        {
+            m_cameraActor->setPosition( m_citySmokeFinal.cameraPosition );
+            m_cameraActor->setOrientation( m_citySmokeCameraOrientation );
+            m_cameraActor->updateTransform();
+            if( m_cameraSceneNode ) m_cameraSceneNode->setTransform( m_cameraActor->getWorldTransform() );
+        }
         m_citySmokePhase = CitySmokePhase::Failed;
         m_citySmokeRequested.store( CitySmokeObserver::Automatic, std::memory_order_release );
         std::ostringstream evidence;
@@ -5284,6 +5398,18 @@ namespace workphone
                     m_cameraSceneNode->setTransform( m_cameraActor->getWorldTransform() );
                 }
             }
+        }
+        // Move the real render camera while keeping automatic residency enabled.
+        // The publication below is the same path used by normal camera movement.
+        if( m_cityStreamingSmokeTest && m_cameraActor && m_cameraSceneNode &&
+            ( m_citySmokePhase == CitySmokePhase::CameraColdAway || m_citySmokePhase == CitySmokePhase::CameraNear ||
+              m_citySmokePhase == CitySmokePhase::CameraAway || m_citySmokePhase == CitySmokePhase::CameraReturn ) )
+        {
+            m_cameraActor->setPosition( m_citySmokePhase == CitySmokePhase::CameraColdAway || m_citySmokePhase == CitySmokePhase::CameraAway ?
+                m_citySmokeAway : m_citySmokeFinal.cameraPosition );
+            m_cameraActor->setOrientation( m_citySmokeCameraOrientation );
+            m_cameraActor->updateTransform();
+            m_cameraSceneNode->setTransform( m_cameraActor->getWorldTransform() );
         }
         if( m_camera && m_cameraActor && m_assets.vehicleLOD )
         {

@@ -5,6 +5,7 @@
 #include "Workphone/Core/Parameter.hpp"
 #include "Workphone/Interface/System/IEventListener.hpp"
 #include <Workphone/Scene/Components/ProceduralCityStreaming.hpp>
+#include <Workphone/Math/Quaternion.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
 #include "ProceduralScene.h"
 #include "VehicleAudio.h"
@@ -141,7 +142,7 @@ namespace workphone
         void createScene() override;
 
         void updateRenderCamera();
-        enum class CitySmokeObserver { Automatic, Near, Away, Failed };
+        enum class CitySmokeObserver { Automatic, Near, Away, CameraAway, CameraReturn, Failed };
         CitySmokeObserver applyCitySmokeObservers();
         bool advanceCityStreamingSmoke();
         void failCityStreamingSmoke( const std::string &reason );
@@ -197,7 +198,7 @@ namespace workphone
         s32 m_cityStreetDetail = -1;
         bool m_cityStreaming = true;
         bool m_cityStreamingSmokeTest = false;
-        enum class CitySmokePhase { Startup, ColdAway, Near, Away, Return, Automatic, Passed, Failed };
+        enum class CitySmokePhase { Startup, ColdAway, Near, Away, Return, Automatic, CameraColdAway, CameraNear, CameraAway, CameraReturn, Passed, Failed };
         struct CitySmokeSnapshot
         {
             scene::race::CityStreamingStats streaming;
@@ -209,6 +210,9 @@ namespace workphone
             u32 nativeObjectCount = 0, nativeNodeCount = 0, visibleMeshes = 0, visibilityMismatches = 0;
             u32 visibleDetailMeshes = 0;
             f32 maximumPoseError = 0;
+            Vector3F cameraPosition{}, lodViewPosition{}, vehiclePosition{};
+            bool cameraViewMatches = false;
+            u32 detailedLodGroups = 0, imposterLodGroups = 0;
         };
         CitySmokePhase m_citySmokePhase = CitySmokePhase::Startup;
         u64 m_citySmokeStartupIdentity = 0;
@@ -217,6 +221,9 @@ namespace workphone
         std::chrono::steady_clock::time_point m_citySmokeDeadline;
         Vector3F m_citySmokeCamera{}, m_citySmokeVehicle{}, m_citySmokeAway{};
         CitySmokeSnapshot m_citySmokeNear, m_citySmokeEvicted, m_citySmokeReturned, m_citySmokeFinal, m_citySmokeLast;
+        CitySmokeSnapshot m_citySmokeCameraNear, m_citySmokeCameraEvicted, m_citySmokeCameraReturned;
+        Quaternion<real_Num> m_citySmokeCameraOrientation;
+        f32 m_citySmokeMaximumVehicleDisplacement = 0;
         s32 m_citySourceMemoryMiB = 768;
         s32 m_cityBuildingStyle = -1;
         std::array<String, 5> m_cityBuildingMeshes;

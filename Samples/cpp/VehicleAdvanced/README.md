@@ -148,8 +148,15 @@ silhouettes at LOD1, and a baked, multi-view skyline imposter at LOD2. The
 lowest available tier stays resident. Patches stay detailed when their distant
 meshes lack required custom building geometry.
 
-Camera and vehicle proximity control residency of the higher-detail mesh
-payloads. Buildings keep their actors, materials and collision. Roads, edited
+The active LOD camera controls residency of the higher-detail mesh payloads.
+Moving or switching the camera updates both screen-size LOD selection and city
+streaming. The C++ sample publishes its actual render-camera view; scene Camera
+components are discovered automatically, including Editor camera overrides and
+fallbacks. Offscreen render-texture cameras do not replace the primary view.
+Losing the camera during a transition preserves existing residency until a valid
+view returns. `ProceduralScene::setCityStreamingObservers` can explicitly replace
+camera demand for simulation or tooling; clearing it resumes the active camera.
+Buildings keep their actors, materials and collision. Roads, edited
 terrain and the existing tree and paged foliage paths keep their own lifetimes.
 The component saves `City Streaming` (enabled by default), `City Stream Load
 Radius` (300 m), and `City Stream Retain Radius` (420 m). A larger retain radius

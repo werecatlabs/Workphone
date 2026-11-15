@@ -25,7 +25,7 @@ namespace workphone::scene
         String getGenerationError() const;
         const race::SceneAssets &getAssets() const;
         /// Optional world-space interests for simulation or a streaming review.
-        /// Clearing the override resumes the active camera and vehicle observers.
+        /// Clearing the override resumes the active LOD camera; no camera preserves residency.
         void setCityStreamingObservers( const Array<Vector3F> &observers );
         void clearCityStreamingObservers();
 

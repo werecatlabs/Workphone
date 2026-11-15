@@ -56,6 +56,14 @@ namespace workphone
             void setViewOverride( const View &view );
             void clearViewOverride();
 
+            /** Snapshot the same active view used for LOD selection and streaming.
+             * Explicit overrides win; otherwise prefer the active editor view, then the
+             * highest-Z active game camera. Authored offscreen cameras are excluded.
+             * Returns false without modifying view when no eligible camera exists
+             * or its position is not finite.
+             */
+            bool getView( View &view ) const;
+
             void setGrainSize( u32 grainSize );
             u32 getGrainSize() const;
 
@@ -105,7 +113,7 @@ namespace workphone
                 Atomic<u32> remainingJobs{ 0 };
             };
 
-            SharedPtr<LODBatch> buildBatch() const;
+            SharedPtr<LODBatch> buildBatch( const View &view ) const;
             void dispatchBatch( const SharedPtr<LODBatch> &batch );
             void applyBatch( const SharedPtr<LODBatch> &batch );
 

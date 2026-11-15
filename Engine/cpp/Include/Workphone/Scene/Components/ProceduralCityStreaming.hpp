@@ -49,6 +49,8 @@ namespace workphone::scene
 
             bool initialize( SceneAssets &assets, SmartPtr<IGameActor> owner, const String &cacheDirectory,
                              String &error );
+            /// Use the same active view as the building LOD groups. A missing camera preserves demand.
+            bool updateFromActiveCamera( String &error );
             bool update( const Array<Vector3F> &observers, String &error );
             void close();
             CityStreamingStats stats() const;

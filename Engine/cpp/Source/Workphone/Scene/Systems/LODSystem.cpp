@@ -81,6 +81,13 @@ namespace workphone::scene
             return;
         }
 
+        // Discover the view before taking the system lock. Streaming uses this
+        // same snapshot API with the game manager already held.
+        View view;
+        bool hasView;
+        try { hasView = getView( view ); }
+        catch( const std::bad_alloc & ) { return; }
+
         ScopedLock lock( this );
 
         if( m_pendingBatch )
@@ -95,7 +102,7 @@ namespace workphone::scene
         }
 
         SharedPtr<LODBatch> batch;
-        try { batch = buildBatch(); }
+        try { if( hasView ) batch = buildBatch( view ); }
         catch( const std::bad_alloc & ) { return; } // Keep the last applied visibility; retry next frame.
         if( !batch || batch->slots.empty() )
         {
@@ -228,6 +235,75 @@ namespace workphone::scene
         m_hasViewOverride = false;
     }
 
+    bool LODSystem::getView( View &view ) const
+    {
+        const auto finitePosition = []( const Vector3<real_Num> &position ) {
+            return std::isfinite( position.x ) && std::isfinite( position.y ) &&
+                   std::isfinite( position.z );
+        };
+        auto application = core::IApplicationManager::instancePtr();
+        auto manager = application ? application->getGameManagerPtr() : nullptr;
+        ScopedLock managerLock( manager );
+        {
+            ScopedLock lock( this );
+            if( m_hasViewOverride )
+            {
+                if( !finitePosition( m_viewOverride.position ) ) return false;
+                view = m_viewOverride;
+                return true;
+            }
+        }
+
+        auto cameras = application ? application->getCameraManager() : nullptr;
+        if( !cameras ) return false;
+
+        SmartPtr<Camera> selected;
+        const auto eligible = []( const SmartPtr<Camera> &camera ) {
+            // getTargetTexture also contains the Editor's game preview target;
+            // only an authored output texture identifies an offscreen camera.
+            return camera && camera->isActive() && !camera->getOutputRenderTexture();
+        };
+        if( auto editor = cameras->getEditorCamera() )
+        {
+            for( const auto &camera : editor->getAllComponentsAndInChildren<Camera>() )
+            {
+                if( eligible( camera ) )
+                {
+                    selected = camera;
+                    break;
+                }
+            }
+        }
+        if( !selected )
+        {
+            for( const auto &actor : cameras->getCameras() )
+            {
+                if( !actor ) continue;
+                for( const auto &camera : actor->getComponents<Camera>() )
+                {
+                    // Keep registration order for equal Z, avoiding frame-to-frame
+                    // changes when two viewports have the same priority.
+                    if( eligible( camera ) &&
+                        ( !selected || camera->getZOrder() > selected->getZOrder() ) )
+                        selected = camera;
+                }
+            }
+        }
+        if( !selected ) return false;
+
+        View resolved;
+        resolved.position = selected->getActor()->getWorldTransform().getPosition();
+        if( !finitePosition( resolved.position ) ) return false;
+        resolved.verticalFovRadians = Math<f32>::DegToRad( std::max( selected->getFOV(), 0.001f ) );
+        resolved.orthographicHeight = selected->getOrthoWindowHeight();
+        resolved.nearClipDistance = std::max( selected->getNearClipDistance(), 0.001f );
+        resolved.orthographic = resolved.orthographicHeight > 0.001f;
+        if( auto renderCamera = selected->getCamera() )
+            resolved.lodBias = std::max( renderCamera->getLodBias(), 0.01f );
+        view = resolved;
+        return true;
+    }
+
     void LODSystem::setGrainSize( u32 grainSize )
     {
         ScopedLock lock( this );
@@ -279,81 +355,15 @@ namespace workphone::scene
         m_appliedRevisions.swap( revisions );
     }
 
-    SharedPtr<LODSystem::LODBatch> LODSystem::buildBatch() const
+    SharedPtr<LODSystem::LODBatch> LODSystem::buildBatch( const View &view ) const
     {
         auto batch = workphone::make_shared<LODBatch>();
-        auto cameraLODBias = 1.0f;
-        if( m_hasViewOverride )
-        {
-            batch->cameraPosition = m_viewOverride.position;
-            batch->verticalFovRadians = m_viewOverride.verticalFovRadians;
-            batch->orthographicHeight = m_viewOverride.orthographicHeight;
-            batch->nearClipDistance = std::max( m_viewOverride.nearClipDistance, 0.001f );
-            batch->orthographic = m_viewOverride.orthographic;
-            cameraLODBias = std::max( m_viewOverride.lodBias, 0.01f );
-        }
-        else
-        {
-            auto applicationManager = core::IApplicationManager::instancePtr();
-            if( !applicationManager )
-            {
-                return nullptr;
-            }
-
-            auto cameraManager = applicationManager->getCameraManager();
-            if( !cameraManager )
-            {
-                return nullptr;
-            }
-
-            SmartPtr<IGameActor> cameraActor;
-            SmartPtr<Camera> cameraComponent;
-
-            const auto tryCamera = [&]( const SmartPtr<IGameActor> &actor ) {
-                if( !actor )
-                {
-                    return false;
-                }
-
-                auto camera = actor->getComponent<Camera>();
-                if( camera && camera->isActive() )
-                {
-                    cameraActor = actor;
-                    cameraComponent = camera;
-                    return true;
-                }
-
-                return false;
-            };
-
-            if( !tryCamera( cameraManager->getEditorCamera() ) )
-            {
-                for( const auto &actor : cameraManager->getCameras() )
-                {
-                    if( tryCamera( actor ) )
-                    {
-                        break;
-                    }
-                }
-            }
-
-            if( !cameraActor || !cameraComponent )
-            {
-                return nullptr;
-            }
-
-            batch->cameraPosition = cameraActor->getWorldTransform().getPosition();
-            batch->verticalFovRadians =
-                Math<f32>::DegToRad( std::max( cameraComponent->getFOV(), 0.001f ) );
-            batch->orthographicHeight = cameraComponent->getOrthoWindowHeight();
-            batch->nearClipDistance = std::max( cameraComponent->getNearClipDistance(), 0.001f );
-            batch->orthographic = batch->orthographicHeight > 0.001f;
-
-            if( auto renderCamera = cameraComponent->getCamera() )
-            {
-                cameraLODBias = std::max( renderCamera->getLodBias(), 0.01f );
-            }
-        }
+        batch->cameraPosition = view.position;
+        batch->verticalFovRadians = view.verticalFovRadians;
+        batch->orthographicHeight = view.orthographicHeight;
+        batch->nearClipDistance = std::max( view.nearClipDistance, 0.001f );
+        batch->orthographic = view.orthographic;
+        auto cameraLODBias = std::max( view.lodBias, 0.01f );
 
         if( auto app = core::IApplicationManager::instancePtr() )
             if( auto settings = app->getPlayerSettings() )
