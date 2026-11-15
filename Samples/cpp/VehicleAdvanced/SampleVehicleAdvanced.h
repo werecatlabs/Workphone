@@ -193,6 +193,7 @@ namespace workphone
         Vector3F m_cityBoulevardCentre{};
         Vector3F m_cityFrontageEye{}, m_cityFrontageTarget{};
         Vector3F m_cityFacadeEye{}, m_cityFacadeTarget{};
+        Vector3F m_cityEntryWalkEdge{};
         Vector3F m_cityConnectionEye{}, m_cityConnectionTarget{};
         Vector3F m_cityHillsideEye{}, m_cityHillsideTarget{};
         String m_cityHillsideRoadId;

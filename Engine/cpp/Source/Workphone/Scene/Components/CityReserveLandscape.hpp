@@ -87,7 +87,9 @@
             SourceBudgetVector<Site> build( SceneAssets &assets, const OpenCityLayout &city,
                 const CityRoadTerrainMesh &fitted, SmartPtr<IMesh> walkMesh, const cityRoadEdges::Surface &road,
                 const SourceBudgetVector<cityGroundContact::Entry> &buildings,
-                const SourceBudgetVector<cityParkLandscape::Layout> &parks, u32 seed, VehicleAppearanceQuality quality )
+                const SourceBudgetVector<cityParkLandscape::Layout> &parks,
+                const SourceBudgetVector<cityRoadEdges::Bounds> &pedestrianCorridors,
+                u32 seed, VehicleAppearanceQuality quality )
             {
                 SourceBudgetVector<Site> sites;
                 const auto detail = size_t( std::clamp( assets.cityStreetDetail, 0, 100 ) );
@@ -100,6 +102,7 @@
                 const cityRoadEdges::Surface footways( walkMesh );
 
                 SourceBudgetVector<cityRoadEdges::Bounds> occupied;
+                occupied.insert( occupied.end(), pedestrianCorridors.begin(), pedestrianCorridors.end() );
                 for( const auto &lot : city.lots )
                 {
                     const Vector3F p( lot.parcelX, 0, lot.parcelZ ), h( lot.parcelWidth * .5f + .35f, 0,

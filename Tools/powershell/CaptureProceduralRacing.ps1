@@ -12,7 +12,7 @@ param(
     [ValidatePattern('^\d+x\d+$')][string]$Resolution = '1280x720',
     [ValidateSet('auto', 'none', 'msaa2', 'msaa4')][string]$SceneAA = 'auto',
     [ValidateRange(0.1, 3600)][double]$Seconds = 10,
-    [ValidateSet('follow', 'car', 'track', 'corner', 'junction', 'hillside', 'verge', 'street', 'boulevard', 'frontage', 'facade', 'building', 'utilities', 'park', 'shopfront', 'road-edit-before', 'road-edit-after')][string[]]$Views = @('car', 'track', 'corner', 'follow'),
+    [ValidateSet('follow', 'car', 'track', 'corner', 'junction', 'hillside', 'verge', 'street', 'boulevard', 'frontage', 'facade', 'building', 'utilities', 'park', 'shopfront', 'entry-route', 'road-edit-before', 'road-edit-after')][string[]]$Views = @('car', 'track', 'corner', 'follow'),
     [string]$Replay,
     [switch]$NoEffects,
     [switch]$FoliageWorld,
@@ -34,6 +34,7 @@ if ($Views -contains 'frontage' -and !$CityTerrainRoads) { throw '-Views frontag
 if ($Views -contains 'utilities' -and !$CityTerrainRoads) { throw '-Views utilities requires -CityTerrainRoads.' }
 if ($Views -contains 'park' -and !$CityTerrainRoads) { throw '-Views park requires -CityTerrainRoads.' }
 if ($Views -contains 'shopfront' -and !$CityTerrainRoads) { throw '-Views shopfront requires -CityTerrainRoads.' }
+if ($Views -contains 'entry-route' -and !$CityTerrainRoads) { throw '-Views entry-route requires -CityTerrainRoads.' }
 if ($Views -contains 'junction' -and !$CityTerrainRoads) { throw '-Views junction requires -CityTerrainRoads.' }
 if ($Views -contains 'verge' -and !$CityTerrainRoads) { throw '-Views verge requires -CityTerrainRoads.' }
 if (($Views -contains 'hillside' -or $PSBoundParameters.ContainsKey('CityTerrainRelief')) -and !$CityTerrainRoads) { throw 'The hillside view and terrain relief require -CityTerrainRoads.' }
@@ -183,6 +184,10 @@ try {
             }
             if ($view -eq 'shopfront') {
                 $run.passed = $run.passed -and $run.evidence.cityShopfrontCameraValid -eq $true -and
+                    [bool]$run.evidence.cityFacadeCamera.lotId
+            }
+            if ($view -eq 'entry-route') {
+                $run.passed = $run.passed -and $run.evidence.cityEntryRouteCamera.valid -eq $true -and
                     [bool]$run.evidence.cityFacadeCamera.lotId
             }
             if ($view -in $roadEditViews) {

@@ -3415,14 +3415,14 @@ namespace workphone::scene::race
             return route;
         }
 
+#include "CityCarriagewayUtilities.hpp"
+#include "CityRoadEdgeSurface.hpp"
 #include "CityBuildingGroundContact.hpp"
 #include "CityEntranceWayfinding.hpp"
 #include "CityRoundaboutSigns.hpp"
 #include "CityFootwayAppearance.hpp"
 #include "CityCrossingLandings.hpp"
 #include "CityCrossingBollards.hpp"
-#include "CityCarriagewayUtilities.hpp"
-#include "CityRoadEdgeSurface.hpp"
 #include "CityParkLandscape.hpp"
 #include "CityReserveLandscape.hpp"
 #include "CityParkAmenities.hpp"
@@ -5108,21 +5108,23 @@ namespace workphone::scene::race
                 cityCrossingBollards::build( assets, fitted, installedFurniture, terrainStreetLamps, quality );
                 cityCarriagewayUtilities::build( assets, fitted, seed, quality );
                 cityRoundaboutLandscape::build( assets, seed );
-                cityGroundContact::build( assets, buildingEntries, fitted, pavingMaterial, forge );
-                cityEntranceWayfinding::build( assets, entranceSigns );
-                cityRoundaboutSigns::build( assets, fitted, terrainStreetLamps, quality );
                 SourceBudgetVector<cityParkLandscape::Layout> parkLayouts;
                 SourceBudgetVector<cityReserveLandscape::Site> reserveSites;
                 {
                     const auto layers = cityCarriagewayUtilities::activeLayers( assets );
                     const cityRoadEdges::Surface roadSurface( layers.road );
+                    SourceBudgetVector<cityRoadEdges::Bounds> pedestrianCorridors;
+                    cityGroundContact::build( assets, buildingEntries, fitted, pavingMaterial, forge,
+                        layers.road ? &roadSurface : nullptr, walks.mesh, seed, pedestrianCorridors );
+                    cityEntranceWayfinding::build( assets, entranceSigns );
+                    cityRoundaboutSigns::build( assets, fitted, terrainStreetLamps, quality );
                     cityRoadEdges::buildGutters( assets, fitted, roadSurface, layers.roadMaterial );
                     buildTerrainCityVergeTransitions( assets, fitted, seed, quality, roadSurface );
                     parkLayouts = cityParkLandscape::build( assets, city, fitted, walks.mesh, roadSurface,
                                                            pavingMaterial, seed, surfaceParams.size, quality );
                     if( layers.road )
                         reserveSites = cityReserveLandscape::build( assets, city, fitted, walks.mesh, roadSurface,
-                                                                  buildingEntries, parkLayouts, seed, quality );
+                            buildingEntries, parkLayouts, pedestrianCorridors, seed, quality );
                 }
                 cityParkAmenities::build( assets, parkLayouts, seed );
                 buildTerrainCityVerges( assets, fitted, seed, quality );

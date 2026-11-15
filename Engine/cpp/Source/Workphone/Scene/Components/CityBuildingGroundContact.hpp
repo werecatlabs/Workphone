@@ -1,6 +1,8 @@
 #pragma once
 
 #include "CityFrontagePlanting.hpp"
+#include "CityEntranceRoute.hpp"
+#include "CityPedestrianSurfacing.hpp"
 
         namespace cityGroundContact
         {
@@ -36,13 +38,21 @@
                         if( std::abs( top.normal.y ) > .01f || top.position.y - a.position.y < .10f ||
                             std::abs( top.position.x - a.position.x ) > .001f ||
                             std::abs( top.position.z - a.position.z ) > .001f ) continue;
+                        auto farTop = b.position + Vector3F( 0, top.position.y - a.position.y, 0 );
+                        if( i + 5 < footways.indices.size() && footways.indices[i + 3] == footways.indices[i] &&
+                            footways.indices[i + 4] == footways.indices[i + 2] )
+                        {
+                            const auto candidate = footways.vertices[footways.indices[i + 5]].position;
+                            if( std::hypot( candidate.x - b.position.x, candidate.z - b.position.z ) < .001f )
+                                farTop = candidate;
+                        }
                         const auto lo = cell( { std::min( a.position.x, b.position.x ), 0,
                                                 std::min( a.position.z, b.position.z ) } );
                         const auto hi = cell( { std::max( a.position.x, b.position.x ), 0,
                                                 std::max( a.position.z, b.position.z ) } );
                         for( auto x = lo.first; x <= hi.first; ++x )
                             for( auto z = lo.second; z <= hi.second; ++z )
-                                index[{ x, z }].push_back( { a.position, b.position, top.normal } );
+                                index[{ x, z }].push_back( { top.position, farTop, top.normal } );
                     }
                 }
 
@@ -241,15 +251,31 @@
                 }
             }
 
+            void addWalkCollision( SmartPtr<scene::IGameActor> actor )
+            {
+                actor->setStatic( true );
+                const auto resource = actor->getComponent<scene::Mesh>()->getMeshResource();
+                auto collision = actor->addComponent<CollisionMesh>();
+                if( !collision ) throw std::runtime_error( "Cannot create terrain-city pedestrian collision." );
+                collision->setConvex( false );
+                collision->setMeshResource( resource );
+                if( auto shape = dynamic_pointer_cast<physics::IMeshShape>( collision->getShape() ) )
+                    shape->setMeshResource( resource );
+                if( !actor->addComponent<Rigidbody>() )
+                    throw std::runtime_error( "Cannot create terrain-city pedestrian rigidbody." );
+            }
+
             void build( SceneAssets &assets, const SourceBudgetVector<Entry> &entries,
                         CityRoadTerrainMesh &landscapeClearance, SmartPtr<render::IMaterial> paving,
-                        SmartPtr<ITextureForge> forge )
+                        SmartPtr<ITextureForge> forge, const cityRoadEdges::Surface *roadSurface,
+                        SmartPtr<IMesh> sidewalks, u32 seed, SourceBudgetVector<cityRoadEdges::Bounds> &pedestrianCorridors )
             {
                 if( entries.empty() ) return;
                 const auto terrain = assets.roadAuthoring->getTerrainSnapshot();
                 if( !terrain ) return;
                 const auto &placement = assets.roadAuthoring->getTerrainPlacement();
                 const WalkEdges edges( landscapeClearance );
+                const cityRoadEdges::Surface sidewalkSurface( sidewalks );
                 struct Bounds { float x0, x1, z0, z1; };
                 SourceBudgetVector<Bounds> roadBounds;
                 const auto addRoadBounds = [&]( Vector3F a, Vector3F b, float radius ) {
@@ -274,20 +300,25 @@
                         addRoadBounds( start, start + port.outward * port.length, port.width * .5f + .12f );
                     }
                 }
+                const auto parcelClear = [&]( const Bounds &bounds, const OpenCityLayout::Lot *exempt ) {
+                    return std::none_of( assets.cityLayout.lots.begin(), assets.cityLayout.lots.end(),
+                        [&]( const auto &other ) {
+                            return ( !exempt || other.id != exempt->id ) &&
+                                   bounds.x0 < other.parcelX + other.parcelWidth * .5f &&
+                                   bounds.x1 > other.parcelX - other.parcelWidth * .5f &&
+                                   bounds.z0 < other.parcelZ + other.parcelDepth * .5f &&
+                                   bounds.z1 > other.parcelZ - other.parcelDepth * .5f;
+                        } );
+                };
                 const auto footprintClear = [&]( Vector3F a, Vector3F b, const OpenCityLayout::Lot *exempt ) {
                     const auto x0 = std::min( a.x, b.x ), x1 = std::max( a.x, b.x );
                     const auto z0 = std::min( a.z, b.z ), z1 = std::max( a.z, b.z );
                     return std::none_of( roadBounds.begin(), roadBounds.end(), [&]( const Bounds &road ) {
                         return x0 < road.x1 && x1 > road.x0 && z0 < road.z1 && z1 > road.z0;
-                    } ) && std::none_of( assets.cityLayout.lots.begin(), assets.cityLayout.lots.end(),
-                        [&]( const auto &other ) {
-                            return &other != exempt && x0 < other.parcelX + other.parcelWidth * .5f &&
-                                   x1 > other.parcelX - other.parcelWidth * .5f &&
-                                   z0 < other.parcelZ + other.parcelDepth * .5f &&
-                                   z1 > other.parcelZ - other.parcelDepth * .5f;
-                        } );
+                    } ) && parcelClear( { x0, x1, z0, z1 }, exempt );
                 };
                 Geometry approach, gravel, stoneEdge, courses[2], caps, risers, stairs;
+                cityPedestrianSurfacing::Batches routedPaving;
                 buildFoundationFacing( assets.cityLayout, *terrain, placement, courses, caps );
                 FrontagePlanting planting( assets.cityStreetDetail );
                 const Vector3F up( 0, 1, 0 );
@@ -296,7 +327,7 @@
                     p.y += .028f;
                     return true;
                 };
-                size_t contacts = 0, connections = 0, raised = 0;
+                size_t contacts = 0, connections = 0, raised = 0, routed = 0, bends = 0;
                 for( const auto &entry : entries )
                 {
                     const auto &lot = *entry.lot;
@@ -408,56 +439,106 @@
 
                     // Verify both margins and the centre reach the same outward face of the
                     // walk without crossing any other parcel between the door and the curb.
-                    const auto left = end - along * half, right = end + along * half;
-                    const float l = edges.reach( left, normal ), r = edges.reach( right, normal );
-                    const float m = edges.reach( end, normal );
-                    if( std::min( { l, r, m } ) < .14f || std::abs( l - r ) > 2.8f ||
-                        std::abs( ( l + r ) * .5f - m ) > .27f ) continue;
-                    // A narrow reveal prevents coincident triangles against the fitted kerb, even
-                    // where the outer edge curves between the three sampled rays.
-                    const float span = std::max( l, r );
-                    if( !groundClear( left, right + normal * span ) ) continue;
+                    const auto connectStraight = [&]() -> bool {
+                        const auto left = end - along * half, right = end + along * half;
+                        const float l = edges.reach( left, normal ), r = edges.reach( right, normal );
+                        const float m = edges.reach( end, normal );
+                        if( std::min( { l, r, m } ) < .14f || std::abs( l - r ) > 2.8f ||
+                            std::abs( ( l + r ) * .5f - m ) > .27f ) return false;
+                        // A narrow reveal prevents coincident triangles against the fitted kerb, even
+                        // where the outer edge curves between the three sampled rays.
+                        const float span = std::max( l, r );
+                        if( !groundClear( left, right + normal * span ) ) return false;
 
-                    const int segments = std::max( 1, int( std::ceil( span / .85f ) ) );
-                    std::array<std::pair<Vector3F, Vector3F>, 21> rows;
-                    const float approachStart = landing.end > 0 ? landing.end - depth : setback ? .015f : .24f;
-                    const float startHeight = landing.end > 0 ? landing.height : floor.y;
-                    if( std::min( l, r ) - .10f <= approachStart ) continue;
-                    bool grounded = true;
-                    for( int row = 0; row <= segments; ++row )
-                    {
-                        const float t = float( row ) / segments;
-                        auto a = left + normal * ( approachStart + ( l - .10f - approachStart ) * t );
-                        auto b = right + normal * ( approachStart + ( r - .10f - approachStart ) * t );
-                        auto centre = ( a + b ) * .5f;
-                        grounded = surface( a ) && surface( b ) && surface( centre ) &&
-                                   std::abs( ( a.y + b.y ) * .5f - centre.y ) < .025f;
-                        if( row == 0 )
-                            grounded = grounded && startHeight >= centre.y - .05f && startHeight - centre.y < .39f;
-                        else
+                        const int segments = std::max( 1, int( std::ceil( span / .85f ) ) );
+                        std::array<std::pair<Vector3F, Vector3F>, 21> rows;
+                        const float approachStart = landing.end > 0 ? landing.end - depth : setback ? .015f : .24f;
+                        const float startHeight = landing.end > 0 ? landing.height : floor.y;
+                        if( std::min( l, r ) - .10f <= approachStart ) return false;
+                        bool grounded = true;
+                        for( int row = 0; row <= segments; ++row )
                         {
-                            const auto &last = rows[size_t( row - 1 )];
-                            auto midpoint = ( last.first + b ) * .5f;
-                            const float interpolated = midpoint.y;
-                            grounded = grounded && surface( midpoint ) &&
-                                       std::abs( midpoint.y - interpolated ) < .025f &&
-                                       std::abs( last.first.y - a.y ) < .28f && std::abs( last.second.y - b.y ) < .28f;
+                            const float t = float( row ) / segments;
+                            auto a = left + normal * ( approachStart + ( l - .10f - approachStart ) * t );
+                            auto b = right + normal * ( approachStart + ( r - .10f - approachStart ) * t );
+                            auto centre = ( a + b ) * .5f;
+                            grounded = surface( a ) && surface( b ) && surface( centre ) &&
+                                       std::abs( ( a.y + b.y ) * .5f - centre.y ) < .025f;
+                            if( row == 0 )
+                                grounded = grounded && startHeight >= centre.y - .05f && startHeight - centre.y < .39f;
+                            else
+                            {
+                                const auto &last = rows[size_t( row - 1 )];
+                                auto midpoint = ( last.first + b ) * .5f;
+                                const float interpolated = midpoint.y;
+                                grounded = grounded && surface( midpoint ) &&
+                                           std::abs( midpoint.y - interpolated ) < .025f &&
+                                           std::abs( last.first.y - a.y ) < .28f && std::abs( last.second.y - b.y ) < .28f;
+                            }
+                            if( !grounded ) break;
+                            rows[size_t( row )] = { a, b };
                         }
-                        if( !grounded ) break;
-                        rows[size_t( row )] = { a, b };
-                    }
-                    if( !grounded ) continue;
-                    for( int row = 1; row <= segments; ++row )
+                        if( !grounded ) return false;
+                        for( int row = 1; row <= segments; ++row )
+                        {
+                            const auto &[a, b] = rows[size_t( row - 1 )];
+                            const auto &[c, d] = rows[size_t( row )];
+                            auto n = ( b - a ).crossProduct( d - a );
+                            n.normalise();
+                            if( n.y < 0 ) n = -n;
+                            approach.quad( a, b, d, c, n );
+                        }
+                        planting.reserveAccess( left - along * .16f, right + along * .16f + normal * span );
+                        ++connections;
+                        return true;
+                    };
+                    if( connectStraight() || !landing.end || !roadSurface || !sidewalks ) continue;
+
+                    const auto toe = entry.door + normal * landing.end;
+                    cityEntranceRoute::Row launch{ toe - along * half, toe, toe + along * half };
+                    if( !surface( launch.left ) || !surface( launch.right ) ) continue;
+                    launch.centre.y = ( launch.left.y + launch.right.y ) * .5f;
+                    const auto overlaps = []( const cityRoadEdges::Surface &layer, const auto &quad ) {
+                        return layer.overlaps( { quad[0], quad[1], quad[2] } ) ||
+                               layer.overlaps( { quad[0], quad[2], quad[3] } );
+                    };
+                    const auto clear = [&]( std::array<Vector3F, 4> quad, bool terminal ) {
+                        const cityRoadEdges::Bounds bounds( quad );
+                        if( !parcelClear( { bounds.x0, bounds.x1, bounds.z0, bounds.z1 }, &lot ) ||
+                            overlaps( *roadSurface, quad ) ||
+                            std::any_of( pedestrianCorridors.begin(), pedestrianCorridors.end(),
+                                         [&]( const auto &other ) { return bounds.intersects( other ); } ) ) return false;
+                        // Permit the last row to share the kerb's upper rim. The clearance
+                        // test ends 21 mm short of that seam, leaving the rendered row flush.
+                        if( terminal )
+                        {
+                            quad[2] += cityEntranceRoute::horizontal( quad[1] - quad[2] ).normaliseCopy() * .021f;
+                            quad[3] += cityEntranceRoute::horizontal( quad[0] - quad[3] ).normaliseCopy() * .021f;
+                        }
+                        return !overlaps( sidewalkSurface, quad );
+                    };
+                    cityEntranceRoute::Route route;
+                    if( !cityEntranceRoute::plan( edges, launch, normal, std::min( .84f, half ), clear, surface, route ) ||
+                        !cityPedestrianSurfacing::append( routedPaving, route ) ) continue;
+
+                    for( size_t row = 1; row < route.rowCount; ++row )
                     {
-                        const auto &[a, b] = rows[size_t( row - 1 )];
-                        const auto &[c, d] = rows[size_t( row )];
-                        auto n = ( b - a ).crossProduct( d - a );
-                        n.normalise();
-                        if( n.y < 0 ) n = -n;
-                        approach.quad( a, b, d, c, n );
+                        const auto &a = route.rows[row - 1], &b = route.rows[row];
+                        const cityRoadEdges::Bounds stripBounds( std::array{ a.left, a.right, b.left, b.right } );
+                        const Vector3F low( stripBounds.x0 - .12f, 0, stripBounds.z0 - .12f );
+                        const Vector3F high( stripBounds.x1 + .12f, 0, stripBounds.z1 + .12f );
+                        planting.reserveAccess( low, high );
+                        pedestrianCorridors.emplace_back( std::array{ low, high } );
                     }
-                    planting.reserveAccess( left - along * .16f, right + along * .16f + normal * span );
-                    ++connections;
+                    ++routed;
+                    bends += route.bends;
+                    const auto position = []( Vector3F p ) {
+                        return StringUtil::toString( p.x ) + "/" + StringUtil::toString( p.y ) + "/" + StringUtil::toString( p.z );
+                    };
+                    WP_LOG( String( "Terrain city pedestrian connector lot=" ) + StringUtil::toString( lot.id ) +
+                            ", rows=" + StringUtil::toString( route.rowCount ) + ", bends=" + StringUtil::toString( route.bends ) +
+                            ", length=" + StringUtil::toString( route.length ) + ", start=" + position( launch.centre ) +
+                            ", end=" + position( route.rows[route.rowCount - 1].centre ) );
                 }
 
                 // Approaches through occupied neighbourhoods can have an open verge
@@ -512,17 +593,10 @@
                     auto actor = mesh( assets, "Terrain city raised entrance steps", stairs,
                                        pavingVariant( { .73f, .75f, .71f, 1 }, 1.0f ) );
                     if( !actor ) throw std::runtime_error( "Cannot publish terrain-city entrance steps." );
-                    actor->setStatic( true );
-                    const auto resource = actor->getComponent<scene::Mesh>()->getMeshResource();
-                    auto collision = actor->addComponent<CollisionMesh>();
-                    if( !collision ) throw std::runtime_error( "Cannot create terrain-city entrance collision." );
-                    collision->setConvex( false );
-                    collision->setMeshResource( resource );
-                    if( auto shape = dynamic_pointer_cast<physics::IMeshShape>( collision->getShape() ) )
-                        shape->setMeshResource( resource );
-                    if( !actor->addComponent<Rigidbody>() )
-                        throw std::runtime_error( "Cannot create terrain-city entrance rigidbody." );
+                    addWalkCollision( actor );
                 }
+                for( auto actor : cityPedestrianSurfacing::publish( assets, routedPaving, seed ) )
+                    if( actor ) addWalkCollision( actor );
                 if( !stoneEdge.indices.empty() )
                     publish( "Terrain city building threshold joints", stoneEdge,
                              pavingVariant( { .56f, .55f, .50f, 1 }, 1.10f ) );
@@ -564,7 +638,8 @@
 
                 // The fitted footway's render mesh and collider have already been published.
                 // Feed the exact entrance and drainage triangles into later landscape passes.
-                for( const auto *surface : { &approach, &stoneEdge, &gravel, &stairs } )
+                for( const auto *surface : { &approach, &stoneEdge, &gravel, &stairs, &routedPaving.paving,
+                                            &routedPaving.edging, &routedPaving.drainage } )
                 {
                     const auto base = u32( landscapeClearance.vertices.size() );
                     landscapeClearance.vertices.reserve( base + surface->positions.size() );
@@ -576,6 +651,8 @@
                     landscapeClearance.triangleKinds.insert( landscapeClearance.triangleKinds.end(),
                         surface->indices.size() / 3, CityRoadTerrainTriangleKind::Kerb );
                 }
+                WP_LOG( String( "Terrain city pedestrian connectors=" ) + StringUtil::toString( routed ) +
+                        ", bends=" + StringUtil::toString( bends ) );
                 WP_LOG( String( "Terrain city building contacts=" ) + StringUtil::toString( contacts ) +
                         " fittedWalkConnections=" + StringUtil::toString( connections ) +
                         " raisedApproaches=" + StringUtil::toString( raised ) +
