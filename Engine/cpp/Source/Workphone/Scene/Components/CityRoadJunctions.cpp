@@ -12,6 +12,8 @@ namespace workphone::scene
     {
         constexpr double pi = 3.14159265358979323846;
         constexpr double contactTolerance = .002;
+        constexpr double minimumCornerRadius = .25;
+        constexpr double capClearance = .02;
         constexpr u64 maximumVisits = 2000000;
         using Sample = procedural::CityRoadSplineSample;
         struct P { double x = 0, z = 0; };
@@ -42,8 +44,14 @@ namespace workphone::scene
             double station = 0, angle = 0, trim = 0, available = 0;
             bool forward = true;
             P direction;
+            double minimumTrim = 2;
         };
-        struct Plan { Contact contact; SourceBudgetVector<Arm> arms; };
+        struct Plan
+        {
+            Contact contact;
+            SourceBudgetVector<Arm> arms;
+            std::array<double, 4> radii{};
+        };
         struct Cut { u32 road = 0; double first = 0, last = 0; };
 
         Sample at( const SourceBudgetVector<Sample> &samples, double station )
@@ -197,6 +205,35 @@ namespace workphone::scene
         void appendDistinct( SourceBudgetVector<Vector3F> &points, Vector3F position )
         { if( points.empty() || length( point( points.back() ) - point( position ) ) > .00001 ) points.push_back( position ); }
 
+        void allocateSharedRuns( SourceBudgetVector<Plan> &plans )
+        {
+            for( auto &plan : plans ) for( auto &arm : plan.arms )
+            {
+                if( !arm.forward ) continue;
+                Arm *opposite = nullptr;
+                for( auto &other : plans ) for( auto &candidate : other.arms )
+                {
+                    if( candidate.forward || candidate.road != arm.road || candidate.station <= arm.station + .001 ||
+                        ( opposite && candidate.station >= opposite->station ) ) continue;
+                    opposite = &candidate;
+                }
+                if( !opposite ) continue;
+
+                // Keep the existing two-percent ribbon between connectors, but
+                // give the wider or more oblique approach its share of the span.
+                const double span = ( opposite->station - arm.station ) * .98;
+                require( arm.minimumTrim + opposite->minimumTrim <= span,
+                         "Consecutive junctions cannot fit their minimum corner clearance." );
+                const auto desiredA = std::min( arm.trim, arm.available );
+                const auto desiredB = std::min( opposite->trim, opposite->available );
+                const auto half = span * .5;
+                const auto share = desiredA <= half && desiredB <= half ? half :
+                    std::clamp( ( span + desiredA - desiredB ) * .5, arm.minimumTrim, span - opposite->minimumTrim );
+                arm.available = std::min( arm.available, share );
+                opposite->available = std::min( opposite->available, span - share );
+            }
+        }
+
         void fitCurvedCaps( Plan &plan, const procedural::CityRoadSplineBake &bake,
                             const CityRoadJunctionOptions &options )
         {
@@ -204,6 +241,8 @@ namespace workphone::scene
             {
                 std::array<P, 4> directions{}, edgeLeft{}, edgeRight{};
                 std::array<double, 4> growth{};
+                std::array<double, 4> radii;
+                radii.fill( options.cornerRadius );
                 for( size_t i = 0; i < plan.arms.size(); ++i )
                 {
                     const auto &arm = plan.arms[i];
@@ -222,21 +261,34 @@ namespace workphone::scene
                     require( gap >= pi / 6, "Curved junction approaches become too acute at their caps." );
                     const double denominator = cross( da, db );
                     const auto delta = edgeRight[next] - edgeLeft[i];
-                    const double tangent = options.cornerRadius / std::tan( gap * .5 );
-                    const double a = cross( delta, db ) / denominator + tangent + .25;
-                    const double b = cross( delta, da ) / denominator + tangent + .25;
+                    const double alongA = cross( delta, db ) / denominator;
+                    const double alongB = cross( delta, da ) / denominator;
+                    const double slope = std::tan( gap * .5 );
+                    const double tangent = options.cornerRadius / slope;
+                    const double a = alongA + tangent + .25;
+                    const double b = alongB + tangent + .25;
                     if( a > 0 ) growth[i] = std::max( growth[i], a + .25 );
                     if( b > 0 ) growth[next] = std::max( growth[next], b + .25 );
+                    radii[i] = std::min( double( options.cornerRadius ),
+                                         ( -std::max( alongA, alongB ) - capClearance ) * slope );
                 }
                 bool changed = false;
-                for( size_t i = 0; i < plan.arms.size(); ++i ) if( growth[i] > 0 )
+                for( size_t i = 0; i < plan.arms.size(); ++i )
                 {
                     auto &arm = plan.arms[i];
-                    require( arm.trim + growth[i] <= arm.available,
-                             "Curved junction radius cannot fit within the available approach run." );
-                    arm.trim += growth[i]; changed = true;
+                    const double step = std::min( growth[i], arm.available - arm.trim );
+                    if( step <= .00001 ) continue;
+                    arm.trim += step;
+                    changed = true;
                 }
-                if( !changed ) return;
+                if( !changed )
+                {
+                    for( size_t i = 0; i < plan.arms.size(); ++i )
+                        require( radii[i] >= minimumCornerRadius - .00001,
+                                 "Curved junction has insufficient clearance for a rounded corner." );
+                    plan.radii = radii;
+                    return;
+                }
             }
             throw std::runtime_error( "Curved junction cap fitting exceeded its bounded iterations." );
         }
@@ -439,17 +491,18 @@ namespace workphone::scene
                     const double alongA = cross( b - a, db ) / denominator;
                     const double alongB = cross( b - a, da ) / denominator;
                     const auto intersection = a + da * alongA;
-                    const double tangent = options.cornerRadius / std::tan( gap * .5 );
+                    const double radius = plan.radii[i];
+                    const double tangent = radius / std::tan( gap * .5 );
                     require( alongA + tangent <= -.01 && alongB + tangent <= -.01,
                              "Junction radius does not fit between its approach caps." );
                     const auto first = intersection + da * tangent, last = intersection + db * tangent;
-                    const auto center = intersection + unit( da + db ) * ( options.cornerRadius / std::sin( gap * .5 ) );
+                    const auto center = intersection + unit( da + db ) * ( radius / std::sin( gap * .5 ) );
                     append( first );
                     const double startAngle = std::atan2( first.z - center.z, first.x - center.x );
                     for( u32 part = 1; part < options.cornerSegments; ++part )
                     {
                         const double angle = startAngle + ( gap - pi ) * part / options.cornerSegments;
-                        append( center + P{ std::cos( angle ), std::sin( angle ) } * options.cornerRadius );
+                        append( center + P{ std::cos( angle ), std::sin( angle ) } * radius );
                     }
                     append( last );
                 }
@@ -534,7 +587,7 @@ namespace workphone::scene
             if( !procedural::validateCityRoadSplineSource( source, error ) ) throw std::runtime_error( error.c_str() );
             require( bake.sourceRevision == source.revision && bake.roads.size() == source.roads.size(),
                      "Junction bake is stale or does not match its source." );
-            require( std::isfinite( options.cornerRadius ) && options.cornerRadius >= .25f && options.cornerRadius <= 16 &&
+            require( std::isfinite( options.cornerRadius ) && options.cornerRadius >= minimumCornerRadius && options.cornerRadius <= 16 &&
                      options.cornerSegments >= 2 && options.cornerSegments <= 24 && std::isfinite( options.maximumTrim ) &&
                      options.maximumTrim >= 2 && options.maximumTrim <= 64,
                      "Invalid bounded junction geometry options." );
@@ -566,18 +619,11 @@ namespace workphone::scene
                 std::sort( plan.arms.begin(), plan.arms.end(), []( const Arm &a, const Arm &b ) { return a.angle < b.angle; } );
                 plans.push_back( std::move( plan ) );
             }
-            SourceBudgetVector<Cut> cuts;
             for( auto &plan : plans )
             {
                 for( auto &arm : plan.arms )
                 {
                     arm.available = std::min( arm.available, double( options.maximumTrim ) );
-                    for( const auto &other : plans ) if( &other != &plan ) for( const auto &hit : other.contact.hits )
-                    {
-                        if( hit.road != arm.road ) continue;
-                        const double delta = ( hit.station - arm.station ) * ( arm.forward ? 1 : -1 );
-                        if( delta > .001 ) arm.available = std::min( arm.available, delta * .49 );
-                    }
                     arm.trim = std::max( 2., double( options.cornerRadius ) );
                 }
                 for( size_t i = 0; i < plan.arms.size(); ++i )
@@ -591,12 +637,25 @@ namespace workphone::scene
                     const double denominator = cross( a.direction, b.direction );
                     const double alongA = cross( edgeB - edgeA, b.direction ) / denominator;
                     const double alongB = cross( edgeB - edgeA, a.direction ) / denominator;
-                    const double tangent = options.cornerRadius / std::tan( gap * .5 );
+                    const double slope = std::tan( gap * .5 );
+                    const double tangent = options.cornerRadius / slope;
+                    const double minimumTangent = minimumCornerRadius / slope + capClearance;
                     a.trim = std::max( a.trim, alongA + tangent + .5 );
                     b.trim = std::max( b.trim, alongB + tangent + .5 );
+                    a.minimumTrim = std::max( a.minimumTrim, alongA + minimumTangent );
+                    b.minimumTrim = std::max( b.minimumTrim, alongB + minimumTangent );
                 }
-                for( const auto &arm : plan.arms ) require( arm.trim <= arm.available,
-                    "Consecutive junctions leave insufficient room for the configured corner radius." );
+            }
+            allocateSharedRuns( plans );
+            SourceBudgetVector<Cut> cuts;
+            for( auto &plan : plans )
+            {
+                for( auto &arm : plan.arms )
+                {
+                    require( arm.minimumTrim <= arm.available + .00001,
+                             "Junction has insufficient approach run for its minimum corner clearance." );
+                    arm.trim = std::min( arm.trim, arm.available );
+                }
                 fitCurvedCaps( plan, bake, options );
                 auto patch = buildPatch( plan, source, bake, terrain, options );
                 for( const auto &hit : plan.contact.hits )

@@ -431,6 +431,63 @@ namespace
         }
         require( admitted && denied >= 2, "Junction admission sweep missed staged allocation failures" );
     }
+
+    void consecutiveJunctions()
+    {
+        auto data = terrain();
+        const CityRoadHeightSampler height = [data]( const Vector3F &p, float &h ) {
+            return render::sampleTerrainHeight( *data, {}, p, h );
+        };
+        auto s = ordinarySource( false );
+        auto &north = s.roads[1];
+        north.width = 9;
+        for( auto &knot : north.knots ) knot.position.x = -4;
+        auto south = north;
+        south.id.back() = '3';
+        south.width = 3;
+        south.knots.front().id.back() = '5';
+        south.knots.back().id.back() = '6';
+        south.knots.front().position = { 4, 0, 0 };
+        south.knots.front().outHandle = { 0, 0, -8 };
+        south.knots.back().position = { 4, 0, -24 };
+        south.knots.back().inHandle = { 0, 0, 8 };
+        s.roads.push_back( std::move( south ) );
+
+        String error;
+        const auto bake = sample( s, data );
+        CityRoadJunctionBake junctions;
+        check( buildCityRoadJunctions( s, bake, height, {}, junctions, error ), error );
+        require( junctions.junctions.size() == 2, "Close junctions lost a valid connector" );
+        const auto &a = junctions.junctions[0], &b = junctions.junctions[1];
+        const auto aPort = std::find_if( a.ports.begin(), a.ports.end(), []( const auto &port ) {
+            return port.roadIndex == 0 && port.forward;
+        } );
+        const auto bPort = std::find_if( b.ports.begin(), b.ports.end(), []( const auto &port ) {
+            return port.roadIndex == 0 && !port.forward;
+        } );
+        require( aPort != a.ports.end() && bPort != b.ports.end(), "Shared run lost its approach caps" );
+        require( aPort->boundary.position.x - a.center.x > 4.5f && bPort->station > aPort->station + .1f,
+                 "The wider corner lost its asymmetric clearance or consumed the shared road run" );
+        const auto run = std::find_if( junctions.roadRuns.begin(), junctions.roadRuns.end(), [&]( const auto &item ) {
+            return item.roadIndex == 0 && item.points.front().distance == aPort->station &&
+                   item.points.back().distance == bPort->station;
+        } );
+        require( run != junctions.roadRuns.end() && run->points.front().left == aPort->boundary.left &&
+                 run->points.back().right == bPort->boundary.right, "The short ribbon no longer meets its caps exactly" );
+        const auto retained = junctionChecksum( junctions );
+        check( buildCityRoadJunctions( s, bake, height, {}, junctions, error ), error );
+        require( junctionChecksum( junctions ) == retained, "Short-junction solution must be deterministic" );
+
+        CityRoadTerrainMesh mesh;
+        check( buildCityRoadTerrainMesh( s, bake, data, {}, mesh, error ), error );
+        agreement( mesh, data, {}, .025f );
+        for( const auto &p : bake.roads.front().points )
+            require( surfaceCoverage( mesh, p.position.x, p.position.z ) > 0, "Close junctions split the carriageway" );
+
+        for( auto &knot : s.roads[2].knots ) knot.position.x = 1.5f;
+        require( !buildCityRoadJunctions( s, sample( s, data ), height, {}, junctions, error ) &&
+                 junctionChecksum( junctions ) == retained, "Physically overlapping corners changed the retained junctions" );
+    }
     void roundaboutJunctionConflicts()
     {
         auto data = terrain(); data->dimensions = { 129, 129 }; data->origin = { -64, -64 };
@@ -496,6 +553,7 @@ int main()
         run( "transactional invalid terrain/bake", failures );
         run( "roundabout footprint and approach seams", roundaboutSupport ); run( "staged SourceCpu denial", budgetDenial );
         run( "ordinary unequal-width T/X connectors", ordinaryJunctions );
+        run( "short shared junction approach", consecutiveJunctions );
         run( "junction SourceCpu denial", junctionBudgetDenial );
         run( "roundabout and ordinary junction conflicts", roundaboutJunctionConflicts );
         std::cout << "City road exact terrain mesh: support, ridges, holes, transforms, roundabouts, revisions and denial PASS\n";

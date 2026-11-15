@@ -485,6 +485,7 @@ int main()
         run( "generated hilly city seed7/8", [] { generatedCity( 7, 8 ); } );
         run( "generated grid city relief0 seed42/6", [] { generatedCity( 42, 6, 0, false ); } );
         run( "generated hilly city relief2 seed42/6", [] { generatedCity( 42, 6, 2 ); } );
+        run( "generated hilly city relief2 seed42/8", [] { generatedCity( 42, 8, 2 ); } );
         run( "local approach grades retain the broad hill profile", localApproachGrades );
         return failures ? 1 : 0;
     }

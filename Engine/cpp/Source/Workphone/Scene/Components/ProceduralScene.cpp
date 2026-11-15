@@ -3,7 +3,7 @@
 #include <Workphone/Scene/Components/ProceduralCircuitScene.hpp>
 #include <Workphone/Scene/Components/ProceduralCityStreaming.hpp>
 #include <Workphone/Scene/Components/Camera.hpp>
-#include <Workphone/Scene/Components/CarController.hpp>
+#include <Workphone/Scene/Components/FourWheelVehicle.hpp>
 #include <Workphone/Interface/Scene/ICameraManager.hpp>
 #include <Workphone/Interface/System/ITaskManager.hpp>
 #include <Workphone/System/TaskLock.hpp>
@@ -127,7 +127,7 @@ namespace workphone::scene
                 for( const auto &camera : owner->getScene()->getComponents<Camera>() )
                     if( camera && camera->isEnabled() && camera->isActive() )
                     { observe( camera->getActor() ); if( !observers.empty() ) break; }
-            if( observers.empty() || ( owner && owner->getComponent<CarController>() ) ) observe( owner );
+            if( observers.empty() || ( owner && owner->getComponent<FourWheelVehicle>() ) ) observe( owner );
             updateStreaming( observers );
         }
         catch( const std::bad_alloc & )
