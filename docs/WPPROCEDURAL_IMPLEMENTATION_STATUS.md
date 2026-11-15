@@ -1,5 +1,155 @@
 # WPProcedural implementation status
 
+## Street materials and exposed foundations — 15 November 2026
+
+The fitted sidewalk uses separate material sections for the paved top and
+the vertical kerb. The top retains its scanned pavers, while the kerb uses
+weathered stone courses that follow the fitted bends. The sections use the
+original triangle positions and one collider.
+
+Exposed building pads gain staggered stone courses and a cap. Supported
+entrances gain shallow threshold risers where needed. The facing is visual
+geometry around the existing foundations and entrance approaches.
+
+The scanned asphalt adds larger-scale differences in binder colour and
+roughness while retaining the aggregate scale. The projected markings use
+filtered opacity for worn areas. The road surfaces and markings still use
+the editable road source and its fitted geometry.
+
+The first frontage capture showed asphalt streaking, so the final bake uses
+less variation at the largest scale. The final seed 42 frontage, uphill and
+façade captures show individual kerb blocks, worn paint and masonry at the
+building bases. The uphill road still shows some broad mottling. All three
+captures passed native validation, including the one-footway collider and
+32 roundabout surface probes. The five focused tests passed. See
+`artifacts/procedural/city-street-materials-20261115/visual-review.md` for
+matched software-rendered captures and material binding evidence.
+
+## Open city banks and settlement turf — 15 November 2026
+
+Planting on terrain now covers open banks alongside collector and local streets
+as well as the bigger approaches. Taller trees sit farther back, with lower
+shrubs and grass along roads and roundabout approaches. The pass uses the
+existing paged foliage species and fits roots to supported ground. Placement
+uses the fitted pavement, real entrance paving and drainage triangles, parcel
+edges and junction clearances. VehicleAdvanced checks root contact against
+the retained terrain or the published park pads when capturing the city.
+Where two fitted roads meet and diverge, the generator can plant the open
+ground between them. A small tree sits farther from the junction, with lower
+shrubs and grass toward the front.
+
+New terrain uses a fourth ground layer for close-cut turf. The generator
+blends it into loose meadow, damp grass and local exposed soil. The initial
+road layout supplies a buffer that preserves the existing curb and verge
+blend. Subsequent road edits retain the terrain's current paint weights.
+
+The seed 42 scene produced 25 open-bank groups, 19 low shoulder pockets and
+16 planted forks. The new turf accounts for an 8.66% mean terrain-layer
+weight. The first uphill render changed the soil and grass tones but left the
+near fork bare. A second capture at the same pose shows the tree and lower
+planting beside the curb bend. The final uphill and frontage captures passed
+all 1,800 foliage root-point checks, the footway collision check and all four
+perimeter probes. Six focused foliage, city road and surface tests passed.
+Broad areas of turf remain visible. See
+`artifacts/procedural/city-bank-realism-20261115/visual-review.md` for the
+matched Microsoft Basic Render Driver captures and their verification.
+
+## Street planting and surrounding terrain — 15 November 2026
+
+Terrain-city frontage planting now uses fitted footways, building envelopes,
+door approaches and terrain support to choose where to put formal evergreen
+beds and softer perennial beds. Roundabout islands add low grasses and clipped
+shrubs over textured soil on the baked junction grade. A mown strip separates
+the beds from the kerb. City Street Detail controls planting density. The
+scene's existing road and terrain revision refresh also rebuilds this dressing.
+Wider setbacks and eligible approach verges can take larger perennial beds.
+Their placement uses the exposed edge of the fitted walk and reserves the
+paved routes to entrances. The roundabout approach segments also receive
+irregular verge planting where the terrain and pavement clearance allow it.
+
+The city backdrop continues from the exact retained heightfield boundary into
+rolling hills. It follows the heightfield placement and reduces mesh detail
+farther from the city. The visual extension leaves the road and terrain
+collision unchanged.
+
+Three fresh seed 42 views passed at the same frontage, uphill and façade
+camera poses. Distant slopes replace the straight skyline band in the
+frontage and façade views. Low grasses are visible beside the approach, and
+the uphill view shows small beds beside the entrances. The broad lawn and
+uphill bank still read as open ground. The scene published 109 frontage
+planting sites, including five courts, and eight beds on four roundabout
+islands. Native checks passed for 32 roundabout road-surface probes, the
+footway, and all four perimeter probes. Roundabout, parcel support and
+footway suites passed. See `artifacts/procedural/city-street-landscape-20261115/visual-review.md`
+for the comparisons and Microsoft Basic Render Driver capture scope.
+
+## Building glazing and street contact — 15 November 2026
+
+Built-in near windows use a small atlas for recessed glass, blinds and
+curtains. The glass also receives the outdoor sky reflection. Commercial
+glazing has narrow metal framing, and the default storefront doors have
+kick plates. Authored window and entrance modules take precedence within
+their openings.
+
+Entrance paving and gravel drainage strips follow generated door bays and
+fit the parcel. Supported approaches extend to fitted sidewalks. Fully
+occupied parcel pads meet the base of the façade without overlapping it.
+City perimeter walls use the same terrain-fitted geometry for rendering and
+collision when the heightfield supports the boundary.
+
+Fresh seed 42 captures covered the close façade, uphill street and roundabout
+frontage. The scene generated 80 entrance treatments and 18 fitted sidewalk
+links. The building collision body count matched the expected 110, and all
+four perimeter collision probes passed. The parcel support, footway and surface
+library suites passed. See `artifacts/procedural/city-frontage-realism-20261115/visual-review.md`
+for the comparisons and Microsoft Basic Render Driver capture scope.
+
+## Hillside planting and grass coverage — 15 November 2026
+
+Terrain cities on the Claw renderer scatter groups of broadleaf trees, scrub
+and rough grass across open slopes. Plants cluster around taller growth and
+thin out into open ground. Placement uses the fitted terrain, road widths,
+roundabout lanes, pavement triangles and parcel bounds. Hillside plants use
+the paged foliage renderer and rebuild with the generated city.
+
+Verge grass uses fewer, folded blades with broader shoulders and short tips
+that retain their shape when viewed side-on. `SampleVehicleAdvanced` requests
+4× DX11 scene multisampling for high and cinematic terrain cities and 2× at
+medium. Use `--scene-aa` or `-SceneAA` to compare explicit sample counts. The
+capture evidence reads back the native scene depth target's sample count.
+
+The seed 42 close view places 46 hillside groups, 17 along approach banks.
+The matched road-end view shows tree and scrub groups on both banks. The same
+build produced one- and four-sample captures from the verge camera. Several
+grass edges are more continuous at four samples in those 720p stills. Both
+final matched views passed native checks, including terrain restoration and
+collision after road editing. Five focused foliage and road suites passed.
+The default uphill capture also passed with 97 trees, 340 shrubs and 820 grass
+tufts in the foliage snapshot. The captures use Microsoft Basic Render Driver. See
+`artifacts/procedural/city-hillside-foliage-20261115/visual-review.md`.
+
+## City daylight, ground materials and rounded road ends — 15 November 2026
+
+The generated racing city uses angled afternoon sun, cooler sky fill and
+distance haze tied to the sky horizon. The seeded cloud field feeds the visible
+sky and the outdoor reflection probe. City window materials use three roughness
+levels so different glazing styles pick up daylight at different angles.
+
+New city heightfields seed meadow, damp grass and dry ground as editable
+terrain layers. Their paint weights vary by slope, aspect, seeded patches and
+distance from the city. Regenerating against a retained heightfield uses its
+authored material weights. Wide rounded road ends use 24 segments shared by
+the road surface, markings, pavement and collision. The fitter can fall back
+to 12 segments when terrain support or the cap budget requires it.
+Planting stations attach to the exposed cap and stay stable when the pavement
+edge is subdivided.
+
+Two render passes used the retained seed 42 verge camera. The final pass also
+matched the edited-road camera and validated the road history, terrain restore
+and collision. The road mesh, terrain fitting, footway and surface library
+suites passed. The native 1280 × 720 captures use Microsoft Basic Render Driver.
+See `artifacts/procedural/city-lighting-ground-20261115/visual-review.md`.
+
 ## Varied verge planting and pavement edges — 14 November 2026
 
 Terrain cities regenerate fescue, meadow grass, broad-leaf ground cover,

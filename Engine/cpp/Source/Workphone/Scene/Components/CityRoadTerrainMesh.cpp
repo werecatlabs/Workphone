@@ -8,6 +8,7 @@
 #include <cmath>
 #include <limits>
 #include <stdexcept>
+#include <utility>
 
 namespace workphone::scene
 {
@@ -605,6 +606,7 @@ namespace workphone::scene
         u64 visits = 0;
         size_t capIndices = 0;
         constexpr size_t maximumCapIndices = 24000;
+        constexpr size_t baseSections = 12, smoothSections = 24;
         constexpr float pavement = 2.45f;
         constexpr float pi = 3.14159265358979323846f;
         const auto scale = placement.getScale();
@@ -711,47 +713,62 @@ namespace workphone::scene
                 policy.offset = road.heightOffset;
                 policy.maxGrade = road.maxGrade;
                 bool supported = false;
+                // Wider ends make the straight chords visible. Retain the
+                // original outline when refinement cannot fit terrain or budget.
+                const size_t preferredSections = road.width >= 8.f ? smoothSections : baseSections;
+                terminal.edge.reserve( preferredSections + 1 );
+                terminal.outward.reserve( preferredSections + 1 );
                 for( const float depthScale : { 1.f, .5f } )
                 {
                     const float depth = std::min( 3.f, radius ) * depthScale;
-                    terminal.edge.front() = end.left;
-                    terminal.edge.back() = end.right;
-                    terminal.outward.front() = side;
-                    terminal.outward.back() = -side;
-                    const size_t sections = terminal.edge.size() - 1;
-                    for( size_t i = 1; i < sections; ++i )
+                    for( size_t sections = preferredSections; sections >= baseSections; sections /= 2 )
                     {
-                        const float angle = float( i ) * pi / float( sections );
-                        const float c = std::cos( angle ), s = std::sin( angle );
-                        terminal.edge[i] = end.position + side * ( radius * c ) + forward * ( depth * s );
-                        auto normal = side * ( c / radius ) + forward * ( s / depth );
-                        normal.normalise();
-                        terminal.outward[i] = normal;
-                    }
-                    probe.vertices.clear();
-                    probe.indices.clear();
-                    probe.triangleKinds.clear();
-                    try
-                    {
-                        const auto uv = []( Vector3F p ) { return Vector2F( p.x * .125f, p.z * .125f ); };
-                        for( size_t i = 1; i < terminal.edge.size(); ++i )
+                        terminal.edge.resize( sections + 1 );
+                        terminal.outward.resize( sections + 1 );
+                        terminal.edge.front() = end.left;
+                        terminal.edge.back() = end.right;
+                        terminal.outward.front() = side;
+                        terminal.outward.back() = -side;
+                        for( size_t i = 1; i < sections; ++i )
                         {
-                            const auto a = terminal.edge[i - 1], b = terminal.edge[i];
-                            builder.triangle( { terminal.center, a, b },
-                                              { uv( terminal.center ), uv( a ), uv( b ) }, policy );
+                            const float angle = float( i ) * pi / float( sections );
+                            const float c = std::cos( angle ), s = std::sin( angle );
+                            terminal.edge[i] = end.position + side * ( radius * c ) + forward * ( depth * s );
+                            auto normal = side * ( c / radius ) + forward * ( s / depth );
+                            normal.normalise();
+                            terminal.outward[i] = normal;
+                        }
+                        probe.vertices.clear();
+                        probe.indices.clear();
+                        probe.triangleKinds.clear();
+                        try
+                        {
+                            const auto uv = []( Vector3F p ) { return Vector2F( p.x * .125f, p.z * .125f ); };
+                            for( size_t i = 1; i < terminal.edge.size(); ++i )
+                            {
+                                const auto a = terminal.edge[i - 1], b = terminal.edge[i];
+                                builder.triangle( { terminal.center, a, b },
+                                                  { uv( terminal.center ), uv( a ), uv( b ) }, policy );
+                            }
+                        }
+                        catch( const UnsupportedFootprint & )
+                        {
+                            // Try looser sampling or a shorter return before
+                            // leaving the authored ribbon's straight end in place.
+                            continue;
+                        }
+                        catch( const FootprintWorkLimit & ) { return result; }
+                        if( capIndices + probe.indices.size() > maximumCapIndices )
+                        {
+                            if( sections == baseSections ) return result;
+                            continue;
                         }
                         supported = true;
                         break;
                     }
-                    catch( const UnsupportedFootprint & )
-                    {
-                        // The original authored ribbon is still usable. Try a
-                        // shorter return, then keep its original straight end.
-                    }
-                    catch( const FootprintWorkLimit & ) { return result; }
+                    if( supported ) break;
                 }
                 if( !supported ) continue;
-                if( capIndices + probe.indices.size() > maximumCapIndices ) return result;
                 if( asphalt )
                 {
                     if( asphalt->vertices.size() + probe.vertices.size() > maximumVertices ||
@@ -763,7 +780,7 @@ namespace workphone::scene
                                                    probe.triangleKinds.end() );
                 }
                 capIndices += probe.indices.size();
-                result.push_back( terminal );
+                result.push_back( std::move( terminal ) );
             }
         }
         return result;

@@ -10,6 +10,7 @@ param(
     [ValidateRange(0, 2)][int]$CityRoute = 0,
     [ValidateSet('grid', 'lsystem')][string]$CityLayout = 'grid',
     [ValidatePattern('^\d+x\d+$')][string]$Resolution = '1280x720',
+    [ValidateSet('auto', 'none', 'msaa2', 'msaa4')][string]$SceneAA = 'auto',
     [ValidateRange(0.1, 3600)][double]$Seconds = 10,
     [ValidateSet('follow', 'car', 'track', 'corner', 'junction', 'hillside', 'verge', 'street', 'boulevard', 'frontage', 'facade', 'building', 'road-edit-before', 'road-edit-after')][string[]]$Views = @('car', 'track', 'corner', 'follow'),
     [string]$Replay,
@@ -116,7 +117,7 @@ $manifest = [ordered]@{
     cityBuildingStyle = $(if ($CityBuildingStyle) { $CityBuildingStyle.ToLowerInvariant() } else { $null })
     cityBuildingMeshes = $buildingMeshPaths
     cityBuildingMeshInputs = [ordered]@{}
-    requestedResolution = $Resolution; benchmarkSeconds = $Seconds; visualAcceptance = 'unreviewed'
+    requestedResolution = $Resolution; sceneAA = $SceneAA; benchmarkSeconds = $Seconds; visualAcceptance = 'unreviewed'
     diff = Get-Identity (Join-Path $output 'working-tree.patch'); sources = $sources; binaries = $binaries
     plugins = Get-Identity $plugins; assets = $assets; replay = $null; runs = @()
     limitations = @('Fresh build must be performed separately; hashes identify artifacts, not freshness.', 'Control replay applies one row per physics-task tick; the task targets 120 Hz but physics uses measured deltas.', 'Asset hashes inventory the media tree; they are not a runtime dependency trace.', 'No blind comparison or visual acceptance is implied.')
@@ -134,6 +135,7 @@ try {
         $evidence = Join-Path $output "$view.json"
         $arguments = @('--seed', "$Seed", '--quality', $Quality, '--plugins', (Quote-ProcessArgument $plugins), '--capture', (Quote-ProcessArgument $capture), '--view', $view, '--no-hud', '--resolution', $Resolution, '--no-audio', '--benchmark', $Seconds.ToString([Globalization.CultureInfo]::InvariantCulture), '--evidence', (Quote-ProcessArgument $evidence))
         if ($Scene -eq 'city') { $arguments += @('--city', '--city-blocks', "$CityBlocks", '--city-route', "$CityRoute", '--city-layout', $CityLayout) }
+        if ($SceneAA -ne 'auto') { $arguments += @('--scene-aa', $SceneAA) }
         if ($RoadAuthoringShowcase) { $arguments += '--road-authoring-showcase' }
         if ($CityTerrainRoads) { $arguments += @('--city-terrain-roads', '--city-terrain-relief', $CityTerrainRelief.ToString([Globalization.CultureInfo]::InvariantCulture)) }
         if ($streetDetailExplicit) { $arguments += @('--city-street-detail', "$CityStreetDetail") }

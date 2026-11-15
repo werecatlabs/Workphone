@@ -136,21 +136,61 @@
                          s32( std::lround( point.z * 100.f ) ) };
             }
 
-            void bladeTriangle( Geometry &geometry, Vector3F a, Vector3F b, Vector3F c,
-                                Vector3F normal, Vector3F tangent )
+            template <size_t Count, class Clear>
+            void foldedGrassBlade( Geometry &geometry, const std::array<Vector3F, Count> &spine,
+                                   const std::array<float, Count - 1> &widths, Vector3F across,
+                                   const Clear &isClear )
             {
-                const auto start = u32( geometry.positions.size() );
-                for( const auto &point : { a, b, c } )
+                std::array<std::array<Vector3F, 3>, Count - 1> sections;
+                const auto facing = across.crossProduct( spine.back() - spine.front() ).normaliseCopy();
+                // The fold gives the blade a visible cross section on grazing views.
+                // Shared ridge vertices keep lighting soft across the fold.
+                for( size_t i = 0; i < sections.size(); ++i )
                 {
-                    geometry.positions.push_back( point );
-                    geometry.normals.push_back( normal );
-                    geometry.uv.push_back( Vector3F( 0, 0, 0 ) );
-                    geometry.tangents.push_back( { tangent.x, tangent.y, tangent.z, 1 } );
+                    const auto width = across * widths[i];
+                    auto &section = sections[i];
+                    section = { spine[i] - width, spine[i] + facing * ( widths[i] * .57f ), spine[i] + width };
+                    if( !isClear( section[0] ) || !isClear( section[1] ) || !isClear( section[2] ) ) return;
                 }
-                const bool forward = ( b - a ).crossProduct( c - a ).dotProduct( normal ) >= 0;
-                geometry.indices.push_back( start );
-                geometry.indices.push_back( start + ( forward ? 1 : 2 ) );
-                geometry.indices.push_back( start + ( forward ? 2 : 1 ) );
+                const auto base = u32( geometry.positions.size() );
+                const auto vertex = [&]( Vector3F point, Vector3F normal ) {
+                    geometry.positions.push_back( point );
+                    geometry.normals.push_back( normal.normaliseCopy() );
+                    geometry.uv.push_back( { 0, 0, 0 } );
+                    geometry.tangents.push_back( { across.x, across.y, across.z, 1 } );
+                };
+                const Vector3F up( 0, 1, 0 );
+                for( size_t i = 0; i < sections.size(); ++i )
+                {
+                    const auto along = ( spine[i + 1] - spine[i > 0 ? i - 1 : 0] ).normaliseCopy();
+                    const auto normal = up + across.crossProduct( along ) * .22f;
+                    vertex( sections[i][0], normal - across * .13f );
+                    vertex( sections[i][1], normal );
+                    vertex( sections[i][2], normal + across * .13f );
+                }
+                const auto tip = u32( geometry.positions.size() );
+                vertex( spine.back(), up + facing * .15f );
+
+                const auto triangle = [&]( u32 a, u32 b, u32 c ) {
+                    const auto ab = geometry.positions[b] - geometry.positions[a];
+                    const auto ac = geometry.positions[c] - geometry.positions[a];
+                    // The shading normals need not follow the fold direction.
+                    const auto outward = geometry.normals[a] + geometry.normals[b] + geometry.normals[c];
+                    const bool forward = ab.crossProduct( ac ).dotProduct( outward ) >= 0;
+                    geometry.indices.push_back( a );
+                    geometry.indices.push_back( forward ? b : c );
+                    geometry.indices.push_back( forward ? c : b );
+                };
+                for( size_t i = 1; i < sections.size(); ++i )
+                {
+                    const u32 a = base + u32( 3 * ( i - 1 ) ), b = a + 3;
+                    triangle( a, a + 1, b + 1 );
+                    triangle( a, b + 1, b );
+                    triangle( a + 1, a + 2, b + 2 );
+                    triangle( a + 1, b + 2, b + 1 );
+                }
+                triangle( tip - 3, tip - 2, tip );
+                triangle( tip - 2, tip - 1, tip );
             }
         }
 
@@ -337,29 +377,26 @@
             const auto supported = [&]( Vector3F &point ) {
                 return isClear( point ) && render::sampleTerrainHeight( *ground, placement, point, point.y );
             };
-            const auto scatterFringe = [&]( Vector3F a, Vector3F b, Vector3F outward, bool terminal, size_t limit ) {
+            const auto fringeCover = [seed]( Vector3F point ) {
+                return smooth( ( noise( seed + 17, ( point.x + 1024.f ) * .37f,
+                                        ( point.z + 1024.f ) * .37f, 4093 ) - .32f ) / .42f );
+            };
+            const auto emitFringe = [&]( Vector3F centre, Vector3F spread, Vector3F outward, u64 key,
+                                         float cover, bool terminal, size_t limit ) {
                 if( clumps >= limit ) return;
-                const auto middle = ( a + b ) * .5f;
-                const auto location = joinKey( middle );
-                const auto key = render::foliageStableHash( ( u64( u32( location.first ) ) << 32 ) |
-                                                            u32( location.second ) ) ^ seed;
-                const float cover = smooth( ( noise( seed + 17, ( middle.x + 1024.f ) * .37f,
-                                                      ( middle.z + 1024.f ) * .37f, 4093 ) - .32f ) / .42f );
-                const float density = terminal ? .38f + .86f * cover : .045f + .70f * cover;
-                if( unit( key ) >= ( b - a ).length() * density ) return;
                 const bool dry = unit( key + 1 ) > .58f;
                 auto &batch = fringe[dry ? 1 : 0];
-                const float drift = .27f + .60f * unit( key + 2 );
-                const unsigned members = 2 + unsigned( cover * ( terminal ? 5.f : 3.f ) );
+                const float drift = terminal ? .23f + .50f * unit( key + 2 ) : .27f + .60f * unit( key + 2 );
+                const unsigned members = 2 + unsigned( cover * ( terminal ? 4.f : 3.f ) );
                 for( unsigned i = 0; i < members && clumps < limit; ++i )
                 {
                     const auto plant = render::foliageStableHash( key + 3 + i );
-                    auto root = a + ( b - a ) * unit( plant ) + outward *
+                    auto root = centre + spread * ( unit( plant ) - .5f ) + outward *
                                 ( drift + .26f * ( unit( plant + 1 ) - .5f ) );
                     if( !supported( root ) ) continue;
                     const auto firstVertex = batch.positions.size();
                     const bool rosette = unit( plant + 2 ) < .25f;
-                    const unsigned bladeCount = rosette ? 4u : 5u + unsigned( 3.f * unit( plant + 3 ) );
+                    const unsigned bladeCount = rosette ? 4u : 4u + unsigned( 2.f * unit( plant + 3 ) );
                     const float phaseAngle = 2.f * pi * unit( plant + 4 );
                     const float scale = ( terminal ? 1.22f : 1.f ) * ( .73f + .54f * unit( plant + 5 ) );
                     for( unsigned blade = 0; blade < bladeCount; ++blade )
@@ -368,55 +405,116 @@
                         const float angle = phaseAngle + 2.f * pi * ( blade + .32f * unit( sample ) ) / bladeCount;
                         const Vector3F direction( std::cos( angle ), 0, std::sin( angle ) );
                         const Vector3F across( direction.z, 0, -direction.x );
-                        const float height = scale * ( rosette ? .047f + .050f * unit( sample + 1 ) :
-                                                                .074f + .154f * unit( sample + 1 ) );
+                        const bool shortBlade = !rosette && blade >= ( bladeCount + 1 ) / 2;
+                        const float tier = shortBlade ? .52f + .25f * unit( sample + 6 ) : 1.f;
+                        const float height = scale * tier * ( rosette ? .047f + .050f * unit( sample + 1 ) :
+                                                                       .067f + .140f * unit( sample + 1 ) );
                         const float reach = scale * ( rosette ? .09f + .05f * unit( sample + 2 ) :
                                                                .044f + .09f * unit( sample + 2 ) );
                         auto foot = root + direction * ( .023f * unit( sample + 3 ) );
-                        auto curve = foot + direction * ( reach * .38f );
-                        auto tip = foot + direction * reach;
+                        const auto lean = across * ( reach * .32f * ( unit( sample + 5 ) - .5f ) );
+                        auto curve = foot + direction * ( reach * ( rosette ? .52f : .64f ) ) + lean * .45f;
+                        auto tip = foot + direction * reach + lean;
                         if( !supported( foot ) || !supported( curve ) || !supported( tip ) ) continue;
                         const float soil = foot.y;
                         foot.y -= .014f;
-                        curve.y = std::max( curve.y + .018f, soil + height * .67f );
-                        tip.y = std::max( tip.y + .018f, soil + height * ( rosette ? .64f : 1.f ) );
-                        const auto width = across * ( scale * ( rosette ? .017f : .009f ) );
-                        const auto bendWidth = width * ( rosette ? 1.20f : .58f );
-                        if( !isClear( foot - width ) || !isClear( foot + width ) ||
-                            !isClear( curve - bendWidth ) || !isClear( curve + bendWidth ) ) continue;
-                        auto normal = across.crossProduct( tip - foot ) + Vector3F( 0, .16f, 0 );
-                        normal.normalise();
-                        batch.quad( foot - width, foot + width, curve + bendWidth, curve - bendWidth, normal );
-                        bladeTriangle( batch, curve - bendWidth, curve + bendWidth, tip, normal, across );
+                        curve.y = std::max( curve.y + .018f, soil + height * .82f );
+                        tip.y = std::max( tip.y + .018f, soil + height * ( rosette ? .64f : .96f ) );
+                        const float width = scale * ( rosette ? .018f + .004f * unit( sample + 4 ) :
+                                                              .012f + .005f * unit( sample + 4 ) );
+                        foldedGrassBlade( batch, std::array{ foot, curve, tip },
+                                          { width * .76f, width }, across, isClear );
                     }
                     if( batch.positions.size() != firstVertex ) ++clumps;
                 }
             };
 
-            // Terminal arcs share neither the first-road quota nor the terrain-overlay quota.
-            // Reserve planting around supported ends before infilling ordinary verges.
-            SourceBudgetVector<size_t> terminalCounts( ends.size(), 0 );
-            SourceBudgetMap<Cell, size_t> fringeCounts;
-            for( const bool terminal : { true, false } )
+            const auto keyAt = [seed]( Vector3F point ) {
+                const auto cell = joinKey( point );
+                return render::foliageStableHash( ( u64( u32( cell.first ) ) << 32 ) |
+                                                   u32( cell.second ) ) ^ seed;
+            };
+            // Station seeds belong to the road end. Intersect each station's
+            // ray with the exposed skirt, so terrain clipping or an extra arc
+            // subdivision cannot reroll all of the nearby grass clumps.
+            SourceBudgetVector<SourceBudgetVector<size_t>> terminalEdges( ends.size() );
+            for( size_t i = 0; i < vergeEdges.size(); ++i )
+                if( vergeEdges[i].terminal != noTerminal ) terminalEdges[vergeEdges[i].terminal].push_back( i );
+            const size_t activeEnds = std::count_if( terminalEdges.begin(), terminalEdges.end(),
+                                                   []( const auto &edges ) { return !edges.empty(); } );
+            if( activeEnds )
             {
-                const size_t areaLimit = terminal ? ( preview ? 28 : 44 ) : ( preview ? 5 : 8 );
-                const size_t passLimit = terminal ? maxClumps * 2 / 3 : maxClumps;
-                for( const auto &edge : vergeEdges )
+                const size_t terminalBudget = maxClumps * 2 / 3;
+                const size_t perEnd = std::min<size_t>( preview ? 28 : 44, terminalBudget / activeEnds );
+                for( size_t endIndex = 0; endIndex < terminalEdges.size(); ++endIndex )
                 {
-                    if( clumps >= passLimit ) break;
-                    if( terminal != ( edge.terminal != noTerminal ) ) continue;
-                    auto &count = terminal ? terminalCounts[edge.terminal] : fringeCounts[cellAt( ( edge.a + edge.b ) * .5f )];
-                    if( count >= areaLimit ) continue;
-                    const auto delta = edge.b - edge.a;
-                    const auto pieces = std::max( 1, int( std::ceil( delta.length() / 1.1f ) ) );
-                    const auto before = clumps;
-                    const auto limit = std::min( passLimit, clumps + areaLimit - count );
-                    for( int i = 0; i < pieces && clumps < limit; ++i )
-                        scatterFringe( edge.a + delta * ( float( i ) / pieces ),
-                                       edge.a + delta * ( float( i + 1 ) / pieces ), edge.outward,
-                                       terminal, limit );
-                    count += clumps - before;
+                    const auto &arc = terminalEdges[endIndex];
+                    if( arc.empty() ) continue;
+                    const auto &end = ends[endIndex];
+                    const auto endKey = keyAt( end.centre );
+                    const Vector3F side( -end.direction.z, 0, end.direction.x );
+                    const unsigned stations = end.halfWidth >= 7.5f ? 24u : end.halfWidth >= 4.f ? 16u : 12u;
+                    const auto limit = clumps + perEnd;
+                    for( unsigned i = 0; i < stations && clumps < limit; ++i )
+                    {
+                        // Visit well-spaced sectors first if this end uses its reserve.
+                        const auto station = ( i * 7u ) % stations;
+                        const auto key = render::foliageStableHash( endKey + station );
+                        const float angle = pi * ( station + .18f + .64f * unit( key + 11 ) ) / stations;
+                        const auto ray = side * ( std::cos( angle ) * ( end.halfWidth + 2.45f ) ) +
+                                         end.direction * ( std::sin( angle ) * ( std::min( 3.f, end.halfWidth ) + 2.45f ) );
+                        float nearestOutside = 0;
+                        Vector3F point, outward;
+                        for( const auto edgeIndex : arc )
+                        {
+                            const auto &edge = vergeEdges[edgeIndex];
+                            const auto delta = edge.b - edge.a;
+                            const float denominator = crossXZ( ray, delta );
+                            if( std::abs( denominator ) < .00001f ) continue;
+                            const float t = crossXZ( edge.a - end.centre, ray ) / denominator;
+                            if( t < 0 || t > 1 ) continue;
+                            const auto hit = edge.a + delta * t;
+                            const float distance = ( hit - end.centre ).dotProduct( ray );
+                            if( distance <= nearestOutside ) continue;
+                            nearestOutside = distance;
+                            point = hit;
+                            outward = pointNormal( edge.a, edge.outward ) * ( 1 - t ) +
+                                      pointNormal( edge.b, edge.outward ) * t;
+                        }
+                        if( nearestOutside <= 0 ) continue;
+                        const float cover = fringeCover( point );
+                        if( unit( key ) >= .69f + .26f * cover ) continue;
+                        outward.normalise();
+                        const Vector3F tangent( -outward.z, 0, outward.x );
+                        emitFringe( point, tangent * .65f, outward, key, cover, true, limit );
+                    }
                 }
+            }
+
+            SourceBudgetMap<Cell, size_t> fringeCounts;
+            for( const auto &edge : vergeEdges )
+            {
+                if( clumps >= maxClumps ) break;
+                if( edge.terminal != noTerminal ) continue;
+                const size_t areaLimit = preview ? 5 : 8;
+                auto &count = fringeCounts[cellAt( ( edge.a + edge.b ) * .5f )];
+                if( count >= areaLimit ) continue;
+                const auto delta = edge.b - edge.a;
+                const auto pieces = std::max( 1, int( std::ceil( delta.length() / 1.1f ) ) );
+                const auto before = clumps;
+                const auto limit = std::min( maxClumps, clumps + areaLimit - count );
+                for( int i = 0; i < pieces && clumps < limit; ++i )
+                {
+                    const auto a = edge.a + delta * ( float( i ) / pieces );
+                    const auto b = edge.a + delta * ( float( i + 1 ) / pieces );
+                    const auto point = ( a + b ) * .5f;
+                    const auto spread = b - a;
+                    const auto key = keyAt( point );
+                    const float cover = fringeCover( point );
+                    if( unit( key ) < spread.length() * ( .045f + .70f * cover ) )
+                        emitFringe( point, spread, edge.outward, key, cover, false, limit );
+                }
+                count += clumps - before;
             }
 
             // Keep the terminal blend and exposed approaches in the preview quota.
@@ -490,6 +588,6 @@
                 if( auto actor = mesh( assets, name, batch, material( assets, tint, .95f ) ) )
                     actor->getComponent<scene::MeshRenderer>()->setCastShadows( scene::Renderer::CastShadows::Off );
             };
-            publishFringe( "Terrain city verge pavement fringe grass", fringe[0], { .323f, .362f, .171f, 1 } );
-            publishFringe( "Terrain city verge pavement fringe dry tips", fringe[1], { .413f, .376f, .204f, 1 } );
+            publishFringe( "Terrain city verge pavement fringe grass", fringe[0], { .334f, .378f, .192f, 1 } );
+            publishFringe( "Terrain city verge pavement fringe dry tips", fringe[1], { .412f, .380f, .217f, 1 } );
         }

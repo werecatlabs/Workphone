@@ -205,6 +205,68 @@ namespace workphone::scene
             material->setMetalness( 1 );
         }
 
+        float roadGrain( u32 seed, u32 x, u32 y, u32 period )
+        {
+            u32 value = ( x % period ) * 0x9e3779b9u ^ ( y % period ) * 0x85ebca6bu ^ seed;
+            value ^= value >> 16;
+            value *= 0x7feb352du;
+            value ^= value >> 15;
+            return float( ( value ^ ( value >> 16 ) ) >> 8 ) / 16777215.f;
+        }
+
+        float roadVariation( u32 seed, float u, float v, u32 cells )
+        {
+            const float x = u * cells, y = v * cells;
+            const u32 ix = u32( x ), iy = u32( y );
+            const float fx = x - ix, fy = y - iy;
+            const float sx = fx * fx * ( 3 - 2 * fx ), sy = fy * fy * ( 3 - 2 * fy );
+            const float a = roadGrain( seed, ix, iy, cells ) * ( 1 - sx ) +
+                            roadGrain( seed, ix + 1, iy, cells ) * sx;
+            const float b = roadGrain( seed, ix, iy + 1, cells ) * ( 1 - sx ) +
+                            roadGrain( seed, ix + 1, iy + 1, cells ) * sx;
+            return a * ( 1 - sy ) + b * sy;
+        }
+
+        constexpr u32 asphaltTiles = 4;
+
+        void weatherScannedAsphalt( procedural::SurfaceBakeResult &surface )
+        {
+            // Preserve the scale of the scanned aggregate, with a second scale for
+            // the smoother binder and exposed stone across a section of carriageway.
+            constexpr u32 size = 1024;
+            procedural::TextureBuffer colour( size, size ), normal( size, size ), orm( size, size );
+            const auto byte = []( float value ) { return u8( std::clamp( std::lround( value ), 0l, 255l ) ); };
+            for( u32 y = 0; y < size; ++y )
+            {
+                for( u32 x = 0; x < size; ++x )
+                {
+                    const u32 sx = ( x * asphaltTiles * surface.albedo.width / size ) % surface.albedo.width;
+                    const u32 sy = ( y * asphaltTiles * surface.albedo.height / size ) % surface.albedo.height;
+                    const float u = ( x + .5f ) / size, v = ( y + .5f ) / size;
+                    const float binder = .42f * roadVariation( 0x1f73a1u, u, v, 3 ) +
+                                         .41f * roadVariation( 0x673c51u, u, v, 7 ) +
+                                         .17f * roadVariation( 0x5521c3u, u, v, 23 );
+                    const float exposed = std::clamp( ( binder - .37f ) / .34f, 0.f, 1.f );
+                    const float wear = exposed * exposed * ( 3.f - 2.f * exposed );
+                    const auto *source = surface.albedo.pixel( sx, sy );
+                    auto *pixel = colour.pixel( x, y );
+                    const float tone = .93f + .15f * wear;
+                    pixel[0] = byte( source[0] * tone + 1.5f * wear );
+                    pixel[1] = byte( source[1] * tone + wear );
+                    pixel[2] = byte( source[2] * tone );
+                    pixel[3] = 255;
+                    std::copy_n( surface.normal.pixel( sx, sy ), 4, normal.pixel( x, y ) );
+                    const auto *surfaceOrm = surface.orm.pixel( sx, sy );
+                    auto *response = orm.pixel( x, y );
+                    std::copy_n( surfaceOrm, 4, response );
+                    response[1] = byte( surfaceOrm[1] * ( .97f + .03f * wear ) );
+                }
+            }
+            surface.albedo = std::move( colour );
+            surface.normal = std::move( normal );
+            surface.orm = std::move( orm );
+        }
+
         void roadSurface( CityRoadRuntimeState &state, const String &prefix,
                           SmartPtr<render::IMaterial> material,
                           SmartPtr<procedural::ITextureForge> forge, u32 seed,
@@ -220,13 +282,15 @@ namespace workphone::scene
                                                                          : CitySurface::Concrete;
                 SurfaceBakeResult scanned;
                 String diagnostic;
-                if( loadCitySurface( family, 512, scanned, diagnostic ) )
+                if( loadCitySurface( family, asphalt ? 256 : 512, scanned, diagnostic ) )
                 {
+                    if( asphalt ) weatherScannedAsphalt( scanned );
                     surfaceMaps( state, prefix + "/city-surface/" + citySurfaceAssetId( family ), material, scanned );
                     material->setNormalStrength( asphalt ? .45f : turf ? .5f : .35f );
                     material->setEditorFloat( "aoStrength", .65f );
                     material->setUVProjection( kind == CityRoadTerrainTriangleKind::Kerb ? 1 : 3 );
-                    material->setTriplanarScale( 1.f / citySurfaceTileMetres( family ) );
+                    const float repeatMetres = citySurfaceTileMetres( family ) * ( asphalt ? asphaltTiles : 1u );
+                    material->setTriplanarScale( 1.f / repeatMetres );
                     material->setEditorUInt( "uvFilter", 3 );
                     material->setEditorFloat( "uvAniso", 8.f );
                     return;
@@ -250,23 +314,8 @@ namespace workphone::scene
                                 surface.height.height == 256 &&
                                 surface.height.values.size() == 256 * 256,
                             "Road texture forge returned incomplete bounded surface maps." );
-            const auto noise = [seed]( u32 x, u32 y, u32 period ) {
-                u32 value = ( x % period ) * 0x9e3779b9u ^ ( y % period ) * 0x85ebca6bu ^ seed;
-                value ^= value >> 16;
-                value *= 0x7feb352du;
-                value ^= value >> 15;
-                value *= 0x846ca68bu;
-                return float( ( value ^ ( value >> 16 ) ) >> 8 ) / 16777215.f;
-            };
             const auto smoothNoise = [&]( u32 x, u32 y, u32 cells ) {
-                const float u = float( x ) * cells / params.size, v = float( y ) * cells / params.size;
-                const u32 ix = u32( u ), iy = u32( v );
-                const float fx = u - ix, fy = v - iy;
-                const float sx = fx * fx * ( 3 - 2 * fx ), sy = fy * fy * ( 3 - 2 * fy );
-                const float a = noise( ix, iy, cells ) * ( 1 - sx ) + noise( ix + 1, iy, cells ) * sx;
-                const float b =
-                    noise( ix, iy + 1, cells ) * ( 1 - sx ) + noise( ix + 1, iy + 1, cells ) * sx;
-                return a * ( 1 - sy ) + b * sy;
+                return roadVariation( seed, float( x ) / params.size, float( y ) / params.size, cells );
             };
             const auto srgb = []( float linear ) {
                 linear = std::clamp( linear, 0.f, 1.f );
@@ -279,7 +328,7 @@ namespace workphone::scene
             {
                 for( u32 x = 0; x < params.size; ++x )
                 {
-                    const float grain = noise( x, y, params.size ), patch = smoothNoise( x, y, 3 );
+                    const float grain = roadGrain( seed, x, y, params.size ), patch = smoothNoise( x, y, 3 );
                     const float aggregate = smoothNoise( x, y, 32 );
                     auto pixel = surface.albedo.pixel( x, y ), orm = surface.orm.pixel( x, y );
                     auto &height = surface.height.values[size_t( y ) * params.size + x];
@@ -309,10 +358,15 @@ namespace workphone::scene
                     }
                     else if( paint )
                     {
-                        const float linear = .72f + ( grain - .5f ) * .035f + ( patch - .5f ) * .02f;
+                        // Mip-filtered opacity keeps the chipped paint readable at a distance.
+                        const float flecks = smoothNoise( x, y, 53 );
+                        const float field = .50f * flecks + .22f * grain + .16f * aggregate + .12f * patch;
+                        const float chips = std::clamp( ( field - .57f ) / .23f, 0.f, 1.f );
+                        const float linear = .70f + ( grain - .5f ) * .065f - .18f * chips;
                         pixel[0] = srgb( linear );
                         pixel[1] = srgb( linear * .99f );
                         pixel[2] = srgb( linear * .95f );
+                        pixel[3] = u8( std::lround( 255.f * ( 1.f - .81f * chips ) ) );
                     }
                     else
                     {
@@ -324,7 +378,7 @@ namespace workphone::scene
                         orm[0] = u8( 246 + patch * 9 );
                         orm[1] = u8( 214 + aggregate * 16 );
                     }
-                    pixel[3] = 255;
+                    if( !paint ) pixel[3] = 255;
                     orm[2] = 0;
                     orm[3] = 255;
                 }
@@ -337,6 +391,9 @@ namespace workphone::scene
                     0 );
                 material->setRoughness( .78f );
                 material->setMetalness( 0 );
+                material->setTransparent( true );
+                material->setBlendMode( 1 );
+                material->setDepthWrite( false );
             }
             else
             {

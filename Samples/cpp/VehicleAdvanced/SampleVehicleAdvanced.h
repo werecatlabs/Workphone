@@ -55,6 +55,7 @@ namespace workphone
             m_forcedVehicleLOD = forcedVehicleLOD;
             m_orbitCamera = orbit; m_reviewWidth = width; m_reviewHeight = height;
         }
+        void setSceneAA( u32 samples ) { m_preferredSceneSamples = samples; }
         void reset();
         void setFoliageWorldEnabled( bool enabled ) { m_foliageWorldEnabled = enabled; }
         void setCityOptions( bool enabled, s32 blocks, s32 route, bool naturalRoads = false )
@@ -154,6 +155,8 @@ namespace workphone
         std::unique_ptr<advanced::terrain_gameplay::Package> m_terrainGameplayPackage;
 #endif
         bool m_effectsEnabled = true, m_effectsSmokeTest = false;
+        u32 m_preferredSceneSamples = 0;
+        u32 m_configuredSceneSamples = 0;
         f64 m_effectsTestTime = 0;
         u32 m_effectsTestPhase = 0;
         size_t m_effectsTestEmitted = 0;

@@ -2,7 +2,6 @@
 
 #include <Workphone/Scene/Components/CityRoadJunctions.hpp>
 #include <Workphone/Scene/Components/CityRoadTerrainMesh.hpp>
-#include <array>
 
 namespace workphone::scene
 {
@@ -11,7 +10,7 @@ namespace workphone::scene
         u32 roadIndex = 0;
         bool atStart = false;
         Vector3F center{};
-        std::array<Vector3F, 13> edge{}, outward{};
+        SourceBudgetVector<Vector3F> edge, outward;
     };
 
     // Resolve only free tips whose complete cap fits the existing terrain. The

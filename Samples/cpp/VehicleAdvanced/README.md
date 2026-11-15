@@ -76,11 +76,19 @@ For a generated terrain city, `--city-terrain-roads --city-layout lsystem
 accepts 0–2 and affects newly created terrain; regenerating a retained city
 preserves its edited terrain. The hillside camera is cached for the capture and
 its road ID, selected rise, eye and target are written to the evidence JSON.
+Terrain cities on Claw include hillside vegetation. `--foliage-world` also
+enables the managed park tree population in these cities.
 
 With `--view verge`, the sample looks across an open road end from pavement
 level. Use `-Views verge` in the capture harness with `-CityTerrainRoads`.
 The evidence records the selected endpoint camera and counts uploaded planting
 and soil-to-grass transition triangles separately.
+
+On DX11, the terrain-city sample requests 4× scene multisampling at high and
+cinematic quality and 2× at medium. Use `--scene-aa none|msaa2|msaa4` or the
+capture harness `-SceneAA` option for fixed-camera comparisons. Capture
+evidence reports the scene depth target's actual sample count and the final
+resolved image is saved at the requested resolution.
 
 The capture harness accepts `-Views road-edit-before,road-edit-after` with
 `-CityTerrainRoads`. Both views apply the same live spline edit and check exact

@@ -146,6 +146,24 @@ namespace
         require( topAt( walks, 0, 24 ) && topAt( walks, -7, 20 ) && topAt( walks, 7, 20 ) &&
                      !topAt( walks, 0, 22 ), "Terminal footway fails to wrap the asphalt and join both pavement sides." );
 
+        const auto rim = [&]( double angle, double offset ) {
+            const double radius = s.roads.front().width * .5, depth = 3.;
+            const double c = std::cos( angle ), d = std::sin( angle );
+            const double norm = std::hypot( c / radius, d / depth );
+            return Vector2F( float( radius * c + offset * c / ( radius * norm ) ),
+                             float( 20. + depth * d + offset * d / ( depth * norm ) ) );
+        };
+        constexpr double coarseStep = 3.14159265358979323846 / 12.;
+        for( const double offset : { 0., 2.45 } )
+        {
+            // The midpoint between the old chord and smooth ellipse belongs
+            // to both refinements, for the road edge and outer footway alike.
+            const auto oldChord = ( rim( 0., offset ) + rim( coarseStep, offset ) ) * .5f;
+            const auto point = ( oldChord + rim( coarseStep * .5, offset ) ) * .5f;
+            require( topAt( offset == 0. ? asphalt : walks, point.x, point.y ),
+                     "Wide road end retained a coarse terminal chord." );
+        }
+
         data->holes.assign( 128 * 128, 0 );
         data->holes[85 * 128 + 64] = 1;  // x [0,1], z [21,22], beyond the authored endpoint.
         check( buildCityRoadTerrainMesh( s, bake, data, {}, asphalt, error ), error );

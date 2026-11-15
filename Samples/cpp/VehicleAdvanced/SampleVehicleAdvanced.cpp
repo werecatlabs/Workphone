@@ -17,6 +17,7 @@
 #include <Workphone/Scene/Systems/LODSystem.hpp>
 #include <Workphone/Physics/RaycastHit.hpp>
 #include <Workphone/Core/Properties.hpp>
+#include <Workphone/Graphics/FoliageData.hpp>
 #include <Workphone/Scene/Components/CityRoadAuthoring.hpp>
 #include <Workphone/Scene/Components/CityRoadJunctions.hpp>
 #include <Workphone/Scene/Components/CityRoadTerrainFit.hpp>
@@ -40,6 +41,9 @@
 #    include <workphone_graphics_object.h>
 #    include "MaterialSceneCpuWorkload.h"
 #    include "MaterialSceneCpuEdits.h"
+#    if defined( _WIN32 )
+#        include <d3d11.h>
+#    endif
 #endif
 
 #ifdef _WP_STATIC_LIB_
@@ -796,8 +800,11 @@ namespace workphone
             bool valid=false,binding=false,revisions=false,renderer=false,route=false,islands=false,support=false,flatFallbackAbsent=false;
             bool roadPBRBindingsReady=false;
             u32 roadPBRTextures=0,roadPBRMaterials=0;
+            s32 asphaltAlbedoWidth=0;
+            bool markingAlphaBlend=false;
             bool footwayReady=false,footwayCollisionReady=false;
             u32 footwayActors=0,footwayNativeRayProbes=0,footwayRayCandidates=0;
+            size_t fittedBoundaries = 0, boundaryCollisionProbes = 0;
             f32 footwayRayHeightError=-1;
             size_t roads=0,junctions=0,triangles=0,routePoints=0,islandsChecked=0,rayProbes=0,buildingBodies=0,expectedBuildingBodies=0;
             f32 routeHeightError=0, roadRayCurveDeviation=0;
@@ -861,11 +868,34 @@ namespace workphone
             for(const auto &lot:assets.cityLayout.lots)result.expectedBuildingBodies+=procedural::OpenCityLayout::buildingVolumes(lot).size();
             result.flatFallbackAbsent=assets.ground && terrain->getActor()==assets.ground;
             SmartPtr<scene::IGameActor> footway;
+            std::array<SmartPtr<scene::IGameActor>, 4> boundaries{};
             for(const auto &actor:assets.actors)if(actor)
             {
                 if(actor->getName().find("Trackside collision: City building mass")==0)++result.buildingBodies;
                 if(actor->getName()=="Circuit collision plane")result.flatFallbackAbsent=false;
                 if(actor->getName()=="Terrain city footways"){footway=actor;++result.footwayActors;}
+                if( actor->getName() == "Terrain city boundary" && result.fittedBoundaries < boundaries.size() )
+                    boundaries[result.fittedBoundaries++] = actor;
+            }
+            if( result.fittedBoundaries == boundaries.size() )
+            {
+                const float edge = assets.cityLayout.extent + 20;
+                for( const auto normal : { Vector3F( 1, 0, 0 ), Vector3F( -1, 0, 0 ),
+                                           Vector3F( 0, 0, 1 ), Vector3F( 0, 0, -1 ) } )
+                {
+                    auto point = normal * edge + Vector3F( normal.z, 0, normal.x ) * ( edge * .51f );
+                    if( !render::sampleTerrainHeight( *sourceTerrain, authoring->getTerrainPlacement(), point, point.y ) )
+                        continue;
+                    point.y += .60f;
+                    Vector3F hit, hitNormal;
+                    SmartPtr<ISharedObject> object;
+                    if( physics->intersects( point - normal * 2.f, point + normal * 2.f, hit, hitNormal, object ) &&
+                        std::abs( ( hit - point ).dotProduct( normal ) + .5f ) < .04f &&
+                        std::any_of( boundaries.begin(), boundaries.end(), [&]( const auto &actor ) {
+                            const auto body = actor->template getComponent<scene::Rigidbody>();
+                            return body && object == body->getRigidStatic();
+                        } ) ) ++result.boundaryCollisionProbes;
+                }
             }
             result.support=assets.cityBuildingSupportValid && assets.cityBuildingSupportChecks>=assets.cityLayout.lots.size() && result.buildingBodies==result.expectedBuildingBodies && result.buildingBodies>0;
             if(footway && result.footwayActors==1)
@@ -919,13 +949,19 @@ namespace workphone
                 if(!material){mapsReady=false;continue;}
                 const auto materialName=material->getName();SourceBudgetText key(materialName.data(),materialName.size());
                 if(key.empty() || !materialNames.insert(key).second){mapsReady=false;continue;}
+                if( layer == 0 )
+                {
+                    if( auto albedo = material->getTexture( 0 ) ) result.asphaltAlbedoWidth = albedo->getSize().x;
+                }
+                if( layer == 3 ) result.markingAlphaBlend = material->isTransparent() && material->getBlendMode() == 1;
                 const auto uploaded=[&](u32 slot) {auto texture=material->getTexture(slot);void *native=nullptr;if(texture)texture->getTextureFinal(&native);if(native)textures.insert(texture.get());else mapsReady=false;};
                 uploaded(0);if(layer!=3)for(const u32 slot:{1u,22u,3u,2u})uploaded(slot);
             }
             result.roadPBRMaterials=u32(materialNames.size());result.roadPBRTextures=u32(textures.size());const bool junctions=!source.roundabouts.empty();
             result.roadPBRBindingsReady=mapsReady && layers[0]==1 && layers[3]==1 && layers[1]==(junctions?1u:0u) && layers[2]==(junctions?1u:0u) &&
                 result.roadPBRMaterials==(junctions?4u:2u) && result.roadPBRTextures==(junctions?16u:6u);
-            result.valid=result.binding && result.revisions && result.renderer && result.route && result.islands && result.support && result.flatFallbackAbsent && terrainProbe && result.rayProbes==4 && result.roads>0 && result.triangles>0 && result.roadPBRBindingsReady && result.footwayReady;
+            result.valid=result.binding && result.revisions && result.renderer && result.route && result.islands && result.support && result.flatFallbackAbsent && terrainProbe && result.rayProbes==4 && result.roads>0 && result.triangles>0 && result.roadPBRBindingsReady && result.footwayReady &&
+                         ( result.fittedBoundaries < boundaries.size() || result.boundaryCollisionProbes == boundaries.size() );
             return result;
         }
 
@@ -1074,6 +1110,34 @@ namespace workphone
             applicationManager->setApplication( this );
 
             Application::load( data );
+#if WP_GRAPHICS_SYSTEM_CLAW && defined( _WIN32 )
+            if( m_preferredSceneSamples == 0 && m_cityTerrainRoads &&
+                m_quality != procedural::VehicleAppearanceQuality::Preview )
+            {
+                m_preferredSceneSamples =
+                    m_quality == procedural::VehicleAppearanceQuality::Standard ? 2 : 4;
+            }
+            if( m_preferredSceneSamples != 0 )
+            {
+                auto graphics = applicationManager->getGraphicsSystem();
+                auto pipeline = graphics->getGraphicsPipeline();
+                auto renderer = dynamic_cast<render::ClawRendererDX11 *>( graphics->getRendererPtr() );
+                if( pipeline && renderer )
+                {
+                    const auto native = wp_renderer_get_dx11( renderer->getNativeRenderer() );
+                    const auto supportedSamples = wp_renderer_dx11_supported_scene_samples( native );
+                    auto samples = m_preferredSceneSamples;
+                    while( samples > 1 && !( supportedSamples & samples ) ) samples /= 2;
+                    auto options = workphone::make_ptr<Properties>();
+                    const s32 aaMode = samples == 4 ? 4 : ( samples == 2 ? 3 : 0 );
+                    options->setProperty( "graphics.antiAliasing", aaMode );
+                    pipeline->setProperties( options );
+                    m_configuredSceneSamples = samples;
+                    if( samples != m_preferredSceneSamples )
+                        WP_LOG_WARNING( "VehicleAdvanced: the device selected a lower supported MSAA sample count." );
+                }
+            }
+#endif
 #if WP_GRAPHICS_SYSTEM_CLAW
             if( m_sceneProfile )
             {
@@ -1514,6 +1578,7 @@ namespace workphone
                 if(m_materialEdits && m_sceneProfile) m_sceneProfile->setMaterialEditEvidence(m_materialEdits->json());
 #endif
                 bool linearSceneValid = true;
+                bool sceneSamplingValid = true;
                 size_t treeMeshes = 0, treeImposters = 0;
                 bool treeLODValid = m_terrainGameplay || m_assets.openCity || m_assets.useFoliageWorld || !m_assets.treeLODs.empty();
                 for( const auto &group : m_assets.treeLODs )
@@ -1719,6 +1784,15 @@ namespace workphone
                                  << ",\"eye\":[" << m_cityHillsideEye.x << ',' << m_cityHillsideEye.y << ',' << m_cityHillsideEye.z
                                  << "],\"target\":[" << m_cityHillsideTarget.x << ',' << m_cityHillsideTarget.y << ',' << m_cityHillsideTarget.z << "]}";
                     }
+                    if( m_captureView == "frontage" && m_assets.cityTerrainRoads && !m_orbitCamera )
+                    {
+                        const auto eye = m_cityHasJunction ? m_cityFrontageEye :
+                                         m_cityStreetCentre + Vector3F( 0, 4, 0 );
+                        const auto target = m_cityHasJunction ? m_cityFrontageTarget :
+                            m_cityStreetCentre + m_cityStreetForward * 40.f + Vector3F( 0, 5, 0 );
+                        evidence << ",\n  \"cityFrontageCamera\":{\"eye\":[" << eye.x << ',' << eye.y << ',' << eye.z
+                                 << "],\"target\":[" << target.x << ',' << target.y << ',' << target.z << "]}";
+                    }
                 }
                 if(m_assets.cityTerrainRoads)
                 {
@@ -1800,12 +1874,14 @@ namespace workphone
                         <<",\"groundORM\":"<<advanced::jsonString(snapshot?snapshot->layers[0].orm:String())
                         <<",\"groundSourceRoot\":"<<advanced::jsonString(app->getProjectPath())
                         <<",\"roadPBRBindingsReady\":"<<(check.roadPBRBindingsReady?"true":"false")<<",\"roadPBRTextures\":"<<check.roadPBRTextures<<",\"roadPBRMaterials\":"<<check.roadPBRMaterials
+                        <<",\"asphaltAlbedoWidth\":"<<check.asphaltAlbedoWidth<<",\"markingAlphaBlend\":"<<(check.markingAlphaBlend?"true":"false")
                         <<",\"footwayReady\":"<<(check.footwayReady?"true":"false")<<",\"footwayCollisionReady\":"<<(check.footwayCollisionReady?"true":"false")
                         <<",\"footwayActors\":"<<check.footwayActors<<",\"footwayNativeRayProbes\":"<<check.footwayNativeRayProbes<<",\"footwayRayCandidates\":"<<check.footwayRayCandidates<<",\"footwayRayHeightError\":"<<check.footwayRayHeightError
                         <<",\"routeSamples\":"<<check.routePoints<<",\"routeDriveable\":"<<(check.route?"true":"false")<<",\"routeMaximumHeightError\":"<<check.routeHeightError
                         <<",\"raceRouteAvailable\":"<<(m_assets.cityRaceRouteAvailable?"true":"false")<<",\"raceRouteError\":"<<advanced::jsonString(m_assets.cityRaceRouteError)
                         <<",\"islandCentresChecked\":"<<check.islandsChecked<<",\"islandsExcluded\":"<<(check.islands?"true":"false")
                         <<",\"nativeRayProbesPassed\":"<<check.rayProbes<<",\"flatFallbackAbsent\":"<<(check.flatFallbackAbsent?"true":"false")
+                        <<",\"fittedBoundaries\":"<<check.fittedBoundaries<<",\"boundaryCollisionProbes\":"<<check.boundaryCollisionProbes
                         <<",\"roadRayCurveDeviationMetres\":"<<check.roadRayCurveDeviation
                         <<",\"lots\":"<<layout.lots.size()<<",\"buildingLots\":"<<layout.lots.size()-parks<<",\"parkLots\":"<<parks
                         <<",\"buildingCollisionActors\":"<<check.buildingBodies<<",\"expectedBuildingCollisionActors\":"<<check.expectedBuildingBodies
@@ -1814,6 +1890,26 @@ namespace workphone
                         <<",\"streetDetailActors\":"<<streetDetailActors<<",\"streetDetailRenderersReady\":"<<(streetDetailRenderersReady?"true":"false")
                         <<",\"streetDetailPlacementsRequired\":"<<(expectStreetDetail?"true":"false")<<",\"streetDetailValid\":"<<(streetDetailValid?"true":"false")
                         <<",\"buildingSupportValid\":"<<(check.support?"true":"false")<<",\"structuralValidation\":"<<(cityValid?"true":"false")<<"}";
+                    if( snapshot )
+                    {
+                        std::array<double, 4> totals{};
+                        const auto samples = snapshot->layerWeights.size();
+                        if( !samples ) totals[0] = 1.0;
+                        for( const auto &weights : snapshot->layerWeights )
+                            for( s32 layer = 0; layer < 4; ++layer ) totals[layer] += weights[layer];
+                        evidence << ",\n  \"cityGroundLayers\":[";
+                        for( size_t i = 0; i < snapshot->layers.size(); ++i )
+                        {
+                            const auto &layer = snapshot->layers[i];
+                            if( i ) evidence << ',';
+                            evidence << "{\"index\":" << i
+                                     << ",\"meanWeight\":" << totals[i] / std::max<size_t>( 1, samples )
+                                     << ",\"albedo\":" << advanced::jsonString( layer.albedo )
+                                     << ",\"normal\":" << advanced::jsonString( layer.normal )
+                                     << ",\"orm\":" << advanced::jsonString( layer.orm ) << '}';
+                        }
+                        evidence << ']';
+                    }
                     if(!cityValid)WP_LOG_ERROR("Terrain city: source, fitted route, native collision, building support or uploaded road PBR bindings validation failed.");
                 }
                 else if(m_assets.cityRoadShowcase)
@@ -1967,6 +2063,54 @@ namespace workphone
                              << ", \"geometryBytes\": " << foliage.geometryBytes
                              << ", \"uploadBytes\": " << foliage.uploadBytes
                              << ", \"error\": " << advanced::jsonString( foliage.error ) << "}";
+                    if( const auto world = m_assets.foliageTerrain->getFoliageSnapshot();
+                        m_assets.cityTerrainRoads && world )
+                    {
+                        const auto source = m_assets.roadAuthoring;
+                        const auto terrain = source ? source->getTerrainSnapshot() : nullptr;
+                        size_t trees = 0, shrubs = 0, grasses = 0;
+                        size_t terrainRoots = 0, parkRoots = 0;
+                        float deepestRoot = 0;
+                        for( const auto &instance : world->instances )
+                        {
+                            const auto kind = world->species[instance.species]->kind;
+                            trees += kind == render::FoliageKind::Tree;
+                            shrubs += kind == render::FoliageKind::Bush;
+                            grasses += kind == render::FoliageKind::Grass;
+                            if( !terrain ) continue;
+
+                            const auto p = instance.position;
+                            if( m_assets.useFoliageWorld && kind == render::FoliageKind::Tree &&
+                                std::any_of( m_assets.cityLayout.lots.begin(), m_assets.cityLayout.lots.end(),
+                                    [&]( const auto &lot ) {
+                                        return lot.park && std::abs( p.x - lot.parcelX ) <= lot.parcelWidth * .5f &&
+                                               std::abs( p.z - lot.parcelZ ) <= lot.parcelDepth * .5f &&
+                                               std::abs( p.y - ( lot.groundHeight + .16f ) ) <= .01f;
+                                    } ) )
+                            {
+                                ++parkRoots;
+                                continue;
+                            }
+                            float height = 0;
+                            if( render::sampleTerrainHeight( *terrain, source->getTerrainPlacement(), p, height ) &&
+                                p.y <= height + .015f && p.y >= height - .15f )
+                            {
+                                ++terrainRoots;
+                                deepestRoot = std::max( deepestRoot, height - p.y );
+                            }
+                        }
+                        evidence << ",\n  \"cityFoliagePopulation\": {\"trees\":" << trees
+                                 << ",\"shrubs\":" << shrubs << ",\"grassTufts\":" << grasses
+                                 << ",\"species\":" << world->species.size() << '}';
+                        const auto failedRoots = world->instances.size() - terrainRoots - parkRoots;
+                        const bool rootsValid = terrain && !failedRoots;
+                        evidence << ",\n  \"cityFoliageRoots\": {\"terrain\":" << terrainRoots
+                                 << ",\"parkPads\":" << parkRoots << ",\"failed\":" << failedRoots
+                                 << ",\"maximumTerrainInsetMetres\":" << deepestRoot
+                                 << ",\"valid\":" << ( rootsValid ? "true" : "false" ) << '}';
+                        foliageValid = foliageValid && rootsValid;
+                        if( !rootsValid ) WP_LOG_ERROR( "Terrain city: foliage root height does not match terrain or park support." );
+                    }
                 }
 #if WP_GRAPHICS_SYSTEM_CLAW
                 // Consume the completed render-task snapshot: querying the C system
@@ -2015,6 +2159,22 @@ namespace workphone
                     WP_LOG( report.str() );
                     const auto native = wp_renderer_get_dx11( renderer->getNativeRenderer() );
                     const auto hdrPasses = wp_renderer_dx11_get_hdr_completed_frames( native );
+                    u32 actualSamples = 1;
+                    if( auto depth = static_cast<ID3D11Texture2D *>(
+                            wp_renderer_dx11_get_scene_depth_texture( native ) ) )
+                    {
+                        D3D11_TEXTURE2D_DESC descriptor{};
+                        depth->GetDesc( &descriptor );
+                        actualSamples = descriptor.SampleDesc.Count;
+                    }
+                    sceneSamplingValid = m_configuredSceneSamples == 0 ||
+                                         actualSamples == m_configuredSceneSamples;
+                    if( !sceneSamplingValid )
+                        WP_LOG_ERROR( "VehicleAdvanced: the native scene did not use the configured sample count." );
+                    evidence << ",\n  \"sceneSampling\": {\"requestedSamples\": " << m_preferredSceneSamples
+                             << ", \"configuredSamples\": " << m_configuredSceneSamples
+                             << ", \"actualSamples\": " << actualSamples
+                             << ", \"matched\": " << ( sceneSamplingValid ? "true" : "false" ) << '}';
                     const auto pipeline = app->getGraphicsSystem()->getGraphicsPipeline();
                     const bool hdrRequested = pipeline && pipeline->getHdrSettings().m_enableAgxToneMapping;
                     const bool hdrActive = hdrRequested && hdrPasses > 0;
@@ -2057,13 +2217,17 @@ namespace workphone
                     {
                         const auto direction = light->getDerivedDirection();
                         const auto power = light->getPowerScale();
+                        const auto colour = light->getDiffuseColour();
+                        const auto ambient = scene->getAmbientLight();
                         sunlightValid = sunlightValid && std::isfinite( direction.x ) &&
                             std::isfinite( direction.y ) && std::isfinite( direction.z ) &&
                             direction.lengthSquared() > .99f && std::isfinite( power ) && power > 0;
                         evidence << ",\n  \"primarySun\": {\"matchesProceduralSky\": "
                                  << ( sunlightValid ? "true" : "false" ) << ", \"power\": " << power
                                  << ", \"direction\": [" << direction.x << ", " << direction.y
-                                 << ", " << direction.z << "]}";
+                                 << ", " << direction.z << "], \"colour\": [" << colour.r << ", "
+                                 << colour.g << ", " << colour.b << "], \"ambient\": [" << ambient.r
+                                 << ", " << ambient.g << ", " << ambient.b << "]}";
                     }
                     if( !sunlightValid ) WP_LOG_ERROR( "VehicleAdvanced: primary sunlight does not match the generated sky." );
                 }
@@ -2076,7 +2240,7 @@ namespace workphone
                 const bool windingValid = checkSceneWinding( m_assets );
                 m_capturePassed = ( m_capturePath.empty() || advanced::captureFrame( m_capturePath ) ) &&
                                   treeLODValid && vehicleLODValid && reflectionValid && windingValid &&
-                                  nativeFrameValid && foliageValid && radianceValid && sunlightValid && linearSceneValid && cityValid &&
+                                  nativeFrameValid && foliageValid && radianceValid && sunlightValid && linearSceneValid && sceneSamplingValid && cityValid &&
                                   ( !m_terrainGameplay || m_terrainSurfacesValidated );
                 evidence << ",\n  \"validationPassed\": " << ( m_capturePassed ? "true" : "false" )
                          << ",\n  \"visualAcceptance\": \"unreviewed\",\n"
@@ -4216,6 +4380,7 @@ int main( int argc, char **argv )
                    "  --export-terrain-gameplay NEW_DIR  Export its source-free asset closure, then exit\n"
                    "  --terrain-gameplay-package DIR  Load packaged terrain and authoritative vehicle recipe\n"
                    "  --resolution WIDTHxHEIGHT     Set the review window resolution\n"
+                   "  --scene-aa none|msaa2|msaa4   Choose DX11 scene multisampling\n"
                    "  --no-audio                    Disable vehicle sounds\n"
                    "  --audio-smoke-test            Check idle, redline, skid and mute playback\n"
                    "  --no-effects                  Disable particles and skid decals\n"
@@ -4261,6 +4426,7 @@ int main( int argc, char **argv )
     s32 forcedVehicleLOD = -1;
     f64 benchmarkSeconds = 0;
     u32 width = 1280, height = 720;
+    u32 sceneSamples = 0;
     try
     {
         for( int i = 1; i < argc; ++i )
@@ -4275,6 +4441,15 @@ int main( int argc, char **argv )
             { terrainGameplay = true; terrainGameplayPackageDirectory = argv[++i]; }
             else if( String( argv[i] ) == "--no-audio" )
                 audioEnabled = false;
+            else if( String( argv[i] ) == "--scene-aa" )
+            {
+                if( i + 1 >= argc ) throw std::runtime_error( "--scene-aa requires none, msaa2 or msaa4." );
+                const std::string_view mode( argv[++i] );
+                if( mode == "none" ) sceneSamples = 1;
+                else if( mode == "msaa2" ) sceneSamples = 2;
+                else if( mode == "msaa4" ) sceneSamples = 4;
+                else throw std::runtime_error( "--scene-aa requires none, msaa2 or msaa4." );
+            }
             else if( String( argv[i] ) == "--audio-smoke-test" )
                 audioSmokeTest = true;
             else if( String( argv[i] ) == "--no-effects" )
@@ -4593,6 +4768,7 @@ int main( int argc, char **argv )
         app->setEffectsOptions( effectsEnabled, effectsSmokeTest, effectsCapture );
         app->setCapture( capturePath, captureView );
         app->setReviewOptions( hud, forcedLOD, forcedVehicleLOD, benchmarkSeconds, orbit, width, height );
+        app->setSceneAA( sceneSamples );
         app->setEvidenceOptions( evidencePath, replayPath, std::move( replayControls ) );
         app->setFoliageWorldEnabled( foliageWorld );
         app->setCityOptions( openCity, cityBlocks, cityRoute, cityNaturalRoads );
