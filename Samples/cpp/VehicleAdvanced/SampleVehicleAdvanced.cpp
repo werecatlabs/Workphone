@@ -2002,12 +2002,50 @@ namespace workphone
                     evidence << "}}";
                     if( requestedOverrides && !overridesApplied )
                         WP_LOG_ERROR( "City building mesh override was not applied. " + m_assets.cityBuildingKitDiagnostic );
-                    if( m_captureView == "facade" || m_captureView == "building" )
+                    if( m_captureView == "facade" || m_captureView == "building" || m_captureView == "shopfront" )
                     {
                         evidence << ",\n  \"cityFacadeCamera\": {\"lotId\":\"" << m_cityFacadeLotId
                                  << "\",\"eye\":[" << m_cityFacadeEye.x << ',' << m_cityFacadeEye.y << ',' << m_cityFacadeEye.z
                                  << "],\"target\":[" << m_cityFacadeTarget.x << ',' << m_cityFacadeTarget.y << ','
                                  << m_cityFacadeTarget.z << "]}";
+                        if( m_captureView == "shopfront" )
+                        {
+                            const auto &lots = m_assets.cityLayout.lots;
+                            const auto lot = std::find_if( lots.begin(), lots.end(), [&]( const auto &item ) {
+                                return item.id == m_cityFacadeLotId && !item.park &&
+                                       item.district == procedural::OpenCityLayout::District::Commercial;
+                            } );
+                            const auto eye = m_cameraActor->getWorldTransform().getPosition();
+                            const bool valid = lot != lots.end() && ( eye - m_cityFacadeEye ).lengthSquared() < .0001f;
+                            cityValid = cityValid && valid;
+                            size_t stepHits = 0;
+                            const auto stepActor = std::find_if( m_assets.actors.begin(), m_assets.actors.end(),
+                                []( const auto &actor ) { return actor && actor->getName() == "Terrain city raised entrance steps"; } );
+                            auto physics = app->getPhysicsManager()->getPhysicsScene();
+                            if( valid && physics && stepActor != m_assets.actors.end() )
+                            {
+                                const auto rigid = ( *stepActor )->getComponent<scene::Rigidbody>();
+                                const auto body = rigid ? rigid->getRigidStatic() : nullptr;
+                                const auto direction = eye - m_cityFacadeTarget;
+                                const auto outward = std::abs( direction.x ) > std::abs( direction.z )
+                                    ? Vector3F( std::copysign( 1.f, direction.x ), 0, 0 )
+                                    : Vector3F( 0, 0, std::copysign( 1.f, direction.z ) );
+                                const Vector3F side( -outward.z, 0, outward.x );
+                                const auto sill = m_cityFacadeTarget - Vector3F( 0, 1.78f, 0 );
+                                for( const float along : { 0.f, -.77f, .77f, -1.48f, 1.48f } )
+                                    for( const float distance : { .42f, .79f, 1.23f, 1.64f, 2.17f, 2.83f, 3.64f } )
+                                    {
+                                        const auto p = sill + outward * distance + side * along;
+                                        Vector3F hit, normal;
+                                        SmartPtr<ISharedObject> object;
+                                        if( body && physics->intersects( p + Vector3F( 0, .35f, 0 ),
+                                            p - Vector3F( 0, 1.75f, 0 ), hit, normal, object ) &&
+                                            object == body && normal.y > .65f ) ++stepHits;
+                                    }
+                            }
+                            evidence << ",\n  \"cityShopfrontCameraValid\":" << ( valid ? "true" : "false" )
+                                     << ",\n  \"cityShopfrontStepHits\":" << stepHits;
+                        }
                     }
                     if( m_captureView == "corner" && !m_assets.circuit.samples.empty() )
                     {
@@ -4102,7 +4140,8 @@ namespace workphone
         m_cityStreetForward = { 0, 0, -1 };
         m_cityHasJunction=false;m_cityJunctionCentre=m_cityBoulevardCentre={};m_generatedSpawnPosition=m_vehicleActor->getPosition();
         const auto selectFacade = [&]( const procedural::OpenCityLayout &layout ) {
-            if( m_captureView != "facade" && m_captureView != "building" )
+            const bool shopfront = m_captureView == "shopfront";
+            if( m_captureView != "facade" && m_captureView != "building" && !shopfront )
                 return;
             const auto anchor = m_cityHasJunction ? m_cityJunctionCentre : m_cityOverviewCentre;
             const procedural::OpenCityLayout::Lot *selected = nullptr;
@@ -4113,7 +4152,7 @@ namespace workphone
             float visibleFrontageDistance = std::numeric_limits<float>::max();
             for( const auto &lot : layout.lots )
             {
-                if( lot.park ) continue;
+                if( lot.park || ( shopfront && lot.district != procedural::OpenCityLayout::District::Commercial ) ) continue;
                 const float distance = Vector3F( lot.x - anchor.x, 0, lot.z - anchor.z ).lengthSquared();
                 if( distance < nearest || ( selected && distance == nearest && lot.id < selected->id ) )
                 {
@@ -4168,6 +4207,12 @@ namespace workphone
                               along * std::min( span * .16f, 7.f );
             m_cityFacadeEye.y += 2.8f;
             m_cityFacadeTarget = face + Vector3F( 0, std::min( 5.5f, volume.height * .47f ), 0 );
+            if( shopfront )
+            {
+                m_cityFacadeEye = face + outward * std::clamp( span * .72f, 12.f, 18.f ) +
+                                  along * std::min( span * .18f, 3.2f ) + Vector3F( 0, 1.7f, 0 );
+                m_cityFacadeTarget = face + Vector3F( 0, 1.95f, 0 );
+            }
             if( m_captureView == "building" )
             {
                 float top = volume.bottom + volume.height;
@@ -4189,7 +4234,7 @@ namespace workphone
                 float terrainHeight = 0;
                 if( terrain && render::sampleTerrainHeight( *terrain, m_assets.roadAuthoring->getTerrainPlacement(),
                                                             m_cityFacadeEye, terrainHeight ) )
-                    m_cityFacadeEye.y = std::max( m_cityFacadeEye.y, terrainHeight + 2.8f );
+                    m_cityFacadeEye.y = std::max( m_cityFacadeEye.y, terrainHeight + ( shopfront ? 1.82f : 2.8f ) );
             }
         };
         if(m_assets.cityTerrainRoads && m_assets.roadAuthoring && m_assets.roadTerrain)
@@ -4513,7 +4558,7 @@ namespace workphone
                             m_cameraActor->lookAt( Vector3F( 75, 0, -30 ), Vector3F::unitZ() );
                         }
                     }
-                    else if( m_captureView == "facade" || m_captureView == "building" )
+                    else if( m_captureView == "facade" || m_captureView == "building" || m_captureView == "shopfront" )
                     {
                         m_cameraActor->setPosition( m_cityFacadeEye );
                         m_cameraActor->lookAt( m_cityFacadeTarget, Vector3F::unitY() );
@@ -4684,7 +4729,7 @@ int main( int argc, char **argv )
                    "  --track-smoke-test            Drive one full lap through the physics controller\n"
                    "  --collision-smoke-test        Verify native boxes; circuit garage impact or city road/sidewalk grades\n"
                    "  --validate-circuit           Validate 100 generated closed circuits\n"
-                   "  --capture PATH.bmp --view follow|car|track|corner|junction|hillside|street|boulevard|frontage|facade|building|utilities|park   Save a rendered view and "
+                   "  --capture PATH.bmp --view follow|car|track|corner|junction|hillside|street|boulevard|frontage|facade|building|utilities|park|shopfront   Save a rendered view and "
                    "exit\n"
                    "  --no-hud --force-lod auto|0|1  Clean captures and tree LOD comparisons\n"
                    "  --force-vehicle-lod auto|0|1|2  Override the vehicle level (clamped for low)\n"
@@ -4709,6 +4754,7 @@ int main( int argc, char **argv )
                    "  --view frontage               Close sidewalk inspection (requires --city-terrain-roads)\n"
                    "  --view utilities              Close inspection of a fitted carriageway cover and nearby grate\n"
                    "  --view park                   Inspect a generated park parcel from street level\n"
+                   "  --view shopfront              Inspect a commercial entrance from street level\n"
                    "  --view hillside               Inspect a sustained road climb and its surrounding terrain\n"
                    "  --view verge                  Inspect a terrain road end at pavement level\n"
                    "  --view road-edit-before|road-edit-after   Fixed camera after Undo or Redo of a graded road edit\n"
@@ -4977,9 +5023,9 @@ int main( int argc, char **argv )
         }
         if( captureView != "follow" && captureView != "car" && captureView != "track" &&
             captureView != "corner" && captureView != "junction" && captureView != "hillside" && captureView != "verge" && captureView != "street" && captureView != "boulevard" &&
-            captureView != "frontage" && captureView != "facade" && captureView != "building" && captureView != "utilities" && captureView != "park" &&
+            captureView != "frontage" && captureView != "facade" && captureView != "building" && captureView != "utilities" && captureView != "park" && captureView != "shopfront" &&
             !isRoadTerrainEditView( captureView ) )
-            throw std::runtime_error( "View must be follow, car, track, corner, junction, hillside, verge, street, boulevard, frontage, facade, building, utilities, park, road-edit-before, or road-edit-after." );
+            throw std::runtime_error( "View must be follow, car, track, corner, junction, hillside, verge, street, boulevard, frontage, facade, building, utilities, park, shopfront, road-edit-before, or road-edit-after." );
         if( ( cityOptionsExplicit || captureView == "street" || captureView == "boulevard" ) && !openCity )
             throw std::runtime_error( "City options and street-level views require --city." );
         if(roadAuthoringShowcase && foliageWorld)throw std::runtime_error("Road authoring showcase does not provide foliage-world generation.");
@@ -4994,6 +5040,8 @@ int main( int argc, char **argv )
             throw std::runtime_error( "--view utilities requires --city-terrain-roads and a fixed camera." );
         if( captureView == "park" && ( !cityTerrainRoads || orbit ) )
             throw std::runtime_error( "--view park requires --city-terrain-roads and a fixed camera." );
+        if( captureView == "shopfront" && ( !cityTerrainRoads || orbit ) )
+            throw std::runtime_error( "--view shopfront requires --city-terrain-roads and a fixed camera." );
         if( captureView == "junction" && !cityTerrainRoads )
             throw std::runtime_error( "--view junction requires --city-terrain-roads." );
         if( captureView == "hillside" && !cityTerrainRoads )

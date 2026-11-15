@@ -94,6 +94,95 @@
                 return float( render::foliageStableHash( key ) >> 40 ) / 16777216.f;
             }
 
+            struct RaisedApproach
+            {
+                float end = 0;
+                float height = 0;
+                int risers = 0;
+            };
+
+            template <class Surface, class Clear>
+            RaisedApproach buildRaisedApproach( const Entry &entry, float depth, float half,
+                                                Vector3F floor, const Surface &surface,
+                                                const Clear &clear, Geometry &stairs )
+            {
+                constexpr float landing = .83f, tread = .34f, apronRun = .96f;
+                constexpr int maxRisers = 9;
+                const auto outward = entry.outward, along = entry.along;
+                const float start = std::max( .025f, depth + .005f );
+                const auto point = [&]( float s, float u ) { return floor + outward * s + along * u; };
+                const auto supported = [&]( float s, std::array<Vector3F, 3> &row ) {
+                    row = { point( s, -half ), point( s, 0 ), point( s, half ) };
+                    return std::all_of( row.begin(), row.end(), [&]( auto &p ) { return surface( p ); } );
+                };
+                std::array<Vector3F, 3> upperGround{};
+                if( !supported( start + .24f, upperGround ) || floor.y - upperGround[1].y < .055f ) return {};
+                for( int count = 1; count <= maxRisers; ++count )
+                {
+                    const float end = start + landing + count * tread;
+                    if( !clear( point( start, -half ), point( end + apronRun, half ) ) ) continue;
+                    std::array<Vector3F, 3> lastTread{}, bottom{}, outer{};
+                    if( !supported( end - tread, lastTread ) || !supported( end, bottom ) ||
+                        !supported( end + apronRun, outer ) ) continue;
+                    const float base = std::max( { lastTread[0].y, lastTread[1].y, lastTread[2].y,
+                                                   bottom[0].y, bottom[1].y, bottom[2].y } );
+                    const float riser = ( floor.y - base ) / count;
+                    if( riser < ( count == 1 ? .060f : .10f ) || riser > .181f ||
+                        base - std::min( bottom.front().y, bottom.back().y ) > .27f ||
+                        std::abs( outer[1].y - base ) > .24f ||
+                        std::abs( outer[0].y - outer[2].y ) > .25f ) continue;
+                    auto midpoint = ( bottom.front() + outer.back() ) * .5f;
+                    const float apronMiddle = ( base + outer.back().y ) * .5f;
+                    if( !surface( midpoint ) || midpoint.y > apronMiddle + .028f ||
+                        apronMiddle - midpoint.y > .12f ) continue;
+
+                    std::array<std::array<Vector3F, 3>, maxRisers + 2> ground{};
+                    bool fits = supported( start, ground[0] );
+                    for( int row = 1; fits && row <= count + 1; ++row )
+                    {
+                        const float s = start + landing + ( row - 1 ) * tread;
+                        fits = supported( s, ground[row] );
+                        const float top = floor.y - std::min( row, count ) * riser;
+                        for( const auto p : ground[row] ) fits = fits && p.y <= top + .025f && top - p.y <= 1.55f;
+                    }
+                    if( !fits ) continue;
+
+                    const auto cheek = [&]( Vector3F lowerA, Vector3F lowerB, Vector3F topA,
+                                            Vector3F topB, Vector3F normal ) {
+                        lowerA.y = std::min( lowerA.y - .030f, topA.y );
+                        lowerB.y = std::min( lowerB.y - .030f, topB.y );
+                        if( std::max( topA.y - lowerA.y, topB.y - lowerB.y ) > .035f )
+                            stairs.quad( lowerA, lowerB, topB, topA, normal );
+                    };
+                    for( int step = 0; step <= count; ++step )
+                    {
+                        const auto &a = ground[step], &b = ground[step + 1];
+                        const float y = floor.y - step * riser;
+                        auto ll = a.front(), lr = a.back(), farLeft = b.front(), farRight = b.back();
+                        ll.y = lr.y = farLeft.y = farRight.y = y;
+                        stairs.quad( ll, lr, farRight, farLeft, { 0, 1, 0 } );
+                        cheek( a.front(), b.front(), ll, farLeft, -along );
+                        cheek( a.back(), b.back(), lr, farRight, along );
+                        if( step < count )
+                        {
+                            const auto drop = Vector3F( 0, riser, 0 );
+                            stairs.quad( farLeft - drop, farRight - drop, farRight, farLeft, outward );
+                        }
+                    }
+                    // Level treads can meet a bank with crossfall. Close both shoulders
+                    // of the landing as it tapers down to the existing terrain.
+                    auto apronLeft = bottom.front(), apronRight = bottom.back();
+                    apronLeft.y = apronRight.y = base;
+                    auto normal = ( apronRight - apronLeft ).crossProduct( outer.front() - apronLeft ).normaliseCopy();
+                    if( normal.y < 0 ) normal = -normal;
+                    stairs.quad( apronLeft, apronRight, outer.back(), outer.front(), normal );
+                    cheek( bottom.front(), outer.front(), apronLeft, outer.front(), -along );
+                    cheek( bottom.back(), outer.back(), apronRight, outer.back(), along );
+                    return { end + apronRun, outer[1].y, count };
+                }
+                return {};
+            }
+
             void buildFoundationFacing( const OpenCityLayout &city, const render::TerrainData &terrain,
                                         const Transform3<real_Num> &placement, Geometry ( &courses )[2],
                                         Geometry &caps )
@@ -198,7 +287,7 @@
                                    z1 > other.parcelZ - other.parcelDepth * .5f;
                         } );
                 };
-                Geometry approach, gravel, stoneEdge, courses[2], caps, risers;
+                Geometry approach, gravel, stoneEdge, courses[2], caps, risers, stairs;
                 buildFoundationFacing( assets.cityLayout, *terrain, placement, courses, caps );
                 FrontagePlanting planting( assets.cityStreetDetail );
                 const Vector3F up( 0, 1, 0 );
@@ -207,7 +296,7 @@
                     p.y += .028f;
                     return true;
                 };
-                size_t contacts = 0, connections = 0;
+                size_t contacts = 0, connections = 0, raised = 0;
                 for( const auto &entry : entries )
                 {
                     const auto &lot = *entry.lot;
@@ -226,6 +315,17 @@
                     const auto groundClear = [&]( Vector3F a, Vector3F b ) {
                         return footprintClear( a, b, &lot );
                     };
+                    const auto landing = lot.district == OpenCityLayout::District::Commercial
+                        ? buildRaisedApproach( entry, depth, half, floor, surface, groundClear, stairs )
+                        : RaisedApproach{};
+                    if( landing.end > 0 )
+                    {
+                        ++raised;
+                        planting.reserveAccess( entry.door - along * ( half + .12f ),
+                                                 entry.door + normal * landing.end + along * ( half + .12f ) );
+                        WP_LOG( String( "Terrain city raised entrance lot=" ) + StringUtil::toString( lot.id ) +
+                                ", risers=" + StringUtil::toString( landing.risers ) );
+                    }
                     const auto strip = [&]( Geometry &geometry, float left, float right, float start,
                                             float finish, float lift ) {
                         if( right - left < .035f || finish - start < .035f ) return;
@@ -281,7 +381,7 @@
                         strip( approach, -half, half, .009f, depth, 0 );
                         strip( stoneEdge, -half, half, .009f, std::min( .22f, depth ), .006f );
                     }
-                    else
+                    else if( !landing.end )
                     {
                         groundStrip( stoneEdge, -half, half, .020f, .24f, true );
                     }
@@ -320,7 +420,8 @@
 
                     const int segments = std::max( 1, int( std::ceil( span / .85f ) ) );
                     std::array<std::pair<Vector3F, Vector3F>, 21> rows;
-                    const float approachStart = setback ? .015f : .24f;
+                    const float approachStart = landing.end > 0 ? landing.end - depth : setback ? .015f : .24f;
+                    const float startHeight = landing.end > 0 ? landing.height : floor.y;
                     if( std::min( l, r ) - .10f <= approachStart ) continue;
                     bool grounded = true;
                     for( int row = 0; row <= segments; ++row )
@@ -332,7 +433,7 @@
                         grounded = surface( a ) && surface( b ) && surface( centre ) &&
                                    std::abs( ( a.y + b.y ) * .5f - centre.y ) < .025f;
                         if( row == 0 )
-                            grounded = grounded && floor.y >= centre.y - .05f && floor.y - centre.y < .39f;
+                            grounded = grounded && startHeight >= centre.y - .05f && startHeight - centre.y < .39f;
                         else
                         {
                             const auto &last = rows[size_t( row - 1 )];
@@ -406,6 +507,22 @@
                 if( !approach.indices.empty() )
                     publish( "Terrain city building entrance paving", approach,
                              pavingVariant( { .82f, .84f, .80f, 1 }, .86f ) );
+                if( !stairs.indices.empty() )
+                {
+                    auto actor = mesh( assets, "Terrain city raised entrance steps", stairs,
+                                       pavingVariant( { .73f, .75f, .71f, 1 }, 1.0f ) );
+                    if( !actor ) throw std::runtime_error( "Cannot publish terrain-city entrance steps." );
+                    actor->setStatic( true );
+                    const auto resource = actor->getComponent<scene::Mesh>()->getMeshResource();
+                    auto collision = actor->addComponent<CollisionMesh>();
+                    if( !collision ) throw std::runtime_error( "Cannot create terrain-city entrance collision." );
+                    collision->setConvex( false );
+                    collision->setMeshResource( resource );
+                    if( auto shape = dynamic_pointer_cast<physics::IMeshShape>( collision->getShape() ) )
+                        shape->setMeshResource( resource );
+                    if( !actor->addComponent<Rigidbody>() )
+                        throw std::runtime_error( "Cannot create terrain-city entrance rigidbody." );
+                }
                 if( !stoneEdge.indices.empty() )
                     publish( "Terrain city building threshold joints", stoneEdge,
                              pavingVariant( { .56f, .55f, .50f, 1 }, 1.10f ) );
@@ -447,7 +564,7 @@
 
                 // The fitted footway's render mesh and collider have already been published.
                 // Feed the exact entrance and drainage triangles into later landscape passes.
-                for( const auto *surface : { &approach, &stoneEdge, &gravel } )
+                for( const auto *surface : { &approach, &stoneEdge, &gravel, &stairs } )
                 {
                     const auto base = u32( landscapeClearance.vertices.size() );
                     landscapeClearance.vertices.reserve( base + surface->positions.size() );
@@ -461,6 +578,7 @@
                 }
                 WP_LOG( String( "Terrain city building contacts=" ) + StringUtil::toString( contacts ) +
                         " fittedWalkConnections=" + StringUtil::toString( connections ) +
+                        " raisedApproaches=" + StringUtil::toString( raised ) +
                         " stonePlinthPieces=" + StringUtil::toString( ( courses[0].indices.size() +
                             courses[1].indices.size() + caps.indices.size() ) / 6 ) +
                         " thresholdRisers=" + StringUtil::toString( risers.indices.size() / 6 ) );

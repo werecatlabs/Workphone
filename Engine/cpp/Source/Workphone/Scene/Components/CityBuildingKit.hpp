@@ -44,6 +44,11 @@ namespace workphone::scene::race
             m_buildingStart = m_assets.cityBuildingModulePlacements;
         }
 
+        bool hasModule( CityBuildingPart part ) const
+        {
+            return !m_modules[static_cast<size_t>( part )].indices.empty();
+        }
+
         template <class Geometry>
         bool append( CityBuildingPart part, Geometry &geometry, const Vector3F &centre,
                      const Vector3F &size, float yaw )

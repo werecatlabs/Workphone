@@ -3416,6 +3416,7 @@ namespace workphone::scene::race
         }
 
 #include "CityBuildingGroundContact.hpp"
+#include "CityEntranceWayfinding.hpp"
 #include "CityRoundaboutSigns.hpp"
 #include "CityFootwayAppearance.hpp"
 #include "CityCrossingLandings.hpp"
@@ -3428,6 +3429,7 @@ namespace workphone::scene::race
 #include "CityStormDrains.hpp"
 #include "CityHinterland.hpp"
 #include "CityBuildingGlazing.hpp"
+#include "CityShopfront.hpp"
 
         void buildCity( SceneAssets &assets, SmartPtr<IGameActor> sourceOwner,
                         SmartPtr<IGameActor> vehicle, u32 seed, VehicleAppearanceQuality quality )
@@ -3478,6 +3480,7 @@ namespace workphone::scene::race
             Geometry asphalt, pavement, markings, parks, courtyards, streetMetal, lampGlass;
             SourceBudgetVector<Vector3F> terrainStreetLamps;
             SourceBudgetVector<cityGroundContact::Entry> buildingEntries;
+            SourceBudgetVector<cityEntranceWayfinding::Mount> entranceSigns;
             constexpr u32 paneAtlasColumns = cityBuildingGlazing::atlasColumns;
             constexpr float panePadding = cityBuildingGlazing::padding;
 
@@ -3485,13 +3488,17 @@ namespace workphone::scene::race
             {
                 Geometry walls[3], farWalls[3], glass[3], farGlass, roofs, farRoofs, frames, accents;
                 Geometry windowPanes, timber, tiles, farTiles, officeJoinery;
+                Geometry shopfrontFascia[static_cast<size_t>( cityShopfront::Style::Count )], shopfrontLetters, shopfrontDisplays;
                 Array<LODDetailBound> bounds{ Allocator<LODDetailBound>( sourceBudget ) };
             };
 
             SourceBudgetMap<std::pair<int, int>, CityPatch> patches;
+            size_t emittedShopfronts = 0;
             size_t nominalMansardSilhouettes = 0, emittedMansardSilhouettes = 0;
             CityBuildingKit kit( assets, buildingCount );
             const bool detailedBuildings = quality != VehicleAppearanceQuality::Preview;
+            const bool decorateShopfronts = detailedBuildings && !kit.hasModule( CityBuildingPart::Window ) &&
+                                            !kit.hasModule( CityBuildingPart::Entrance );
             const int buildingStyle = std::clamp( assets.cityBuildingStyle, 0, cityBuildingStyleMax );
             const auto streetDetails = OpenCityStreetDetails::generate(
                 city, seed, quality != VehicleAppearanceQuality::Preview );
@@ -3986,6 +3993,21 @@ namespace workphone::scene::race
                                     wallPanel( -span * .5f, y0, span * .5f, y1 );
                                     continue;
                                 }
+                                const float shopDoor = office ? 0.f : -span * .5f + ( bays / 2 + .5f ) * bayWidth;
+                                const bool builtInShopfront = decorateShopfronts && retail && ( office || warehouse || artdeco ) &&
+                                    y1 - y0 >= 3.05f && cityShopfront::fasciaWidth( span, shopDoor ) >= 2.3f &&
+                                    admitFacadeDetail( cityShopfront::faceBudget );
+                                const auto shopStyle = builtInShopfront ? cityShopfront::choose( lot.id, seed, warehouse, artdeco )
+                                                                       : cityShopfront::Style::Market;
+                                u32 displayCount = 0;
+                                const auto display = [&]( float left, float right, float bottom, float head, float depth, int bay ) {
+                                    if( !builtInShopfront || displayCount >= 2 || right - left < 1.05f || head - bottom < 1.38f ||
+                                        !admitFacadeDetail( cityShopfront::displayBudget ) ) return;
+                                    const u32 variation = u32( render::foliageStableHash( lot.id ^ ( u64( bay + 1 ) << 32 ) ^ displayCount ) );
+                                    cityShopfront::appendDisplay( patch.shopfrontDisplays, patch.officeJoinery, shopStyle,
+                                                                  faceBox, left, right, bottom, head, depth, variation );
+                                    ++displayCount;
+                                };
                                 if( office )
                                 {
                                     // Curtain-wall kit: recessed ribbons, substantial spandrels
@@ -3993,6 +4015,7 @@ namespace workphone::scene::race
                                     const float left = -span * .5f + .38f, right = span * .5f - .38f;
                                     const float doorHalfWidth = std::min( .92f, right * .8f );
                                     const float doorHead = std::min( high, y0 + 2.7f );
+                                    const float paneDepth = builtInShopfront ? cityShopfront::glassDepth : .085f;
                                     if( entrance && floor == 0 )
                                     {
                                         entranceModule = module( CityBuildingPart::Entrance,
@@ -4013,7 +4036,7 @@ namespace workphone::scene::race
                                     else
                                     {
                                         wallPanel( -span * .5f, y0, span * .5f, low );
-                                        reveal( left, low, right, high, .085f );
+                                        reveal( left, low, right, high, paneDepth );
                                     }
                                     wallPanel( -span * .5f, high, span * .5f, y1 );
                                     panel( opaque, -span * .5f, low, left, high );
@@ -4022,7 +4045,12 @@ namespace workphone::scene::race
                                         const bool custom = module( CityBuildingPart::Window, patch.frames,
                                                                     paneLeft, low, paneRight, high, .050f, .07f );
                                         windowPane( patch.glass[surface], paneLeft, low, paneRight, high,
-                                                    custom ? .097f : .085f, bay, custom );
+                                                    custom ? .097f : paneDepth, bay, custom );
+                                        if( builtInShopfront )
+                                        {
+                                            display( paneLeft, std::min( paneRight, -doorHalfWidth - .16f ), low, high, paneDepth, bay );
+                                            display( std::max( paneLeft, doorHalfWidth + .16f ), paneRight, low, high, paneDepth, bay );
+                                        }
                                         return custom;
                                     };
                                     // Keep the continuous ribbon aperture and individual pane treatments.
@@ -4097,7 +4125,7 @@ namespace workphone::scene::race
                                                          .056f, -.047f, .062f );
                                         }
                                     }
-                                    if( !entranceModule && !anyWindowModule && lot.variant % 3 == 1 )
+                                    if( !builtInShopfront && !entranceModule && !anyWindowModule && lot.variant % 3 == 1 )
                                     {
                                         panel( patch.frames, left, ( low + high ) * .5f - .025f, right,
                                                ( low + high ) * .5f + .025f, .045f );
@@ -4125,7 +4153,7 @@ namespace workphone::scene::race
                                         const float bottom = door ? y0 + .16f : low;
                                         const float head =
                                             door ? std::min( y1 - .35f, y0 + 2.65f ) : high;
-                                        const float depth = civic ? .24f : .16f;
+                                        const float depth = builtInShopfront && !door ? cityShopfront::glassDepth : civic ? .24f : .16f;
                                         wallPanel( s0, y0, s1, bottom );
                                         wallPanel( s0, head, s1, y1 );
                                         panel( opaque, s0, bottom, left, head );
@@ -4141,6 +4169,7 @@ namespace workphone::scene::race
                                                                admitFacadeDetail( 132 );
                                         if( ( !door || !hasModule ) && !bayWindow )
                                             windowPane( glass, left, bottom, right, head, depth, bay, door || hasModule );
+                                        if( builtInShopfront && !door ) display( left, right, bottom, head, depth, bay );
                                         if( !hasModule )
                                         {
                                             panel( patch.frames, s - .032f, bottom, s + .032f, head,
@@ -4283,19 +4312,47 @@ namespace workphone::scene::race
                                     const float canopyWidth =
                                         std::min( span * .60f, civic ? 11.f : terrace || timber ? 3.2f : 7.f );
                                     const float canopyDepth = civic ? 1.05f : timber ? .95f : .70f;
-                                    if( mediterranean && admitFacadeDetail( 168 ) )
+                                    if( builtInShopfront )
                                     {
-                                        for( int rafter = 0; rafter <= 5; ++rafter )
-                                            faceBox( patch.timber, doorS + canopyWidth * ( rafter / 5.f - .5f ),
-                                                     y1 - .08f, .10f, .14f, canopyDepth * .5f, canopyDepth );
-                                        faceBox( patch.timber, doorS, y1 - .18f, canopyWidth + .16f, .16f,
-                                                 canopyDepth * .82f, .13f );
+                                        cityShopfront::appendFace( patch.shopfrontFascia[static_cast<u32>( shopStyle )],
+                                            patch.officeJoinery, patch.shopfrontLetters, shopStyle, normal, along,
+                                            point, faceBox, doorS, doorHalfWidth, span, y0, high, y1 );
+                                        ++emittedShopfronts;
                                     }
                                     else
-                                        faceBox( timber ? patch.timber : patch.accents, doorS, y1 - .08f, canopyWidth, .16f,
-                                                 canopyDepth * .5f, canopyDepth );
-                                    faceBox( patch.frames, doorS, y1 + .10f, canopyWidth * .82f, .20f,
-                                             .045f, .10f );
+                                    {
+                                        if( mediterranean && admitFacadeDetail( 168 ) )
+                                        {
+                                            for( int rafter = 0; rafter <= 5; ++rafter )
+                                                faceBox( patch.timber, doorS + canopyWidth * ( rafter / 5.f - .5f ),
+                                                         y1 - .08f, .10f, .14f, canopyDepth * .5f, canopyDepth );
+                                            faceBox( patch.timber, doorS, y1 - .18f, canopyWidth + .16f, .16f,
+                                                     canopyDepth * .82f, .13f );
+                                        }
+                                        else
+                                            faceBox( timber ? patch.timber : patch.accents, doorS, y1 - .08f, canopyWidth, .16f,
+                                                     canopyDepth * .5f, canopyDepth );
+                                        faceBox( patch.frames, doorS, y1 + .10f, canopyWidth * .82f, .20f,
+                                                 .045f, .10f );
+                                    }
+                                    if( assets.cityTerrainRoads && detailedBuildings && assets.cityStreetDetail > 0 &&
+                                        ( office || civic || warehouse || artdeco ) &&
+                                        assets.cityBuildingMeshes[size_t( CityBuildingPart::Wall )].empty() &&
+                                        assets.cityBuildingMeshes[size_t( CityBuildingPart::Entrance )].empty() &&
+                                        assets.cityBuildingMeshes[size_t( CityBuildingPart::Corner )].empty() )
+                                    {
+                                        // The lettering is supported by the real metal fascia, outside the
+                                        // central shop name and clear of door, glass, and moving leaves.
+                                        const float fascia = builtInShopfront ? cityShopfront::fasciaWidth( span, doorS ) : canopyWidth;
+                                        const float side = Vector3F::unitY().crossProduct( normal ).dotProduct( along ) >= 0 ? 1.f : -1.f;
+                                        if( fascia >= ( builtInShopfront ? 2.55f : 2.18f ) )
+                                            entranceSigns.push_back( { lot.id,
+                                                point( doorS + side * ( fascia * .5f - ( builtInShopfront ? .40f : .33f ) ),
+                                                       y1 - ( builtInShopfront ? .198f : .08f ),
+                                                       -( builtInShopfront ? .152f : canopyDepth + .002f ) ) + origin,
+                                                normal, along * -side, builtInShopfront ? 1.24f : 1.f,
+                                                lot.district == OpenCityLayout::District::Commercial } );
+                                    }
                                     if( civic )
                                     {
                                         for( int bay = 0; bay <= bays; ++bay )
@@ -4920,6 +4977,7 @@ namespace workphone::scene::race
             const auto timberMaterial = material( assets, { .24f, .15f, .085f, 1 }, .83f );
             const auto tileMaterial = material( assets, { .57f, .24f, .13f, 1 }, .82f );
             const auto [glassMaterials, paneMaterial] = cityBuildingGlazing::build( assets, detailedBuildings );
+            const auto shops = emittedShopfronts ? cityShopfront::materials( assets ) : cityShopfront::Materials{};
             for( auto &[key, patch] : patches )
             {
                 reserveOwnerSlot( assets.actors );
@@ -4959,6 +5017,10 @@ namespace workphone::scene::race
                     add( "LOD0 city roof detail", patch.roofs, roofMaterial, nearRenderers );
                     add( "LOD0 city facade frames", patch.frames, frameMaterial, nearRenderers );
                     add( "LOD0 city storefront joinery", patch.officeJoinery, storefrontMetal, nearRenderers );
+                    for( size_t style = 0; style < shops.fascia.size(); ++style )
+                        add( "LOD0 city commercial fascia and canopies", patch.shopfrontFascia[style], shops.fascia[style], nearRenderers );
+                    add( "LOD0 city commercial lettering", patch.shopfrontLetters, shops.lettering, nearRenderers );
+                    add( "LOD0 city commercial window displays", patch.shopfrontDisplays, shops.display, nearRenderers );
                     add( "LOD0 city entrance fascia", patch.accents, accentMaterial, nearRenderers );
                     add( "LOD0 city timber details", patch.timber, timberMaterial, nearRenderers );
                     add( "LOD0 city terracotta roofs", patch.tiles, tileMaterial, nearRenderers );
@@ -5047,6 +5109,7 @@ namespace workphone::scene::race
                 cityCarriagewayUtilities::build( assets, fitted, seed, quality );
                 cityRoundaboutLandscape::build( assets, seed );
                 cityGroundContact::build( assets, buildingEntries, fitted, pavingMaterial, forge );
+                cityEntranceWayfinding::build( assets, entranceSigns );
                 cityRoundaboutSigns::build( assets, fitted, terrainStreetLamps, quality );
                 SourceBudgetVector<cityParkLandscape::Layout> parkLayouts;
                 SourceBudgetVector<cityReserveLandscape::Site> reserveSites;

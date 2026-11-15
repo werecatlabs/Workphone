@@ -1,5 +1,24 @@
 # WPProcedural implementation status
 
+## Commercial storefronts and entrance details — 15 November 2026
+
+Built-in commercial frontages gain three storefront treatments with recessed
+display panes, fascia lettering, and awnings tied to the actual doorway.
+Small address plaques sit on supported fascia ends. Custom window and
+entrance modules take precedence over the built-in storefront treatment.
+
+On supported commercial approaches, the entrance fitter uses the retained
+ground to size stone treads and a landing. The stair renderer and collider
+share the same mesh. `SampleVehicleAdvanced` has a fixed `shopfront` view
+with a commercial parcel check and vertical collision probes at the door.
+
+The matched studio captures exposed two issues. Framed prints replaced the
+repeated display blocks, and the lower landing now closes its sides where
+the ground slopes across the flight. The photographed entrance fits five
+risers and reported 18 hits from native collision probes. Seed 42 produced
+13 raised approaches. See `artifacts/procedural/city-shopfronts-20261115/visual-review.md`
+for the capture and test results.
+
 ## Morning daylight, distance haze and glazing — 15 November 2026
 
 The generated city now uses morning sun, a cooler sky fill and haze tied to
