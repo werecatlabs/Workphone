@@ -10,14 +10,12 @@ namespace workphone::scene::cityRoadCrossings
 {
     inline constexpr u32 noRoad = std::numeric_limits<u32>::max();
 
-    struct Crossing
-    {
-        Vector3F centre, outward, across;
-        float width, depth;
-        u32 roadIndex = noRoad;
-        float firstStation = 0, lastStation = 0;
-        bool roundabout = false;
-    };
+    using Crossing = CityRoadCrossing;
+
+    // Refine the fitted walk only after a crossing has been accepted on the road.
+    // Failure leaves the original shared render/collision mesh intact.
+    WPCore_API bool fitDroppedKerbs( CityRoadTerrainMesh &footways, const CityRoadTerrainMesh &roadMesh,
+                                     SourceBudgetVector<Crossing> &paintedCrossings, String &error );
 
     inline float crossXZ( Vector3F a, Vector3F b )
     {

@@ -200,7 +200,7 @@
                 {
                     const auto &top = fitted.vertices[fitted.indices[i]];
                     const auto &bottom = fitted.vertices[fitted.indices[i + 1]];
-                    if( std::abs( top.normal.y ) < .01f && top.position.y - bottom.position.y > .10f &&
+                    if( std::abs( top.normal.y ) < .01f && top.position.y - bottom.position.y > .012f &&
                         std::abs( top.position.x - bottom.position.x ) < .001f &&
                         std::abs( top.position.z - bottom.position.z ) < .001f )
                     {
@@ -220,7 +220,7 @@
                     delta.y = 0;
                     const float length = delta.length();
                     if( j[0] != j[3] || j[2] != j[4] || length < .00001f ||
-                        std::abs( a.normal.y ) > .01f || a.position.y - b.position.y < .10f ||
+                        std::abs( a.normal.y ) > .01f || a.position.y - b.position.y < .012f ||
                         std::abs( a.position.x - b.position.x ) > .001f ||
                         std::abs( a.position.z - b.position.z ) > .001f ||
                         std::abs( d.position.x - c.position.x ) > .001f ||

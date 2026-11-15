@@ -234,8 +234,8 @@ namespace workphone::scene
 
         void weatherScannedAsphalt( procedural::SurfaceBakeResult &surface )
         {
-            // Preserve the scale of the scanned aggregate, with a second scale for
-            // the smoother binder and exposed stone across a section of carriageway.
+            // Preserve the scan's physical aggregate scale. Binder exposure varies
+            // in local patches, and the millimetre-scale grain filters out at distance.
             constexpr u32 size = 1024;
             procedural::TextureBuffer colour( size, size ), normal( size, size ), orm( size, size );
             const auto byte = []( float value ) { return u8( std::clamp( std::lround( value ), 0l, 255l ) ); };
@@ -246,23 +246,24 @@ namespace workphone::scene
                     const u32 sx = ( x * asphaltTiles * surface.albedo.width / size ) % surface.albedo.width;
                     const u32 sy = ( y * asphaltTiles * surface.albedo.height / size ) % surface.albedo.height;
                     const float u = ( x + .5f ) / size, v = ( y + .5f ) / size;
-                    const float binder = .42f * roadVariation( 0x1f73a1u, u, v, 3 ) +
-                                         .41f * roadVariation( 0x673c51u, u, v, 7 ) +
-                                         .17f * roadVariation( 0x5521c3u, u, v, 23 );
-                    const float exposed = std::clamp( ( binder - .37f ) / .34f, 0.f, 1.f );
+                    const float binder = .48f * roadVariation( 0x1f73a1u, u, v, 9 ) +
+                                         .31f * roadVariation( 0x673c51u, u, v, 19 ) +
+                                         .21f * roadVariation( 0x5521c3u, u, v, 41 );
+                    const float exposed = std::clamp( ( binder - .27f ) / .49f, 0.f, 1.f );
                     const float wear = exposed * exposed * ( 3.f - 2.f * exposed );
+                    const float grain = ( roadGrain( 0x7f33abu, x, y, size ) - .5f ) * ( 2.5f + 2.f * wear );
                     const auto *source = surface.albedo.pixel( sx, sy );
                     auto *pixel = colour.pixel( x, y );
-                    const float tone = .93f + .15f * wear;
-                    pixel[0] = byte( source[0] * tone + 1.5f * wear );
-                    pixel[1] = byte( source[1] * tone + wear );
-                    pixel[2] = byte( source[2] * tone );
+                    const float tone = .963f + .074f * wear;
+                    pixel[0] = byte( source[0] * tone + grain + wear );
+                    pixel[1] = byte( source[1] * tone + grain + .5f * wear );
+                    pixel[2] = byte( source[2] * tone + grain );
                     pixel[3] = 255;
                     std::copy_n( surface.normal.pixel( sx, sy ), 4, normal.pixel( x, y ) );
                     const auto *surfaceOrm = surface.orm.pixel( sx, sy );
                     auto *response = orm.pixel( x, y );
                     std::copy_n( surfaceOrm, 4, response );
-                    response[1] = byte( surfaceOrm[1] * ( .97f + .03f * wear ) );
+                    response[1] = byte( surfaceOrm[1] * ( .981f + .019f * wear ) );
                 }
             }
             surface.albedo = std::move( colour );
@@ -476,6 +477,7 @@ namespace workphone::scene
                 throw std::runtime_error( connectionError.c_str() );
             }
             SourceBudgetVector<cityRoadCrossings::Crossing> crossingCandidates;
+            std::shared_ptr<CityRoadTerrainMesh> fittedWalks;
             if( !source.roundabouts.empty() || !connections.junctions.empty() )
             {
                 try
@@ -484,7 +486,7 @@ namespace workphone::scene
                     String walkError;
                     if( buildCityRoadFootways( source, bake, terrain, placement, *walks, walkError ) )
                     {
-                        state.footways = walks;
+                        fittedWalks = walks;
                         crossingCandidates = cityRoadCrossings::collect( source, connections, *walks );
                     }
                 }
@@ -1080,6 +1082,22 @@ namespace workphone::scene
                 WP_LOG( String( "City road projected paint roundaboutCrossings=" ) + StringUtil::toString( roundCrossings ) +
                         " ordinaryCrossings=" + StringUtil::toString( crossingCandidates.size() - roundCrossings ) +
                         " yieldApproaches=" + StringUtil::toString( yieldApproaches ) );
+            }
+            if( fittedWalks )
+            {
+                String kerbError;
+                if( !crossingCandidates.empty() &&
+                    !cityRoadCrossings::fitDroppedKerbs( *fittedWalks, mesh, crossingCandidates, kerbError ) )
+                {
+                    WP_LOG( String( "City crossing kerbs retained their original heights: " ) + kerbError );
+                }
+                const auto lowered = std::count_if( crossingCandidates.begin(), crossingCandidates.end(),
+                    []( const auto &crossing ) { return crossing.droppedKerbs; } );
+                if( !crossingCandidates.empty() )
+                    WP_LOG( String( "City crossing kerbs fitted=" ) + StringUtil::toString( lowered ) +
+                            " raisedFallbacks=" + StringUtil::toString( crossingCandidates.size() - lowered ) );
+                fittedWalks->crossings.swap( crossingCandidates );
+                state.footways = std::move( fittedWalks );
             }
         }
     }  // namespace

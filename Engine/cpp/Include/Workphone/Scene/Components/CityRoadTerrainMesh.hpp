@@ -2,6 +2,7 @@
 #include <Workphone/Interface/Procedural/CityRoadSplineSource.hpp>
 #include <Workphone/Graphics/TerrainData.hpp>
 #include <Workphone/Math/Vector2.hpp>
+#include <limits>
 
 namespace workphone::scene
 {
@@ -19,11 +20,21 @@ namespace workphone::scene
         Vector2F uv{};
     };
 
+    struct CityRoadCrossing
+    {
+        Vector3F centre{}, outward{}, across{};
+        float width = 0, depth = 0;
+        u32 roadIndex = std::numeric_limits<u32>::max();
+        float firstStation = 0, lastStation = 0;
+        bool roundabout = false, droppedKerbs = false;
+    };
+
     struct CityRoadTerrainMesh : SourceBudgetObject
     {
         SourceBudgetVector<CityRoadTerrainVertex> vertices;
         SourceBudgetVector<u32> indices;
         SourceBudgetVector<CityRoadTerrainTriangleKind> triangleKinds;
+        SourceBudgetVector<CityRoadCrossing> crossings;  // Paint-confirmed positions on published footways.
         u64 sourceRevision = 0, terrainRevision = 0;
         WPCore_API void swap( CityRoadTerrainMesh &other ) noexcept;
     };

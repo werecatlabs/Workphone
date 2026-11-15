@@ -21,6 +21,7 @@
 #include <Workphone/Scene/Components/CityRoadAuthoring.hpp>
 #include <Workphone/Scene/Components/CityRoadJunctions.hpp>
 #include <Workphone/Scene/Components/CityRoadTerrainFit.hpp>
+#include <Workphone/Scene/Components/CityRoadTerrainMesh.hpp>
 #include <Workphone/Scene/Components/CityBuildingStyles.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
@@ -483,6 +484,160 @@ namespace workphone
             size_t road = 0;
         };
 
+        constexpr const char *utilityCoverActor = "Terrain city carriageway cast iron covers";
+        constexpr const char *utilityGrateActor = "Terrain city cast iron storm grates";
+
+        bool utilityNativeReady( const advanced::SceneAssets &assets, const char *name )
+        {
+            for( const auto &actor : assets.actors )
+            {
+                if( !actor || actor->getName() != name ) continue;
+                const auto renderer = actor->getComponent<scene::MeshRenderer>();
+                const auto graphics = renderer ? renderer->getGraphicsObject() : nullptr;
+                if( !renderer || !renderer->isLoaded() || !graphics || !graphics->isLoaded() ) continue;
+#if WP_GRAPHICS_SYSTEM_CLAW
+                const auto mesh = dynamic_pointer_cast<render::ClawMesh>( graphics );
+                const auto native = mesh ? mesh->getNativeMesh() : nullptr;
+                const auto object = mesh ? mesh->getNativeRenderObject() : nullptr;
+                if( !native || !object || wp_graphics_object_get_mesh( object ) != native ||
+                    wp_graphics_mesh_get_vertex_count( native ) == 0 || wp_graphics_mesh_get_index_count( native ) < 3 ) continue;
+#endif
+                return true;
+            }
+            return false;
+        }
+
+        SourceBudgetVector<Vector3F> utilityCentres( const advanced::SceneAssets &assets, const char *name )
+        {
+            struct Bounds { Vector3F low, high; };
+            SourceBudgetVector<Bounds> pieces;
+            for( const auto &actor : assets.actors )
+            {
+                if( !actor || actor->getName() != name ) continue;
+                const auto component = actor->getComponent<scene::Mesh>();
+                const auto resource = component ? component->getMeshResource() : nullptr;
+                if( !resource || !resource->getMesh() ) continue;
+                const auto transform = actor->getWorldTransform();
+                for( const auto &point : MeshUtil::getPoints( resource->getMesh() ) )
+                {
+                    const auto p = transform.transformPoint( point );
+                    if( !p.isFinite() ) continue;
+                    // Every cover or grate fits in its own metre-scale envelope.
+                    // Merge terrain-clipped fragments without depending on vertex order.
+                    const auto selected = std::find_if( pieces.begin(), pieces.end(), [&]( const Bounds &piece ) {
+                        return std::max( piece.high.x, p.x ) - std::min( piece.low.x, p.x ) < 1.10f &&
+                               std::max( piece.high.z, p.z ) - std::min( piece.low.z, p.z ) < 1.10f;
+                    } );
+                    if( selected == pieces.end() )
+                    {
+                        pieces.push_back( { p, p } );
+                        continue;
+                    }
+                    selected->low = { std::min( selected->low.x, p.x ), std::min( selected->low.y, p.y ),
+                                      std::min( selected->low.z, p.z ) };
+                    selected->high = { std::max( selected->high.x, p.x ), std::max( selected->high.y, p.y ),
+                                       std::max( selected->high.z, p.z ) };
+                }
+            }
+            SourceBudgetVector<Vector3F> centres;
+            for( const auto &piece : pieces )
+                if( std::hypot( piece.high.x - piece.low.x, piece.high.z - piece.low.z ) > .12f )
+                    centres.push_back( ( piece.low + piece.high ) * .5f );
+            return centres;
+        }
+
+        struct CityUtilityView
+        {
+            Vector3F eye{}, target{}, primary{}, grate{};
+            size_t covers = 0, grates = 0;
+            bool nearby = false;
+        };
+
+        CityUtilityView cityUtilityInspectionView( const advanced::SceneAssets &assets )
+        {
+            const auto authoring = assets.roadAuthoring;
+            const auto terrain = authoring ? authoring->getTerrainSnapshot() : nullptr;
+            if( !terrain ) throw std::runtime_error( "Utilities view requires fitted terrain roads." );
+            const auto covers = utilityCentres( assets, utilityCoverActor );
+            const auto grates = utilityCentres( assets, utilityGrateActor );
+            if( covers.empty() ) throw std::runtime_error( "Utilities view requires a generated service cover." );
+            const auto &placement = authoring->getTerrainPlacement();
+            const auto heightAt = [&]( Vector3F p, float &height ) {
+                bool driveable = false;
+                if( authoring->getRuntimeSurface( p.x, p.z, height, driveable ) ) return true;
+                return render::sampleTerrainHeight( *terrain, placement, p, height );
+            };
+            const auto clear = [&]( Vector3F eye, Vector3F point ) {
+                for( unsigned i = 0; i < 9; ++i )
+                {
+                    const auto p = eye + ( point - eye ) * ( float( i ) / 9 );
+                    float y = 0;
+                    if( !render::sampleTerrainHeight( *terrain, placement, p, y ) || p.y < y + .04f ) return false;
+                    for( const auto &lot : assets.cityLayout.lots )
+                        if( !lot.park && std::abs( p.x - lot.x ) < lot.width * .5f + .15f &&
+                            std::abs( p.z - lot.z ) < lot.depth * .5f + .15f &&
+                            p.y < lot.groundHeight + lot.height + .2f ) return false;
+                }
+                return true;
+            };
+            CityUtilityView best;
+            float lowestScore = std::numeric_limits<float>::infinity();
+            const auto select = [&]( bool allowGrates ) {
+                for( const auto primary : covers )
+                {
+                    float bestDistance = 5.4f;
+                    Vector3F nearby{};
+                    bool paired = false;
+                    for( const auto grate : grates )
+                    {
+                        if( !allowGrates ) break;
+                        const float distance = std::hypot( grate.x - primary.x, grate.z - primary.z );
+                        if( distance < 1.12f || distance >= bestDistance ) continue;
+                        bestDistance = distance;
+                        nearby = grate;
+                        paired = true;
+                    }
+                    auto target = paired ? primary * .52f + nearby * .48f : primary;
+                    target.y += .05f;
+                    Vector3F heading( 1, 0, 0 );
+                    if( paired ) heading = Vector3F( nearby.x - primary.x, 0, nearby.z - primary.z ).normaliseCopy();
+                    else
+                    {
+                        float nearest = std::numeric_limits<float>::infinity();
+                        for( const auto &road : authoring->getBake().roads )
+                            for( size_t i = 1; i < road.points.size(); ++i )
+                            {
+                                const auto a = road.points[i - 1].position;
+                                auto axis = road.points[i].position - a, offset = primary - a;
+                                axis.y = offset.y = 0;
+                                const float length = axis.lengthSquared();
+                                if( length < .001f ) continue;
+                                const float distance = ( offset - axis * std::clamp( offset.dotProduct( axis ) / length, 0.f, 1.f ) ).lengthSquared();
+                                if( distance < nearest ) { nearest = distance; heading = axis.normaliseCopy(); }
+                            }
+                    }
+                    const Vector3F side( -heading.z, 0, heading.x );
+                    const float run = paired ? std::max( 3.4f, bestDistance * .99f + .42f ) : 2.55f;
+                    for( const auto direction : { side, -side } )
+                    {
+                        auto eye = target + direction * run - heading * .31f;
+                        float ground = 0;
+                        if( !heightAt( eye, ground ) ) continue;
+                        eye.y = std::max( target.y, ground ) + ( paired ? 1.81f + .12f * bestDistance : 1.77f );
+                        const float score = ( paired ? bestDistance * .24f : 8.f ) +
+                                            std::hypot( primary.x, primary.z ) * .0018f;
+                        if( score >= lowestScore || !clear( eye, primary ) || ( paired && !clear( eye, nearby ) ) ) continue;
+                        lowestScore = score;
+                        best = { eye, target, primary, nearby, covers.size(), grates.size(), paired };
+                    }
+                }
+            };
+            select( true );
+            if( !best.covers ) select( false );
+            if( !best.covers ) throw std::runtime_error( "Utilities view could not find an unobstructed cover inspection pose." );
+            return best;
+        }
+
         CityVergeView cityVergeInspectionView( const advanced::SceneAssets &assets )
         {
             const auto authoring = assets.roadAuthoring;
@@ -804,11 +959,48 @@ namespace workphone
             bool markingAlphaBlend=false;
             bool footwayReady=false,footwayCollisionReady=false;
             u32 footwayActors=0,footwayNativeRayProbes=0,footwayRayCandidates=0;
+            size_t loweredCrossings = 0, raisedCrossings = 0, crossingKerbRays = 0;
+            float crossingKerbHeightError = 0;
             size_t fittedBoundaries = 0, boundaryCollisionProbes = 0;
             f32 footwayRayHeightError=-1;
             size_t roads=0,junctions=0,triangles=0,routePoints=0,islandsChecked=0,rayProbes=0,buildingBodies=0,expectedBuildingBodies=0;
             f32 routeHeightError=0, roadRayCurveDeviation=0;
         };
+
+        void checkCrossingKerbs( TerrainCityCheck &result, const scene::CityRoadTerrainMesh &walks,
+                                 const render::TerrainData &terrain, const Transform3<real_Num> &placement,
+                                 physics::IPhysicsScene3 &physics, const SmartPtr<physics::IRigidStatic3> &body )
+        {
+            for( const auto &crossing : walks.crossings )
+            {
+                if( !crossing.droppedKerbs )
+                {
+                    ++result.raisedCrossings;
+                    continue;
+                }
+                ++result.loweredCrossings;
+                for( const float side : { -1.f, 1.f } )
+                {
+                    // The front pair checks the lowered lip. The back pair checks the
+                    // unchanged sidewalk height beyond the sloping part of the landing.
+                    for( const auto &[inset, lift] : { std::pair{ .22f, .040f }, std::pair{ 2.05f, .15f } } )
+                    {
+                        auto point = crossing.centre + crossing.across * ( side * ( crossing.width * .5f + inset ) );
+                        if( !render::sampleTerrainHeight( terrain, placement, point, point.y ) ) continue;
+                        point.y += lift;
+                        const Vector3F ray( 0, .22f, 0 );
+                        Vector3F hit, normal;
+                        SmartPtr<ISharedObject> object;
+                        if( !physics.intersects( point + ray, point - ray, hit, normal, object ) ||
+                            object != body || !std::isfinite( hit.y ) || normal.y < .5f ) continue;
+                        const float error = std::abs( point.y - hit.y );
+                        result.crossingKerbHeightError = std::max( result.crossingKerbHeightError, error );
+                        if( error <= .003f ) ++result.crossingKerbRays;
+                    }
+                }
+            }
+        }
+
         TerrainCityCheck checkTerrainCity(const advanced::SceneAssets &assets,SmartPtr<physics::IPhysicsScene3> physics)
         {
             TerrainCityCheck result;auto authoring=assets.roadAuthoring;auto terrain=assets.roadTerrain;
@@ -909,6 +1101,8 @@ namespace workphone
                 };
                 result.footwayCollisionReady=collision && !collision->isConvex() && collision->getShape() && collision->getShape()->isAttached() &&
                     body && body->getScene()==physics && identity(footway->getWorldTransform()) && identity(body->getTransform());
+                if( const auto walks = authoring->getRuntimeFootways(); result.footwayCollisionReady && walks )
+                    checkCrossingKerbs( result, *walks, *sourceTerrain, authoring->getTerrainPlacement(), *physics, body );
                 u32 inspectedPoints=0;
                 if(result.footwayCollisionReady)for(const auto &road:bake.roads)
                 {
@@ -961,6 +1155,7 @@ namespace workphone
             result.roadPBRBindingsReady=mapsReady && layers[0]==1 && layers[3]==1 && layers[1]==(junctions?1u:0u) && layers[2]==(junctions?1u:0u) &&
                 result.roadPBRMaterials==(junctions?4u:2u) && result.roadPBRTextures==(junctions?16u:6u);
             result.valid=result.binding && result.revisions && result.renderer && result.route && result.islands && result.support && result.flatFallbackAbsent && terrainProbe && result.rayProbes==4 && result.roads>0 && result.triangles>0 && result.roadPBRBindingsReady && result.footwayReady &&
+                         result.crossingKerbRays == result.loweredCrossings * 4 &&
                          ( result.fittedBoundaries < boundaries.size() || result.boundaryCollisionProbes == boundaries.size() );
             return result;
         }
@@ -1829,6 +2024,34 @@ namespace workphone
                         evidence << ",\n  \"cityVergeCamera\":{\"roadIndex\":" << m_cityVergeRoad
                                  << ",\"eye\":[" << m_cityVergeEye.x << ',' << m_cityVergeEye.y << ',' << m_cityVergeEye.z
                                  << "],\"target\":[" << m_cityVergeTarget.x << ',' << m_cityVergeTarget.y << ',' << m_cityVergeTarget.z << "]}";
+                    if( m_captureView == "utilities" )
+                    {
+                        const auto eye = m_cameraActor->getWorldTransform().getPosition();
+                        const auto vector = [&]( Vector3F p ) { evidence << '[' << p.x << ',' << p.y << ',' << p.z << ']'; };
+                        float roadHeight = 0;
+                        bool driveable = false;
+                        const bool present = m_cityUtilityCovers > 0 && m_assets.roadAuthoring->getRuntimeSurface(
+                            m_cityUtilityPrimary.x, m_cityUtilityPrimary.z, roadHeight, driveable ) && driveable &&
+                            std::abs( m_cityUtilityPrimary.y - roadHeight ) < .065f;
+                        const bool coverReady = utilityNativeReady( m_assets, utilityCoverActor );
+                        const bool grateReady = m_cityUtilityHasGrate && utilityNativeReady( m_assets, utilityGrateActor );
+                        const bool valid = present && coverReady && ( !m_cityUtilityHasGrate || grateReady ) &&
+                            ( eye - m_cityUtilityEye ).lengthSquared() < .0001f;
+                        cityValid = cityValid && valid;
+                        evidence << ",\n  \"cityUtilitiesCamera\":{\"valid\":" << ( valid ? "true" : "false" )
+                                 << ",\"primaryPresent\":" << ( present ? "true" : "false" )
+                                 << ",\"nativeReady\":" << ( coverReady ? "true" : "false" )
+                                 << ",\"grateNativeReady\":" << ( grateReady ? "true" : "false" )
+                                 << ",\"coverCandidates\":" << m_cityUtilityCovers
+                                 << ",\"grateCandidates\":" << m_cityUtilityGrates << ",\"eye\":";
+                        vector( eye );
+                        evidence << ",\"target\":"; vector( m_cityUtilityTarget );
+                        evidence << ",\"primary\":"; vector( m_cityUtilityPrimary );
+                        evidence << ",\"nearbyGrate\":";
+                        if( m_cityUtilityHasGrate ) vector( m_cityUtilityGrate );
+                        else evidence << "null";
+                        evidence << '}';
+                    }
                     const auto expectedDetail = m_cityStreetDetail >= 0 ? m_cityStreetDetail : 100;
                     const bool expectStreetDetail = m_cityStreetDetail == 100 && m_seed == 42 &&
                         m_cityBlocks == 6 && m_cityRoute == 0 && m_quality == procedural::VehicleAppearanceQuality::High;
@@ -1890,6 +2113,13 @@ namespace workphone
                         <<",\"streetDetailActors\":"<<streetDetailActors<<",\"streetDetailRenderersReady\":"<<(streetDetailRenderersReady?"true":"false")
                         <<",\"streetDetailPlacementsRequired\":"<<(expectStreetDetail?"true":"false")<<",\"streetDetailValid\":"<<(streetDetailValid?"true":"false")
                         <<",\"buildingSupportValid\":"<<(check.support?"true":"false")<<",\"structuralValidation\":"<<(cityValid?"true":"false")<<"}";
+                    evidence << ",\n  \"cityCrossingKerbs\":{\"loweredCrossings\":" << check.loweredCrossings
+                             << ",\"raisedFallbacks\":" << check.raisedCrossings
+                             << ",\"expectedNativeRays\":" << check.loweredCrossings * 4
+                             << ",\"nativeRays\":" << check.crossingKerbRays
+                             << ",\"maximumNativeHeightError\":" << check.crossingKerbHeightError
+                             << ",\"valid\":" << ( check.footwayCollisionReady && check.crossingKerbRays == check.loweredCrossings * 4
+                                                       ? "true" : "false" ) << '}';
                     if( snapshot )
                     {
                         std::array<double, 4> totals{};
@@ -3954,6 +4184,17 @@ namespace workphone
                 const auto view = cityVergeInspectionView( m_assets );
                 m_cityVergeEye = view.eye; m_cityVergeTarget = view.target; m_cityVergeRoad = view.road;
             }
+            if( m_captureView == "utilities" )
+            {
+                const auto view = cityUtilityInspectionView( m_assets );
+                m_cityUtilityEye = view.eye;
+                m_cityUtilityTarget = view.target;
+                m_cityUtilityPrimary = view.primary;
+                m_cityUtilityGrate = view.grate;
+                m_cityUtilityCovers = view.covers;
+                m_cityUtilityGrates = view.grates;
+                m_cityUtilityHasGrate = view.nearby;
+            }
             if( m_captureView == "junction" )
             {
                 const auto connections = cityConnections( *m_assets.roadAuthoring );
@@ -4145,6 +4386,11 @@ namespace workphone
                     {
                         m_cameraActor->setPosition( m_cityVergeEye );
                         m_cameraActor->lookAt( m_cityVergeTarget, Vector3F::unitY() );
+                    }
+                    else if( m_captureView == "utilities" )
+                    {
+                        m_cameraActor->setPosition( m_cityUtilityEye );
+                        m_cameraActor->lookAt( m_cityUtilityTarget, Vector3F::unitY() );
                     }
                     else if( isRoadTerrainEditView( m_captureView ) && m_roadTerrainEditPrepared )
                     {
@@ -4347,7 +4593,7 @@ int main( int argc, char **argv )
                    "  --track-smoke-test            Drive one full lap through the physics controller\n"
                    "  --collision-smoke-test        Verify native boxes; circuit garage impact or city road/sidewalk grades\n"
                    "  --validate-circuit           Validate 100 generated closed circuits\n"
-                   "  --capture PATH.bmp --view follow|car|track|corner|junction|hillside|street|boulevard|frontage|facade|building   Save a rendered view and "
+                   "  --capture PATH.bmp --view follow|car|track|corner|junction|hillside|street|boulevard|frontage|facade|building|utilities   Save a rendered view and "
                    "exit\n"
                    "  --no-hud --force-lod auto|0|1  Clean captures and tree LOD comparisons\n"
                    "  --force-vehicle-lod auto|0|1|2  Override the vehicle level (clamped for low)\n"
@@ -4370,6 +4616,7 @@ int main( int argc, char **argv )
                    "  --city-building-mesh ROLE PATH  Replace a wall, window, entrance, corner or roof module (repeatable)\n"
                    "  --view street|boulevard       Opposite street-level city inspections; track is the overview\n"
                    "  --view frontage               Close sidewalk inspection (requires --city-terrain-roads)\n"
+                   "  --view utilities              Close inspection of a fitted carriageway cover and nearby grate\n"
                    "  --view hillside               Inspect a sustained road climb and its surrounding terrain\n"
                    "  --view verge                  Inspect a terrain road end at pavement level\n"
                    "  --view road-edit-before|road-edit-after   Fixed camera after Undo or Redo of a graded road edit\n"
@@ -4638,9 +4885,9 @@ int main( int argc, char **argv )
         }
         if( captureView != "follow" && captureView != "car" && captureView != "track" &&
             captureView != "corner" && captureView != "junction" && captureView != "hillside" && captureView != "verge" && captureView != "street" && captureView != "boulevard" &&
-            captureView != "frontage" && captureView != "facade" && captureView != "building" &&
+            captureView != "frontage" && captureView != "facade" && captureView != "building" && captureView != "utilities" &&
             !isRoadTerrainEditView( captureView ) )
-            throw std::runtime_error( "View must be follow, car, track, corner, junction, hillside, verge, street, boulevard, frontage, facade, building, road-edit-before, or road-edit-after." );
+            throw std::runtime_error( "View must be follow, car, track, corner, junction, hillside, verge, street, boulevard, frontage, facade, building, utilities, road-edit-before, or road-edit-after." );
         if( ( cityOptionsExplicit || captureView == "street" || captureView == "boulevard" ) && !openCity )
             throw std::runtime_error( "City options and street-level views require --city." );
         if(roadAuthoringShowcase && foliageWorld)throw std::runtime_error("Road authoring showcase does not provide foliage-world generation.");
@@ -4651,6 +4898,8 @@ int main( int argc, char **argv )
             throw std::runtime_error( "--city-terrain-relief requires --city-terrain-roads." );
         if( captureView == "frontage" && !cityTerrainRoads )
             throw std::runtime_error( "--view frontage requires --city-terrain-roads." );
+        if( captureView == "utilities" && ( !cityTerrainRoads || orbit ) )
+            throw std::runtime_error( "--view utilities requires --city-terrain-roads and a fixed camera." );
         if( captureView == "junction" && !cityTerrainRoads )
             throw std::runtime_error( "--view junction requires --city-terrain-roads." );
         if( captureView == "hillside" && !cityTerrainRoads )

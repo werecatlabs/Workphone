@@ -47,7 +47,7 @@ namespace
             return render::sampleTerrainHeight( *data, placement, p, height );
         }, bake, error ), error ); return bake;
     }
-    bool topAt( const CityRoadTerrainMesh &mesh, double x, double z )
+    bool topAt( const CityRoadTerrainMesh &mesh, double x, double z, double *height = nullptr )
     {
         for( size_t i = 0; i < mesh.indices.size(); i += 3 )
         {
@@ -58,7 +58,11 @@ namespace
             if( std::abs( denominator ) < 1e-10 ) continue;
             const double u = ( ( b.z - c.z ) * ( x - c.x ) + ( c.x - b.x ) * ( z - c.z ) ) / denominator;
             const double v = ( ( c.z - a.z ) * ( x - c.x ) + ( a.x - c.x ) * ( z - c.z ) ) / denominator;
-            if( u >= -1e-6 && v >= -1e-6 && u + v <= 1.000001 ) return true;
+            if( u >= -1e-6 && v >= -1e-6 && u + v <= 1.000001 )
+            {
+                if( height ) *height = u * a.y + v * b.y + ( 1 - u - v ) * c.y;
+                return true;
+            }
         }
         return false;
     }
@@ -204,6 +208,54 @@ namespace
         const auto supported = cityRoadCrossings::collect( s, {}, southWalks );
         require( supported.size() == 1 && supported.front().centre.z < 0,
                  "A crossing survived after one or both landings were removed." );
+        auto revised = mesh;
+        auto adjustedCrossings = crossings;
+        check( cityRoadCrossings::fitDroppedKerbs( revised, road, adjustedCrossings, error ), error );
+        require( revised.sourceRevision == mesh.sourceRevision && revised.terrainRevision == mesh.terrainRevision,
+                 "Dropped kerbs lost the active road or terrain revision." );
+        const auto area = []( const CityRoadTerrainMesh &surface ) {
+            double total = 0;
+            for( size_t i = 0; i < surface.indices.size(); i += 3 )
+            {
+                const auto a = surface.vertices[surface.indices[i]].position;
+                const auto b = surface.vertices[surface.indices[i + 1]].position;
+                const auto c = surface.vertices[surface.indices[i + 2]].position;
+                total += std::abs( double( b.x - a.x ) * ( c.z - a.z ) - double( b.z - a.z ) * ( c.x - a.x ) ) * .5;
+            }
+            return total;
+        };
+        require( std::abs( area( revised ) - area( mesh ) ) < .003,
+                 "Dropped kerb clipping changed the walkable footprint or left overlapping faces." );
+        for( const auto &crossing : adjustedCrossings )
+        {
+            require( crossing.droppedKerbs, "Flat, fully supported roundabout crossing did not receive both ramps." );
+            for( const float side : { -1.f, 1.f } )
+            {
+                const auto probe = [&]( float offset, float station, double expected ) {
+                    const auto point = crossing.centre + crossing.across * ( side * ( crossing.width * .5f + offset ) ) +
+                                       crossing.outward * station;
+                    double height = 0;
+                    require( topAt( revised, point.x, point.z, &height ) && std::abs( height - expected ) < .0002,
+                             "Dropped kerb profile or adjacent full-height sidewalk failed a footprint probe." );
+                };
+                probe( .22f, 0, .040 );
+                probe( 2.05f, 0, .150 );
+                probe( .22f, crossing.depth * .5f + .45f, .095 );
+            }
+        }
+        auto repeated = mesh;
+        auto repeatedCrossings = crossings;
+        check( cityRoadCrossings::fitDroppedKerbs( repeated, road, repeatedCrossings, error ), error );
+        require( checksum( revised ) == checksum( repeated ), "Dropped kerb fitting is nondeterministic." );
+        auto highRoad = road;
+        for( auto &vertex : highRoad.vertices ) vertex.position.y += .20f;
+        auto fallback = mesh;
+        auto fallbackCrossings = crossings;
+        check( cityRoadCrossings::fitDroppedKerbs( fallback, highRoad, fallbackCrossings, error ), error );
+        require( checksum( fallback ) == checksum( mesh ) &&
+                 std::none_of( fallbackCrossings.begin(), fallbackCrossings.end(), []( const auto &crossing ) {
+                     return crossing.droppedKerbs;
+                 } ), "A level mismatch must retain the unmodified fitted footway." );
         const double diagonal = 15.5 / std::sqrt( 2. );
         for( int x : { -1, 1 } ) for( int z : { -1, 1 } ) require( topAt( mesh, diagonal * x, diagonal * z ), "Roundabout ring footway is absent between its four mouths" );
         for( const auto &direction : directions ) for( float radius : { 14.2f, 15.5f, 18.f, 25.f, 32.f } )

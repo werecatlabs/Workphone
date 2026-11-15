@@ -2010,7 +2010,8 @@ namespace workphone::scene::race
 
         void buildTerrainCityStreetDressing( SceneAssets &assets, const CityRoadTerrainMesh &walks,
                                              const SourceBudgetVector<Vector3F> &existingLamps,
-                                             VehicleAppearanceQuality quality )
+                                             VehicleAppearanceQuality quality,
+                                             SourceBudgetVector<CityStreetFixture> &installed )
         {
             assets.cityStreetDetailCount = 0;
             const int detail = std::clamp( assets.cityStreetDetail, 0, 100 );
@@ -2035,6 +2036,15 @@ namespace workphone::scene::race
                 {
                     return;
                 }
+                if( std::any_of( walks.crossings.begin(), walks.crossings.end(), [&]( const auto &crossing ) {
+                        const auto offset = position - crossing.centre;
+                        const auto extentAlong = halfLengths[kind] * std::abs( crossing.outward.dotProduct( along ) ) +
+                            halfDepths[kind] * std::abs( crossing.outward.dotProduct( outward ) );
+                        const auto extentAcross = halfLengths[kind] * std::abs( crossing.across.dotProduct( along ) ) +
+                            halfDepths[kind] * std::abs( crossing.across.dotProduct( outward ) );
+                        return std::abs( offset.dotProduct( crossing.outward ) ) < crossing.depth * .5f + extentAlong + .95f &&
+                               std::abs( offset.dotProduct( crossing.across ) ) < crossing.width * .5f + extentAcross + 2.5f;
+                    } ) ) return;
                 const float lampClearance = kind == CityStreetFixture::Lamp ? 9.f : 1.65f;
                 if( std::any_of( existingLamps.begin(), existingLamps.end(), [&]( const auto &lamp ) {
                         const float dx = lamp.x - position.x, dz = lamp.z - position.z;
@@ -2289,6 +2299,7 @@ namespace workphone::scene::race
             publish( "ornamental grasses", planting, { .31f, .43f, .16f, 1 }, .93f );
             publish( "pedestrian lamp lenses", lenses, { .86f, .83f, .72f, 1 }, .38f );
             assets.cityStreetDetailCount = static_cast<u32>( admitted.size() );
+            installed.swap( admitted );
         }
 
 #include "CityVergeTransitions.hpp"
@@ -3389,6 +3400,9 @@ namespace workphone::scene::race
 #include "CityRoundaboutSigns.hpp"
 #include "CityFootwayAppearance.hpp"
 #include "CityCrossingLandings.hpp"
+#include "CityCrossingBollards.hpp"
+#include "CityCarriagewayUtilities.hpp"
+#include "CityStormDrains.hpp"
 #include "CityHinterland.hpp"
 
         void buildCity( SceneAssets &assets, SmartPtr<IGameActor> sourceOwner,
@@ -5055,8 +5069,15 @@ namespace workphone::scene::race
                         throw std::runtime_error( "Cannot create terrain-city footway rigidbody." );
                     }
                 }
-                if( sharedFootways ) cityCrossingLandings::build( assets, fitted );
-                buildTerrainCityStreetDressing( assets, fitted, terrainStreetLamps, quality );
+                if( sharedFootways )
+                {
+                    cityCrossingLandings::build( assets, fitted );
+                    cityStormDrains::build( assets, fitted, seed, quality );
+                }
+                SourceBudgetVector<CityStreetFixture> installedFurniture;
+                buildTerrainCityStreetDressing( assets, fitted, terrainStreetLamps, quality, installedFurniture );
+                cityCrossingBollards::build( assets, fitted, installedFurniture, terrainStreetLamps, quality );
+                cityCarriagewayUtilities::build( assets, fitted, seed, quality );
                 cityRoundaboutLandscape::build( assets, seed );
                 cityGroundContact::build( assets, buildingEntries, fitted, pavingMaterial, forge );
                 cityRoundaboutSigns::build( assets, fitted, terrainStreetLamps, quality );

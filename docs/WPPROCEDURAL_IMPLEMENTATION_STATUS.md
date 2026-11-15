@@ -1,5 +1,52 @@
 # WPProcedural implementation status
 
+## Street utilities and asphalt finish — 15 November 2026
+
+The scanned carriageway material keeps the aggregate at its physical scale
+and uses finer binder variation with less tonal contrast. The native city can
+place utility covers and localized asphalt repairs in open paved areas, and
+cast-iron slot grates alongside the fitted crossing kerbs. Placement checks the
+published road and paint triangles. City generation places the fixtures as
+render geometry fitted to the carriageway. Live spline edits still need a city
+regeneration to refresh these fixtures.
+
+The first frontage capture exposed a rectangular border around a round cover.
+The material now has an explicit alpha cutout. The seed 42 native close-up
+shows the circular rim and a slotted grate between the kerb and edge line. The
+scene generated 41 covers, 41 asphalt repairs and 40 grates. All five focused
+road and surface tests passed. The frontage, junction and utility captures
+each passed native validation with 256 sidewalk collision probes. The sample's
+`utilities` view selects a cover from the generated meshes and checks its live
+road support and renderer state. See
+`artifacts/procedural/city-street-utilities-20261115/visual-review.md` for the
+matched captures on Microsoft Basic Render Driver.
+
+## Pedestrian crossing kerbs and protection — 15 November 2026
+
+The fitted sidewalk now lowers at eligible crossings using the same surface
+for rendering and collision. A short shelf meets the carriageway side, then
+the landing rises back to the surrounding sidewalk. The fitter checks the
+actual road and both sidewalk edges before admitting a pair of drops.
+Crossings keep their existing sidewalk profile if the fit fails.
+
+The native road publication retains its accepted crossing positions with the
+fitted footways. Tactile tiles use those positions and follow the landing
+contours. Their raised-dot texture now has tile joints. Where there is enough
+fitted walking width, graphite bollards with reflector bands flank a crossing.
+General street furniture leaves the crossing area clear. A narrow concrete
+gutter follows the road-facing kerb through lowered landings.
+
+The first frontage capture showed an exposed soil seam at the lowered lip and
+a bench beside the landing. The second pass finishes the seam and moves the
+general furniture away. The seed 42 scene fitted both kerbs at all 64
+crossings, with 128 gutter insets and 32 bollard pairs. The native probes sample
+the lowered lip and the full-height sidewalk on both sides. The footway suite
+checks heights, unchanged horizontal area, determinism and the fallback for an
+unsuitable road height. Both final frontage and junction views passed native
+validation with all 256 sidewalk probes. All four focused road tests passed.
+See `artifacts/procedural/city-crossing-kerbs-20261115/visual-review.md` for
+the matched captures and software renderer scope.
+
 ## Junction markings and pedestrian landings — 15 November 2026
 
 Eligible ordinary and roundabout approaches have zebra crossings. A crossing

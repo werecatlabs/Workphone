@@ -581,6 +581,7 @@ namespace workphone::scene
         vertices.swap( other.vertices );
         indices.swap( other.indices );
         triangleKinds.swap( other.triangleKinds );
+        crossings.swap( other.crossings );
         std::swap( sourceRevision, other.sourceRevision );
         std::swap( terrainRevision, other.terrainRevision );
     }

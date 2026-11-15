@@ -14,6 +14,62 @@
                 float halfLength, inner, outer;
             };
 
+            struct KerbSegment { Vector3F a, b, roadward; };
+
+            SourceBudgetVector<KerbSegment> kerbSegments( const CityRoadTerrainMesh &footways )
+            {
+                SourceBudgetVector<KerbSegment> result;
+                for( size_t i = 0; i + 2 < footways.indices.size(); i += 3 )
+                {
+                    const auto &top = footways.vertices[footways.indices[i]];
+                    const auto &a = footways.vertices[footways.indices[i + 1]].position;
+                    const auto &b = footways.vertices[footways.indices[i + 2]].position;
+                    if( std::abs( top.normal.y ) > .01f || top.position.y - a.y < .009f ||
+                        std::abs( top.position.x - a.x ) > .001f || std::abs( top.position.z - a.z ) > .001f ) continue;
+                    const auto roadward = Vector3F( top.normal.x, 0, top.normal.z ).normaliseCopy();
+                    if( ( b - a ).lengthSquared() > .000004f ) result.push_back( { a, b, roadward } );
+                }
+                return result;
+            }
+
+            void addGutter( Geometry &gutter, const SourceBudgetVector<KerbSegment> &segments,
+                            const CityRoadCrossing &crossing, Vector3F across,
+                            const render::TerrainData &terrain, const Transform3<real_Num> &placement )
+            {
+                constexpr float bias = .014f;
+                const float halfDepth = crossing.depth * .5f + .39f;
+                const auto sample = [&]( Vector3F &p ) {
+                    if( !render::sampleTerrainHeight( terrain, placement, p, p.y ) ) return false;
+                    p.y += bias;
+                    return true;
+                };
+                for( const auto &segment : segments )
+                {
+                    if( segment.roadward.dotProduct( across ) > -.65f ) continue;
+                    const auto a = segment.a - crossing.centre, b = segment.b - crossing.centre;
+                    const float kerbOffset = ( a + b ).dotProduct( across ) * .5f - crossing.width * .5f;
+                    if( std::abs( kerbOffset ) > .39f ) continue;
+                    const float start = a.dotProduct( crossing.outward );
+                    const float advance = b.dotProduct( crossing.outward ) - start;
+                    if( std::abs( advance ) < .001f ) continue;
+                    const float t0 = ( -halfDepth - start ) / advance, t1 = ( halfDepth - start ) / advance;
+                    const float first = std::max( 0.f, std::min( t0, t1 ) ), last = std::min( 1.f, std::max( t0, t1 ) );
+                    if( last - first <= .001f ) continue;
+
+                    const auto step = segment.b - segment.a;
+                    const auto edgeA = segment.a + step * first, edgeB = segment.a + step * last;
+                    auto p = edgeA - segment.roadward * .009f, q = edgeB - segment.roadward * .009f;
+                    auto r = edgeB + segment.roadward * .088f, s = edgeA + segment.roadward * .088f;
+                    if( !sample( p ) || !sample( q ) || !sample( r ) || !sample( s ) ) continue;
+                    auto middle = ( p + r ) * .5f;
+                    const float interpolated = middle.y;
+                    if( !sample( middle ) || std::abs( middle.y - interpolated ) > .009f ) continue;
+                    auto normal = ( q - p ).crossProduct( s - p ).normaliseCopy();
+                    if( normal.y < 0 ) normal = -normal;
+                    if( normal.y > .8f ) gutter.quad( p, q, r, s, normal );
+                }
+            }
+
             void project( Geometry &geometry, const CityRoadTerrainMesh &footways, const Panel &panel )
             {
                 const auto farCorner = std::hypot( panel.outer, panel.halfLength ) + .005f;
@@ -100,12 +156,18 @@
                 constexpr u32 size = 128;
                 constexpr float tile = .432f;
                 TextureBuffer colour( size, size ), normal( size, size );
-                const auto profile = [size]( float x, float y ) {
-                    const float u = ( x + .5f ) * 6.f / size;
-                    const float v = ( y + .5f ) * 6.f / size;
+                const auto joint = [size, tile]( float x, float y ) {
+                    const float u = ( x + .5f ) / size, v = ( y + .5f ) / size;
+                    const float localU = u - std::floor( u ), localV = v - std::floor( v );
+                    const float distance = tile * std::min( { localU, 1.f - localU, localV, 1.f - localV } );
+                    const float bevel = std::clamp( ( distance - .0025f ) / .007f, 0.f, 1.f );
+                    return bevel * bevel * ( 3.f - 2.f * bevel );
+                };
+                const auto profile = [&]( float x, float y ) {
+                    const float u = ( x + .5f ) * 6.f / size, v = ( y + .5f ) * 6.f / size;
                     const float radius = std::hypot( u - std::floor( u ) - .5f, v - std::floor( v ) - .5f );
                     const float shoulder = std::clamp( ( .32f - radius ) / .16f, 0.f, 1.f );
-                    return .0045f * shoulder * shoulder * ( 3.f - 2.f * shoulder );
+                    return .0045f * shoulder * shoulder * ( 3.f - 2.f * shoulder ) - .003f * ( 1.f - joint( x, y ) );
                 };
                 const auto byte = []( float v ) { return u8( std::clamp( v, 0.f, 255.f ) ); };
                 for( u32 y = 0; y < size; ++y )
@@ -116,10 +178,11 @@
                         const auto key = render::foliageStableHash( ( u64( x ) << 32 ) | y );
                         const float grain = float( ( key >> 28 ) & 31u ) - 15.f;
                         auto *pixel = colour.pixel( x, y );
-                        const float relief = metres / .0045f;
-                        pixel[0] = byte( 172.f + .63f * grain + 8.f * relief );
-                        pixel[1] = byte( 127.f + .55f * grain + 5.f * relief );
-                        pixel[2] = byte( 76.f + .46f * grain + 3.f * relief );
+                        const float relief = std::max( 0.f, metres / .0045f );
+                        const float tileFace = joint( float( x ), float( y ) );
+                        pixel[0] = byte( 121.f + 51.f * tileFace + .63f * grain + 8.f * relief );
+                        pixel[1] = byte( 97.f + 30.f * tileFace + .55f * grain + 5.f * relief );
+                        pixel[2] = byte( 71.f + 5.f * tileFace + .46f * grain + 3.f * relief );
                         pixel[3] = 255;
                         const float dx = ( profile( float( x ) + 1, float( y ) ) - profile( float( x ) - 1, float( y ) ) ) * size / ( 2 * tile );
                         const float dy = ( profile( float( x ), float( y ) + 1 ) - profile( float( x ), float( y ) - 1 ) ) * size / ( 2 * tile );
@@ -144,20 +207,12 @@
             void build( SceneAssets &assets, const CityRoadTerrainMesh &footways )
             {
                 const auto terrain = assets.roadAuthoring->getTerrainSnapshot();
-                if( !terrain ) return;
+                if( footways.crossings.empty() || !terrain ) return;
                 const auto &placement = assets.roadAuthoring->getTerrainPlacement();
-                const auto &source = assets.roadAuthoring->getSource();
-                CityRoadJunctionBake connections;
-                String error;
-                const auto sampleHeight = [&]( const Vector3F &point, float &height ) {
-                    return render::sampleTerrainHeight( *terrain, placement, point, height );
-                };
-                if( !buildCityRoadJunctions( source, assets.roadAuthoring->getBake(), sampleHeight, {}, connections, error ) ) return;
-
-                const auto crossings = cityRoadCrossings::collect( source, connections, footways );
-                Geometry geometry;
-                size_t panels = 0;
-                for( const auto &crossing : crossings )
+                const auto edges = kerbSegments( footways );
+                Geometry geometry, gutters;
+                size_t panels = 0, finishedGutters = 0;
+                for( const auto &crossing : footways.crossings )
                 {
                     const float inner = crossing.width * .5f + .13f;
                     for( const float side : { -1.f, 1.f } )
@@ -166,13 +221,26 @@
                         project( geometry, footways, { crossing.centre, crossing.outward, crossing.across * side,
                                                       crossing.depth * .5f - .16f, inner, inner + .77f } );
                         if( geometry.indices.size() > start ) ++panels;
+                        if( crossing.droppedKerbs )
+                        {
+                            const auto gutterStart = gutters.indices.size();
+                            addGutter( gutters, edges, crossing, crossing.across * side, *terrain, placement );
+                            if( gutters.indices.size() > gutterStart ) ++finishedGutters;
+                        }
                     }
                 }
                 if( geometry.indices.empty() ) return;
                 const auto actor = mesh( assets, "Terrain city tactile crossing landings", geometry, materialForLandings( assets ) );
                 actor->getComponent<scene::MeshRenderer>()->setCastShadows( scene::Renderer::CastShadows::Off );
                 WP_LOG( String( "Terrain city tactile landings=" ) + StringUtil::toString( panels ) +
-                        " crossings=" + StringUtil::toString( crossings.size() ) +
+                        " crossings=" + StringUtil::toString( footways.crossings.size() ) +
                         " triangles=" + StringUtil::toString( geometry.indices.size() / 3 ) );
+                if( !gutters.indices.empty() )
+                {
+                    auto surface = material( assets, { .28f, .29f, .28f, 1 }, .96f );
+                    const auto channel = mesh( assets, "Terrain city crossing gutter insets", gutters, surface );
+                    channel->getComponent<scene::MeshRenderer>()->setCastShadows( scene::Renderer::CastShadows::Off );
+                    WP_LOG( String( "Terrain city crossing gutter insets=" ) + StringUtil::toString( finishedGutters ) );
+                }
             }
         }  // namespace cityCrossingLandings

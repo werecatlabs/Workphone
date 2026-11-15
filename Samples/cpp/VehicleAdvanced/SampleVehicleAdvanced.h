@@ -199,6 +199,9 @@ namespace workphone
         f32 m_cityHillsideRise = 0;
         Vector3F m_cityVergeEye{}, m_cityVergeTarget{};
         size_t m_cityVergeRoad = 0;
+        Vector3F m_cityUtilityEye{}, m_cityUtilityTarget{}, m_cityUtilityPrimary{}, m_cityUtilityGrate{};
+        size_t m_cityUtilityCovers = 0, m_cityUtilityGrates = 0;
+        bool m_cityUtilityHasGrate = false;
         Vector3F m_roadTerrainEditEye{}, m_roadTerrainEditTarget{};
         Vector3F m_roadTerrainEditBeforeKnot{}, m_roadTerrainEditAfterKnot{}, m_roadTerrainEditProbe{};
         size_t m_roadTerrainEditRoad = 0, m_roadTerrainEditChangedSamples = 0;
