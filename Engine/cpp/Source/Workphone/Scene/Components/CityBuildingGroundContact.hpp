@@ -3,6 +3,7 @@
 #include "CityFrontagePlanting.hpp"
 #include "CityEntranceRoute.hpp"
 #include "CityPedestrianSurfacing.hpp"
+#include "CityEntranceHandrails.hpp"
 
         namespace cityGroundContact
         {
@@ -109,12 +110,14 @@
                 float end = 0;
                 float height = 0;
                 int risers = 0;
+                bool handrails = false;
             };
 
             template <class Surface, class Clear>
             RaisedApproach buildRaisedApproach( const Entry &entry, float depth, float half,
                                                 Vector3F floor, const Surface &surface,
-                                                const Clear &clear, Geometry &stairs )
+                                                const Clear &clear, Geometry &stairs,
+                                                cityEntranceHandrails::Batches &handrails )
             {
                 constexpr float landing = .83f, tread = .34f, apronRun = .96f;
                 constexpr int maxRisers = 9;
@@ -188,7 +191,10 @@
                     stairs.quad( apronLeft, apronRight, outer.back(), outer.front(), normal );
                     cheek( bottom.front(), outer.front(), apronLeft, outer.front(), -along );
                     cheek( bottom.back(), outer.back(), apronRight, outer.back(), along );
-                    return { end + apronRun, outer[1].y, count };
+                    const bool railed = cityEntranceHandrails::append(
+                        handrails, entry.lot->id, { floor, along, outward, half, start, landing, tread, riser, count },
+                        surface, clear );
+                    return { end + apronRun, outer[1].y, count, railed };
                 }
                 return {};
             }
@@ -319,6 +325,7 @@
                 };
                 Geometry approach, gravel, stoneEdge, courses[2], caps, risers, stairs;
                 cityPedestrianSurfacing::Batches routedPaving;
+                cityEntranceHandrails::Batches handrails;
                 buildFoundationFacing( assets.cityLayout, *terrain, placement, courses, caps );
                 FrontagePlanting planting( assets.cityStreetDetail );
                 const Vector3F up( 0, 1, 0 );
@@ -347,13 +354,14 @@
                         return footprintClear( a, b, &lot );
                     };
                     const auto landing = lot.district == OpenCityLayout::District::Commercial
-                        ? buildRaisedApproach( entry, depth, half, floor, surface, groundClear, stairs )
+                        ? buildRaisedApproach( entry, depth, half, floor, surface, groundClear, stairs, handrails )
                         : RaisedApproach{};
                     if( landing.end > 0 )
                     {
                         ++raised;
-                        planting.reserveAccess( entry.door - along * ( half + .12f ),
-                                                 entry.door + normal * landing.end + along * ( half + .12f ) );
+                        const float reserved = half + ( landing.handrails ? cityEntranceHandrails::clearance : .12f );
+                        planting.reserveAccess( entry.door - along * reserved,
+                                                 entry.door + normal * landing.end + along * reserved );
                         WP_LOG( String( "Terrain city raised entrance lot=" ) + StringUtil::toString( lot.id ) +
                                 ", risers=" + StringUtil::toString( landing.risers ) );
                     }
@@ -595,6 +603,7 @@
                     if( !actor ) throw std::runtime_error( "Cannot publish terrain-city entrance steps." );
                     addWalkCollision( actor );
                 }
+                cityEntranceHandrails::publish( assets, handrails );
                 for( auto actor : cityPedestrianSurfacing::publish( assets, routedPaving, seed ) )
                     if( actor ) addWalkCollision( actor );
                 if( !stoneEdge.indices.empty() )

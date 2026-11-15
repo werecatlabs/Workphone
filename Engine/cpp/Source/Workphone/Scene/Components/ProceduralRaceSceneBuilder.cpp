@@ -3431,6 +3431,7 @@ namespace workphone::scene::race
 #include "CityBuildingGlazing.hpp"
 #include "CityShopfront.hpp"
 #include "CityShopInterior.hpp"
+#include "CityFacadeDetail.hpp"
 
         void buildCity( SceneAssets &assets, SmartPtr<IGameActor> sourceOwner,
                         SmartPtr<IGameActor> vehicle, u32 seed, VehicleAppearanceQuality quality )
@@ -3491,18 +3492,22 @@ namespace workphone::scene::race
                 Geometry windowPanes, timber, tiles, farTiles, officeJoinery;
                 Geometry shopfrontFascia[static_cast<size_t>( cityShopfront::Style::Count )], shopfrontLetters, shopfrontDisplays;
                 cityShopInterior::Surfaces shopInterior;
+                cityFacadeDetail::GeometryBatches masonry;
                 Array<LODDetailBound> bounds{ Allocator<LODDetailBound>( sourceBudget ) };
             };
 
             SourceBudgetMap<std::pair<int, int>, CityPatch> patches;
             size_t emittedShopfronts = 0;
             size_t emittedDisplayBays = 0;
+            bool emittedMasonry = false;
             const size_t displayBayLimit = buildingCount > 256 ? 96 : 144;
             size_t nominalMansardSilhouettes = 0, emittedMansardSilhouettes = 0;
             CityBuildingKit kit( assets, buildingCount );
             const bool detailedBuildings = quality != VehicleAppearanceQuality::Preview;
             const bool decorateShopfronts = detailedBuildings && !kit.hasModule( CityBuildingPart::Window ) &&
                                             !kit.hasModule( CityBuildingPart::Entrance );
+            const bool dressOfficeMasonry = detailedBuildings && !kit.hasModule( CityBuildingPart::Wall ) &&
+                !kit.hasModule( CityBuildingPart::Window ) && !kit.hasModule( CityBuildingPart::Corner );
             const int buildingStyle = std::clamp( assets.cityBuildingStyle, 0, cityBuildingStyleMax );
             const auto streetDetails = OpenCityStreetDetails::generate(
                 city, seed, quality != VehicleAppearanceQuality::Preview );
@@ -3811,6 +3816,8 @@ namespace workphone::scene::race
                 // depend on this optional-detail budget. Dense ten-block cities
                 // therefore cannot multiply railings or sash bars without bound.
                 size_t facadeDetailVertices = 0, roofDetailVertices = 0;
+                size_t masonryVerticesLeft = 250000u / std::max<size_t>( 1, buildingCount );
+                cityFacadeDetail::Counts masonry;
                 const size_t facadeDetailLimit = ( buildingCount > 256 ? 110000u : 220000u ) /
                                                  std::max<size_t>( 1, buildingCount );
                 const size_t roofDetailLimit = ( buildingCount > 256 ? 50000u : 100000u ) /
@@ -4024,6 +4031,9 @@ namespace workphone::scene::race
                                 };
                                 if( office )
                                 {
+                                    if( dressOfficeMasonry && ( floor > 0 || !groundFloor ) )
+                                        cityFacadeDetail::officeStorey( patch.masonry, masonry, point, normal,
+                                            along, span, bays, y0, low, high, y1, masonryVerticesLeft );
                                     // Curtain-wall kit: recessed ribbons, substantial spandrels
                                     // and fine mullions rather than hundreds of boxed windows.
                                     const float left = -span * .5f + .38f, right = span * .5f - .38f;
@@ -4826,6 +4836,15 @@ namespace workphone::scene::race
                         }
                     }
                 }
+                if( masonry.storeys )
+                {
+                    emittedMasonry = true;
+                    WP_LOG( String( "City masonry facade lot=" ) + StringUtil::toString( lot.id ) +
+                            ", faces=" + StringUtil::toString( masonry.storeys ) +
+                            ", panels=" + StringUtil::toString( masonry.panels ) +
+                            ", profiles=" + StringUtil::toString( masonry.profiles ) +
+                            ", mullions=" + StringUtil::toString( masonry.mullions ) );
+                }
             }
             if( nominalMansardSilhouettes != emittedMansardSilhouettes )
             {
@@ -5009,6 +5028,8 @@ namespace workphone::scene::race
             const auto [glassMaterials, paneMaterial] = cityBuildingGlazing::build( assets, detailedBuildings );
             const auto shops = emittedShopfronts ? cityShopfront::materials( assets ) : cityShopfront::Materials{};
             const auto interiors = emittedDisplayBays ? cityShopInterior::materials( assets ) : cityShopInterior::Materials{};
+            const auto masonry = emittedMasonry ? cityFacadeDetail::materials( assets, facades[2], seed )
+                                                : cityFacadeDetail::Materials{};
             for( auto &[key, patch] : patches )
             {
                 reserveOwnerSlot( assets.actors );
@@ -5049,6 +5070,9 @@ namespace workphone::scene::race
                     add( "LOD0 city glazing", patch.windowPanes, paneMaterial, nearRenderers );
                     add( "LOD0 city roof detail", patch.roofs, roofMaterial, nearRenderers );
                     add( "LOD0 city facade frames", patch.frames, frameMaterial, nearRenderers );
+                    add( "LOD0 city masonry panels", patch.masonry.panels, masonry.stone, nearRenderers );
+                    add( "LOD0 city masonry sill and head profiles", patch.masonry.profiles, masonry.dressed, nearRenderers );
+                    add( "LOD0 city masonry capped mullions", patch.masonry.mullions, masonry.metal, nearRenderers );
                     add( "LOD0 city storefront joinery", patch.officeJoinery, storefrontMetal, nearRenderers );
                     for( size_t style = 0; style < shops.fascia.size(); ++style )
                         add( "LOD0 city commercial fascia and canopies", patch.shopfrontFascia[style], shops.fascia[style], nearRenderers );

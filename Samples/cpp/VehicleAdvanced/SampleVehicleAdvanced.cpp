@@ -815,6 +815,7 @@ namespace workphone
         struct CityBuildingGeometryCheck
         {
             u32 patches = 0, meshes = 0, readyMeshes = 0, nearMeshes = 0, farMeshes = 0;
+            u32 masonryMeshes = 0, readyMasonryMeshes = 0;
             u64 vertices = 0, triangles = 0;
             bool valid = false;
         };
@@ -852,6 +853,11 @@ namespace workphone
                 result.triangles += indices / 3;
 #endif
                 result.readyMeshes += ready;
+                if( name.find( "LOD0 city masonry " ) == 0 )
+                {
+                    ++result.masonryMeshes;
+                    result.readyMasonryMeshes += ready;
+                }
             }
             result.valid = result.patches > 0 && result.farMeshes > 0 &&
                 ( !expectNear || result.nearMeshes > 0 ) && result.meshes == result.readyMeshes;
@@ -864,6 +870,8 @@ namespace workphone
                    << ",\"readyMeshes\":" << check.readyMeshes << ",\"nearMeshes\":" << check.nearMeshes
                    << ",\"farMeshes\":" << check.farMeshes << ",\"nativeVertices\":" << check.vertices
                    << ",\"nativeTriangles\":" << check.triangles
+                   << ",\"masonryMeshes\":" << check.masonryMeshes
+                   << ",\"readyMasonryMeshes\":" << check.readyMasonryMeshes
                    << ",\"ready\":" << ( check.valid ? "true" : "false" ) << '}';
         }
 
