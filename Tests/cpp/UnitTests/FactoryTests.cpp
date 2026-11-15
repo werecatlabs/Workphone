@@ -34,7 +34,7 @@ BOOST_AUTO_TEST_CASE( factory_basic )
         BOOST_CHECK( !factoryManager->getFactories().empty() );
         BOOST_CHECK( factoryManager->getFactories().size() >= initialFactoryCount );
 
-        auto typeInfo = scene::CarController::typeInfo();
+        auto typeInfo = scene::FourWheelVehicle::typeInfo();
         BOOST_REQUIRE( typeInfo );
 
         auto typeManager = TypeManager::instance();
@@ -44,8 +44,12 @@ BOOST_AUTO_TEST_CASE( factory_basic )
         BOOST_CHECK( !StringUtil::isNullOrEmpty( type ) );
 
         // Test object creation from type
-        auto carController = factoryManager->createObjectFromType<scene::CarController>( type );
+        auto carController = factoryManager->createObjectFromType<scene::FourWheelVehicle>( type );
         BOOST_CHECK( carController );
+        BOOST_CHECK( sceneManager->getComponentFactoryType( "workphone::scene::CarController" ) ==
+                     "FourWheelVehicle" );
+        BOOST_CHECK( sceneManager->getComponentFactoryType( "CarController" ) ==
+                     "FourWheelVehicle" );
 
         // Verify the created object is of correct type
         if( carController )
@@ -75,16 +79,16 @@ BOOST_AUTO_TEST_CASE( factory_invalid_type )
         UnitTests::setupFactories();
 
         // Test with empty string
-        auto emptyResult = factoryManager->createObjectFromType<scene::CarController>( "" );
+        auto emptyResult = factoryManager->createObjectFromType<scene::FourWheelVehicle>( "" );
         BOOST_CHECK( !emptyResult );
 
         // Test with non-existent type
         auto invalidResult =
-            factoryManager->createObjectFromType<scene::CarController>( "NonExistentType" );
+            factoryManager->createObjectFromType<scene::FourWheelVehicle>( "NonExistentType" );
         BOOST_CHECK( !invalidResult );
 
         // Test with null/whitespace type
-        auto whitespaceResult = factoryManager->createObjectFromType<scene::CarController>( "   " );
+        auto whitespaceResult = factoryManager->createObjectFromType<scene::FourWheelVehicle>( "   " );
         BOOST_CHECK( !whitespaceResult );
     }
     catch( std::exception &e )
@@ -111,13 +115,13 @@ BOOST_AUTO_TEST_CASE( factory_uninitialized )
         auto typeManager = TypeManager::instance();
         BOOST_REQUIRE( typeManager );
 
-        auto typeInfo = scene::CarController::typeInfo();
+        auto typeInfo = scene::FourWheelVehicle::typeInfo();
         BOOST_REQUIRE( typeInfo );
 
         auto type = typeManager->getName( typeInfo );
 
         // The shared test runtime may already have factories registered by earlier tests.
-        auto carController = factoryManager->createObjectFromType<scene::CarController>( type );
+        auto carController = factoryManager->createObjectFromType<scene::FourWheelVehicle>( type );
         if( initialFactoryCount == 0 )
         {
             BOOST_CHECK( !carController );
@@ -159,10 +163,10 @@ BOOST_AUTO_TEST_CASE( factory_duplicate_registration )
         BOOST_CHECK( afterSecondSetup >= afterFirstSetup );
 
         // Verify objects can still be created
-        auto typeInfo = scene::CarController::typeInfo();
+        auto typeInfo = scene::FourWheelVehicle::typeInfo();
         auto typeManager = TypeManager::instance();
         auto type = typeManager->getName( typeInfo );
-        auto carController = factoryManager->createObjectFromType<scene::CarController>( type );
+        auto carController = factoryManager->createObjectFromType<scene::FourWheelVehicle>( type );
         BOOST_CHECK( carController );
     }
     catch( std::exception &e )
@@ -242,7 +246,7 @@ BOOST_AUTO_TEST_CASE( factory_type_manager_consistency )
         auto typeManager = TypeManager::instance();
         BOOST_REQUIRE( typeManager );
 
-        auto typeInfo = scene::CarController::typeInfo();
+        auto typeInfo = scene::FourWheelVehicle::typeInfo();
         BOOST_REQUIRE( typeInfo );
 
         // Get type information multiple times
@@ -414,16 +418,16 @@ BOOST_AUTO_TEST_CASE( factory_performance )
         auto typeManager = TypeManager::instance();
         BOOST_REQUIRE( typeManager );
 
-        auto typeInfo = scene::CarController::typeInfo();
+        auto typeInfo = scene::FourWheelVehicle::typeInfo();
         auto type = typeManager->getName( typeInfo );
 
         // Create multiple objects rapidly
         const size_t numObjects = 100;
-        std::vector<SmartPtr<scene::CarController>> objects;
+        std::vector<SmartPtr<scene::FourWheelVehicle>> objects;
 
         for( size_t i = 0; i < numObjects; ++i )
         {
-            auto obj = factoryManager->createObjectFromType<scene::CarController>( type );
+            auto obj = factoryManager->createObjectFromType<scene::FourWheelVehicle>( type );
             if( obj )
             {
                 objects.push_back( obj );

@@ -1,5 +1,5 @@
 #include <Workphone/WorkphonePCH.hpp>
-#include <Workphone/Scene/Components/CarController.hpp>
+#include <Workphone/Scene/Components/FourWheelVehicle.hpp>
 #include <Workphone/Scene/Components/WheelController.hpp>
 #include <Workphone/Scene/Components/CollisionBox.hpp>
 #include <Workphone/Scene/Components/Rigidbody.hpp>
@@ -24,20 +24,20 @@
 #include <Workphone/Interface/Vehicle/IWheelComponent.hpp>
 #include <Workphone/Core/LogManager.hpp>
 #include <Workphone/Thread/ScopedLock.hpp>
-#include "CarControllerInput.hpp"
+#include "FourWheelVehicleInput.hpp"
 
 namespace workphone::scene
 {
-    WP_CLASS_REGISTER_DERIVED( workphone::scene, CarController, VehicleController );
+    WP_CLASS_REGISTER_DERIVED( workphone::scene, FourWheelVehicle, VehicleController );
 
     // Static property key definitions
-    const String CarController::radiusStr = "radius";
-    const String CarController::suspensionTravelStr = "suspensionTravel";
-    const String CarController::dampingStr = "damping";
-    const String CarController::driveTypeStr = "Drive Type";
-    const String CarController::handlingPresetStr = "Handling Preset";
+    const String FourWheelVehicle::radiusStr = "radius";
+    const String FourWheelVehicle::suspensionTravelStr = "suspensionTravel";
+    const String FourWheelVehicle::dampingStr = "damping";
+    const String FourWheelVehicle::driveTypeStr = "Drive Type";
+    const String FourWheelVehicle::handlingPresetStr = "Handling Preset";
 
-    const Array<String> CarController::driveTypesEnumTypes = Array<String>(
+    const Array<String> FourWheelVehicle::driveTypesEnumTypes = Array<String>(
         { "All Wheel Drive", "Four Wheel Drive", "Rear Wheel Drive", "Front Wheel Drive" } );
 
     namespace
@@ -95,11 +95,11 @@ namespace workphone::scene
         }
     }  // namespace
 
-    CarController::CarController() = default;
+    FourWheelVehicle::FourWheelVehicle() = default;
 
-    CarController::~CarController() = default;
+    FourWheelVehicle::~FourWheelVehicle() = default;
 
-    void CarController::load( SmartPtr<ISharedObject> data )
+    void FourWheelVehicle::load( SmartPtr<ISharedObject> data )
     {
         try
         {
@@ -191,7 +191,7 @@ namespace workphone::scene
         }
     }
 
-    void CarController::unload( SmartPtr<ISharedObject> data )
+    void FourWheelVehicle::unload( SmartPtr<ISharedObject> data )
     {
         try
         {
@@ -261,7 +261,7 @@ namespace workphone::scene
         }
     }
 
-    void CarController::update()
+    void FourWheelVehicle::update()
     {
         try
         {
@@ -517,7 +517,7 @@ namespace workphone::scene
         }
     }
 
-    void CarController::setupWheels()
+    void FourWheelVehicle::setupWheels()
     {
         auto applicationManager = core::IApplicationManager::instance();
         WP_ASSERT( applicationManager );
@@ -716,23 +716,23 @@ namespace workphone::scene
         }
     }
 
-    CarController::VehicleCallback::VehicleCallback( CarController *controller ) : m_owner( controller )
+    FourWheelVehicle::VehicleCallback::VehicleCallback( FourWheelVehicle *controller ) : m_owner( controller )
     {
     }
 
-    CarController::VehicleCallback::VehicleCallback() = default;
+    FourWheelVehicle::VehicleCallback::VehicleCallback() = default;
 
-    CarController::VehicleCallback::~VehicleCallback()
+    FourWheelVehicle::VehicleCallback::~VehicleCallback()
     {
         m_owner = nullptr;
     }
 
-    auto CarController::VehicleCallback::getData( const String &filePath ) -> String
+    auto FourWheelVehicle::VehicleCallback::getData( const String &filePath ) -> String
     {
         return {};
     }
 
-    void CarController::VehicleCallback::addForce( s32 bodyId, const Vector3<real_Num> &force,
+    void FourWheelVehicle::VehicleCallback::addForce( s32 bodyId, const Vector3<real_Num> &force,
                                                    const Vector3<real_Num> &pos )
     {
         if( auto owner = getOwner() )
@@ -744,7 +744,7 @@ namespace workphone::scene
         }
     }
 
-    void CarController::VehicleCallback::addTorque( s32 bodyId, const Vector3<real_Num> &torque )
+    void FourWheelVehicle::VehicleCallback::addTorque( s32 bodyId, const Vector3<real_Num> &torque )
     {
         if( auto owner = getOwner() )
         {
@@ -755,16 +755,16 @@ namespace workphone::scene
         }
     }
 
-    void CarController::VehicleCallback::addLocalForce( s32 bodyId, const Vector3<real_Num> &force,
+    void FourWheelVehicle::VehicleCallback::addLocalForce( s32 bodyId, const Vector3<real_Num> &force,
                                                         const Vector3<real_Num> &pos )
     {
     }
 
-    void CarController::VehicleCallback::addLocalTorque( s32 bodyId, const Vector3<real_Num> &torque )
+    void FourWheelVehicle::VehicleCallback::addLocalTorque( s32 bodyId, const Vector3<real_Num> &torque )
     {
     }
 
-    auto CarController::VehicleCallback::getAngularVelocity() const -> Vector3<real_Num>
+    auto FourWheelVehicle::VehicleCallback::getAngularVelocity() const -> Vector3<real_Num>
     {
         if( auto owner = getOwner() )
         {
@@ -777,7 +777,7 @@ namespace workphone::scene
         return Vector3<real_Num>::zero();
     }
 
-    auto CarController::VehicleCallback::getLinearVelocity() const -> Vector3<real_Num>
+    auto FourWheelVehicle::VehicleCallback::getLinearVelocity() const -> Vector3<real_Num>
     {
         if( auto owner = getOwner() )
         {
@@ -790,7 +790,7 @@ namespace workphone::scene
         return Vector3<real_Num>::zero();
     }
 
-    auto CarController::VehicleCallback::getLocalAngularVelocity() const -> Vector3<real_Num>
+    auto FourWheelVehicle::VehicleCallback::getLocalAngularVelocity() const -> Vector3<real_Num>
     {
         if( auto owner = getOwner() )
         {
@@ -803,7 +803,7 @@ namespace workphone::scene
         return Vector3<real_Num>::zero();
     }
 
-    auto CarController::VehicleCallback::getLocalLinearVelocity() const -> Vector3<real_Num>
+    auto FourWheelVehicle::VehicleCallback::getLocalLinearVelocity() const -> Vector3<real_Num>
     {
         if( auto owner = getOwner() )
         {
@@ -816,7 +816,7 @@ namespace workphone::scene
         return Vector3<real_Num>::zero();
     }
 
-    auto CarController::VehicleCallback::getScale() const -> Vector3<real_Num>
+    auto FourWheelVehicle::VehicleCallback::getScale() const -> Vector3<real_Num>
     {
         if( auto owner = getOwner() )
         {
@@ -829,7 +829,7 @@ namespace workphone::scene
         return Vector3<real_Num>::zero();
     }
 
-    auto CarController::VehicleCallback::getPosition() const -> Vector3<real_Num>
+    auto FourWheelVehicle::VehicleCallback::getPosition() const -> Vector3<real_Num>
     {
         if( auto owner = getOwner() )
         {
@@ -851,7 +851,7 @@ namespace workphone::scene
         return Vector3<real_Num>::zero();
     }
 
-    auto CarController::VehicleCallback::getOrientation() const -> Quaternion<real_Num>
+    auto FourWheelVehicle::VehicleCallback::getOrientation() const -> Quaternion<real_Num>
     {
         if( auto owner = getOwner() )
         {
@@ -873,7 +873,7 @@ namespace workphone::scene
         return Quaternion<real_Num>::identity();
     }
 
-    void CarController::VehicleCallback::displayLocalVector( s32 Bdy, const Vector3<real_Num> &V,
+    void FourWheelVehicle::VehicleCallback::displayLocalVector( s32 Bdy, const Vector3<real_Num> &V,
                                                              const Vector3<real_Num> &Org,
                                                              s32 colour ) const
     {
@@ -889,7 +889,7 @@ namespace workphone::scene
         debug->drawLine( 0, V, Org, colour );
     }
 
-    void CarController::VehicleCallback::displayLocalVector( s32 Bdy, s32 id, const Vector3<real_Num> &V,
+    void FourWheelVehicle::VehicleCallback::displayLocalVector( s32 Bdy, s32 id, const Vector3<real_Num> &V,
                                                              const Vector3<real_Num> &Org,
                                                              s32 colour ) const
     {
@@ -905,35 +905,35 @@ namespace workphone::scene
         debug->drawLine( id, V, Org, colour );
     }
 
-    auto CarController::VehicleCallback::getCallbackFunction() const -> void *
+    auto FourWheelVehicle::VehicleCallback::getCallbackFunction() const -> void *
     {
         return nullptr;
     }
 
-    void CarController::VehicleCallback::setCallbackFunction( void *callbackFunction )
+    void FourWheelVehicle::VehicleCallback::setCallbackFunction( void *callbackFunction )
     {
     }
 
-    auto CarController::VehicleCallback::getCallbackDataFunction() const -> void *
+    auto FourWheelVehicle::VehicleCallback::getCallbackDataFunction() const -> void *
     {
         return nullptr;
     }
 
-    void CarController::VehicleCallback::setCallbackDataFunction( void *callbackDataFunction )
+    void FourWheelVehicle::VehicleCallback::setCallbackDataFunction( void *callbackDataFunction )
     {
     }
 
-    auto CarController::VehicleCallback::getInputData() const -> FixedArray<f32, 8>
-    {
-        return {};
-    }
-
-    auto CarController::VehicleCallback::getControlAngles() const -> FixedArray<f32, 11>
+    auto FourWheelVehicle::VehicleCallback::getInputData() const -> FixedArray<f32, 8>
     {
         return {};
     }
 
-    auto CarController::VehicleCallback::getPointVelocity( const Vector3<real_Num> &p )
+    auto FourWheelVehicle::VehicleCallback::getControlAngles() const -> FixedArray<f32, 11>
+    {
+        return {};
+    }
+
+    auto FourWheelVehicle::VehicleCallback::getPointVelocity( const Vector3<real_Num> &p )
         -> Vector3<real_Num>
     {
         auto applicationManager = core::IApplicationManager::instancePtr();
@@ -953,7 +953,7 @@ namespace workphone::scene
         return {};
     }
 
-    auto CarController::VehicleCallback::castLocalRay( const Ray3<real_Num> &ray,
+    auto FourWheelVehicle::VehicleCallback::castLocalRay( const Ray3<real_Num> &ray,
                                                        SmartPtr<physics::IRaycastHit> &data ) -> bool
     {
         auto applicationManager = core::IApplicationManager::instancePtr();
@@ -989,7 +989,7 @@ namespace workphone::scene
         return false;
     }
 
-    auto CarController::VehicleCallback::castWorldRay( const Ray3<real_Num> &ray,
+    auto FourWheelVehicle::VehicleCallback::castWorldRay( const Ray3<real_Num> &ray,
                                                        SmartPtr<physics::IRaycastHit> &data ) -> bool
     {
         auto applicationManager = core::IApplicationManager::instance();
@@ -1007,18 +1007,18 @@ namespace workphone::scene
         return false;
     }
 
-    auto CarController::VehicleCallback::getOwner() const -> SmartPtr<CarController>
+    auto FourWheelVehicle::VehicleCallback::getOwner() const -> SmartPtr<FourWheelVehicle>
     {
         auto p = m_owner.lock();
         return p;
     }
 
-    void CarController::VehicleCallback::setOwner( SmartPtr<CarController> owner )
+    void FourWheelVehicle::VehicleCallback::setOwner( SmartPtr<FourWheelVehicle> owner )
     {
         m_owner = owner;
     }
 
-    void CarController::VehicleCallback::displayVector( s32 Bdy, s32 id, const Vector3<real_Num> &V,
+    void FourWheelVehicle::VehicleCallback::displayVector( s32 Bdy, s32 id, const Vector3<real_Num> &V,
                                                         const Vector3<real_Num> &Org, s32 colour ) const
     {
         auto applicationManager = core::IApplicationManager::instance();
@@ -1033,7 +1033,7 @@ namespace workphone::scene
         debug->drawLine( id, V, Org, colour );
     }
 
-    auto CarController::getProperties() const -> SmartPtr<Properties>
+    auto FourWheelVehicle::getProperties() const -> SmartPtr<Properties>
     {
         if( auto properties = VehicleController::getProperties() )
         {
@@ -1060,7 +1060,7 @@ namespace workphone::scene
         return nullptr;
     }
 
-    void CarController::setProperties( SmartPtr<Properties> properties )
+    void FourWheelVehicle::setProperties( SmartPtr<Properties> properties )
     {
         if( !properties )
         {
@@ -1135,12 +1135,12 @@ namespace workphone::scene
         }
     }
 
-    bool CarController::hasHandlingPreset() const
+    bool FourWheelVehicle::hasHandlingPreset() const
     {
         return m_handlingPreset != 0;
     }
 
-    void CarController::refreshHandlingPreset()
+    void FourWheelVehicle::refreshHandlingPreset()
     {
         if( hasHandlingPreset() && m_vehicleController )
         {
@@ -1150,7 +1150,7 @@ namespace workphone::scene
         }
     }
 
-    void CarController::applyHandlingConfiguration()
+    void FourWheelVehicle::applyHandlingConfiguration()
     {
         auto vehicle = m_vehicleController;
         const auto &tune = handlingTunes[m_handlingPreset];
@@ -1219,7 +1219,7 @@ namespace workphone::scene
         }
     }
 
-    auto CarController::getChildObjects() const -> Array<SmartPtr<ISharedObject>>
+    auto FourWheelVehicle::getChildObjects() const -> Array<SmartPtr<ISharedObject>>
     {
         auto objects = VehicleController::getChildObjects();
         objects.emplace_back( m_vehicleController );
@@ -1227,17 +1227,17 @@ namespace workphone::scene
         return objects;
     }
 
-    auto CarController::getVehicleController() const -> SmartPtr<vehicle::IVehicle>
+    auto FourWheelVehicle::getVehicleController() const -> SmartPtr<vehicle::IVehicle>
     {
         return m_vehicleController;
     }
 
-    void CarController::setVehicleController( SmartPtr<vehicle::IVehicle> vehicleController )
+    void FourWheelVehicle::setVehicleController( SmartPtr<vehicle::IVehicle> vehicleController )
     {
         m_vehicleController = vehicleController;
     }
 
-    void CarController::setControls( f32 throttle, f32 brake, f32 steering )
+    void FourWheelVehicle::setControls( f32 throttle, f32 brake, f32 steering )
     {
         ScopedLock controlsLock( this, true );
         m_playerControls = false;
@@ -1246,7 +1246,7 @@ namespace workphone::scene
         setSteering( std::clamp( steering, -1.f, 1.f ) );
     }
 
-    void CarController::usePlayerControls()
+    void FourWheelVehicle::usePlayerControls()
     {
         ScopedLock controlsLock( this, true );
         if( !m_playerControls.exchange( true ) )
@@ -1258,37 +1258,37 @@ namespace workphone::scene
         }
     }
 
-    auto CarController::getThrottle() const -> f32
+    auto FourWheelVehicle::getThrottle() const -> f32
     {
         return m_throttle;
     }
 
-    void CarController::setThrottle( f32 throttle )
+    void FourWheelVehicle::setThrottle( f32 throttle )
     {
         m_throttle = throttle;
     }
 
-    auto CarController::getBrake() const -> f32
+    auto FourWheelVehicle::getBrake() const -> f32
     {
         return m_brake;
     }
 
-    void CarController::setBrake( f32 brake )
+    void FourWheelVehicle::setBrake( f32 brake )
     {
         m_brake = brake;
     }
 
-    auto CarController::getSteering() const -> f32
+    auto FourWheelVehicle::getSteering() const -> f32
     {
         return m_steering;
     }
 
-    void CarController::setSteering( f32 steering )
+    void FourWheelVehicle::setSteering( f32 steering )
     {
         m_steering = steering;
     }
 
-    auto CarController::handleComponentEvent( u32 state, FSMEvent eventType ) -> FSMReturnType
+    auto FourWheelVehicle::handleComponentEvent( u32 state, FSMEvent eventType ) -> FSMReturnType
     {
         //WP_ASSERT( Thread::getCurrentTask() == TaskId::Application );
 
@@ -1373,22 +1373,22 @@ namespace workphone::scene
         return FSMReturnType::Ok;
     }
 
-    void CarController::setDriveType( VehicleDriveType driveType )
+    void FourWheelVehicle::setDriveType( VehicleDriveType driveType )
     {
         m_driveType = driveType;
     }
 
-    VehicleDriveType CarController::getDriveType() const
+    VehicleDriveType FourWheelVehicle::getDriveType() const
     {
         return m_driveType;
     }
 
-    void CarController::InputListener::unload( SmartPtr<ISharedObject> data )
+    void FourWheelVehicle::InputListener::unload( SmartPtr<ISharedObject> data )
     {
         m_owner = nullptr;
     }
 
-    auto CarController::InputListener::handleEvent( EventType eventType, hash_type eventValue,
+    auto FourWheelVehicle::InputListener::handleEvent( EventType eventType, hash_type eventValue,
                                                     const Array<Parameter> &arguments,
                                                     SmartPtr<ISharedObject> sender,
                                                     SmartPtr<ISharedObject> object,
@@ -1403,7 +1403,7 @@ namespace workphone::scene
         return {};
     }
 
-    auto CarController::InputListener::inputEvent( SmartPtr<IInputEvent> event ) -> bool
+    auto FourWheelVehicle::InputListener::inputEvent( SmartPtr<IInputEvent> event ) -> bool
     {
         auto owner = getOwner();
         if( !owner || !event )
@@ -1456,38 +1456,38 @@ namespace workphone::scene
                 owner->setSteering( steering );
             }
         }
-        // Only CarController::update publishes channels; input events never write the vehicle.
+        // Only FourWheelVehicle::update publishes channels; input events never write the vehicle.
         return false;
     }
 
-    auto CarController::InputListener::updateEvent( const SmartPtr<IInputEvent> &event ) -> bool
+    auto FourWheelVehicle::InputListener::updateEvent( const SmartPtr<IInputEvent> &event ) -> bool
     {
         return false;
     }
 
-    void CarController::InputListener::setPriority( s32 priority )
+    void FourWheelVehicle::InputListener::setPriority( s32 priority )
     {
         m_priority = priority;
     }
 
-    auto CarController::InputListener::getPriority() const -> s32
+    auto FourWheelVehicle::InputListener::getPriority() const -> s32
     {
         return m_priority;
     }
 
-    auto CarController::InputListener::getOwner() const -> SmartPtr<CarController>
+    auto FourWheelVehicle::InputListener::getOwner() const -> SmartPtr<FourWheelVehicle>
     {
         auto p = m_owner.lock();
         return p;
     }
 
-    void CarController::InputListener::setOwner( SmartPtr<CarController> owner )
+    void FourWheelVehicle::InputListener::setOwner( SmartPtr<FourWheelVehicle> owner )
     {
         m_owner = owner;
     }
 
-    CarController::InputListener::InputListener() = default;
+    FourWheelVehicle::InputListener::InputListener() = default;
 
-    CarController::InputListener::~InputListener() = default;
+    FourWheelVehicle::InputListener::~InputListener() = default;
 
 }  // namespace workphone::scene

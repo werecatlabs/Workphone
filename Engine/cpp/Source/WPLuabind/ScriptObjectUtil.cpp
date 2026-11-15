@@ -519,10 +519,10 @@ namespace workphone
                 luabind::detail::convert_to_lua( L, SmartPtr<scene::TerrainSystem>( scriptObj ) );
                 return true;
             }
-            else if( scriptObj->isDerived<scene::CarController>() )
+            else if( scriptObj->isDerived<scene::FourWheelVehicle>() )
             {
-                WP_ASSERT( dynamic_cast<scene::CarController *>( scriptObj ) );
-                luabind::detail::convert_to_lua( L, SmartPtr<scene::CarController>( scriptObj ) );
+                WP_ASSERT( dynamic_cast<scene::FourWheelVehicle *>( scriptObj ) );
+                luabind::detail::convert_to_lua( L, SmartPtr<scene::FourWheelVehicle>( scriptObj ) );
                 return true;
             }
             else if( scriptObj->isDerived<scene::VehicleController>() )

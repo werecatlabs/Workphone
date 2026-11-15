@@ -1,5 +1,6 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/System/ProjectRuntimeSettings.hpp>
+#include <Workphone/System/WorldStreamingScheduler.hpp>
 #include <Workphone/Interface/IApplicationManager.hpp>
 #include <Workphone/Core/Properties.hpp>
 #include <Workphone/Core/DataUtil.hpp>
@@ -41,6 +42,50 @@ namespace workphone
             DataUtil::parse( text, settings.get() );
             return settings;
         }
+
+        void publishRuntimeSettings( core::IApplicationManager &app, SmartPtr<Properties> settings )
+        {
+            // The Editor handles budget changes through its live graphics settings backend.
+            // Standalone games need the saved limits before they load any scene assets.
+            if( !app.isEditor() )
+            {
+                auto graphics = settings->getChild( "Game Graphics" );
+                const struct
+                {
+                    const char *key;
+                    StreamMemoryClass category;
+                } budgets[] = {
+                    { "performance.memoryBudgetMb", StreamMemoryClass::SourceCpu },
+                    { "quality.streamingBudgetMb", StreamMemoryClass::WorkingCpu },
+                    { "performance.gpuMemoryBudgetMb", StreamMemoryClass::Gpu }
+                };
+                for( const auto &budget : budgets )
+                {
+                    const auto *profile = settings->hasProperty( budget.key ) ? settings.get() : graphics.get();
+                    if( !profile || !profile->hasProperty( budget.key ) ) continue;
+
+                    s32 megabytes = 0;
+                    if( !profile->getPropertyValue( budget.key, megabytes ) || megabytes <= 0 )
+                    {
+                        WP_LOG_WARNING( String( "Ignoring invalid runtime memory budget: " ) + budget.key );
+                        continue;
+                    }
+
+                    String error;
+                    if( WorldStreamingScheduler::shared()->setBudget(
+                            budget.category, static_cast<u64>( megabytes ) * ( 1ull << 20 ), error ) )
+                    {
+                        WP_LOG( String( "Runtime streaming budget: " ) + budget.key + " = " +
+                                StringUtil::toString( megabytes ) + " MiB" );
+                    }
+                    else
+                    {
+                        WP_LOG_WARNING( String( "Could not apply runtime memory budget " ) + budget.key + ": " + error );
+                    }
+                }
+            }
+            app.setPlayerSettings( settings );
+        }
     }
 
     void loadProjectRuntimeSettings( const String &projectDirectory )
@@ -56,7 +101,7 @@ namespace workphone
                 const auto text = stream->getAsString();
                 if( text.size() != stream->size() )
                     throw std::runtime_error( "Unable to read packaged project runtime settings" );
-                app->setPlayerSettings( parseRuntimeSettings( text ) );
+                publishRuntimeSettings( *app, parseRuntimeSettings( text ) );
             }
             return;
         }
@@ -72,7 +117,7 @@ namespace workphone
         const String text = buffer.str();
         if( stream.bad() )
             throw std::runtime_error( "Unable to read project runtime settings" );
-        app->setPlayerSettings( parseRuntimeSettings( text ) );
+        publishRuntimeSettings( *app, parseRuntimeSettings( text ) );
         app->setProjectPath( std::filesystem::absolute( path ).parent_path().u8string() );
     }
 

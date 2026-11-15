@@ -268,7 +268,7 @@ namespace workphone
             auto typeManager = TypeManager::instance();
             WP_ASSERT( typeManager );
 
-            //FactoryUtil::addFactory<scene::CarController>();
+            //FactoryUtil::addFactory<scene::FourWheelVehicle>();
             FactoryUtil::addFactory<scene::Constraint>();
             FactoryUtil::addFactory<scene::CollisionBox>();
             FactoryUtil::addFactory<scene::CollisionMesh>();

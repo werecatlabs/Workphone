@@ -14,17 +14,17 @@ namespace workphone
          * The VehicleController class provides a foundation for implementing vehicle
          * physics and control systems. It manages the basic chassis representation
          * and serves as a base class for more specific vehicle implementations like
-         * CarController.
+         * FourWheelVehicle.
          *
          * This component integrates with the physics system through a Rigidbody
          * chassis that represents the main body of the vehicle. Derived classes
          * should implement specific vehicle behaviors such as wheel management,
          * input handling, and physics simulation.
          *
-         * @note This is an abstract base class. Use derived classes like CarController
+         * @note This is an abstract base class. Use derived classes like FourWheelVehicle
          *       for specific vehicle implementations.
          *
-         * @see CarController
+         * @see FourWheelVehicle
          * @see Component
          * @see physics::IRigidbody
          *
@@ -38,7 +38,7 @@ namespace workphone
             /**
              * @brief Physics implementation selected for this scene component.
              *
-             * Car preserves the historic behaviour used by CarController. Aircraft
+             * Car preserves the historic behaviour used by FourWheelVehicle. Aircraft
              * creates an IAircraft implementation supplied by WPVehiclePhysics and
              * connects it to the scene rigidbody through an aerodynamic callback.
              */
@@ -183,14 +183,14 @@ namespace workphone
              * The moment of inertia defines how the vehicle responds to rotational forces
              * around each axis (X, Y, Z).
              *
-             * @return 3D vector representing the moment of inertia components in kg·m².
+             * @return 3D vector representing the moment of inertia components in kgï¿½mï¿½.
              */
             Vector3<real_Num> getMOI() const;
 
             /**
              * @brief Sets the moment of inertia tensor for the vehicle.
              *
-             * @param moi 3D vector representing the moment of inertia components in kg·m².
+             * @param moi 3D vector representing the moment of inertia components in kgï¿½mï¿½.
              *            Each component should be positive.
              */
             void setMOI( const Vector3<real_Num> &moi );
@@ -341,7 +341,7 @@ namespace workphone
             SmartPtr<vehicle::IAircraft> m_aircraftController;
             SmartPtr<vehicle::IAircraftCallback> m_aircraftCallback;
 
-            Vector3<real_Num> m_moi = Vector3<real_Num>::unit();  ///< Moment of inertia tensor (kg·m²)
+            Vector3<real_Num> m_moi = Vector3<real_Num>::unit();  ///< Moment of inertia tensor (kgï¿½mï¿½)
             Vector3<real_Num> m_cg = Vector3<real_Num>::zero();   ///< Center of gravity offset (meters)
 
             TireModel m_tireModel = TireModel::Simple;  ///< Current tire model for simulation

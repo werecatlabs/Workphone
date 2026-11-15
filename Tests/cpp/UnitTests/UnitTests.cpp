@@ -772,7 +772,7 @@ namespace workphone
 
         FactoryUtil::addFactory<GameActor>();
 
-        FactoryUtil::addFactory<CarController>();
+        FactoryUtil::addFactory<FourWheelVehicle>();
         FactoryUtil::addFactory<Constraint>();
         FactoryUtil::addFactory<CollisionBox>();
         FactoryUtil::addFactory<scene::CollisionMesh>();

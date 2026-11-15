@@ -3,7 +3,7 @@ if not ReplayManager then include("ReplayManager.lua") end
 class 'GhostVehicle' (RacingComponent)
 function GhostVehicle:__init(component) BaseComponent.__init(self, component); self.replay = ReplayManager(component) end
 function GhostVehicle:bind(actor, frames)
-    assert(not actor:getComponent("Rigidbody") and not actor:getComponent("CarController"), "Ghost must be visual only")
+    assert(not actor:getComponent("Rigidbody") and not actor:getComponent("FourWheelVehicle"), "Ghost must be visual only")
     local replay = ReplayManager(self.component)
     for _, frame in ipairs(frames) do replay:append(frame.time, frame.position, frame.rotation) end
     assert(#replay.frames >= 2, "Ghost requires replay samples")

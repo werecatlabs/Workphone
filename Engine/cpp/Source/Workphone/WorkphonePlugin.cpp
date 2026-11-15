@@ -129,7 +129,7 @@ namespace workphone
         FactoryUtil::addFactory<scene::Billboard>();
         FactoryUtil::addFactory<scene::Billboards>();
         FactoryUtil::addFactory<scene::Camera>();
-        FactoryUtil::addFactory<scene::CarController>();
+        FactoryUtil::addFactory<scene::FourWheelVehicle>();
         FactoryUtil::addFactory<scene::HelicopterController>();
         FactoryUtil::addFactory<scene::CharacterController>();
         FactoryUtil::addFactory<scene::Collision>();
@@ -415,7 +415,7 @@ namespace workphone
         factoryManager->setPoolSizeByType<scene::SphericalCameraController>( size );
         factoryManager->setPoolSizeByType<scene::ThirdPersonCameraController>( size );
         factoryManager->setPoolSizeByType<scene::VehicleCameraController>( size );
-        factoryManager->setPoolSizeByType<scene::CarController>( size );
+        factoryManager->setPoolSizeByType<scene::FourWheelVehicle>( size );
         factoryManager->setPoolSizeByType<scene::HelicopterController>( size );
         factoryManager->setPoolSizeByType<scene::CharacterController>( size );
         factoryManager->setPoolSizeByType<scene::Collision>( size );
@@ -698,7 +698,7 @@ namespace workphone
         FactoryUtil::removeFactory<scene::Animator>();
         FactoryUtil::removeFactory<scene::AudioEmitter>();
         FactoryUtil::removeFactory<scene::Camera>();
-        FactoryUtil::removeFactory<scene::CarController>();
+        FactoryUtil::removeFactory<scene::FourWheelVehicle>();
         FactoryUtil::removeFactory<scene::HelicopterController>();
         FactoryUtil::removeFactory<scene::Constraint>();
         FactoryUtil::removeFactory<scene::CollisionBox>();

@@ -99,10 +99,10 @@ namespace workphone::scene
         }
         body->setAngularDamping( 3 );
         body->setLinearDamping( .05f );
-        auto car = actor->getComponent<CarController>();
+        auto car = actor->getComponent<FourWheelVehicle>();
         if( !car )
         {
-            car = actor->addComponent<CarController>();
+            car = actor->addComponent<FourWheelVehicle>();
         }
         if( !car->getVehicleController() )
         {
@@ -610,10 +610,10 @@ namespace workphone::scene
         return m_assets.wheels.at( index );
     }
 
-    SmartPtr<CarController> ProceduralRaceScene::getCarController() const
+    SmartPtr<FourWheelVehicle> ProceduralRaceScene::getCarController() const
     {
         auto actor = getActor();
-        return actor ? actor->getComponent<CarController>() : nullptr;
+        return actor ? actor->getComponent<FourWheelVehicle>() : nullptr;
     }
 
     bool ProceduralRaceScene::validateReflection() const
@@ -821,7 +821,7 @@ namespace workphone::scene
         frame.position = getActor()->getPosition();
 
         auto body = getActor()->getComponent<scene::Rigidbody>();
-        auto car = getActor()->getComponent<scene::CarController>();
+        auto car = getActor()->getComponent<scene::FourWheelVehicle>();
         auto vehicle = car ? car->getVehicleController() : nullptr;
 
         if( !body || !vehicle || !vehicle->getBody() )
@@ -887,7 +887,7 @@ namespace workphone::scene
         input.redlineRpm = float( drivetrain.redlineRpm );
         input.playing = app->isPlaying() && !app->isPaused();
 
-        if( auto car = getActor()->getComponent<scene::CarController>() )
+        if( auto car = getActor()->getComponent<scene::FourWheelVehicle>() )
         {
             if( auto vehicle = car->getVehicleController() )
             {

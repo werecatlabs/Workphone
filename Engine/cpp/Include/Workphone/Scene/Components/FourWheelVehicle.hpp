@@ -1,5 +1,5 @@
-#ifndef CarController_h__
-#define CarController_h__
+#ifndef FourWheelVehicle_h__
+#define FourWheelVehicle_h__
 
 #include <Workphone/Scene/Components/VehicleController.hpp>
 #include <atomic>
@@ -7,10 +7,10 @@
 #include <Workphone/Interface/System/IEventListener.hpp>
 
 /**
- * @file CarController.hpp
- * @brief Declaration of the `CarController` component used to control car-like vehicles.
+ * @file FourWheelVehicle.hpp
+ * @brief Declaration of the `FourWheelVehicle` component used to control four-wheel vehicles.
  *
- * The `CarController` component implements vehicle-specific logic on top of the
+ * The `FourWheelVehicle` component implements vehicle-specific logic on top of the
  * generic `VehicleController`. It exposes vehicle inputs (throttle, brake, steering),
  * configures wheel/drive parameters, and bridges the scene representation to the
  * underlying physics vehicle via `VehicleCallback`.
@@ -21,9 +21,9 @@ namespace workphone
     {
 
         /**
-         * @brief Component providing car-specific vehicle behaviour and physics glue.
+         * @brief Component providing four-wheel vehicle behaviour and physics glue.
          *
-         * `CarController` configures a four-wheel vehicle for the scene, exposes
+         * `FourWheelVehicle` configures a four-wheel vehicle for the scene, exposes
          * runtime inputs (throttle, brake, steering) and delegates physics queries
          * and forces to an `vehicle::IVehicle` implementation via `VehicleCallback`.
          *
@@ -36,21 +36,21 @@ namespace workphone
          *
          * This header contains two helper nested classes used by the component:
          * - `InputListener` — receives input and update events and updates control
-         *   inputs on the owning `CarController`.
+         *   inputs on the owning `FourWheelVehicle`.
          * - `VehicleCallback` — implements `vehicle::IVehicleCallback` to provide
          *   scene/actor state to the physics vehicle and accept requests to apply
          *   forces/torques or execute rays.
          *
          * See also: `VehicleController` (base class), `vehicle::IVehicle` (physics API).
          */
-        class WPCore_API CarController : public VehicleController
+        class WPCore_API FourWheelVehicle : public VehicleController
         {
         public:
             /**
              * @brief Event listener used to translate input events into controller state.
              *
              * The `InputListener` is attached to the input system and updates the
-             * owning `CarController`'s throttle, brake and steering values. The
+             * owning `FourWheelVehicle`'s throttle, brake and steering values. The
              * listener keeps a weak reference to the owner to avoid ownership cycles.
              */
             class WPCore_API InputListener : public IEventListener
@@ -131,26 +131,26 @@ namespace workphone
                 s32 getPriority() const override;
 
                 /**
-                 * @brief Get a strong smart-pointer to the owning CarController.
+                 * @brief Get a strong smart-pointer to the owning FourWheelVehicle.
                  *
                  * Returns a `SmartPtr` created from the internal weak reference if the
                  * owner still exists; otherwise returns a null pointer.
                  *
-                 * @return SmartPtr<CarController> Strong pointer to owner or null.
+                 * @return SmartPtr<FourWheelVehicle> Strong pointer to owner or null.
                  */
-                SmartPtr<CarController> getOwner() const;
+                SmartPtr<FourWheelVehicle> getOwner() const;
 
                 /**
-                 * @brief Set the owning CarController for this listener.
+                 * @brief Set the owning FourWheelVehicle for this listener.
                  *
                  * The listener keeps only a weak reference to avoid reference cycles.
                  *
-                 * @param owner Strong pointer to the owning `CarController`.
+                 * @param owner Strong pointer to the owning `FourWheelVehicle`.
                  */
-                void setOwner( SmartPtr<CarController> owner );
+                void setOwner( SmartPtr<FourWheelVehicle> owner );
 
             protected:
-                WeakPtr<CarController> m_owner;  ///< Weak reference to the owning CarController
+                WeakPtr<FourWheelVehicle> m_owner;  ///< Weak reference to the owning FourWheelVehicle
                 u32 m_priority = 1000;           ///< Event listener priority (default)
             };
 
@@ -160,7 +160,7 @@ namespace workphone
              * `VehicleCallback` implements `vehicle::IVehicleCallback` and acts as the
              * bridge between the physics vehicle and the scene representation. It
              * forwards requests for applying forces/torques, performing raycasts and
-             * querying actor transform/velocity to the owning `CarController`.
+             * querying actor transform/velocity to the owning `FourWheelVehicle`.
              */
             class VehicleCallback : public vehicle::IVehicleCallback
             {
@@ -173,11 +173,11 @@ namespace workphone
                 /**
                  * @brief Construct a callback and set a raw owning pointer.
                  *
-                 * @param controller Raw pointer to the owning `CarController`.
+                 * @param controller Raw pointer to the owning `FourWheelVehicle`.
                  *                   The pointer is only used during construction; the
                  *                   class stores a weak reference via `setOwner`.
                  */
-                explicit VehicleCallback( CarController *controller );
+                explicit VehicleCallback( FourWheelVehicle *controller );
 
                 /**
                  * @brief Destroy the callback implementation.
@@ -264,24 +264,24 @@ namespace workphone
                                    SmartPtr<physics::IRaycastHit> &data ) override;
 
                 /**
-                 * @brief Get the owning CarController as a strong pointer.
+                 * @brief Get the owning FourWheelVehicle as a strong pointer.
                  *
-                 * @return SmartPtr<CarController> Strong pointer to owning controller
+                 * @return SmartPtr<FourWheelVehicle> Strong pointer to owning controller
                  *         or null if the owner was destroyed.
                  */
-                SmartPtr<CarController> getOwner() const;
+                SmartPtr<FourWheelVehicle> getOwner() const;
 
                 /**
-                 * @brief Set the owning CarController.
+                 * @brief Set the owning FourWheelVehicle.
                  *
                  * The callback stores a weak reference to avoid circular ownership.
                  *
-                 * @param owner Strong pointer to the CarController that owns this callback.
+                 * @param owner Strong pointer to the FourWheelVehicle that owns this callback.
                  */
-                void setOwner( SmartPtr<CarController> owner );
+                void setOwner( SmartPtr<FourWheelVehicle> owner );
 
             protected:
-                WeakPtr<CarController> m_owner;  ///< Weak reference to the owning CarController
+                WeakPtr<FourWheelVehicle> m_owner;  ///< Weak reference to the owning FourWheelVehicle
             };
 
             /**
@@ -305,19 +305,19 @@ namespace workphone
             static const String handlingPresetStr;
 
             /**
-             * @brief Construct a CarController with default tuning values.
+             * @brief Construct a FourWheelVehicle with default tuning values.
              *
              * Tuning properties (wheel radius, suspension, damping, etc.) are set to
              * reasonable defaults for a typical passenger car. The physics vehicle
              * itself is not created here; `setVehicleController` may be used to
              * attach a concrete physics implementation.
              */
-            CarController();
+            FourWheelVehicle();
 
             /**
-             * @brief Destroy the CarController and release resources.
+             * @brief Destroy the FourWheelVehicle and release resources.
              */
-            ~CarController() override;
+            ~FourWheelVehicle() override;
 
             /** @copydoc VehicleController::load */
             void load( SmartPtr<ISharedObject> data ) override;
@@ -506,4 +506,4 @@ namespace workphone
     }  // namespace scene
 }  // namespace workphone
 
-#endif  // CarController_h__
+#endif  // FourWheelVehicle_h__

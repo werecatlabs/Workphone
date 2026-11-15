@@ -609,7 +609,7 @@ namespace workphone
         FactoryUtil::addFactory<scene::Light>();
 
         FactoryUtil::addFactory<scene::Camera>();
-        FactoryUtil::addFactory<scene::CarController>();
+        FactoryUtil::addFactory<scene::FourWheelVehicle>();
         FactoryUtil::addFactory<scene::Constraint>();
 
         FactoryUtil::addFactory<scene::CollisionBox>();
@@ -1473,7 +1473,7 @@ namespace workphone
         auto rigidbody = actor->addComponent<scene::Rigidbody>();
         WP_ASSERT( rigidbody );
 
-        auto vehicle = actor->addComponent<scene::CarController>();
+        auto vehicle = actor->addComponent<scene::FourWheelVehicle>();
         WP_ASSERT( vehicle );
 
         auto cubeMeshPath = String( "cube_internal.fbmeshbin" );
@@ -1505,13 +1505,13 @@ namespace workphone
         wheelPositions.resize( 4 );
 
         auto wheelOffset = -1.0f;
-        wheelPositions[static_cast<u32>( scene::CarController::Wheels::FRONT_LEFT )] =
+        wheelPositions[static_cast<u32>( scene::FourWheelVehicle::Wheels::FRONT_LEFT )] =
             Vector3<real_Num>( -width / 2.0f, wheelOffset, wheelBase / 2.0f );
-        wheelPositions[static_cast<u32>( scene::CarController::Wheels::FRONT_RIGHT )] =
+        wheelPositions[static_cast<u32>( scene::FourWheelVehicle::Wheels::FRONT_RIGHT )] =
             Vector3<real_Num>( width / 2.0f, wheelOffset, wheelBase / 2.0f );
-        wheelPositions[static_cast<u32>( scene::CarController::Wheels::REAR_LEFT )] =
+        wheelPositions[static_cast<u32>( scene::FourWheelVehicle::Wheels::REAR_LEFT )] =
             Vector3<real_Num>( -width / 2.0f, wheelOffset, -wheelBase / 2.0f );
-        wheelPositions[static_cast<u32>( scene::CarController::Wheels::REAR_RIGHT )] =
+        wheelPositions[static_cast<u32>( scene::FourWheelVehicle::Wheels::REAR_RIGHT )] =
             Vector3<real_Num>( width / 2.0f, wheelOffset, -wheelBase / 2.0f );
 
         auto wheelMeshSize = Vector3<real_Num>( 0.1f, 0.3f, 0.3f );
@@ -1631,7 +1631,7 @@ namespace workphone
         auto rigidbody = actor->addComponent<scene::Rigidbody>();
         WP_ASSERT( rigidbody );
 
-        auto vehicle = actor->addComponent<scene::CarController>();
+        auto vehicle = actor->addComponent<scene::FourWheelVehicle>();
         WP_ASSERT( vehicle );
 
         auto cubeMeshPath = String( "cube_internal.fbmeshbin" );
@@ -1750,7 +1750,7 @@ namespace workphone
         auto rigidbody = actor->addComponent<scene::Rigidbody>();
         WP_ASSERT( rigidbody );
 
-        auto vehicle = actor->addComponent<scene::CarController>();
+        auto vehicle = actor->addComponent<scene::FourWheelVehicle>();
         WP_ASSERT( vehicle );
 
         auto meshComponent = actor->addComponent<scene::Mesh>();
@@ -2127,7 +2127,7 @@ namespace workphone
         }
 
         // Vehicle-related components
-        if( object->isDerived<scene::CarController>() )
+        if( object->isDerived<scene::FourWheelVehicle>() )
         {
             return 5000;
         }

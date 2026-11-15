@@ -8,7 +8,7 @@
 namespace workphone::scene
 {
 
-    class CarController;
+    class FourWheelVehicle;
     class ProceduralCityConfiguration;
 
     /**
@@ -91,7 +91,7 @@ namespace workphone::scene
         /** Accessors for vehicle actors. */
         SmartPtr<IGameActor> getWheelActor( u32 index ) const;
         SmartPtr<IGameActor> getBodyActor() const;
-        SmartPtr<CarController> getCarController() const;
+        SmartPtr<FourWheelVehicle> getCarController() const;
 
         /** Validate reflection resources for the current generated assets. */
         bool validateReflection() const;

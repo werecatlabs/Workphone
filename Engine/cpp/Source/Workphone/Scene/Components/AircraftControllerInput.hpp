@@ -1,7 +1,7 @@
 #ifndef WORKPHONE_AIRCRAFT_CONTROLLER_INPUT_HPP
 #define WORKPHONE_AIRCRAFT_CONTROLLER_INPUT_HPP
 
-#include "CarControllerInput.hpp"
+#include "FourWheelVehicleInput.hpp"
 
 namespace workphone::scene::aircraft_input
 {

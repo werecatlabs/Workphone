@@ -695,7 +695,7 @@ static void checkLoadedVehicleDrive( s32 preset )
     guard.scene->clear( true );
     guard.scene->loadScene( "Tests/physics_test.fbscene", false );
     drainSceneWork( guard );
-    auto car = guard.sceneManager->getObjectByType<scene::CarController>();
+    auto car = guard.sceneManager->getObjectByType<scene::FourWheelVehicle>();
     BOOST_REQUIRE( car );
     auto actor = car->getActor();
     BOOST_REQUIRE( actor );
@@ -712,7 +712,7 @@ static void checkLoadedVehicleDrive( s32 preset )
     if( preset != 0 )
     {
         auto properties = car->getProperties();
-        auto &selection = properties->getPropertyObject( scene::CarController::handlingPresetStr );
+        auto &selection = properties->getPropertyObject( scene::FourWheelVehicle::handlingPresetStr );
         selection.setValue( StringUtil::toString( preset ) );
         selection.setAttribute( "applyHandlingPreset", "true" );
         car->setProperties( properties );

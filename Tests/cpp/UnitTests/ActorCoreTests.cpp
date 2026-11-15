@@ -1426,7 +1426,7 @@ BOOST_AUTO_TEST_CASE( actor_to_prefab )
         WP_ASSERT( c );
         auto rigidbody = actor->addComponent<scene::Rigidbody>();
         WP_ASSERT( rigidbody );
-        auto vehicle = actor->addComponent<scene::CarController>();
+        auto vehicle = actor->addComponent<scene::FourWheelVehicle>();
         WP_ASSERT( vehicle );
         BOOST_TEST_LOG_MESSAGE( "Added physics components to car" );
 
@@ -2310,7 +2310,7 @@ BOOST_AUTO_TEST_CASE( actor_load )
         auto rigidbody = actor->addComponent<scene::Rigidbody>();
         WP_ASSERT( rigidbody );
 
-        auto vehicle = actor->addComponent<scene::CarController>();
+        auto vehicle = actor->addComponent<scene::FourWheelVehicle>();
         WP_ASSERT( vehicle );
 
         auto dynamicsActor = sceneManager->createActor();
