@@ -4,6 +4,8 @@
 #include "CityEntranceRoute.hpp"
 #include "CityPedestrianSurfacing.hpp"
 #include "CityEntranceHandrails.hpp"
+#include "CityEntrancePathEdge.hpp"
+#include "CityEntranceLandscape.hpp"
 
         namespace cityGroundContact
         {
@@ -326,6 +328,10 @@
                 Geometry approach, gravel, stoneEdge, courses[2], caps, risers, stairs;
                 cityPedestrianSurfacing::Batches routedPaving;
                 cityEntranceHandrails::Batches handrails;
+                cityEntrancePathEdge::Batches gravelShoulders;
+                cityEntranceLandscape::Batches routeGardens;
+                struct LandscapeRoute { u64 lot; cityEntranceRoute::Route path; };
+                SourceBudgetVector<LandscapeRoute> landscapeRoutes;
                 buildFoundationFacing( assets.cityLayout, *terrain, placement, courses, caps );
                 FrontagePlanting planting( assets.cityStreetDetail );
                 const Vector3F up( 0, 1, 0 );
@@ -528,6 +534,8 @@
                     cityEntranceRoute::Route route;
                     if( !cityEntranceRoute::plan( edges, launch, normal, std::min( .84f, half ), clear, surface, route ) ||
                         !cityPedestrianSurfacing::append( routedPaving, route, surface ) ) continue;
+                    if( assets.cityStreetDetail > 0 && landscapeRoutes.size() < 48 )
+                        landscapeRoutes.push_back( { lot.id, route } );
 
                     for( size_t row = 1; row < route.rowCount; ++row )
                     {
@@ -547,6 +555,52 @@
                             ", rows=" + StringUtil::toString( route.rowCount ) + ", bends=" + StringUtil::toString( route.bends ) +
                             ", length=" + StringUtil::toString( route.length ) + ", start=" + position( launch.centre ) +
                             ", end=" + position( route.rows[route.rowCount - 1].centre ) );
+                }
+
+                if( !landscapeRoutes.empty() )
+                {
+                    // Index every accepted entrance before planting alongside any route.
+                    // A diagonal footprint can be clear even when its enclosing box
+                    // overlaps the box used by the public-verge placement pass.
+                    cityRoadEdges::Surface entranceSurfaces;
+                    const auto recordTriangles = [&]( const Geometry &geometry, size_t first = 0 ) {
+                        for( size_t i = first; i + 2 < geometry.indices.size(); i += 3 )
+                            entranceSurfaces.addTriangle( geometry.positions[geometry.indices[i]],
+                                geometry.positions[geometry.indices[i + 1]], geometry.positions[geometry.indices[i + 2]] );
+                    };
+                    for( const auto *geometry : { &approach, &stoneEdge, &gravel, &stairs, &routedPaving.paving,
+                                                 &routedPaving.edging, &routedPaving.drainage } ) recordTriangles( *geometry );
+                    const auto clear = [&]( const std::array<Vector3F, 3> &triangle ) {
+                        const cityRoadEdges::Bounds bounds( triangle );
+                        return parcelClear( { bounds.x0, bounds.x1, bounds.z0, bounds.z1 }, nullptr ) &&
+                               !roadSurface->overlaps( triangle ) && !sidewalkSurface.overlaps( triangle ) &&
+                               !entranceSurfaces.overlaps( triangle );
+                    };
+                    const auto shoulderSurface = [&]( Vector3F &p ) {
+                        if( !render::sampleTerrainHeight( *terrain, placement, p, p.y ) ) return false;
+                        p.y += .021f;
+                        return true;
+                    };
+                    for( const auto &entry : landscapeRoutes )
+                    {
+                        const auto sections = cityEntrancePathEdge::append( gravelShoulders, entry.path,
+                            render::foliageStableHash( entry.lot ^ seed ), shoulderSurface, clear );
+                        if( sections )
+                            WP_LOG( String( "Terrain city entrance gravel shoulder lot=" ) + StringUtil::toString( entry.lot ) +
+                                    ", sections=" + StringUtil::toString( sections ) );
+                        const size_t start = routeGardens.earth.indices.size();
+                        const size_t firstBed = routeGardens.beds.size();
+                        if( !cityEntranceLandscape::offer( routeGardens, entry.path, entry.lot, *terrain, placement, clear ) ) continue;
+                        for( size_t i = firstBed; i < routeGardens.beds.size(); ++i )
+                        {
+                            const cityRoadEdges::Bounds extent( cityEntranceLandscape::outline( routeGardens.beds[i], .16f ) );
+                            const Vector3F low( extent.x0, 0, extent.z0 );
+                            const Vector3F high( extent.x1, 0, extent.z1 );
+                            planting.reserveAccess( low, high );
+                            pedestrianCorridors.emplace_back( std::array{ low, high } );
+                        }
+                        recordTriangles( routeGardens.earth, start );
+                    }
                 }
 
                 // Approaches through occupied neighbourhoods can have an open verge
@@ -606,6 +660,8 @@
                 cityEntranceHandrails::publish( assets, handrails );
                 for( auto actor : cityPedestrianSurfacing::publish( assets, routedPaving, seed ) )
                     if( actor ) addWalkCollision( actor );
+                cityEntrancePathEdge::publish( assets, gravelShoulders, seed );
+                cityEntranceLandscape::publish( assets, routeGardens, seed );
                 if( !stoneEdge.indices.empty() )
                     publish( "Terrain city building threshold joints", stoneEdge,
                              pavingVariant( { .56f, .55f, .50f, 1 }, 1.10f ) );
@@ -648,7 +704,7 @@
                 // The fitted footway's render mesh and collider have already been published.
                 // Feed the exact entrance and drainage triangles into later landscape passes.
                 for( const auto *surface : { &approach, &stoneEdge, &gravel, &stairs, &routedPaving.paving,
-                                            &routedPaving.edging, &routedPaving.drainage } )
+                                            &routedPaving.edging, &routedPaving.drainage, &routeGardens.earth } )
                 {
                     const auto base = u32( landscapeClearance.vertices.size() );
                     landscapeClearance.vertices.reserve( base + surface->positions.size() );
