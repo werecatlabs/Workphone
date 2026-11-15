@@ -816,6 +816,9 @@ namespace workphone
         {
             u32 patches = 0, meshes = 0, readyMeshes = 0, nearMeshes = 0, farMeshes = 0;
             u32 masonryMeshes = 0, readyMasonryMeshes = 0;
+            u32 rooftopMeshes = 0, readyRooftopMeshes = 0;
+            u32 pitchedRoofMeshes = 0, readyPitchedRoofMeshes = 0;
+            u32 farPitchedRoofMeshes = 0, readyFarPitchedRoofMeshes = 0;
             u64 vertices = 0, triangles = 0;
             bool valid = false;
         };
@@ -858,6 +861,21 @@ namespace workphone
                     ++result.masonryMeshes;
                     result.readyMasonryMeshes += ready;
                 }
+                if( name.find( "LOD0 city rooftop " ) == 0 )
+                {
+                    ++result.rooftopMeshes;
+                    result.readyRooftopMeshes += ready;
+                }
+                if( name.find( "LOD0 city pitched roof " ) == 0 )
+                {
+                    ++result.pitchedRoofMeshes;
+                    result.readyPitchedRoofMeshes += ready;
+                }
+                if( name.find( "LOD1 city pitched roof " ) == 0 )
+                {
+                    ++result.farPitchedRoofMeshes;
+                    result.readyFarPitchedRoofMeshes += ready;
+                }
             }
             result.valid = result.patches > 0 && result.farMeshes > 0 &&
                 ( !expectNear || result.nearMeshes > 0 ) && result.meshes == result.readyMeshes;
@@ -872,6 +890,12 @@ namespace workphone
                    << ",\"nativeTriangles\":" << check.triangles
                    << ",\"masonryMeshes\":" << check.masonryMeshes
                    << ",\"readyMasonryMeshes\":" << check.readyMasonryMeshes
+                   << ",\"rooftopMeshes\":" << check.rooftopMeshes
+                   << ",\"readyRooftopMeshes\":" << check.readyRooftopMeshes
+                   << ",\"pitchedRoofMeshes\":" << check.pitchedRoofMeshes
+                   << ",\"readyPitchedRoofMeshes\":" << check.readyPitchedRoofMeshes
+                   << ",\"farPitchedRoofMeshes\":" << check.farPitchedRoofMeshes
+                   << ",\"readyFarPitchedRoofMeshes\":" << check.readyFarPitchedRoofMeshes
                    << ",\"ready\":" << ( check.valid ? "true" : "false" ) << '}';
         }
 
@@ -2013,12 +2037,20 @@ namespace workphone
                     if( requestedOverrides && !overridesApplied )
                         WP_LOG_ERROR( "City building mesh override was not applied. " + m_assets.cityBuildingKitDiagnostic );
                     if( m_captureView == "facade" || m_captureView == "building" || m_captureView == "shopfront" ||
-                        m_captureView == "entry-route" )
+                        m_captureView == "entry-route" || m_captureView == "rooftop" || m_captureView == "pitched-roof" )
                     {
                         evidence << ",\n  \"cityFacadeCamera\": {\"lotId\":\"" << m_cityFacadeLotId
                                  << "\",\"eye\":[" << m_cityFacadeEye.x << ',' << m_cityFacadeEye.y << ',' << m_cityFacadeEye.z
                                  << "],\"target\":[" << m_cityFacadeTarget.x << ',' << m_cityFacadeTarget.y << ','
                                  << m_cityFacadeTarget.z << "]}";
+                        if( m_captureView == "rooftop" || m_captureView == "pitched-roof" )
+                        {
+                            const auto eye = m_cameraActor->getWorldTransform().getPosition();
+                            const bool valid = m_cityFacadeLotId && eye.y > m_cityFacadeTarget.y + 3.f &&
+                                               ( eye - m_cityFacadeEye ).lengthSquared() < .0001f;
+                            cityValid = cityValid && valid;
+                            evidence << ",\n  \"cityRooftopCameraValid\":" << ( valid ? "true" : "false" );
+                        }
                         if( m_captureView == "entry-route" )
                         {
                             const auto eye = m_cameraActor->getWorldTransform().getPosition();
@@ -4233,7 +4265,9 @@ namespace workphone
         const auto selectFacade = [&]( const procedural::OpenCityLayout &layout ) {
             const bool entryRoute = m_captureView == "entry-route";
             const bool shopfront = m_captureView == "shopfront" || entryRoute;
-            if( m_captureView != "facade" && m_captureView != "building" && !shopfront )
+            const bool rooftop = m_captureView == "rooftop";
+            const bool pitchedRoof = m_captureView == "pitched-roof";
+            if( m_captureView != "facade" && m_captureView != "building" && !shopfront && !rooftop && !pitchedRoof )
                 return;
             const auto anchor = m_cityHasJunction ? m_cityJunctionCentre : m_cityOverviewCentre;
             const procedural::OpenCityLayout::Lot *selected = nullptr;
@@ -4244,7 +4278,11 @@ namespace workphone
             float visibleFrontageDistance = std::numeric_limits<float>::max();
             for( const auto &lot : layout.lots )
             {
-                if( lot.park || ( shopfront && lot.district != procedural::OpenCityLayout::District::Commercial ) ) continue;
+                if( lot.park || ( ( shopfront || rooftop ) && lot.district != procedural::OpenCityLayout::District::Commercial ) ) continue;
+                // Select from the parcel recipe before any roof finishing is emitted,
+                // so before/after material captures retain the same crown and pose.
+                if( pitchedRoof && ( lot.district != procedural::OpenCityLayout::District::Residential ||
+                    ( m_assets.cityBuildingStyle == 0 && lot.variant % 6 != 0 ) ) ) continue;
                 const float distance = Vector3F( lot.x - anchor.x, 0, lot.z - anchor.z ).lengthSquared();
                 if( distance < nearest || ( selected && distance == nearest && lot.id < selected->id ) )
                 {
@@ -4319,6 +4357,17 @@ namespace workphone
                                             volume.bottom + height * .9f + 4.f,
                                             volume.z - volume.depth * .5f - distance );
                 m_cityFacadeTarget = Vector3F( volume.x, volume.bottom + height * .45f, volume.z );
+            }
+            if( rooftop || pitchedRoof )
+            {
+                const auto &crown = *std::max_element( volumes.begin(), volumes.end(), []( const auto &a, const auto &b ) {
+                    return a.bottom + a.height < b.bottom + b.height;
+                } );
+                const Vector3F centre( crown.x, crown.bottom + crown.height + .12f, crown.z );
+                const float distance = std::clamp( std::max( crown.width, crown.depth ) * 1.28f, 13.f, 60.f );
+                m_cityFacadeTarget = centre + Vector3F( 0, pitchedRoof ? 1.f : .40f, 0 );
+                m_cityFacadeEye = centre + ( outward * .74f - along * .54f ) * distance +
+                                  Vector3F( 0, distance * ( pitchedRoof ? .72f : .91f ), 0 );
             }
             if( m_assets.roadAuthoring )
             {
@@ -4693,7 +4742,7 @@ namespace workphone
                         }
                     }
                     else if( m_captureView == "facade" || m_captureView == "building" || m_captureView == "shopfront" ||
-                             m_captureView == "entry-route" )
+                             m_captureView == "entry-route" || m_captureView == "rooftop" || m_captureView == "pitched-roof" )
                     {
                         m_cameraActor->setPosition( m_cityFacadeEye );
                         m_cameraActor->lookAt( m_cityFacadeTarget, Vector3F::unitY() );
@@ -4864,7 +4913,7 @@ int main( int argc, char **argv )
                    "  --track-smoke-test            Drive one full lap through the physics controller\n"
                    "  --collision-smoke-test        Verify native boxes; circuit garage impact or city road/sidewalk grades\n"
                    "  --validate-circuit           Validate 100 generated closed circuits\n"
-                   "  --capture PATH.bmp --view follow|car|track|corner|junction|hillside|street|boulevard|frontage|facade|building|utilities|park|shopfront|entry-route   Save a rendered view and "
+                   "  --capture PATH.bmp --view follow|car|track|corner|junction|hillside|street|boulevard|frontage|facade|building|utilities|park|shopfront|entry-route|rooftop|pitched-roof   Save a rendered view and "
                    "exit\n"
                    "  --no-hud --force-lod auto|0|1  Clean captures and tree LOD comparisons\n"
                    "  --force-vehicle-lod auto|0|1|2  Override the vehicle level (clamped for low)\n"
@@ -4891,6 +4940,8 @@ int main( int argc, char **argv )
                    "  --view park                   Inspect a generated park parcel from street level\n"
                    "  --view shopfront              Inspect a commercial entrance from street level\n"
                    "  --view entry-route            Inspect the space between a commercial entrance and its street\n"
+                   "  --view rooftop                Inspect a commercial roof from above (requires --city-terrain-roads)\n"
+                   "  --view pitched-roof           Inspect a residential pitched roof (requires --city-terrain-roads)\n"
                    "  --view hillside               Inspect a sustained road climb and its surrounding terrain\n"
                    "  --view verge                  Inspect a terrain road end at pavement level\n"
                    "  --view road-edit-before|road-edit-after   Fixed camera after Undo or Redo of a graded road edit\n"
@@ -5159,9 +5210,9 @@ int main( int argc, char **argv )
         }
         if( captureView != "follow" && captureView != "car" && captureView != "track" &&
             captureView != "corner" && captureView != "junction" && captureView != "hillside" && captureView != "verge" && captureView != "street" && captureView != "boulevard" &&
-            captureView != "frontage" && captureView != "facade" && captureView != "building" && captureView != "utilities" && captureView != "park" && captureView != "shopfront" && captureView != "entry-route" &&
+            captureView != "frontage" && captureView != "facade" && captureView != "building" && captureView != "utilities" && captureView != "park" && captureView != "shopfront" && captureView != "entry-route" && captureView != "rooftop" && captureView != "pitched-roof" &&
             !isRoadTerrainEditView( captureView ) )
-            throw std::runtime_error( "View must be follow, car, track, corner, junction, hillside, verge, street, boulevard, frontage, facade, building, utilities, park, shopfront, entry-route, road-edit-before, or road-edit-after." );
+            throw std::runtime_error( "View must be follow, car, track, corner, junction, hillside, verge, street, boulevard, frontage, facade, building, utilities, park, shopfront, entry-route, rooftop, pitched-roof, road-edit-before, or road-edit-after." );
         if( ( cityOptionsExplicit || captureView == "street" || captureView == "boulevard" ) && !openCity )
             throw std::runtime_error( "City options and street-level views require --city." );
         if(roadAuthoringShowcase && foliageWorld)throw std::runtime_error("Road authoring showcase does not provide foliage-world generation.");
@@ -5180,6 +5231,11 @@ int main( int argc, char **argv )
             throw std::runtime_error( "--view shopfront requires --city-terrain-roads and a fixed camera." );
         if( captureView == "entry-route" && ( !cityTerrainRoads || orbit ) )
             throw std::runtime_error( "--view entry-route requires --city-terrain-roads and a fixed camera." );
+        if( ( captureView == "rooftop" || captureView == "pitched-roof" ) && ( !cityTerrainRoads || orbit ) )
+            throw std::runtime_error( "Roof views require --city-terrain-roads and a fixed camera." );
+        if( captureView == "pitched-roof" && cityBuildingStyle > 0 && cityBuildingStyle != 1 &&
+            cityBuildingStyle != 4 && cityBuildingStyle != 7 && cityBuildingStyle != 9 )
+            throw std::runtime_error( "--view pitched-roof requires district, masonry, terrace, mediterranean or timber buildings." );
         if( captureView == "junction" && !cityTerrainRoads )
             throw std::runtime_error( "--view junction requires --city-terrain-roads." );
         if( captureView == "hillside" && !cityTerrainRoads )

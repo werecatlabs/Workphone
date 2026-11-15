@@ -3432,6 +3432,10 @@ namespace workphone::scene::race
 #include "CityShopfront.hpp"
 #include "CityShopInterior.hpp"
 #include "CityFacadeDetail.hpp"
+#include "CityRoofDeck.hpp"
+#include "CityRoofEquipment.hpp"
+#include "CityPitchedRoofCladding.hpp"
+#include "CityRoofDrainage.hpp"
 
         void buildCity( SceneAssets &assets, SmartPtr<IGameActor> sourceOwner,
                         SmartPtr<IGameActor> vehicle, u32 seed, VehicleAppearanceQuality quality )
@@ -3493,6 +3497,10 @@ namespace workphone::scene::race
                 Geometry shopfrontFascia[static_cast<size_t>( cityShopfront::Style::Count )], shopfrontLetters, shopfrontDisplays;
                 cityShopInterior::Surfaces shopInterior;
                 cityFacadeDetail::GeometryBatches masonry;
+                cityRoofDeck::Surfaces finishedRoofs;
+                cityRoofEquipment::Surfaces mechanicalRoofs;
+                cityPitchedRoofCladding::Surfaces pitchedRoofs, farPitchedRoofs;
+                cityRoofDrainage::Surfaces roofDrainage;
                 Array<LODDetailBound> bounds{ Allocator<LODDetailBound>( sourceBudget ) };
             };
 
@@ -3500,6 +3508,8 @@ namespace workphone::scene::race
             size_t emittedShopfronts = 0;
             size_t emittedDisplayBays = 0;
             bool emittedMasonry = false;
+            bool emittedRoofFinish = false, emittedRoofEquipment = false;
+            bool emittedPitchedRoofs = false, emittedRoofDrainage = false;
             const size_t displayBayLimit = buildingCount > 256 ? 96 : 144;
             size_t nominalMansardSilhouettes = 0, emittedMansardSilhouettes = 0;
             CityBuildingKit kit( assets, buildingCount );
@@ -3830,6 +3840,18 @@ namespace workphone::scene::race
                 const auto admitRoofDetail = [&]( size_t vertices ) {
                     if( vertices > roofDetailLimit - roofDetailVertices ) return false;
                     roofDetailVertices += vertices;
+                    return true;
+                };
+                size_t roofFinishVertices = 175000u / std::max<size_t>( 1, buildingCount );
+                const auto admitRoofFinish = [&]( size_t vertices ) {
+                    if( vertices > roofFinishVertices ) return false;
+                    roofFinishVertices -= vertices;
+                    return true;
+                };
+                size_t roofDrainageVertices = 120000u / std::max<size_t>( 1, buildingCount );
+                const auto admitRoofDrainage = [&]( size_t vertices ) {
+                    if( vertices > roofDrainageVertices ) return false;
+                    roofDrainageVertices -= vertices;
                     return true;
                 };
                 const int entranceAxis = lot.frontage == OpenCityLayout::Frontage::West ||
@@ -4691,9 +4713,65 @@ namespace workphone::scene::race
                     {
                         roofSilhouette( mediterranean ? patch.farTiles : artdeco ? patch.farWalls[family] : patch.farRoofs );
                     }
+                    if( !replacedRoof && ( gabled || hipped ) )
+                    {
+                        // Physical texture scale survives LOD changes. Only near roofs
+                        // spend the finite trim budget on course lips and rainwater goods.
+                        const auto distant = cityPitchedRoofCladding::append( patch.farPitchedRoofs, roofPoint,
+                            halfLong, halfShort, rise, hipped, mediterranean, lot.id, seed, admitRoofFinish, false );
+                        emittedPitchedRoofs |= distant.slopes > 0;
+                        if( detailedBuildings )
+                        {
+                            const auto finish = cityPitchedRoofCladding::append( patch.pitchedRoofs, roofPoint,
+                                halfLong, halfShort, rise, hipped, mediterranean, lot.id, seed, admitRoofFinish );
+                            const bool clearWall = volumes.size() == 1 && !kit.hasModule( CityBuildingPart::Wall ) &&
+                                !kit.hasModule( CityBuildingPart::Window ) && !kit.hasModule( CityBuildingPart::Corner );
+                            const cityRoofDrainage::Roof roof{ { cx, deck, cz }, halfLong, halfShort, volume.bottom,
+                                                               longX, hipped, clearWall };
+                            const auto drainage = cityRoofDrainage::append( patch.roofDrainage, roof, lot.id, admitRoofDrainage );
+                            emittedRoofDrainage |= drainage.runs > 0;
+                            WP_LOG( String( "City pitched roof lot=" ) + StringUtil::toString( lot.id ) +
+                                ", slopes=" + StringUtil::toString( finish.slopes ) +
+                                ", courses=" + StringUtil::toString( finish.courses ) +
+                                ", caps=" + StringUtil::toString( finish.caps ) +
+                                ", eaves=" + StringUtil::toString( finish.eaves ) +
+                                ", gutters=" + StringUtil::toString( u64( drainage.runs ) ) +
+                                ", brackets=" + StringUtil::toString( u64( drainage.brackets ) ) +
+                                ", downpipes=" + StringUtil::toString( u64( drainage.downpipes ) ) );
+                        }
+                    }
                     if( !detailedBuildings || replacedRoof )
                     {
                         continue;
+                    }
+                    if( !parisian && !warehouse && !artdeco && !gabled && !hipped )
+                    {
+                        const Vector3F roofCentre( cx, deck, cz );
+                        auto finish = cityRoofDeck::append( patch.finishedRoofs, roofCentre, size, deck,
+                            office ? .52f : .42f, render::foliageStableHash( lot.id ^ seed ), admitRoofFinish );
+                        if( lantern && finish.sheets )
+                            cityRoofDeck::lanternCap( patch.finishedRoofs, finish, roofCentre, size,
+                                deck + ( civic ? 1.35f : 1.75f ) + .18f, admitRoofFinish );
+                        if( finish.sheets )
+                        {
+                            emittedRoofFinish = true;
+                            WP_LOG( String( "City roof finishing lot=" ) + StringUtil::toString( lot.id ) +
+                                    ", sheets=" + StringUtil::toString( finish.sheets ) +
+                                    ", seams=" + StringUtil::toString( finish.seams ) +
+                                    ", coping=" + StringUtil::toString( finish.copingPieces ) +
+                                    ", drains=" + StringUtil::toString( finish.drains ) );
+                        }
+                        const Vector2F lanternHalf = lantern ? Vector2F( size.x * .215f + .14f, size.z * .18f + .14f ) : Vector2F{};
+                        const auto services = cityRoofEquipment::append( patch.mechanicalRoofs, roofCentre,
+                            size, deck, lot.id, seed, office, admitRoofDetail, lanternHalf );
+                        if( services.airHandlers || services.condensers || services.vents )
+                        {
+                            emittedRoofEquipment = true;
+                            WP_LOG( String( "City roof equipment lot=" ) + StringUtil::toString( lot.id ) +
+                                    ", airHandlers=" + StringUtil::toString( services.airHandlers ) +
+                                    ", condensers=" + StringUtil::toString( services.condensers ) +
+                                    ", vents=" + StringUtil::toString( services.vents ) );
+                        }
                     }
                     if( parisian )
                     {
@@ -4743,6 +4821,7 @@ namespace workphone::scene::race
                     }
                     else if( gabled )
                     {
+                        u32 chimneyFlashings = 0;
                         for( float side : { -1.f, 1.f } )
                         {
                             const float u = side * ( halfLong + .015f );
@@ -4773,7 +4852,12 @@ namespace workphone::scene::race
                             roofBox( patch.frames, u, rise + .96f, 0, .78f, .14f, .86f );
                             for( float pot : { -.16f, .16f } )
                                 roofBox( patch.tiles, u + pot, rise + 1.14f, 0, .16f, .26f, .18f );
+                            chimneyFlashings += cityPitchedRoofCladding::appendFlashing( patch.pitchedRoofs,
+                                roofPoint, halfLong, halfShort, rise, false, u, 0, .62f, .72f, admitRoofFinish );
                         }
+                        if( chimneyFlashings )
+                            WP_LOG( String( "City pitched roof flashing lot=" ) + StringUtil::toString( lot.id ) +
+                                ", chimneys=" + StringUtil::toString( chimneyFlashings ) );
                     }
                     else if( hipped )
                     {
@@ -4781,24 +4865,11 @@ namespace workphone::scene::race
                         const auto base = roofPoint( u, rise * .63f, halfShort * .20f );
                         patch.walls[family].box( base + Vector3F( 0, .53f, 0 ), { .54f, 1.24f, .61f } );
                         patch.frames.box( base + Vector3F( 0, 1.16f, 0 ), { .66f, .12f, .72f } );
-                        if( mediterranean && admitRoofDetail( 408 ) )
-                        {
-                            const float ridge = std::max( .1f, halfLong - halfShort * .75f );
-                            patch.tiles.beam( roofPoint( -ridge, rise + .045f, 0 ),
-                                              roofPoint( ridge, rise + .045f, 0 ), .085f );
-                            // Bounded raised tile courses catch grazing light without
-                            // allocating one mesh or actor for each roof tile.
-                            for( float side : { -1.f, 1.f } )
-                            {
-                                for( int course = 1; course <= 8; ++course )
-                                {
-                                    const float t = course / 9.f;
-                                    const float u = ridge + ( halfLong - ridge ) * t;
-                                    const float y = rise * ( 1 - t ) + .035f, v = side * halfShort * t;
-                                    patch.tiles.beam( roofPoint( -u, y, v ), roofPoint( u, y, v ), .035f );
-                                }
-                            }
-                        }
+                        if( cityPitchedRoofCladding::appendFlashing( patch.pitchedRoofs, roofPoint,
+                            halfLong, halfShort, rise, true, u, halfShort * .20f,
+                            longX ? .54f : .61f, longX ? .61f : .54f, admitRoofFinish ) )
+                            WP_LOG( String( "City pitched roof flashing lot=" ) + StringUtil::toString( lot.id ) +
+                                ", chimneys=1" );
                     }
                     else if( lantern )
                     {
@@ -4815,23 +4886,6 @@ namespace workphone::scene::race
                                 patch.frames.box( { cx + post * width * .22f, y,
                                                     cz + side * ( depth * .5f + .027f ) },
                                                   { .075f, .66f, .044f } );
-                            }
-                        }
-                    }
-                    else
-                    {
-                        const int requestedUnits = office ? 3 : 1 + int( lot.variant % 2 );
-                        const int units = std::min( requestedUnits, 1 + int( std::max( 0.f, size.x - 2.5f ) / 2.45f ) );
-                        for( int unit = 0; unit < units; ++unit )
-                        {
-                            const float x = cx + ( unit - ( units - 1 ) * .5f ) * 2.45f;
-                            const float z = cz + ( lot.variant % 2 ? .17f : -.17f ) * size.z;
-                            const float h = office ? .82f : .54f;
-                            patch.roofs.box( { x, deck + h * .5f, z }, { 1.95f, h, 1.28f } );
-                            for( int fin = -2; fin <= 2; ++fin )
-                            {
-                                patch.frames.box( { x, deck + h + .025f, z + fin * .21f },
-                                                  { 1.86f, .045f, .082f } );
                             }
                         }
                     }
@@ -5030,6 +5084,10 @@ namespace workphone::scene::race
             const auto interiors = emittedDisplayBays ? cityShopInterior::materials( assets ) : cityShopInterior::Materials{};
             const auto masonry = emittedMasonry ? cityFacadeDetail::materials( assets, facades[2], seed )
                                                 : cityFacadeDetail::Materials{};
+            const auto roofFinish = emittedRoofFinish ? cityRoofDeck::materials( assets, seed ) : cityRoofDeck::Materials{};
+            const auto roofEquipment = emittedRoofEquipment ? cityRoofEquipment::materials( assets ) : cityRoofEquipment::Materials{};
+            const auto pitchedRoof = emittedPitchedRoofs ? cityPitchedRoofCladding::materials( assets, seed ) : cityPitchedRoofCladding::Materials{};
+            const auto roofDrainage = emittedRoofDrainage ? cityRoofDrainage::materials( assets ) : cityRoofDrainage::Materials{};
             for( auto &[key, patch] : patches )
             {
                 reserveOwnerSlot( assets.actors );
@@ -5069,6 +5127,23 @@ namespace workphone::scene::race
                     }
                     add( "LOD0 city glazing", patch.windowPanes, paneMaterial, nearRenderers );
                     add( "LOD0 city roof detail", patch.roofs, roofMaterial, nearRenderers );
+                    add( "LOD0 city rooftop membrane", patch.finishedRoofs.membrane, roofFinish.membrane, nearRenderers );
+                    add( "LOD0 city rooftop seams", patch.finishedRoofs.seams, roofFinish.seams, nearRenderers );
+                    add( "LOD0 city rooftop coping", patch.finishedRoofs.coping, roofFinish.coping, nearRenderers );
+                    add( "LOD0 city rooftop drains", patch.finishedRoofs.drains, roofFinish.drains, nearRenderers );
+                    add( "LOD0 city rooftop mechanical curbs", patch.mechanicalRoofs.curbs, roofEquipment.curbs, nearRenderers );
+                    add( "LOD0 city rooftop equipment housings", patch.mechanicalRoofs.housings, roofEquipment.housings, nearRenderers );
+                    add( "LOD0 city rooftop equipment metal", patch.mechanicalRoofs.metal, roofEquipment.metal, nearRenderers );
+                    add( "LOD0 city rooftop equipment grilles", patch.mechanicalRoofs.grilles, roofEquipment.grilles, nearRenderers );
+                    add( "LOD0 city pitched roof slate", patch.pitchedRoofs.slate, pitchedRoof.slate, nearRenderers );
+                    add( "LOD0 city pitched roof clay", patch.pitchedRoofs.clay, pitchedRoof.clay, nearRenderers );
+                    add( "LOD0 city pitched roof slate caps", patch.pitchedRoofs.slateCaps, pitchedRoof.slateCaps, nearRenderers );
+                    add( "LOD0 city pitched roof clay caps", patch.pitchedRoofs.clayCaps, pitchedRoof.clayCaps, nearRenderers );
+                    add( "LOD0 city pitched roof eaves", patch.pitchedRoofs.eaves, pitchedRoof.eaves, nearRenderers );
+                    add( "LOD0 city pitched roof flashing", patch.pitchedRoofs.flashing, pitchedRoof.flashing, nearRenderers );
+                    add( "LOD0 city pitched roof gutters", patch.roofDrainage.gutters, roofDrainage.gutters, nearRenderers );
+                    add( "LOD0 city pitched roof hardware", patch.roofDrainage.hardware, roofDrainage.hardware, nearRenderers );
+                    add( "LOD0 city pitched roof pipes", patch.roofDrainage.pipes, roofDrainage.pipes, nearRenderers );
                     add( "LOD0 city facade frames", patch.frames, frameMaterial, nearRenderers );
                     add( "LOD0 city masonry panels", patch.masonry.panels, masonry.stone, nearRenderers );
                     add( "LOD0 city masonry sill and head profiles", patch.masonry.profiles, masonry.dressed, nearRenderers );
@@ -5094,6 +5169,8 @@ namespace workphone::scene::race
                     add( "LOD1 city massing", patch.farWalls[family], facades[family], farRenderers );
                 }
                 add( "LOD1 city roof silhouette", patch.farRoofs, roofMaterial, farRenderers );
+                add( "LOD1 city pitched roof slate", patch.farPitchedRoofs.slate, pitchedRoof.slate, farRenderers );
+                add( "LOD1 city pitched roof clay", patch.farPitchedRoofs.clay, pitchedRoof.clay, farRenderers );
                 add( "LOD1 city terracotta silhouette", patch.farTiles, tileMaterial, farRenderers );
                 add( "LOD1 city glazing ribbons", patch.farGlass, glassMaterials[0], farRenderers );
                 auto lod = root->addComponent<scene::LODGroup>();

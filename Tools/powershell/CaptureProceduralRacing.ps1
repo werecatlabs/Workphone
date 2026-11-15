@@ -12,7 +12,7 @@ param(
     [ValidatePattern('^\d+x\d+$')][string]$Resolution = '1280x720',
     [ValidateSet('auto', 'none', 'msaa2', 'msaa4')][string]$SceneAA = 'auto',
     [ValidateRange(0.1, 3600)][double]$Seconds = 10,
-    [ValidateSet('follow', 'car', 'track', 'corner', 'junction', 'hillside', 'verge', 'street', 'boulevard', 'frontage', 'facade', 'building', 'utilities', 'park', 'shopfront', 'entry-route', 'road-edit-before', 'road-edit-after')][string[]]$Views = @('car', 'track', 'corner', 'follow'),
+    [ValidateSet('follow', 'car', 'track', 'corner', 'junction', 'hillside', 'verge', 'street', 'boulevard', 'frontage', 'facade', 'building', 'utilities', 'park', 'shopfront', 'entry-route', 'rooftop', 'pitched-roof', 'road-edit-before', 'road-edit-after')][string[]]$Views = @('car', 'track', 'corner', 'follow'),
     [string]$Replay,
     [switch]$NoEffects,
     [switch]$FoliageWorld,
@@ -35,6 +35,9 @@ if ($Views -contains 'utilities' -and !$CityTerrainRoads) { throw '-Views utilit
 if ($Views -contains 'park' -and !$CityTerrainRoads) { throw '-Views park requires -CityTerrainRoads.' }
 if ($Views -contains 'shopfront' -and !$CityTerrainRoads) { throw '-Views shopfront requires -CityTerrainRoads.' }
 if ($Views -contains 'entry-route' -and !$CityTerrainRoads) { throw '-Views entry-route requires -CityTerrainRoads.' }
+if ($Views -contains 'rooftop' -and ($Scene -ne 'city' -or !$CityTerrainRoads)) { throw '-Views rooftop requires -Scene city and -CityTerrainRoads.' }
+if ($Views -contains 'pitched-roof' -and ($Scene -ne 'city' -or !$CityTerrainRoads)) { throw '-Views pitched-roof requires -Scene city and -CityTerrainRoads.' }
+if ($Views -contains 'pitched-roof' -and $CityBuildingStyle -and $CityBuildingStyle -notin @('district', 'masonry', 'terrace', 'mediterranean', 'timber')) { throw '-Views pitched-roof requires a pitched building style.' }
 if ($Views -contains 'junction' -and !$CityTerrainRoads) { throw '-Views junction requires -CityTerrainRoads.' }
 if ($Views -contains 'verge' -and !$CityTerrainRoads) { throw '-Views verge requires -CityTerrainRoads.' }
 if (($Views -contains 'hillside' -or $PSBoundParameters.ContainsKey('CityTerrainRelief')) -and !$CityTerrainRoads) { throw 'The hillside view and terrain relief require -CityTerrainRoads.' }
@@ -188,6 +191,10 @@ try {
             }
             if ($view -eq 'entry-route') {
                 $run.passed = $run.passed -and $run.evidence.cityEntryRouteCamera.valid -eq $true -and
+                    [bool]$run.evidence.cityFacadeCamera.lotId
+            }
+            if ($view -in @('rooftop', 'pitched-roof')) {
+                $run.passed = $run.passed -and $run.evidence.cityRooftopCameraValid -eq $true -and
                     [bool]$run.evidence.cityFacadeCamera.lotId
             }
             if ($view -in $roadEditViews) {

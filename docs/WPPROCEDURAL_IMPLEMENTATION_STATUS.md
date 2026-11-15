@@ -1,5 +1,50 @@
 # WPProcedural implementation status
 
+## Pitched roof cladding and rainwater details — 15 November 2026
+
+Built-in gable and hip roofs carry metre-scaled slate or clay albedo, normal
+and roughness textures. The same slope mapping continues into the distant
+LOD. Near roofs add overlapping course edges, fitted ridge and hip caps,
+eave trim and half-round gutters. Hip gutters meet at mitred corners.
+Supported single-volume buildings can receive paired downpipes, with custom
+wall, window and corner modules excluded from automatic downpipe placement.
+Successful roof mesh overrides take precedence over the new finishing.
+
+Chimney flashing follows the actual roof planes. Skirts split at ridges and
+hip creases, and turn up against the masonry. Geometry admission reserves
+complete flashing sets, gutter runs and paired downpipes before publication.
+Fine details have city-wide allowances divided between buildings.
+
+The sample and capture runner expose a fixed `pitched-roof` view. Its first
+matched render showed pale blue-grey slate. The refinement darkens and
+neutralises the slate, reduces micro-surface contrast, and expands the tile
+variation atlas while retaining the physical tile size. The isolated C++
+probe passed 193 gutter, 240 cladding and 32 chimney-flashing cases. All 11
+focused Debug tests passed. Fresh matched roof and hillside captures verified
+108 near and 19 distant pitched-roof batches in the seed-42 district. A
+separate Mediterranean capture verified the clay finish and 105 near and
+15 distant batches. Visual evidence uses 1280 × 720 software rendering. See
+`artifacts/procedural/city-pitched-roofs-20261115/visual-review.md` for the
+native capture comparisons and validation scope.
+
+## Flat roof finishes and mechanical detail — 15 November 2026
+
+Built-in flat roofs have mineral membrane, staggered lap seams, sectional
+metal coping and grated drains. Roof lanterns carry a raised-seam cap.
+Air handlers, condensers and capped vents sit on mounting curbs and clear
+the coping, lanterns and drain corners. Near building meshes carry these
+details, and custom roof modules retain precedence.
+
+`SampleVehicleAdvanced` and the capture runner expose a fixed `rooftop`
+view. The first render showed stronger seam and equipment contrast than
+intended. The next pass softened the membrane grain and metal finishes
+and added guard bars above the fan wells. Seed 42 fitted six roofs. The
+selected roof carries two condensers, two vents and two drains around
+its lantern. All 32 rooftop render batches were native-ready and all 11
+focused Debug tests passed. See
+`artifacts/procedural/city-roof-reality-20261115/visual-review.md` for the
+matched rooftop and hillside captures.
+
 ## Landscaped pedestrian approaches — 15 November 2026
 
 Fitted entrance paths gain a narrow, uneven gravel shoulder that fades into
