@@ -3430,6 +3430,7 @@ namespace workphone::scene::race
 #include "CityHinterland.hpp"
 #include "CityBuildingGlazing.hpp"
 #include "CityShopfront.hpp"
+#include "CityShopInterior.hpp"
 
         void buildCity( SceneAssets &assets, SmartPtr<IGameActor> sourceOwner,
                         SmartPtr<IGameActor> vehicle, u32 seed, VehicleAppearanceQuality quality )
@@ -3489,11 +3490,14 @@ namespace workphone::scene::race
                 Geometry walls[3], farWalls[3], glass[3], farGlass, roofs, farRoofs, frames, accents;
                 Geometry windowPanes, timber, tiles, farTiles, officeJoinery;
                 Geometry shopfrontFascia[static_cast<size_t>( cityShopfront::Style::Count )], shopfrontLetters, shopfrontDisplays;
+                cityShopInterior::Surfaces shopInterior;
                 Array<LODDetailBound> bounds{ Allocator<LODDetailBound>( sourceBudget ) };
             };
 
             SourceBudgetMap<std::pair<int, int>, CityPatch> patches;
             size_t emittedShopfronts = 0;
+            size_t emittedDisplayBays = 0;
+            const size_t displayBayLimit = buildingCount > 256 ? 96 : 144;
             size_t nominalMansardSilhouettes = 0, emittedMansardSilhouettes = 0;
             CityBuildingKit kit( assets, buildingCount );
             const bool detailedBuildings = quality != VehicleAppearanceQuality::Preview;
@@ -3999,9 +4003,19 @@ namespace workphone::scene::race
                                     admitFacadeDetail( cityShopfront::faceBudget );
                                 const auto shopStyle = builtInShopfront ? cityShopfront::choose( lot.id, seed, warehouse, artdeco )
                                                                        : cityShopfront::Style::Market;
-                                u32 displayCount = 0;
+                                u32 displayCount = 0, interiorCount = 0;
+                                const auto interior = [&]( float left, float right, float bottom, float head, float depth, int bay ) {
+                                    if( !builtInShopfront || interiorCount + displayCount >= 2 || right - left < 1.15f ||
+                                        head - bottom < 1.5f || emittedDisplayBays >= displayBayLimit ) return false;
+                                    const u32 variation = u32( render::foliageStableHash( lot.id ^ ( u64( bay + 1 ) << 32 ) ^ interiorCount ) );
+                                    cityShopInterior::append( patch.shopInterior, shopStyle, normal, along, point,
+                                                              left, bottom, right, head, depth, variation );
+                                    ++interiorCount;
+                                    ++emittedDisplayBays;
+                                    return true;
+                                };
                                 const auto display = [&]( float left, float right, float bottom, float head, float depth, int bay ) {
-                                    if( !builtInShopfront || displayCount >= 2 || right - left < 1.05f || head - bottom < 1.38f ||
+                                    if( !builtInShopfront || interiorCount + displayCount >= 2 || right - left < 1.05f || head - bottom < 1.38f ||
                                         !admitFacadeDetail( cityShopfront::displayBudget ) ) return;
                                     const u32 variation = u32( render::foliageStableHash( lot.id ^ ( u64( bay + 1 ) << 32 ) ^ displayCount ) );
                                     cityShopfront::appendDisplay( patch.shopfrontDisplays, patch.officeJoinery, shopStyle,
@@ -4042,15 +4056,25 @@ namespace workphone::scene::race
                                     panel( opaque, -span * .5f, low, left, high );
                                     panel( opaque, right, low, span * .5f, high );
                                     const auto pane = [&]( float paneLeft, float paneRight, int surface, int bay ) {
+                                        if( paneRight - paneLeft <= .001f ) return false;
                                         const bool custom = module( CityBuildingPart::Window, patch.frames,
                                                                     paneLeft, low, paneRight, high, .050f, .07f );
-                                        windowPane( patch.glass[surface], paneLeft, low, paneRight, high,
-                                                    custom ? .097f : paneDepth, bay, custom );
-                                        if( builtInShopfront )
+                                        if( builtInShopfront && !custom )
                                         {
-                                            display( paneLeft, std::min( paneRight, -doorHalfWidth - .16f ), low, high, paneDepth, bay );
-                                            display( std::max( paneLeft, doorHalfWidth + .16f ), paneRight, low, high, paneDepth, bay );
+                                            const float leftEdge = std::clamp( -doorHalfWidth - .16f, paneLeft, paneRight );
+                                            const float rightEdge = std::clamp( doorHalfWidth + .16f, paneLeft, paneRight );
+                                            const auto displayPane = [&]( float a, float b ) {
+                                                if( interior( a, b, low, high, paneDepth, bay ) ) return;
+                                                windowPane( patch.glass[surface], a, low, b, high, paneDepth, bay, false );
+                                                display( a, b, low, high, paneDepth, bay );
+                                            };
+                                            displayPane( paneLeft, leftEdge );
+                                            windowPane( patch.glass[surface], leftEdge, low, rightEdge, high, paneDepth, bay, false );
+                                            displayPane( rightEdge, paneRight );
                                         }
+                                        else
+                                            windowPane( patch.glass[surface], paneLeft, low, paneRight, high,
+                                                        custom ? .097f : paneDepth, bay, custom );
                                         return custom;
                                     };
                                     // Keep the continuous ribbon aperture and individual pane treatments.
@@ -4167,9 +4191,11 @@ namespace workphone::scene::race
                                         const bool bayWindow = terrace && streetFace && !door && !hasModule &&
                                                                floor < 2 && ( bay + lot.variant ) % 2 == 0 &&
                                                                admitFacadeDetail( 132 );
-                                        if( ( !door || !hasModule ) && !bayWindow )
+                                        const bool room = !door && !hasModule && !bayWindow &&
+                                                          interior( left, right, bottom, head, depth, bay );
+                                        if( ( !door || !hasModule ) && !bayWindow && !room )
                                             windowPane( glass, left, bottom, right, head, depth, bay, door || hasModule );
-                                        if( builtInShopfront && !door ) display( left, right, bottom, head, depth, bay );
+                                        if( !room && !door ) display( left, right, bottom, head, depth, bay );
                                         if( !hasModule )
                                         {
                                             panel( patch.frames, s - .032f, bottom, s + .032f, head,
@@ -4318,6 +4344,10 @@ namespace workphone::scene::race
                                             patch.officeJoinery, patch.shopfrontLetters, shopStyle, normal, along,
                                             point, faceBox, doorS, doorHalfWidth, span, y0, high, y1 );
                                         ++emittedShopfronts;
+                                        if( interiorCount )
+                                            WP_LOG( String( "City commercial display rooms lot=" ) + StringUtil::toString( lot.id ) +
+                                                    ", style=" + cityShopInterior::styleName( shopStyle ) +
+                                                    ", bays=" + StringUtil::toString( interiorCount ) );
                                     }
                                     else
                                     {
@@ -4978,6 +5008,7 @@ namespace workphone::scene::race
             const auto tileMaterial = material( assets, { .57f, .24f, .13f, 1 }, .82f );
             const auto [glassMaterials, paneMaterial] = cityBuildingGlazing::build( assets, detailedBuildings );
             const auto shops = emittedShopfronts ? cityShopfront::materials( assets ) : cityShopfront::Materials{};
+            const auto interiors = emittedDisplayBays ? cityShopInterior::materials( assets ) : cityShopInterior::Materials{};
             for( auto &[key, patch] : patches )
             {
                 reserveOwnerSlot( assets.actors );
@@ -4992,10 +5023,12 @@ namespace workphone::scene::race
                 auto nearRenderers = makeSourceBudgetSnapshot<SmartPtr<scene::Renderer>>();
                 auto farRenderers = makeSourceBudgetSnapshot<SmartPtr<scene::Renderer>>();
                 const auto add = [&]( const String &name, Geometry &geometry,
-                                      SmartPtr<render::IMaterial> surface, auto &renderers ) {
+                                      SmartPtr<render::IMaterial> surface, auto &renderers, bool shadows = true ) {
                     if( auto actor = mesh( assets, name, geometry, surface, root ) )
                     {
-                        renderers.push_back( actor->getComponent<scene::MeshRenderer>() );
+                        auto renderer = actor->getComponent<scene::MeshRenderer>();
+                        if( !shadows ) renderer->setCastShadows( scene::Renderer::CastShadows::Off );
+                        renderers.push_back( renderer );
                     }
                     // MeshUtil owns a packed copy now. Release grown staging arrays
                     // before publishing the next patch instead of doubling all city
@@ -5021,6 +5054,13 @@ namespace workphone::scene::race
                         add( "LOD0 city commercial fascia and canopies", patch.shopfrontFascia[style], shops.fascia[style], nearRenderers );
                     add( "LOD0 city commercial lettering", patch.shopfrontLetters, shops.lettering, nearRenderers );
                     add( "LOD0 city commercial window displays", patch.shopfrontDisplays, shops.display, nearRenderers );
+                    add( "LOD0 city commercial display room lining", patch.shopInterior.lining, interiors.lining, nearRenderers, false );
+                    add( "LOD0 city commercial display room rear wall", patch.shopInterior.rearWall, interiors.rearWall, nearRenderers, false );
+                    add( "LOD0 city commercial display room timber", patch.shopInterior.timber, interiors.timber, nearRenderers, false );
+                    add( "LOD0 city commercial display room fittings", patch.shopInterior.fittings, interiors.fittings, nearRenderers, false );
+                    add( "LOD0 city commercial display room exhibits", patch.shopInterior.display, interiors.display, nearRenderers, false );
+                    add( "LOD0 city commercial display room lights", patch.shopInterior.luminaires, interiors.luminaires, nearRenderers, false );
+                    add( "LOD0 city commercial display glazing", patch.shopInterior.glazing, interiors.glazing, nearRenderers, false );
                     add( "LOD0 city entrance fascia", patch.accents, accentMaterial, nearRenderers );
                     add( "LOD0 city timber details", patch.timber, timberMaterial, nearRenderers );
                     add( "LOD0 city terracotta roofs", patch.tiles, tileMaterial, nearRenderers );

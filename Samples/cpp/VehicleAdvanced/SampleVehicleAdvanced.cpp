@@ -32,8 +32,10 @@
 #include <Workphone/Interface/Graphics/ISky.hpp>
 
 #if WP_GRAPHICS_SYSTEM_CLAW
+#    include <WPGraphics/ClawMaterial.hpp>
 #    include <WPGraphics/ClawMesh.hpp>
 #    include <WPGraphics/ClawRendererDX11.hpp>
+#    include <workphone_graphics_material.h>
 #    include <workphone_graphics_renderer.h>
 #    include <WorkphonePlatformWin32/workphone_graphics_renderer_dx11.h>
 #    include <WPGraphics/ClawSceneNode.hpp>
@@ -2055,6 +2057,42 @@ namespace workphone
                         }
                         if( m_captureView == "shopfront" )
                         {
+#if WP_GRAPHICS_SYSTEM_CLAW
+                            size_t roomBatches = 0, readyRoomBatches = 0, glassBatches = 0, readyGlassBatches = 0;
+                            for( auto actor : m_assets.actors )
+                            {
+                                if( !actor ) continue;
+                                const auto name = actor->getName();
+                                const bool glass = name == "LOD0 city commercial display glazing";
+                                if( !glass && name.find( "LOD0 city commercial display room " ) != 0 ) continue;
+                                ++( glass ? glassBatches : roomBatches );
+                                const auto renderer = actor->getComponent<scene::MeshRenderer>();
+                                const auto mesh = renderer ? dynamic_pointer_cast<render::ClawMesh>( renderer->getGraphicsObject() ) : nullptr;
+                                if( !mesh || !mesh->isLoaded() || !mesh->getNativeMesh() ||
+                                    !wp_graphics_mesh_get_index_count( mesh->getNativeMesh() ) ) continue;
+                                if( !glass )
+                                {
+                                    ++readyRoomBatches;
+                                    continue;
+                                }
+                                const auto component = actor->getComponent<scene::Material>();
+                                const auto material = component ? dynamic_pointer_cast<render::ClawMaterial>( component->getMaterial() ) : nullptr;
+                                const auto native = material ? material->getNativeMaterial() : nullptr;
+                                if( !native ) continue;
+                                const auto alpha = wp_graphics_material_get_diffuse( native ).a;
+                                if( alpha > 0 && alpha < 1 &&
+                                    wp_graphics_material_has_flag( native, WORKPHONE_MATERIAL_FLAG_TRANSPARENT ) &&
+                                    wp_graphics_material_has_flag( native, WORKPHONE_MATERIAL_FLAG_DEPTH_CHECK ) &&
+                                    !wp_graphics_material_has_flag( native, WORKPHONE_MATERIAL_FLAG_DEPTH_WRITE ) &&
+                                    wp_graphics_material_get_blend_mode( native ) == WORKPHONE_BLEND_MODE_ALPHA &&
+                                    renderer->getCastShadows() == scene::Renderer::CastShadows::Off &&
+                                    material->getTexture( static_cast<u32>( PbsTextureTypes::PBSM_REFLECTION ) ) )
+                                    ++readyGlassBatches;
+                            }
+                            evidence << ",\n  \"cityCommercialDisplays\":{\"roomBatches\":" << roomBatches
+                                     << ",\"readyRoomBatches\":" << readyRoomBatches << ",\"glassBatches\":" << glassBatches
+                                     << ",\"readyGlassBatches\":" << readyGlassBatches << '}';
+#endif
                             const auto &lots = m_assets.cityLayout.lots;
                             const auto lot = std::find_if( lots.begin(), lots.end(), [&]( const auto &item ) {
                                 return item.id == m_cityFacadeLotId && !item.park &&

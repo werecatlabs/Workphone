@@ -1,5 +1,28 @@
 # WPProcedural implementation status
 
+## Commercial display rooms and street trees — 15 November 2026
+
+Built-in commercial windows can open into recessed display rooms with
+gallery plinths, café counters, or market shelving. A separate tinted pane
+uses the city's outdoor reflection probe. The room walls, furnishings and
+light fixtures have physical depth, with warm light baked into the rear
+plaster. The fitter sizes the rooms to qualifying ground-floor apertures
+and keeps the existing window and entrance module overrides available.
+
+Broadleaf street trees now grow behind accepted public planting beds. The
+fitter checks terrain support, crown spacing and clearance from carriageways,
+sidewalks, entrances and crossing approaches. It reuses the city's broadleaf
+foliage meshes. The seed-42 district placed 18 new trees from 41 eligible
+pockets, with no terrain root failures in the native capture checks.
+
+The first shopfront capture exposed props outside the display apertures.
+The revised room builder places fixtures directly from their local metres
+and dimensions. Seed 42 produced 25 display bays across 15 storefronts.
+The corrected shopfront capture validated 36 native room batches and all
+six alpha-blended glass batches. All ten focused Debug tests passed. See
+`artifacts/procedural/city-occupied-streets-20261115/visual-review.md` for the
+matched shopfront, frontage and entrance-route captures.
+
 ## Paved connections from commercial entrances to sidewalks — 15 November 2026
 
 When a raised commercial entrance cannot connect straight ahead, the fitter

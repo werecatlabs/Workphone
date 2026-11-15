@@ -1,5 +1,7 @@
 #pragma once
 
+#include "CityReserveTrees.hpp"
+
         namespace cityReservePlanting
         {
             void scatter( SceneAssets &assets, const SourceBudgetVector<cityReserveLandscape::Site> &sites,
@@ -156,5 +158,6 @@
                 }
                 WP_LOG( String( "Terrain city reserve foliage beds=" ) + StringUtil::toString( beds ) +
                         " shrubs=" + StringUtil::toString( shrubs ) + " grass=" + StringUtil::toString( grasses ) );
+                cityReserveTrees::scatter( assets, sites, exclusions, radii, *terrain, placement, world, quality );
             }
         }  // namespace cityReservePlanting
