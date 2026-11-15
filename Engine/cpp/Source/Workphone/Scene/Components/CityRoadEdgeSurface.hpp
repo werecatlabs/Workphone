@@ -53,19 +53,27 @@
 
             struct Surface
             {
+                Surface() = default;
+
                 explicit Surface( SmartPtr<IMesh> road )
                 {
                     ready = cityCarriagewayUtilities::visitTriangles( road, [&]( Vector3F a, Vector3F b, Vector3F c ) {
-                        const auto area = cross( b - a, c - a );
-                        if( std::abs( area ) <= 1e-7f ) return;
-                        if( area < 0 ) std::swap( b, c );
-                        const auto number = u32( faces.size() );
-                        faces.emplace_back( a, b, c );
-                        faces.back().bounds.cells( [&]( auto cell ) {
-                            index[cell].push_back( number );
-                            return false;
-                        } );
+                        addTriangle( a, b, c );
                     } );
+                }
+
+                void addTriangle( Vector3F a, Vector3F b, Vector3F c )
+                {
+                    const auto area = cross( b - a, c - a );
+                    if( std::abs( area ) <= 1e-7f ) return;
+                    if( area < 0 ) std::swap( b, c );
+                    const auto number = u32( faces.size() );
+                    faces.emplace_back( a, b, c );
+                    faces.back().bounds.cells( [&]( auto cell ) {
+                        index[cell].push_back( number );
+                        return false;
+                    } );
+                    ready = true;
                 }
 
                 bool contains( Vector3F point ) const

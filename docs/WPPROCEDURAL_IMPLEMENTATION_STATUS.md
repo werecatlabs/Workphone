@@ -1,5 +1,26 @@
 # WPProcedural implementation status
 
+## Landscaped pedestrian approaches — 15 November 2026
+
+Fitted entrance paths gain a narrow, uneven gravel shoulder that fades into
+the grass. The shoulder tapers at the stair apron and sidewalk, and its
+projected triangles clear the accepted paving, kerb and carriageway.
+
+Where the terrain and nearby parcels leave room, planting beds follow the
+retained terrain triangles beside the path. The first view showed low
+planting that was too sparse. The next pass filled the lower layer with
+broadleaf perennials and added a smaller, staggered bed on the opposite
+side of longer paths where there was room. Sedges, dry seed heads and
+patches of exposed earth break up the foliage.
+
+The beds reserve their footprints in later landscape passes. Seed 42
+produced three beds and 104 gravel sections along two entrance routes.
+The gravel and planting use render geometry, with stair and walkway
+collision handled by the fitted stair and path meshes. All 11 focused
+Debug tests passed. See
+`artifacts/procedural/city-entrance-landscape-20261115/visual-review.md` for
+the matched entrance-route and shopfront captures.
+
 ## Office masonry and entrance handrails — 15 November 2026
 
 Built-in office elevations use fitted stone panel courses, bevelled piers,
