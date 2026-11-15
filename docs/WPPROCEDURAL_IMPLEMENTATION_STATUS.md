@@ -1,5 +1,26 @@
 # WPProcedural implementation status
 
+## Public roadside planting and roundabout turf — 15 November 2026
+
+Public roadside planting uses the outer edges of fitted sidewalks to locate
+open space. The beds follow the retained terrain and fade into its existing
+surface. Layout checks protect the published carriageway, footways, parcel
+bounds and access corridors. Short grasses and low shrubs share the accepted
+bed footprints. Crossing beds keep the planting low to preserve sightlines.
+
+Roundabout islands use finer, greener turf over the existing island grade.
+The planting beds fade into that turf and mix grasses, shrubs and low flowers.
+The city street-detail control scales the generated planting.
+
+The first reserve capture showed a gap along the near roundabout approach.
+Placement now tries both sides of each fitted roundabout approach and accepts
+short curved sidewalk segments. The seed 42 scene generated 86 meadow beds,
+including 66 crossing pockets, with 87 shrubs and 524 grasses. The four
+roundabouts received 80 flower clusters. All seven focused Debug tests passed.
+The matched frontage and hillside renders passed native validation. See
+`artifacts/procedural/city-street-greens-20261115/visual-review.md` for the
+captures and verification scope.
+
 ## Terrain-fitted city parks — 15 November 2026
 
 Terrain-city park parcels use the retained ground as collision support. Where

@@ -329,6 +329,24 @@ namespace workphone::scene
             surface.orm = std::move( orm );
         }
 
+        void finishIslandTurf( procedural::TextureBuffer &colour, u32 seed )
+        {
+            const auto channel = []( float value ) { return u8( std::clamp( std::lround( value ), 0l, 255l ) ); };
+            for( u32 y = 0; y < colour.height; ++y )
+                for( u32 x = 0; x < colour.width; ++x )
+                {
+                    auto *pixel = colour.pixel( x, y );
+                    const float luminance = .22f * pixel[0] + .70f * pixel[1] + .08f * pixel[2];
+                    const float u = ( x + .5f ) / colour.width, v = ( y + .5f ) / colour.height;
+                    const float thatch = roadVariation( seed ^ 0x31b41au, u, v, 11 );
+                    const float grain = roadGrain( seed ^ 0xa64851u, x, y, colour.width ) - .5f;
+                    const float value = ( luminance - 112.f ) * .36f + grain * 6.f;
+                    pixel[0] = channel( 91.f + value + thatch * 13.f );
+                    pixel[1] = channel( 122.f + value - thatch * 7.f );
+                    pixel[2] = channel( 59.f + value + thatch * 8.f );
+                }
+        }
+
         void roadSurface( CityRoadRuntimeState &state, const String &prefix,
                           SmartPtr<render::IMaterial> material,
                           SmartPtr<procedural::ITextureForge> forge, u32 seed,
@@ -360,8 +378,9 @@ namespace workphone::scene
                 if( loadCitySurface( family, asphalt ? 256 : 512, scanned, diagnostic ) )
                 {
                     if( asphalt ) weatherScannedAsphalt( scanned );
+                    if( turf ) finishIslandTurf( scanned.albedo, seed );
                     surfaceMaps( state, prefix + "/city-surface/" + citySurfaceAssetId( family ), material, scanned );
-                    material->setNormalStrength( asphalt ? .45f : turf ? .5f : .35f );
+                    material->setNormalStrength( asphalt ? .45f : turf ? .34f : .35f );
                     material->setEditorFloat( "aoStrength", .65f );
                     material->setUVProjection( kind == CityRoadTerrainTriangleKind::Kerb ? 1 : 3 );
                     const float repeatMetres = citySurfaceTileMetres( family ) * ( asphalt ? asphaltTiles : 1u );

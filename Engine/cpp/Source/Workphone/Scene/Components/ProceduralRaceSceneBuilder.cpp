@@ -1003,10 +1003,12 @@ namespace workphone::scene::race
         }
 
         namespace cityParkLandscape { struct Layout; }
+        namespace cityReserveLandscape { struct Site; }
 
         void buildFoliageWorld( SceneAssets &assets, u32 seed, VehicleAppearanceQuality quality,
                                 const CityRoadTerrainMesh *cityFootways = nullptr,
-                                const SourceBudgetVector<cityParkLandscape::Layout> *parkLayouts = nullptr );
+                                const SourceBudgetVector<cityParkLandscape::Layout> *parkLayouts = nullptr,
+                                const SourceBudgetVector<cityReserveLandscape::Site> *reserveSites = nullptr );
 
         void buildTrack( SceneAssets &assets, u32 seed, VehicleAppearanceQuality quality )
         {
@@ -1399,10 +1401,13 @@ namespace workphone::scene::race
 #include "CityHillsideVegetation.hpp"
 #include "CityParkLayout.hpp"
 #include "CityParkPlanting.hpp"
+#include "CityReserveLayout.hpp"
+#include "CityReservePlanting.hpp"
 
         void buildFoliageWorld( SceneAssets &assets, u32 seed, VehicleAppearanceQuality quality,
                                 const CityRoadTerrainMesh *cityFootways,
-                                const SourceBudgetVector<cityParkLandscape::Layout> *parkLayouts )
+                                const SourceBudgetVector<cityParkLandscape::Layout> *parkLayouts,
+                                const SourceBudgetVector<cityReserveLandscape::Site> *reserveSites )
         {
             auto app = core::IApplicationManager::instance();
             auto scene = app->getGraphicsSystem()->getGraphicsScene();
@@ -1683,6 +1688,7 @@ namespace workphone::scene::race
                     cityHillside::indexCity( exclusions, assets, *cityFootways );
                     if( parkLayouts ) cityParkPlanting::scatter( assets, *parkLayouts, exclusions, *world, seed, quality );
                     cityHillside::scatter( assets, exclusions, *world, seed, quality );
+                    if( reserveSites ) cityReservePlanting::scatter( assets, *reserveSites, exclusions, *world, quality );
                 }
             }
             if( !render::validateFoliageWorld( *world, error ) ||
@@ -3417,6 +3423,7 @@ namespace workphone::scene::race
 #include "CityCarriagewayUtilities.hpp"
 #include "CityRoadEdgeSurface.hpp"
 #include "CityParkLandscape.hpp"
+#include "CityReserveLandscape.hpp"
 #include "CityParkAmenities.hpp"
 #include "CityStormDrains.hpp"
 #include "CityHinterland.hpp"
@@ -5100,6 +5107,7 @@ namespace workphone::scene::race
                 cityGroundContact::build( assets, buildingEntries, fitted, pavingMaterial, forge );
                 cityRoundaboutSigns::build( assets, fitted, terrainStreetLamps, quality );
                 SourceBudgetVector<cityParkLandscape::Layout> parkLayouts;
+                SourceBudgetVector<cityReserveLandscape::Site> reserveSites;
                 {
                     const auto layers = cityCarriagewayUtilities::activeLayers( assets );
                     const cityRoadEdges::Surface roadSurface( layers.road );
@@ -5107,10 +5115,13 @@ namespace workphone::scene::race
                     buildTerrainCityVergeTransitions( assets, fitted, seed, quality, roadSurface );
                     parkLayouts = cityParkLandscape::build( assets, city, fitted, walks.mesh, roadSurface,
                                                            pavingMaterial, seed, surfaceParams.size, quality );
+                    if( layers.road )
+                        reserveSites = cityReserveLandscape::build( assets, city, fitted, walks.mesh, roadSurface,
+                                                                  buildingEntries, parkLayouts, seed, quality );
                 }
                 cityParkAmenities::build( assets, parkLayouts, seed );
                 buildTerrainCityVerges( assets, fitted, seed, quality );
-                buildFoliageWorld( assets, seed, quality, &fitted, &parkLayouts );
+                buildFoliageWorld( assets, seed, quality, &fitted, &parkLayouts, &reserveSites );
             }
             mesh( assets, "City street furniture", streetMetal,
                   material( assets, { .16f, .19f, .20f, 1 }, .48f, .6f ) );

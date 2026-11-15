@@ -10,6 +10,43 @@
                 return { std::cos( angle ), 0, std::sin( angle ) };
             }
 
+            TextureBuffer plantedSoil( u32 seed )
+            {
+                constexpr u32 size = 128;
+                TextureBuffer texture( size, size );
+                for( u32 y = 0; y < size; ++y )
+                    for( u32 x = 0; x < size; ++x )
+                    {
+                        const float u = ( x + .5f ) * 2.f / size - 1.f;
+                        const float v = ( y + .5f ) * 2.f / size - 1.f;
+                        const float r = std::hypot( u, v );
+                        const float coarse = variation( ( u64( seed ) << 32 ) ^ ( ( y / 4 ) * size + x / 4 ) );
+                        const float fine = variation( ( u64( seed ^ 0x5c117u ) << 32 ) ^ ( y * size + x ) );
+                        const float grit = 14.f * fine + 12.f * coarse;
+                        const float edge = std::clamp( ( .99f - r - .05f * coarse ) / .22f, 0.f, 1.f );
+                        auto *pixel = texture.pixel( x, y );
+                        pixel[0] = u8( 91.f + grit );
+                        pixel[1] = u8( 79.f + grit );
+                        pixel[2] = u8( 57.f + grit );
+                        pixel[3] = u8( std::lround( 255.f * edge * edge * ( 3.f - 2.f * edge ) ) );
+                    }
+                return texture;
+            }
+
+            void inflorescence( Geometry &petals, Vector3F head, Vector3F lean, float size, float phase )
+            {
+                for( u32 floret = 0; floret < 5; ++floret )
+                {
+                    const auto direction = bearing( phase + float( floret ) * 2.f * pi / 5.f );
+                    const auto centre = head + direction * ( .54f * size );
+                    const auto across = Vector3F( -direction.z, 0, direction.x ) * ( .36f * size );
+                    const auto rise = direction * ( .70f * size ) + lean * ( .18f * size ) + Vector3F( 0, .19f * size, 0 );
+                    const auto normal = rise.crossProduct( across ).normaliseCopy();
+                    petals.quad( centre - rise, centre - across, centre + rise, centre + across,
+                                 normal.y < 0 ? -normal : normal );
+                }
+            }
+
             void shrubCrown( Geometry &shape, Vector3F base, float radius, float height, u64 key )
             {
                 constexpr u32 sides = 8, rings = 3;
@@ -56,9 +93,10 @@
                 const int detail = std::clamp( assets.cityStreetDetail, 0, 100 );
                 if( !detail ) return;
 
-                Geometry mulch, shrubs;
+                Geometry mulch, shrubs, stems;
                 std::array<Geometry, 3> grasses;
-                u32 islands = 0, beds = 0, tufts = 0, shrubGroups = 0;
+                std::array<Geometry, 2> flowers;
+                u32 islands = 0, beds = 0, tufts = 0, shrubGroups = 0, floralGroups = 0;
                 constexpr u32 maxIslands = 16;
                 const auto &source = assets.roadAuthoring->getSource();
                 for( const auto &island : source.roundabouts )
@@ -102,15 +140,19 @@
                         // One triangulated surface on the same grade as the island's own mesh.
                         constexpr u32 sectors = 20;
                         const auto first = u32( mulch.positions.size() );
-                        const auto bedVertex = [&]( Vector3F p ) {
+                        const auto bedVertex = [&]( Vector3F p, Vector2F uv ) {
                             mulch.positions.push_back( lay( p, .012f ) );
                             mulch.normals.push_back( normal );
                             mulch.tangents.push_back( { along.x, -normal.dotProduct( along ) / normal.y, along.z, 1 } );
-                            mulch.uv.push_back( { p.x * .54f, p.z * .54f, 0 } );
+                            mulch.uv.push_back( { uv.x, uv.y, 0 } );
                         };
-                        bedVertex( centre );
+                        bedVertex( centre, { .5f, .5f } );
                         for( u32 i = 0; i < sectors; ++i )
-                            bedVertex( bedPoint( i * 2 * pi / sectors, 1 ) );
+                        {
+                            const float angle = i * 2.f * pi / sectors;
+                            const auto map = bearing( angle + 2.f * pi * variation( bedKey ) );
+                            bedVertex( bedPoint( angle, 1 ), { .5f + map.x * .5f, .5f + map.z * .5f } );
+                        }
                         for( u32 i = 0; i < sectors; ++i )
                         {
                             for( const auto index : { first, first + 1 + ( i + 1 ) % sectors, first + 1 + i } )
@@ -161,24 +203,40 @@
                             }
                             ++shrubGroups;
                         }
+                        const u32 flowerCount = u32( detail ) * ( bed ? 8 : 12 ) / 100;
+                        for( u32 cluster = 0; cluster < flowerCount; ++cluster )
+                        {
+                            const auto clusterKey = render::foliageStableHash( bedKey + 181 + cluster );
+                            const float angle = float( cluster ) * 2.39996323f + variation( clusterKey ) * .4f;
+                            const auto centre = bedPoint( angle, .53f + .28f * variation( clusterKey + 1 ) );
+                            const u32 hue = variation( clusterKey + 2 ) > .67f ? 1u : 0u;
+                            for( u32 shoot = 0; shoot < 3; ++shoot )
+                            {
+                                const auto lean = bearing( angle + shoot * 2.39996323f );
+                                const auto foot = lay( centre + lean * .033f, .011f );
+                                const float height = .18f + .14f * variation( clusterKey + 5 + shoot );
+                                const auto head = foot + lean * ( .05f + .05f * variation( clusterKey + 9 + shoot ) ) +
+                                                  Vector3F( 0, height, 0 );
+                                if( !clear( head ) ) continue;
+                                stems.beam( foot, head, .004f );
+                                inflorescence( flowers[hue], head, lean, .031f + .019f * variation( clusterKey + 13 + shoot ), angle );
+                            }
+                            ++floralGroups;
+                        }
                     }
                 }
                 if( !islands ) return;
 
-                constexpr u32 textureSize = 64;
-                TextureBuffer loam( textureSize, textureSize );
-                for( u32 i = 0; i < textureSize * textureSize; ++i )
-                {
-                    const float noise = variation( i + 217 ) * .74f +
-                                        variation( ( i / textureSize / 4 ) * textureSize + i % textureSize / 4 ) * .26f;
-                    loam.pixels[i * 4] = u8( 82 + 34 * noise );
-                    loam.pixels[i * 4 + 1] = u8( 66 + 27 * noise );
-                    loam.pixels[i * 4 + 2] = u8( 49 + 23 * noise );
-                    loam.pixels[i * 4 + 3] = 255;
-                }
-                auto earth = material( assets, { .78f, .76f, .70f, 1 }, .99f );
-                earth->setTexture( upload( assets, loam ), 0 );
-                mesh( assets, "Terrain city island planting soil", mulch, earth );
+                auto earth = material( assets, ColourF::White, .99f );
+                earth->setTexture( upload( assets, plantedSoil( seed ) ), 0 );
+                earth->setTransparent( true );
+                earth->setBlendMode( 1 );
+                earth->setDepthWrite( false );
+                earth->setUVProjection( 0 );
+                earth->setEditorUInt( "uvFilter", 3 );
+                earth->setEditorFloat( "uvAniso", 8.f );
+                if( auto actor = mesh( assets, "Terrain city island planting soil", mulch, earth ) )
+                    actor->getComponent<scene::MeshRenderer>()->setCastShadows( scene::Renderer::CastShadows::Off );
                 mesh( assets, "Terrain city island clipped shrubs", shrubs,
                       material( assets, { .27f, .38f, .20f, 1 }, .93f ) );
                 const ColourF palette[] = { { .41f, .48f, .28f, 1 }, { .35f, .43f, .32f, 1 },
@@ -191,8 +249,22 @@
                     mesh( assets, "Terrain city island ornamental grass " + StringUtil::toString( tint ),
                           grasses[tint], grass );
                 }
+                if( !stems.indices.empty() )
+                {
+                    mesh( assets, "Terrain city island flower stems", stems,
+                          material( assets, { .25f, .37f, .19f, 1 }, .93f ) );
+                    const ColourF blossom[] = { { .69f, .59f, .70f, 1 }, { .80f, .73f, .49f, 1 } };
+                    for( u32 tint = 0; tint < flowers.size(); ++tint )
+                    {
+                        auto materialInstance = material( assets, blossom[tint], .88f );
+                        materialInstance->setCullMode( 0 );
+                        mesh( assets, "Terrain city island flowers " + StringUtil::toString( tint ),
+                              flowers[tint], materialInstance );
+                    }
+                }
                 WP_LOG( String( "Terrain city roundabout landscaping: islands=" ) + StringUtil::toString( islands ) +
                         " beds=" + StringUtil::toString( beds ) + " grassTufts=" + StringUtil::toString( tufts ) +
-                        " shrubGroups=" + StringUtil::toString( shrubGroups ) );
+                        " shrubGroups=" + StringUtil::toString( shrubGroups ) + " flowerClusters=" +
+                        StringUtil::toString( floralGroups ) );
             }
         }
