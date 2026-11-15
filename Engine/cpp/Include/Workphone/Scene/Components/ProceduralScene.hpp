@@ -24,6 +24,10 @@ namespace workphone::scene
         virtual bool isGenerated() const;
         String getGenerationError() const;
         const race::SceneAssets &getAssets() const;
+        /// Optional world-space interests for simulation or a streaming review.
+        /// Clearing the override resumes the active camera and vehicle observers.
+        void setCityStreamingObservers( const Array<Vector3F> &observers );
+        void clearCityStreamingObservers();
 
         u32 getSeed() const;
         void setSeed( u32 seed );
@@ -62,5 +66,7 @@ namespace workphone::scene
     private:
         atomic_bool m_generated{ false };
         atomic_bool m_activationPending{ false };
+        Array<Vector3F> m_cityStreamingObservers{ Allocator<Vector3F>( sourceBudget ) };
+        bool m_cityStreamingObserverOverride = false;
     };
 }  // namespace workphone::scene

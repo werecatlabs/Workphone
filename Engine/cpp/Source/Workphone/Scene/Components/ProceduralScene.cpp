@@ -1,11 +1,16 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Scene/Components/ProceduralScene.hpp>
 #include <Workphone/Scene/Components/ProceduralCircuitScene.hpp>
+#include <Workphone/Scene/Components/ProceduralCityStreaming.hpp>
+#include <Workphone/Scene/Components/Camera.hpp>
+#include <Workphone/Scene/Components/CarController.hpp>
+#include <Workphone/Interface/Scene/ICameraManager.hpp>
 #include <Workphone/Interface/System/ITaskManager.hpp>
 #include <Workphone/System/TaskLock.hpp>
 #include <Workphone/Workphone.hpp>
 #include <algorithm>
 #include <stdexcept>
+#include <filesystem>
 
 namespace workphone::scene
 {
@@ -49,27 +54,85 @@ namespace workphone::scene
 
     void ProceduralScene::update()
     {
-        if( Thread::getCurrentTask() != TaskId::Application || !isLoaded() || !isEnabled() ||
-            !m_activationPending )
+        if( Thread::getCurrentTask() != TaskId::Application || !isLoaded() || !isEnabled() )
         {
             return;
         }
-        auto tasks = core::IApplicationManager::instance()->getTaskManager();
-        auto renderLock = tasks ? tasks->lockTask( TaskId::Render ) : TaskLock();
-        auto physicsLock = tasks ? tasks->lockTask( TaskId::Physics ) : TaskLock();
-        std::lock_guard<std::recursive_mutex> lock( m_generationMutex );
+        auto app = core::IApplicationManager::instancePtr();
+        if( !app ) return;
         if( m_activationPending )
         {
-            try
+            auto tasks = app->getTaskManager();
+            auto renderLock = tasks ? tasks->lockTask( TaskId::Render ) : TaskLock();
+            auto physicsLock = tasks ? tasks->lockTask( TaskId::Physics ) : TaskLock();
+            std::lock_guard<std::recursive_mutex> lock( m_generationMutex );
+            if( m_activationPending )
             {
-                activateGeneratedAssets();
+                try
+                {
+                    activateGeneratedAssets();
+                }
+                catch( const std::exception &failure )
+                {
+                    generationFailed();
+                    clearGeneratedScene();
+                    m_generationError = failure.what();
+                }
             }
-            catch( const std::exception &failure )
+        }
+
+        if( !m_generated ) return;
+        std::shared_ptr<race::CityStreaming> streaming;
+        {
+            std::unique_lock<std::recursive_mutex> lock( m_generationMutex, std::try_to_lock );
+            if( !lock.owns_lock() || !m_generated || m_activationPending ) return;
+            streaming = m_assets.cityStreaming;
+            if( !streaming || !streaming->stats().totalPatches ) return;
+        }
+
+        // LOD edits and native render publication use the manager, then graphics owner.
+        // Regeneration can already own the generation lock while removing scene objects.
+        // If it does, release the publication locks and let it finish before retrying.
+        auto manager = app->getGameManager();
+        auto graphics = app->getGraphicsSystem();
+        if( !manager || !graphics ) return;
+        ScopedLock managerLock( manager );
+        ScopedLock graphicsLock( graphics );
+        std::unique_lock<std::recursive_mutex> lock( m_generationMutex, std::try_to_lock );
+        if( !lock.owns_lock() || !m_generated || m_activationPending || m_assets.cityStreaming != streaming ) return;
+        const auto updateStreaming = [&]( const Array<Vector3F> &observers ) {
+            String error;
+            if( !streaming->update( observers, error ) && !error.empty() )
+                m_generationError = "City streaming: " + error;
+        };
+        try
+        {
+            if( m_cityStreamingObserverOverride )
             {
-                generationFailed();
-                clearGeneratedScene();
-                m_generationError = failure.what();
+                updateStreaming( m_cityStreamingObservers );
+                return;
             }
+            auto observers = makeSourceBudgetSnapshot<Vector3F>();
+            const auto owner = getActor();
+            const auto observe = [&]( SmartPtr<IGameActor> actor ) {
+                if( !actor || !actor->isEnabledInScene() ) return;
+                const auto p = actor->getWorldTransform().getPosition();
+                observers.push_back( { float( p.x ), float( p.y ), float( p.z ) } );
+            };
+            if( app->isEditor() && !app->isPlaying() )
+            {
+                if( auto cameras = app->getCameraManager() ) observe( cameras->getEditorCamera() );
+            }
+            if( observers.empty() && owner && owner->getScene() )
+                for( const auto &camera : owner->getScene()->getComponents<Camera>() )
+                    if( camera && camera->isEnabled() && camera->isActive() )
+                    { observe( camera->getActor() ); if( !observers.empty() ) break; }
+            if( observers.empty() || ( owner && owner->getComponent<CarController>() ) ) observe( owner );
+            updateStreaming( observers );
+        }
+        catch( const std::bad_alloc & )
+        {
+            // Preserve current observer demand until the next update can obtain its snapshot.
         }
     }
 
@@ -102,6 +165,19 @@ namespace workphone::scene
             clearGeneratedScene();
             m_generationError.clear();
             buildGeneratedScene();
+            if( m_assets.openCity && m_assets.cityStreamingEnabled && !m_assets.cityRoadShowcase )
+            {
+                race::CityStreamingOptions options;
+                options.loadRadius = m_assets.cityStreamLoadRadius;
+                options.retainRadius = m_assets.cityStreamRetainRadius;
+                auto streaming = std::allocate_shared<race::CityStreaming>( SourceBudgetAllocator<race::CityStreaming>{}, options );
+                const auto cache = ( std::filesystem::u8path( app->getProjectPath().c_str() ) /
+                    ".FBCache" / "ProceduralCityStreaming" ).generic_u8string();
+                String error;
+                if( !streaming->initialize( m_assets, owner, String( cache.c_str() ), error ) )
+                    throw std::runtime_error( ( "City streaming: " + error ).c_str() );
+                m_assets.cityStreaming = std::move( streaming );
+            }
             m_generated = true;
             return true;
         }
@@ -121,6 +197,8 @@ namespace workphone::scene
         m_activationPending = false;
         race::SceneAssets retired;
         m_assets.swap( retired );
+        if( retired.cityStreaming ) retired.cityStreaming->close();
+        retired.cityStreaming.reset();
         // Release producer storage before callbacks can allocate during retirement.
         retired.vehicle = {};
         retired.circuit = {};
@@ -204,6 +282,22 @@ namespace workphone::scene
     }
 
     const race::SceneAssets &ProceduralScene::getAssets() const { return m_assets; }
+    void ProceduralScene::setCityStreamingObservers( const Array<Vector3F> &observers )
+    {
+        if( observers.empty() || observers.size() > 16 ||
+            std::any_of( observers.begin(), observers.end(), []( const auto &p ) { return !p.isFinite(); } ) )
+            throw std::invalid_argument( "City streaming requires one to sixteen finite observers." );
+        std::lock_guard<std::recursive_mutex> lock( m_generationMutex );
+        auto admitted = makeSourceBudgetSnapshot( observers );
+        m_cityStreamingObservers.swap( admitted );
+        m_cityStreamingObserverOverride = true;
+    }
+    void ProceduralScene::clearCityStreamingObservers()
+    {
+        std::lock_guard<std::recursive_mutex> lock( m_generationMutex );
+        m_cityStreamingObservers.clear();
+        m_cityStreamingObserverOverride = false;
+    }
     u32 ProceduralScene::getSeed() const { return m_seed; }
     void ProceduralScene::setSeed( u32 seed ) { m_seed = seed; }
     s32 ProceduralScene::getQuality() const { return static_cast<s32>( m_quality ); }

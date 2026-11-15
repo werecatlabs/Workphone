@@ -635,6 +635,14 @@ namespace workphone
         return service.instance;
     }
 
+    void WorldStreamingScheduler::raiseSharedSourceBudget( u64 minimumBytes )
+    {
+        const auto ledger = sharedAllocationLedger();
+        constexpr auto source = size_t( StreamMemoryClass::SourceCpu );
+        std::lock_guard<std::mutex> lock( ledger->mutex );
+        ledger->limits[source] = std::max( ledger->limits[source], minimumBytes );
+    }
+
     void WorldStreamingScheduler::shutdownShared()
     {
         std::shared_ptr<WorldStreamingScheduler> retiring;

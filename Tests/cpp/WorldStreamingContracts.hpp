@@ -92,6 +92,38 @@ namespace world_streaming_contracts
         }
     };
 
+    inline void sharedSourceFloorContracts()
+    {
+        SharedSourceLimit source;
+        constexpr auto sourceCpu = size_t( StreamMemoryClass::SourceCpu );
+        const auto before = source.scheduler->stats();
+        auto lease = WorldStreamingScheduler::reserveSharedSource( 96 );
+        require( lease && source.scheduler->ownsBudget( lease ), "The preexisting shared source lease is valid." );
+        WorldStreamingScheduler::raiseSharedSourceBudget( 0 );
+        require( source.scheduler->stats().limits[sourceCpu] == before.limits[sourceCpu],
+                 "A zero source floor leaves the shared budget unchanged." );
+
+        constexpr u64 delta = 1ull << 20;
+        const u64 lower = before.limits[sourceCpu] + delta;
+        const u64 higher = lower + delta;
+        Gate start;
+        auto competing = std::async( std::launch::async, [ready = start.future, higher] {
+            ready.wait();
+            for( int i = 0; i < 128; ++i ) WorldStreamingScheduler::raiseSharedSourceBudget( higher );
+        } );
+        start.open();
+        for( int i = 0; i < 128; ++i ) WorldStreamingScheduler::raiseSharedSourceBudget( lower );
+        competing.get();
+        WorldStreamingScheduler::raiseSharedSourceBudget( 1 );
+        const auto after = source.scheduler->stats();
+        auto expectedLimits = before.limits;
+        expectedLimits[sourceCpu] = higher;
+        require( after.limits == expectedLimits && after.workers == before.workers,
+                 "Concurrent source floor increases preserve the maximum and unrelated worker budgets." );
+        require( lease->bytes() == 96 && source.scheduler->ownsBudget( lease ),
+                 "Increasing the shared source cap preserves active reservations." );
+    }
+
     inline void sourceMetadataContracts()
     {
         SharedSourceLimit source;
@@ -438,6 +470,7 @@ namespace world_streaming_contracts
 
     inline void run()
     {
+        sharedSourceFloorContracts();
         WorldStreamLimits limits;
         limits.workers = 1;
         limits.maximumProducers = 4;

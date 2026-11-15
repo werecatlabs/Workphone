@@ -137,6 +137,55 @@ registration/unregistration, the paint/contrast regression and indexed tyre
 triangle coverage on all four wheels at every LOD. The inertia test
 checks world-space torque on a body with unequal principal moments in two poses.
 
+## City building streaming
+
+The city first generates its building geometry, then caches the detail mesh
+payloads for eligible patches in a private directory under the project's
+`.FBCache/ProceduralCityStreaming`. The generation owns this cache and removes
+its files on teardown. Each eligible patch can use three screen-size LODs,
+with detailed façades and roofs at LOD0, simplified building masses and roof
+silhouettes at LOD1, and a baked, multi-view skyline imposter at LOD2. The
+lowest available tier stays resident. Patches stay detailed when their distant
+meshes lack required custom building geometry.
+
+Camera and vehicle proximity control residency of the higher-detail mesh
+payloads. Buildings keep their actors, materials and collision. Roads, edited
+terrain and the existing tree and paged foliage paths keep their own lifetimes.
+The component saves `City Streaming` (enabled by default), `City Stream Load
+Radius` (300 m), and `City Stream Retain Radius` (420 m). A larger retain radius
+reduces reloads near the load boundary. Radii must be finite, with load greater
+than zero and retain at least as large as load.
+
+`City Source Memory MiB` (768 by default, range 128–4096) is a saved minimum for
+the shared CPU source ledger. City generation raises the existing limit only
+when needed. The ledger charges source bytes as resources are allocated, and
+GPU resources use their own budget. Constant occlusion, roughness and metallic
+channels in city materials use 1×1 scalar textures with the same values.
+Channels with detail keep their original resolution and values.
+
+Use `--city-streaming on|off` to select streaming in the sample and
+`--city-source-memory-mib N` to override the minimum. The capture runner exposes
+these as `-CityStreaming on|off` and `-CitySourceMemoryMiB N`. It defaults to
+`off` for stable comparisons with earlier captures.
+
+The Windows Claw streaming probe requires a generated city, streaming enabled,
+and a capture. It moves the streaming observer beyond the city and back while
+leaving the capture camera in place. The `cityStreamingSmoke` evidence records
+settled near, evicted, returned and automatic-observer states, including native
+mesh residency, imposter readiness and the shared source ledger. The sample
+requires native detail eviction and reload and a decrease in source memory
+during eviction before it resumes normal capture and collision validation.
+
+```powershell
+./SampleVehicleAdvanced.exe --city-terrain-roads --city-layout lsystem --view hillside `
+    --city-streaming on --city-source-memory-mib 768 --city-streaming-smoke-test `
+    --capture hillside.bmp --evidence hillside.json
+
+# From the repository root
+./Tools/powershell/CaptureProceduralRacing.ps1 -Scene city -CityTerrainRoads -CityLayout lsystem `
+    -Views hillside -CityStreaming on -CitySourceMemoryMiB 768 -CityStreamingSmokeTest
+```
+
 ## Reusable tree LOD and generated imposters
 
 Trees are grouped into 64-metre patches, each with a scene `LODGroup`. LOD0

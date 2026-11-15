@@ -4,12 +4,15 @@
 #include <Workphone/Application.hpp>
 #include "Workphone/Core/Parameter.hpp"
 #include "Workphone/Interface/System/IEventListener.hpp"
+#include <Workphone/Scene/Components/ProceduralCityStreaming.hpp>
+#include <Workphone/System/WorldStreamingScheduler.hpp>
 #include "ProceduralScene.h"
 #include "VehicleAudio.h"
 #include "VehicleVisualEffects.h"
 #include "ReviewEvidence.h"
 #include <atomic>
 #include <array>
+#include <chrono>
 #include <limits>
 #include <memory>
 
@@ -64,6 +67,9 @@ namespace workphone
         void setCityTerrainRoads(bool enabled) { m_cityTerrainRoads=enabled; }
         void setCityTerrainRelief( f32 relief ) { m_cityTerrainRelief = relief; }
         void setCityStreetDetail( s32 detail ) { m_cityStreetDetail = detail; }
+        void setCityStreaming( bool enabled ) { m_cityStreaming = enabled; }
+        void setCityStreamingSmokeTest( bool enabled ) { m_cityStreamingSmokeTest = enabled; }
+        void setCitySourceMemoryMiB( s32 value ) { m_citySourceMemoryMiB = value; }
         void setCityBuildingMeshes( const std::array<String, 5> &meshes ) { m_cityBuildingMeshes = meshes; }
         void setCityBuildingStyle( s32 style ) { m_cityBuildingStyle = style; }
         void setMaterialExportDirectory( const std::string &path ) { m_materialExportDirectory = path; }
@@ -135,6 +141,11 @@ namespace workphone
         void createScene() override;
 
         void updateRenderCamera();
+        enum class CitySmokeObserver { Automatic, Near, Away, Failed };
+        CitySmokeObserver applyCitySmokeObservers();
+        bool advanceCityStreamingSmoke();
+        void failCityStreamingSmoke( const std::string &reason );
+        void writeCityStreamingSmoke( std::ostream &output ) const;
         void updateControls();
         void updateWheelVisuals();
         void performReset();
@@ -184,6 +195,28 @@ namespace workphone
         f32 m_cityTerrainRelief = 1.f;
         s32 m_cityBlocks = 8, m_cityRoute = 0;
         s32 m_cityStreetDetail = -1;
+        bool m_cityStreaming = true;
+        bool m_cityStreamingSmokeTest = false;
+        enum class CitySmokePhase { Startup, Near, Away, Return, Automatic, Passed, Failed };
+        struct CitySmokeSnapshot
+        {
+            scene::race::CityStreamingStats streaming;
+            WorldStreamStats memory;
+            u64 nativeTriangles = 0;
+            u32 readyMeshes = 0, streamedOutMeshes = 0, imposterMeshes = 0, readyImposters = 0;
+            bool recorded = false, nativeGraphValid = false;
+            u64 componentIdentity = 0;
+            u32 nativeObjectCount = 0, nativeNodeCount = 0, visibleMeshes = 0, visibilityMismatches = 0;
+            u32 visibleDetailMeshes = 0;
+            f32 maximumPoseError = 0;
+        };
+        CitySmokePhase m_citySmokePhase = CitySmokePhase::Startup;
+        std::atomic<CitySmokeObserver> m_citySmokeRequested{ CitySmokeObserver::Automatic };
+        std::atomic<CitySmokeObserver> m_citySmokeApplied{ CitySmokeObserver::Automatic };
+        std::chrono::steady_clock::time_point m_citySmokeDeadline;
+        Vector3F m_citySmokeCamera{}, m_citySmokeVehicle{}, m_citySmokeAway{};
+        CitySmokeSnapshot m_citySmokeNear, m_citySmokeEvicted, m_citySmokeReturned, m_citySmokeFinal, m_citySmokeLast;
+        s32 m_citySourceMemoryMiB = 768;
         s32 m_cityBuildingStyle = -1;
         std::array<String, 5> m_cityBuildingMeshes;
         f32 m_cityExtent = 0, m_citySpacing = 0;

@@ -8,9 +8,21 @@
 #include <Workphone/Graphics/Terrain.hpp>
 #include <Workphone/System/SourceBudgetVector.hpp>
 #include <array>
+#include <memory>
 
 namespace workphone::scene::race
 {
+    class CityStreaming;
+
+    inline constexpr float defaultCityStreamLoadRadius = 300.f;
+    inline constexpr float defaultCityStreamRetainRadius = 420.f;
+    inline constexpr int minimumCitySourceMemoryMiB = 128;
+    inline constexpr int defaultCitySourceMemoryMiB = 768;
+    inline constexpr int maximumCitySourceMemoryMiB = 4096;
+
+    // City generation uses the process-wide SourceCpu ledger. A lower request
+    // does not shrink an externally configured or previously raised limit.
+    WPCore_API bool prepareCitySourceMemoryBudget( int minimumMiB, String &error );
 
     /**
      * A single sample point along a race circuit.
@@ -80,6 +92,11 @@ namespace workphone::scene::race
     {
         bool openCity = false, useFoliageWorld = false, cityNaturalRoads = false,
              cityRoadShowcase = false, cityTerrainRoads = false;
+        bool cityStreamingEnabled = false;
+        float cityStreamLoadRadius = defaultCityStreamLoadRadius;
+        float cityStreamRetainRadius = defaultCityStreamRetainRadius;
+        int citySourceMemoryMiB = defaultCitySourceMemoryMiB;
+        std::shared_ptr<CityStreaming> cityStreaming;
         SmartPtr<CityRoadAuthoring> roadAuthoring;
         SmartPtr<TerrainSystem> roadTerrain;
         render::TerrainSnapshot terrainGameplaySource;

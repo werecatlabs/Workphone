@@ -23,7 +23,10 @@
 #include <Workphone/Scene/Components/CityRoadTerrainFit.hpp>
 #include <Workphone/Scene/Components/CityRoadTerrainMesh.hpp>
 #include <Workphone/Scene/Components/CityBuildingStyles.hpp>
+#include <Workphone/Scene/Components/LODGroup.hpp>
+#include <Workphone/Scene/Components/ProceduralCityStreaming.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
+#include <Workphone/Thread/ScopedLock.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
 #include <Workphone/Scene/Components/Terrain/CollisionTerrain.hpp>
 #include <Workphone/Scene/Components/Material.hpp>
@@ -43,6 +46,7 @@
 #    include <WPGraphics/ClawTerrain.hpp>
 #    include <WPGraphics/ClawUiSettings.hpp>
 #    include <workphone_graphics_object.h>
+#    include <workphone_graphics_scene.h>
 #    include "MaterialSceneCpuWorkload.h"
 #    include "MaterialSceneCpuEdits.h"
 #    if defined( _WIN32 )
@@ -92,9 +96,8 @@ namespace workphone
             return view == "road-edit-before" || view == "road-edit-after";
         }
 
-        void writeSharedMemoryLedger( std::ostream &output )
+        void writeSharedMemoryLedger( std::ostream &output, const WorldStreamStats &stats )
         {
-            const auto stats = WorldStreamingScheduler::shared()->stats();
             const char *names[] = { "sourceCpu", "workingCpu", "gpu" };
             const StreamMemoryClass classes[] = {
                 StreamMemoryClass::SourceCpu, StreamMemoryClass::WorkingCpu, StreamMemoryClass::Gpu
@@ -109,6 +112,26 @@ namespace workphone
                        << ",\"rejectedReservations\":" << stats.rejectedReservations[index] << '}';
             }
             output << '}';
+        }
+
+        void writeSharedMemoryLedger( std::ostream &output )
+        {
+            writeSharedMemoryLedger( output, WorldStreamingScheduler::shared()->stats() );
+        }
+
+        void writeCityStreamingStats( std::ostream &output, const scene::race::CityStreamingStats &streaming,
+                                      const advanced::SceneAssets &assets )
+        {
+            output << "{\"initialized\":" << ( streaming.initialized ? "true" : "false" )
+                   << ",\"patches\":" << streaming.totalPatches << ",\"residentPatches\":" << streaming.residentPatches
+                   << ",\"pendingPatches\":" << streaming.pendingPatches << ",\"retiringPatches\":" << streaming.retiringPatches
+                   << ",\"residentMeshes\":" << streaming.residentMeshes << ",\"fallbackMeshes\":" << streaming.fallbackMeshes
+                   << ",\"installedPatches\":" << streaming.installedPatches << ",\"evictedPatches\":" << streaming.evictedPatches
+                   << ",\"reloadedPatches\":" << streaming.reloadedPatches << ",\"failedPatches\":" << streaming.failedPatches
+                   << ",\"meshPayloadEvictions\":" << streaming.meshPayloadEvictions << ",\"meshPayloadReloads\":" << streaming.meshPayloadReloads
+                   << ",\"nativeMeshUnloads\":" << streaming.nativeMeshUnloads << ",\"nativeMeshLoads\":" << streaming.nativeMeshLoads
+                   << ",\"residentSourceBytes\":" << streaming.residentSourceBytes << ",\"sourceDiskBytes\":" << streaming.sourceDiskBytes
+                   << ",\"loadRadius\":" << assets.cityStreamLoadRadius << ",\"retainRadius\":" << assets.cityStreamRetainRadius << '}';
         }
 
         float chordDeviation( Vector3F point, Vector3F a, Vector3F b )
@@ -815,17 +838,28 @@ namespace workphone
         struct CityBuildingGeometryCheck
         {
             u32 patches = 0, meshes = 0, readyMeshes = 0, nearMeshes = 0, farMeshes = 0;
+            u32 imposterMeshes = 0, readyImposterMeshes = 0, streamedOutMeshes = 0;
             u32 masonryMeshes = 0, readyMasonryMeshes = 0;
             u32 rooftopMeshes = 0, readyRooftopMeshes = 0;
             u32 pitchedRoofMeshes = 0, readyPitchedRoofMeshes = 0;
             u32 farPitchedRoofMeshes = 0, readyFarPitchedRoofMeshes = 0;
             u64 vertices = 0, triangles = 0;
+            u64 componentIdentity = 14695981039346656037ull;
+            u32 nativePoseChecks = 0, visibleMeshes = 0, visibilityMismatches = 0;
+            u32 visibleDetailMeshes = 0;
+            f32 maximumPoseError = 0;
+            bool componentOwnershipValid = true;
             bool valid = false;
         };
 
         CityBuildingGeometryCheck checkCityBuildingGeometry( const advanced::SceneAssets &assets,
                                                               bool expectNear )
         {
+            auto app = core::IApplicationManager::instancePtr();
+            auto manager = assets.cityStreaming && app ? app->getGameManager() : nullptr;
+            auto graphics = assets.cityStreaming && app ? app->getGraphicsSystem() : nullptr;
+            ScopedLock managerLock( manager );
+            ScopedLock graphicsLock( graphics );
             CityBuildingGeometryCheck result;
             for( const auto &actor : assets.actors )
             {
@@ -834,11 +868,19 @@ namespace workphone
                 if( name == "City LOD patch" ) ++result.patches;
                 const bool nearMesh = name.find( "LOD0 city " ) == 0;
                 const bool farMesh = name.find( "LOD1 city " ) == 0;
-                if( !nearMesh && !farMesh ) continue;
+                const bool imposterMesh = name == "LOD2 city building imposters";
+                if( !nearMesh && !farMesh && !imposterMesh ) continue;
                 ++result.meshes;
                 result.nearMeshes += nearMesh;
                 result.farMeshes += farMesh;
                 const auto renderer = actor->getComponent<scene::MeshRenderer>();
+                const auto fsm = renderer ? renderer->getFsm() : nullptr;
+                result.componentOwnershipValid = result.componentOwnershipValid && renderer &&
+                    renderer->isLoaded() && renderer->getActor() == actor && fsm;
+                for( const auto identity : { static_cast<const void *>( actor.get() ),
+                                             static_cast<const void *>( renderer.get() ),
+                                             static_cast<const void *>( fsm.get() ) } )
+                    result.componentIdentity = ( result.componentIdentity ^ reinterpret_cast<uintptr_t>( identity ) ) * 1099511628211ull;
                 const auto graphics = renderer ? renderer->getGraphicsObject() : nullptr;
                 bool ready = renderer && renderer->isLoaded() && graphics && graphics->isLoaded();
 #if WP_GRAPHICS_SYSTEM_CLAW
@@ -852,10 +894,37 @@ namespace workphone
                 ready = ready && native && vertices > 0 && indices >= 3 && indices % 3 == 0 &&
                     object && wp_graphics_object_get_mesh( object ) == native && node &&
                     node->getNativeNode() && wp_graphics_object_get_owner( object ) == node->getNativeNode();
+                if( ready )
+                {
+                    wp_mat4f rendered;
+                    wp_scenenode_get_world_matrix( wp_graphics_object_get_owner( object ), &rendered );
+                    const auto expected = actor->getWorldTransform();
+                    Matrix4F expectedMatrix;
+                    expectedMatrix.makeTransform( expected.getPosition(), expected.getScale(), expected.getOrientation() );
+                    ++result.nativePoseChecks;
+                    for( size_t element = 0; element < 16; ++element )
+                    {
+                        const auto difference = std::abs( rendered.m[element / 4][element % 4] - expectedMatrix.ptr()[element] );
+                        result.maximumPoseError = std::isfinite( difference ) ?
+                            std::max( result.maximumPoseError, difference ) : std::numeric_limits<float>::max();
+                    }
+                    const bool visible = wp_graphics_object_is_visible( object ) != 0;
+                    const bool expectedVisible = renderer->isLODVisible() && renderer->isEnabled() && actor->isEnabledInScene();
+                    result.visibleMeshes += visible;
+                    result.visibleDetailMeshes += visible && !imposterMesh;
+                    result.visibilityMismatches += visible != expectedVisible;
+                    if( visible && !( wp_graphics_object_get_visibility_flags( object ) & render::IGraphicsObject::SceneFlag ) )
+                        ++result.visibilityMismatches;
+                }
                 result.vertices += vertices;
                 result.triangles += indices / 3;
 #endif
                 result.readyMeshes += ready;
+                result.imposterMeshes += imposterMesh;
+                result.readyImposterMeshes += imposterMesh && ready;
+                const bool streamedOut = !ready && assets.cityStreaming &&
+                    assets.cityStreaming->isStreamedOut( renderer.get() );
+                result.streamedOutMeshes += streamedOut;
                 if( name.find( "LOD0 city masonry " ) == 0 )
                 {
                     ++result.masonryMeshes;
@@ -877,8 +946,13 @@ namespace workphone
                     result.readyFarPitchedRoofMeshes += ready;
                 }
             }
-            result.valid = result.patches > 0 && result.farMeshes > 0 &&
-                ( !expectNear || result.nearMeshes > 0 ) && result.meshes == result.readyMeshes;
+            result.valid = result.componentOwnershipValid && result.patches > 0 && result.farMeshes > 0 &&
+                ( !expectNear || result.nearMeshes > 0 ) && result.meshes == result.readyMeshes + result.streamedOutMeshes &&
+                ( !assets.cityStreaming || !assets.cityStreaming->hasPending() );
+#if WP_GRAPHICS_SYSTEM_CLAW
+            result.valid = result.valid && result.nativePoseChecks == result.readyMeshes &&
+                result.maximumPoseError <= .01f && result.visibilityMismatches == 0 && result.visibleMeshes > 0;
+#endif
             return result;
         }
 
@@ -886,6 +960,12 @@ namespace workphone
         {
             output << "{\"patches\":" << check.patches << ",\"meshes\":" << check.meshes
                    << ",\"readyMeshes\":" << check.readyMeshes << ",\"nearMeshes\":" << check.nearMeshes
+                   << ",\"imposterMeshes\":" << check.imposterMeshes << ",\"readyImposterMeshes\":" << check.readyImposterMeshes
+                   << ",\"streamedOutMeshes\":" << check.streamedOutMeshes
+                   << ",\"componentOwnershipValid\":" << ( check.componentOwnershipValid ? "true" : "false" )
+                   << ",\"nativePoseChecks\":" << check.nativePoseChecks << ",\"maximumPoseError\":" << check.maximumPoseError
+                   << ",\"visibleMeshes\":" << check.visibleMeshes << ",\"visibilityMismatches\":" << check.visibilityMismatches
+                   << ",\"visibleDetailMeshes\":" << check.visibleDetailMeshes
                    << ",\"farMeshes\":" << check.farMeshes << ",\"nativeVertices\":" << check.vertices
                    << ",\"nativeTriangles\":" << check.triangles
                    << ",\"masonryMeshes\":" << check.masonryMeshes
@@ -1035,7 +1115,7 @@ namespace workphone
         struct TerrainCityCheck
         {
             bool valid=false,binding=false,revisions=false,renderer=false,route=false,islands=false,support=false,flatFallbackAbsent=false;
-            bool roadPBRBindingsReady=false;
+            bool roadPBRBindingsReady=false, terrainMaterialReady=false;
             u32 roadPBRTextures=0,roadPBRMaterials=0;
             s32 asphaltAlbedoWidth=0;
             bool markingAlphaBlend=false;
@@ -1094,6 +1174,20 @@ namespace workphone
             result.binding=authoring->getTerrain()==terrain && terrain->getHandle() && binding==terrain->getHandle()->getUUIDAsString() && same(source.terrainResourceUuid,binding) && !source.id.empty();
             result.revisions=authoring->getSourceRevision()==authoring->getActiveRevision() && assets.cityAppliedSourceRevision==authoring->getSourceRevision() && source.terrainRevision==sourceTerrain->revision;
             result.renderer=terrain->getTerrain() && activeTerrain && activeTerrain->revision==sourceTerrain->revision;
+            result.terrainMaterialReady = result.renderer;
+#if WP_GRAPHICS_SYSTEM_CLAW
+            if( auto nativeTerrain = dynamic_pointer_cast<render::ClawTerrain>( terrain->getTerrain() ) )
+            {
+                const auto materialSource = nativeTerrain->terrainMaterial().snapshot();
+                result.terrainMaterialReady = materialSource && materialSource->revision == sourceTerrain->revision;
+                for( size_t layer = 0; materialSource && layer < sourceTerrain->layers.size(); ++layer )
+                    result.terrainMaterialReady = result.terrainMaterialReady &&
+                        materialSource->layers[layer].albedo == sourceTerrain->layers[layer].albedo &&
+                        materialSource->layers[layer].normal == sourceTerrain->layers[layer].normal &&
+                        materialSource->layers[layer].orm == sourceTerrain->layers[layer].orm;
+            }
+            else result.terrainMaterialReady = false;
+#endif
             result.roads=source.roads.size();result.junctions=source.roundabouts.size();result.triangles=authoring->getRuntimeTriangleCount();result.routePoints=assets.circuit.samples.size();
             result.route=assets.cityRaceRouteAvailable && result.routePoints>=3;
             for(size_t i=0;i<result.routePoints;++i)
@@ -1236,7 +1330,7 @@ namespace workphone
             result.roadPBRMaterials=u32(materialNames.size());result.roadPBRTextures=u32(textures.size());const bool junctions=!source.roundabouts.empty();
             result.roadPBRBindingsReady=mapsReady && layers[0]==1 && layers[3]==1 && layers[1]==(junctions?1u:0u) && layers[2]==(junctions?1u:0u) &&
                 result.roadPBRMaterials==(junctions?4u:2u) && result.roadPBRTextures==(junctions?16u:6u);
-            result.valid=result.binding && result.revisions && result.renderer && result.route && result.islands && result.support && result.flatFallbackAbsent && terrainProbe && result.rayProbes==4 && result.roads>0 && result.triangles>0 && result.roadPBRBindingsReady && result.footwayReady &&
+            result.valid=result.binding && result.revisions && result.renderer && result.terrainMaterialReady && result.route && result.islands && result.support && result.flatFallbackAbsent && terrainProbe && result.rayProbes==4 && result.roads>0 && result.triangles>0 && result.roadPBRBindingsReady && result.footwayReady &&
                          result.crossingKerbRays == result.loweredCrossings * 4 &&
                          ( result.fittedBoundaries < boundaries.size() || result.boundaryCollisionProbes == boundaries.size() );
             return result;
@@ -1475,6 +1569,12 @@ namespace workphone
             m_benchmarkStarted = false;
             m_captureAttempted = false;
             m_capturePassed = false;
+            m_citySmokePhase = CitySmokePhase::Startup;
+            m_citySmokeRequested.store( CitySmokeObserver::Automatic );
+            m_citySmokeApplied.store( CitySmokeObserver::Automatic );
+            m_citySmokeDeadline = {};
+            m_citySmokeCamera = m_citySmokeVehicle = m_citySmokeAway = {};
+            m_citySmokeNear = m_citySmokeEvicted = m_citySmokeReturned = m_citySmokeFinal = m_citySmokeLast = {};
             m_replayTick = 0;
             setLoadingState( LoadingState::Loaded );
         }
@@ -1568,6 +1668,246 @@ namespace workphone
         }
     }
 
+    SampleVehicleAdvanced::CitySmokeObserver SampleVehicleAdvanced::applyCitySmokeObservers()
+    {
+        const auto requested = m_citySmokeRequested.load( std::memory_order_acquire );
+        const auto applied = m_citySmokeApplied.load( std::memory_order_relaxed );
+        if( requested == applied || applied == CitySmokeObserver::Failed || !m_raceScene ) return applied;
+
+        try
+        {
+            switch( requested )
+            {
+            case CitySmokeObserver::Near:
+                m_raceScene->setCityStreamingObservers( { m_citySmokeCamera, m_citySmokeVehicle } );
+                break;
+            case CitySmokeObserver::Away:
+                m_raceScene->setCityStreamingObservers( { m_citySmokeAway } );
+                break;
+            case CitySmokeObserver::Automatic:
+                m_raceScene->clearCityStreamingObservers();
+                break;
+            case CitySmokeObserver::Failed:
+                return CitySmokeObserver::Failed;
+            }
+            return requested;
+        }
+        catch( const std::exception &failure )
+        {
+            std::cerr << "City streaming smoke observer update failed: " << failure.what() << '\n';
+            return CitySmokeObserver::Failed;
+        }
+    }
+
+    bool SampleVehicleAdvanced::advanceCityStreamingSmoke()
+    {
+        if( m_citySmokePhase == CitySmokePhase::Passed ) return true;
+        if( m_citySmokePhase == CitySmokePhase::Failed ) return false;
+
+        auto app = core::IApplicationManager::instancePtr();
+        ScopedLock managerLock( app->getGameManager() );
+        ScopedLock graphicsLock( app->getGraphicsSystem() );
+
+        using Clock = std::chrono::steady_clock;
+        const auto now = Clock::now();
+        const auto transition = [&]( CitySmokePhase phase, CitySmokeObserver observer ) {
+            m_citySmokePhase = phase;
+            m_citySmokeDeadline = now + std::chrono::seconds( 120 );
+            m_citySmokeRequested.store( observer, std::memory_order_release );
+        };
+        if( m_citySmokeDeadline == Clock::time_point{} ) m_citySmokeDeadline = now + std::chrono::seconds( 120 );
+        if( m_citySmokeApplied.load( std::memory_order_acquire ) == CitySmokeObserver::Failed )
+        {
+            failCityStreamingSmoke( "The city streaming observer override failed" );
+            return false;
+        }
+        if( now > m_citySmokeDeadline )
+        {
+            failCityStreamingSmoke( "City streaming did not pass the current phase within 120 seconds" );
+            return false;
+        }
+        if( !m_assets.cityStreaming ||
+            m_citySmokeApplied.load( std::memory_order_acquire ) != m_citySmokeRequested.load( std::memory_order_relaxed ) )
+            return false;
+
+        const auto streaming = m_assets.cityStreaming->stats();
+        if( !streaming.initialized ) return false;
+        if( !streaming.totalPatches )
+        {
+            failCityStreamingSmoke( "The requested city has no streamable building patches" );
+            return false;
+        }
+        const auto native = checkCityBuildingGeometry( m_assets, m_quality != procedural::VehicleAppearanceQuality::Preview );
+        m_citySmokeLast = { streaming, WorldStreamingScheduler::shared()->stats(), native.triangles,
+                            native.readyMeshes, native.streamedOutMeshes, native.imposterMeshes,
+                            native.readyImposterMeshes, true, native.valid, native.componentIdentity };
+        m_citySmokeLast.visibleMeshes = native.visibleMeshes;
+        m_citySmokeLast.visibleDetailMeshes = native.visibleDetailMeshes;
+        m_citySmokeLast.visibilityMismatches = native.visibilityMismatches;
+        m_citySmokeLast.maximumPoseError = native.maximumPoseError;
+#if WP_GRAPHICS_SYSTEM_CLAW
+        if( auto nativeScene = dynamic_pointer_cast<render::ClawScene>( app->getGraphicsSystem()->getGraphicsScene() ) )
+        {
+            m_citySmokeLast.nativeObjectCount = u32( std::max( 0, wp_graphics_scene_get_object_count( nativeScene->getNativeScene() ) ) );
+            m_citySmokeLast.nativeNodeCount = u32( std::max( 0, wp_graphics_scene_get_node_count( nativeScene->getNativeScene() ) ) );
+        }
+#endif
+        if( !native.componentOwnershipValid || ( m_citySmokeNear.recorded &&
+            native.componentIdentity != m_citySmokeNear.componentIdentity ) )
+        {
+            failCityStreamingSmoke( "City streaming changed an actor, renderer or component state-machine identity" );
+            return false;
+        }
+        if( streaming.failedPatches )
+        {
+            failCityStreamingSmoke( "A city detail patch failed during the streaming probe" );
+            return false;
+        }
+        if( streaming.pendingPatches || streaming.retiringPatches || !native.valid ||
+            native.imposterMeshes == 0 || native.readyImposterMeshes != native.imposterMeshes )
+            return false;
+
+        const bool detailReady = streaming.residentPatches > 0 && streaming.residentMeshes > 0 &&
+            native.readyMeshes > native.readyImposterMeshes;
+        const auto usedSource = []( const CitySmokeSnapshot &snapshot ) {
+            return snapshot.memory.used[size_t( StreamMemoryClass::SourceCpu )];
+        };
+        switch( m_citySmokePhase )
+        {
+        case CitySmokePhase::Startup:
+        {
+            if( !detailReady || !m_cameraActor || !m_vehicleActor ) return false;
+            const auto camera = m_cameraActor->getWorldTransform().getPosition();
+            const auto vehicle = m_vehicleActor->getWorldTransform().getPosition();
+            m_citySmokeCamera = { float( camera.x ), float( camera.y ), float( camera.z ) };
+            m_citySmokeVehicle = { float( vehicle.x ), float( vehicle.y ), float( vehicle.z ) };
+            double east = m_cityOverviewCentre.x + std::max( { m_cityExtent, m_cityOverviewExtent, m_assets.cityLayout.extent } );
+            for( const auto &actor : m_assets.actors )
+            {
+                if( !actor || actor->getName() != "City LOD patch" ) continue;
+                const auto pose = actor->getWorldTransform();
+                const auto scale = pose.getScale();
+                const auto lod = actor->getComponent<scene::LODGroup>();
+                float radius = lod ? lod->getSize() * .5f : 0.f;
+                if( lod )
+                    for( const auto &bound : lod->getDetailBounds() )
+                        radius = std::max( radius, float( bound.centre.length() ) + bound.diameter * .5f );
+                const auto maxScale = std::max( { std::abs( double( scale.x ) ), std::abs( double( scale.y ) ), std::abs( double( scale.z ) ) } );
+                east = std::max( east, double( pose.getPosition().x ) + radius * maxScale );
+            }
+            m_citySmokeAway = { float( east + m_assets.cityStreamRetainRadius + 128.0 ), m_citySmokeCamera.y, m_citySmokeCamera.z };
+            if( !m_citySmokeCamera.isFinite() || !m_citySmokeVehicle.isFinite() || !m_citySmokeAway.isFinite() )
+            {
+                failCityStreamingSmoke( "City streaming probe positions must be finite" );
+                return false;
+            }
+            m_cityBuildingStartupDeadline = 0;
+            transition( CitySmokePhase::Near, CitySmokeObserver::Near );
+            break;
+        }
+        case CitySmokePhase::Near:
+            if( !detailReady ) return false;
+            m_citySmokeNear = m_citySmokeLast;
+            transition( CitySmokePhase::Away, CitySmokeObserver::Away );
+            break;
+        case CitySmokePhase::Away:
+            if( streaming.residentPatches || streaming.residentMeshes || streaming.residentSourceBytes ||
+                m_citySmokeLast.nativeObjectCount >= m_citySmokeNear.nativeObjectCount ||
+                m_citySmokeLast.nativeNodeCount >= m_citySmokeNear.nativeNodeCount ||
+                native.readyMeshes >= m_citySmokeNear.readyMeshes ||
+                native.readyImposterMeshes != m_citySmokeNear.readyImposters ||
+                streaming.evictedPatches <= m_citySmokeNear.streaming.evictedPatches ||
+                streaming.meshPayloadEvictions <= m_citySmokeNear.streaming.meshPayloadEvictions ||
+                streaming.nativeMeshUnloads <= m_citySmokeNear.streaming.nativeMeshUnloads ||
+                native.triangles >= m_citySmokeNear.nativeTriangles || native.streamedOutMeshes <= m_citySmokeNear.streamedOutMeshes ||
+                usedSource( m_citySmokeLast ) >= usedSource( m_citySmokeNear ) )
+                return false;
+            m_citySmokeEvicted = m_citySmokeLast;
+            transition( CitySmokePhase::Return, CitySmokeObserver::Near );
+            break;
+        case CitySmokePhase::Return:
+            if( !detailReady || native.readyImposterMeshes != m_citySmokeNear.readyImposters ||
+                ( m_citySmokeNear.visibleDetailMeshes && !native.visibleDetailMeshes ) ||
+                m_citySmokeLast.nativeObjectCount != m_citySmokeNear.nativeObjectCount ||
+                m_citySmokeLast.nativeNodeCount != m_citySmokeNear.nativeNodeCount ||
+                streaming.reloadedPatches <= m_citySmokeEvicted.streaming.reloadedPatches ||
+                streaming.meshPayloadReloads <= m_citySmokeEvicted.streaming.meshPayloadReloads ||
+                streaming.nativeMeshLoads <= m_citySmokeEvicted.streaming.nativeMeshLoads ||
+                native.triangles <= m_citySmokeEvicted.nativeTriangles || native.streamedOutMeshes >= m_citySmokeEvicted.streamedOutMeshes )
+                return false;
+            m_citySmokeReturned = m_citySmokeLast;
+            transition( CitySmokePhase::Automatic, CitySmokeObserver::Automatic );
+            break;
+        case CitySmokePhase::Automatic:
+            if( !detailReady || native.readyImposterMeshes != m_citySmokeNear.readyImposters ||
+                ( m_citySmokeNear.visibleDetailMeshes && !native.visibleDetailMeshes ) ) return false;
+            m_citySmokeFinal = m_citySmokeLast;
+            m_citySmokePhase = CitySmokePhase::Passed;
+            return true;
+        case CitySmokePhase::Passed:
+        case CitySmokePhase::Failed:
+            break;
+        }
+        return false;
+    }
+
+    void SampleVehicleAdvanced::writeCityStreamingSmoke( std::ostream &output ) const
+    {
+        const auto position = [&]( const Vector3F &p ) {
+            if( p.isFinite() ) output << '[' << p.x << ',' << p.y << ',' << p.z << ']';
+            else output << "null";
+        };
+        const auto stage = [&]( const CitySmokeSnapshot &snapshot ) {
+            if( !snapshot.recorded ) { output << "null"; return; }
+            output << "{\"streaming\":";
+            writeCityStreamingStats( output, snapshot.streaming, m_assets );
+            output << ",\"memory\":";
+            writeSharedMemoryLedger( output, snapshot.memory );
+            output << ",\"nativeGraphValid\":" << ( snapshot.nativeGraphValid ? "true" : "false" )
+                   << ",\"componentIdentityPreserved\":" << ( snapshot.componentIdentity == m_citySmokeNear.componentIdentity ? "true" : "false" )
+                   << ",\"nativeObjectCount\":" << snapshot.nativeObjectCount << ",\"nativeNodeCount\":" << snapshot.nativeNodeCount
+                   << ",\"visibleMeshes\":" << snapshot.visibleMeshes
+                   << ",\"visibleDetailMeshes\":" << snapshot.visibleDetailMeshes
+                   << ",\"visibilityMismatches\":" << snapshot.visibilityMismatches << ",\"maximumPoseError\":" << snapshot.maximumPoseError
+                   << ",\"readyMeshes\":" << snapshot.readyMeshes << ",\"streamedOutMeshes\":" << snapshot.streamedOutMeshes
+                   << ",\"imposterMeshes\":" << snapshot.imposterMeshes << ",\"readyImposters\":" << snapshot.readyImposters
+                   << ",\"nativeTriangles\":" << snapshot.nativeTriangles << '}';
+        };
+        output << "{\"passed\":" << ( m_citySmokePhase == CitySmokePhase::Passed ? "true" : "false" )
+               << ",\"observers\":{\"nearCamera\":";
+        position( m_citySmokeCamera );
+        output << ",\"nearVehicle\":"; position( m_citySmokeVehicle );
+        output << ",\"away\":"; position( m_citySmokeAway );
+        output << "},\"near\":"; stage( m_citySmokeNear );
+        output << ",\"evicted\":"; stage( m_citySmokeEvicted );
+        output << ",\"returned\":"; stage( m_citySmokeReturned );
+        output << ",\"automatic\":"; stage( m_citySmokeFinal );
+        if( m_citySmokePhase == CitySmokePhase::Failed )
+        {
+            output << ",\"lastObservation\":";
+            stage( m_citySmokeLast );
+        }
+        output << '}';
+    }
+
+    void SampleVehicleAdvanced::failCityStreamingSmoke( const std::string &reason )
+    {
+        const char *phases[] = { "startup", "near", "away", "return", "automatic", "passed", "failed" };
+        const std::string failedPhase = phases[size_t( m_citySmokePhase )];
+        m_citySmokePhase = CitySmokePhase::Failed;
+        m_citySmokeRequested.store( CitySmokeObserver::Automatic, std::memory_order_release );
+        std::ostringstream evidence;
+        evidence << "{\"schema\":\"workphone.vehicle-review.v1\",\"validationPassed\":false,\"failure\":"
+                 << advanced::jsonString( reason + " (phase " + failedPhase + ')' ) << ",\"cityStreamingSmoke\":";
+        writeCityStreamingSmoke( evidence );
+        evidence << '}';
+        std::cerr << evidence.str() << '\n';
+        if( !m_evidencePath.empty() ) advanced::writeReviewEvidence( m_evidencePath, evidence.str() );
+        m_capturePassed = false;
+        m_captureAttempted = true;
+        core::IApplicationManager::instance()->setQuit( true );
+    }
+
     void SampleVehicleAdvanced::update()
     {
         const auto generationFailed=[&]() {
@@ -1590,6 +1930,11 @@ namespace workphone
             const auto check = checkCityBuildingGeometry( m_assets, m_quality != procedural::VehicleAppearanceQuality::Preview );
             if( !check.valid )
             {
+                if( m_cityStreamingSmokeTest )
+                {
+                    failCityStreamingSmoke( "City building meshes did not finish initial native upload within 30 seconds" );
+                    return;
+                }
                 std::ostringstream failure;
                 failure << "{\"schema\":\"workphone.vehicle-review.v1\",\"validationPassed\":false,"
                            "\"failure\":\"City building meshes did not finish native upload within 30 seconds\",\"cityBuildingGeometry\":";
@@ -1691,7 +2036,10 @@ namespace workphone
                 m_vehicleActor->updateTransform();
         }
 
+        const bool applySmokeObserver = m_cityStreamingSmokeTest && Thread::getCurrentTask() == TaskId::Application;
+        const auto appliedObserver = applySmokeObserver ? applyCitySmokeObservers() : CitySmokeObserver::Automatic;
         Application::update();
+        if( applySmokeObserver ) m_citySmokeApplied.store( appliedObserver, std::memory_order_release );
         if(generationFailed())return;
         if(m_collisionSmokeTest && m_assets.cityTerrainRoads && !m_cityRetentionSmokePrepared &&
            Thread::getCurrentTask()==TaskId::Application && m_physicsConfigured &&
@@ -1729,6 +2077,7 @@ namespace workphone
 #endif
             }
             updateRenderCamera();
+            if( m_cityStreamingSmokeTest && !advanceCityStreamingSmoke() ) return;
             if ( m_effectsSmokeTest && m_effectsEnabled ) updateVehicleEffects();
             if( m_smokeTest && m_smokePhase > 0 )
             {
@@ -1989,7 +2338,9 @@ namespace workphone
                             void *native = nullptr;
                             if( texture ) texture->getTextureFinal( &native );
                             if( slot == 0 && texture ) size = texture->getSize();
-                            if( native && texture->getSize() == size && size.x >= 256 && size.x <= 1024 && size.y == size.x ) ++ready;
+                            const bool scalar = slot == 22u || slot == 3u || slot == 2u;
+                            const bool exactConstant = scalar && texture && texture->getSize() == Vector2I( 1, 1 );
+                            if( native && ( exactConstant || ( texture->getSize() == size && size.x >= 256 && size.x <= 1024 && size.y == size.x ) ) ) ++ready;
                         }
                         surfaceMapsReady = surfaceMapsReady && ready == 5;
                         evidence << "{\"asset\":" << advanced::jsonString( asset )
@@ -2001,10 +2352,76 @@ namespace workphone
                     evidence << "],\"materialCount\":" << inspectedSurfaces.size()
                              << ",\"bindingsReady\":" << ( surfaceMapsReady && !inspectedSurfaces.empty() ? "true" : "false" ) << '}';
                     cityValid = cityValid && surfaceMapsReady;
+                    if( m_assets.cityTerrainRoads )
+                    {
+                        size_t finishBatches = 0, readyFinishBatches = 0, footwayMaps = 0;
+                        u64 finishTriangles = 0;
+                        for( auto actor : m_assets.actors )
+                        {
+                            if( !actor ) continue;
+                            const auto name = actor->getName();
+                            if( name == "Terrain city footways" )
+                            {
+                                const auto binding = actor->getComponent<scene::Material>();
+                                const auto surface = binding ? binding->getMaterial() : nullptr;
+                                for( const u32 slot : { 0u, 1u, 3u } )
+                                {
+                                    const auto texture = surface ? surface->getTexture( slot ) : nullptr;
+                                    void *view = nullptr;
+                                    if( texture ) texture->getTextureFinal( &view );
+                                    footwayMaps += view != nullptr;
+                                }
+                            }
+                            if( name != "Terrain city kerb coping" && name != "Terrain city dry wheel wear" ) continue;
+                            ++finishBatches;
+                            const auto renderer = actor->getComponent<scene::MeshRenderer>();
+                            const auto graphics = renderer ? renderer->getGraphicsObject() : nullptr;
+                            bool ready = renderer && renderer->isLoaded() && graphics && graphics->isLoaded();
+                            const auto binding = actor->getComponent<scene::Material>();
+                            const auto surface = binding ? binding->getMaterial() : nullptr;
+                            const auto albedo = surface ? surface->getTexture( 0 ) : nullptr;
+                            void *view = nullptr;
+                            if( albedo ) albedo->getTextureFinal( &view );
+                            ready = ready && view;
+#if WP_GRAPHICS_SYSTEM_CLAW
+                            const auto nativeMesh = dynamic_pointer_cast<render::ClawMesh>( graphics );
+                            const auto native = nativeMesh ? nativeMesh->getNativeMesh() : nullptr;
+                            const auto indices = native ? wp_graphics_mesh_get_index_count( native ) : 0;
+                            ready = ready && native && indices > 0 && indices % 3 == 0;
+                            finishTriangles += indices / 3;
+#endif
+                            readyFinishBatches += ready;
+                        }
+                        const bool ready = footwayMaps == 3 && finishBatches == readyFinishBatches;
+                        cityValid = cityValid && ready;
+                        evidence << ",\n  \"cityRoadFinish\":{\"batches\":" << finishBatches
+                                 << ",\"readyBatches\":" << readyFinishBatches << ",\"nativeTriangles\":" << finishTriangles
+                                 << ",\"footwayMaps\":" << footwayMaps << ",\"ready\":" << ( ready ? "true" : "false" ) << '}';
+                    }
                     const auto buildings = checkCityBuildingGeometry( m_assets, m_quality != procedural::VehicleAppearanceQuality::Preview );
                     cityValid = cityValid && buildings.valid;
                     evidence << ",\n  \"cityBuildingGeometry\": "; writeCityBuildingGeometry( evidence, buildings );
+                    if( m_assets.cityStreaming )
+                    {
+                        const auto streaming = m_assets.cityStreaming->stats();
+                        evidence << ",\n  \"cityStreaming\":";
+                        writeCityStreamingStats( evidence, streaming, m_assets );
+                        cityValid = cityValid && streaming.initialized &&
+                            streaming.failedPatches == 0 && streaming.pendingPatches == 0 && streaming.retiringPatches == 0;
+                    }
+                    if( m_cityStreamingSmokeTest )
+                    {
+                        evidence << ",\n  \"cityStreamingSmoke\":";
+                        writeCityStreamingSmoke( evidence );
+                        cityValid = cityValid && m_citySmokePhase == CitySmokePhase::Passed;
+                    }
                     evidence << ",\n  \"sharedMemoryLedger\": "; writeSharedMemoryLedger( evidence );
+                    const auto memory = WorldStreamingScheduler::shared()->stats();
+                    bool admitted = true;
+                    for( const auto memoryClass : { StreamMemoryClass::SourceCpu, StreamMemoryClass::WorkingCpu, StreamMemoryClass::Gpu } )
+                        admitted = admitted && memory.rejectedReservations[size_t( memoryClass )] == 0;
+                    cityValid = cityValid && admitted;
+                    evidence << ",\n  \"cityMemoryAdmissionsValid\":" << ( admitted ? "true" : "false" );
                     const auto style = m_assets.cityBuildingStyle;
                     const bool styleInRange = style >= 0 && static_cast<size_t>( style ) < cityBuildingStyles.size();
                     const bool styleApplied = styleInRange && style == std::max( 0, m_cityBuildingStyle );
@@ -2314,6 +2731,7 @@ namespace workphone
                         <<",\"activeRevision\":"<<(authoring?authoring->getActiveRevision():0)<<",\"terrainRevision\":"<<(snapshot?snapshot->revision:0)
                         <<",\"sourceBytes\":"<<(authoring?authoring->getSourceJSON().size():0)<<",\"roads\":"<<check.roads<<",\"roundabouts\":"<<check.junctions
                         <<",\"runtimeTriangles\":"<<check.triangles<<",\"terrainRendererReady\":"<<(check.renderer?"true":"false")
+                        <<",\"terrainMaterialReady\":"<<(check.terrainMaterialReady?"true":"false")
                         <<",\"groundAlbedo\":"<<advanced::jsonString(snapshot?snapshot->layers[0].albedo:String())
                         <<",\"groundNormal\":"<<advanced::jsonString(snapshot?snapshot->layers[0].normal:String())
                         <<",\"groundORM\":"<<advanced::jsonString(snapshot?snapshot->layers[0].orm:String())
@@ -4204,6 +4622,8 @@ namespace workphone
             properties->setProperty( "Road Authoring Showcase", m_roadAuthoringShowcase );
             properties->setProperty( "City Terrain Roads", m_cityTerrainRoads );
             properties->setProperty( "City Terrain Relief", m_cityTerrainRelief );
+            properties->setProperty( "City Streaming", m_cityStreaming );
+            properties->setProperty( "City Source Memory MiB", m_citySourceMemoryMiB );
             if( m_cityStreetDetail >= 0 )
                 properties->setProperty( "City Street Detail", m_cityStreetDetail );
             if( m_cityBuildingStyle >= 0 )
@@ -4955,6 +5375,9 @@ int main( int argc, char **argv )
                    "  --city-terrain-roads            Editable generated city roads fitted to terrain (implies --city)\n"
                    "  --city-terrain-relief 0..2      Initial city terrain relief multiplier (default 1; retained terrain is preserved)\n"
                    "  --city-street-detail 0..100     Roadside detail density (requires --city-terrain-roads, default 100)\n"
+                   "  --city-streaming on|off        Stream building mesh tiers; keep skyline imposters resident\n"
+                   "  --city-streaming-smoke-test   Verify native city unload and reload before capture\n"
+                   "  --city-source-memory-mib N     Shared source-memory minimum for city generation (128..4096, default 768)\n"
                    "  --city-building-style STYLE    Built-in architecture: district, masonry, civic, modern,\n"
                    "                                 terrace, parisian, warehouse, mediterranean, artdeco, timber\n"
                    "  --city-building-mesh ROLE PATH  Replace a wall, window, entrance, corner or roof module (repeatable)\n"
@@ -5011,6 +5434,8 @@ int main( int argc, char **argv )
     bool cityNaturalRoads = false;
     bool roadAuthoringShowcase = false;
     bool cityTerrainRoads = false;
+    bool cityStreaming = true, cityStreamingSmokeTest = false;
+    s32 citySourceMemoryMiB = 768;
     float cityTerrainRelief = 1.f;
     bool cityTerrainReliefExplicit = false;
     s32 cityBlocks = 8, cityRoute = 0;
@@ -5068,6 +5493,25 @@ int main( int argc, char **argv )
             { roadAuthoringShowcase = true; openCity = true; }
             else if( String( argv[i] ) == "--city-terrain-roads" )
             { cityTerrainRoads = true; openCity = true; }
+            else if( String( argv[i] ) == "--city-streaming" )
+            {
+                if( i + 1 >= argc ) throw std::runtime_error( "--city-streaming requires on or off." );
+                const std::string_view value = argv[++i];
+                if( value != "on" && value != "off" ) throw std::runtime_error( "--city-streaming requires on or off." );
+                cityStreaming = value == "on"; cityOptionsExplicit = true;
+            }
+            else if( String( argv[i] ) == "--city-streaming-smoke-test" )
+                cityStreamingSmokeTest = true;
+            else if( String( argv[i] ) == "--city-source-memory-mib" )
+            {
+                if( i + 1 >= argc ) throw std::runtime_error( "--city-source-memory-mib requires 128..4096." );
+                const std::string_view value = argv[++i];
+                const auto parsed = std::from_chars( value.data(), value.data() + value.size(), citySourceMemoryMiB );
+                if( parsed.ec != std::errc{} || parsed.ptr != value.data() + value.size() ||
+                    citySourceMemoryMiB < 128 || citySourceMemoryMiB > 4096 )
+                    throw std::runtime_error( "City source-memory minimum must be an integer from 128 to 4096 MiB." );
+                cityOptionsExplicit = true;
+            }
             else if( String( argv[i] ) == "--city-terrain-relief" && i + 1 < argc )
             {
                 const std::string_view value = argv[++i];
@@ -5268,6 +5712,14 @@ int main( int argc, char **argv )
             throw std::runtime_error( "--view verge requires --city-terrain-roads." );
         if( isRoadTerrainEditView( captureView ) && ( !cityTerrainRoads || orbit || capturePath.empty() ) )
             throw std::runtime_error( "Road edit views require --city-terrain-roads and a fixed capture camera." );
+        if( cityStreamingSmokeTest )
+        {
+            if( !openCity || roadAuthoringShowcase || !cityStreaming || capturePath.empty() || isRoadTerrainEditView( captureView ) )
+                throw std::runtime_error( "--city-streaming-smoke-test requires a generated city, streaming on, and a capture view outside road editing." );
+#if !defined( _WIN32 ) || !WP_GRAPHICS_SYSTEM_CLAW
+            throw std::runtime_error( "--city-streaming-smoke-test requires Windows and Claw graphics." );
+#endif
+        }
         if( (cityBuildingMeshOverride || cityBuildingStyle >= 0 || captureView == "facade" || captureView == "building") &&
             (!openCity || roadAuthoringShowcase) )
             throw std::runtime_error( "City building mesh overrides, styles, and the facade/building views require a generated city." );
@@ -5385,6 +5837,9 @@ int main( int argc, char **argv )
         app->setCityTerrainRoads( cityTerrainRoads );
         app->setCityTerrainRelief( cityTerrainRelief );
         app->setCityStreetDetail( cityStreetDetail );
+        app->setCityStreaming( cityStreaming );
+        app->setCityStreamingSmokeTest( cityStreamingSmokeTest );
+        app->setCitySourceMemoryMiB( citySourceMemoryMiB );
         app->setCityBuildingMeshes( cityBuildingMeshes );
         app->setCityBuildingStyle( cityBuildingStyle );
         app->setMaterialExportDirectory( materialExportDirectory );

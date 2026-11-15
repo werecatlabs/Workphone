@@ -13,6 +13,7 @@
 #include <Workphone/Interface/System/IFactoryManager.hpp>
 #include <Workphone/Scene/Components/ProceduralVehicle.hpp>
 #include <Workphone/Scene/Components/ProceduralRaceScene.hpp>
+#include <Workphone/Scene/Components/ProceduralCityScene.hpp>
 #include <Workphone/Scene/Components/Terrain/FoliagePlantGenerator.hpp>
 #include <Workphone/Graphics/ProceduralSurfaceSourceExport.hpp>
 #include <Workphone/Graphics/Texture.hpp>
@@ -312,6 +313,43 @@ void checkClientContracts( SmartPtr<IFactoryManager> factories )
     restoredRace->clearGeneratedScene();
     require( restoredRace->getFoliageWorldEnabled() && !restoredRace->getAssets().foliageTerrain,
              "Clearing generated foliage reset authoring selection or retained its owner" );
+    require( !race->getAssets().cityStreamingEnabled && !race->getAssets().cityStreaming,
+             "The default circuit does not create a city streaming controller" );
+    auto city = workphone::make_ptr<scene::ProceduralCityScene>();
+    auto cityOptions = city->getProperties();
+    bool cityStreamingEnabled = false;
+    f32 streamLoad = 0, streamRetain = 0;
+    s32 cityMemory = 0;
+    require( cityOptions->getPropertyValue( "City Streaming", cityStreamingEnabled ) && cityStreamingEnabled &&
+                 cityOptions->getPropertyValue( "City Stream Load Radius", streamLoad ) && streamLoad == 300.f &&
+                 cityOptions->getPropertyValue( "City Stream Retain Radius", streamRetain ) && streamRetain == 420.f &&
+                 cityOptions->getPropertyValue( "City Source Memory MiB", cityMemory ) && cityMemory == 768,
+             "City streaming defaults did not reach the editor properties" );
+    cityOptions->setProperty( "City Streaming", false );
+    cityOptions->setProperty( "City Stream Load Radius", 210.f );
+    cityOptions->setProperty( "City Stream Retain Radius", 360.f );
+    cityOptions->setProperty( "City Source Memory MiB", s32( 640 ) );
+    city->setProperties( cityOptions );
+    auto restoredCity = workphone::make_ptr<scene::ProceduralCityScene>();
+    restoredCity->setProperties( city->getProperties() );
+    auto savedOptions = restoredCity->getProperties();
+    require( savedOptions->getPropertyValue( "City Streaming", cityStreamingEnabled ) && !cityStreamingEnabled &&
+                 savedOptions->getPropertyValue( "City Stream Load Radius", streamLoad ) && streamLoad == 210.f &&
+                 savedOptions->getPropertyValue( "City Stream Retain Radius", streamRetain ) && streamRetain == 360.f &&
+                 savedOptions->getPropertyValue( "City Source Memory MiB", cityMemory ) && cityMemory == 640,
+             "City streaming settings did not round-trip" );
+    savedOptions->setProperty( "City Stream Retain Radius", 150.f );
+    savedOptions->setProperty( "City Source Memory MiB", s32( 8192 ) );
+    restoredCity->setProperties( savedOptions );
+    savedOptions = restoredCity->getProperties();
+    String cityError;
+    require( savedOptions->getPropertyValue( "City Stream Retain Radius", streamRetain ) && streamRetain == 360.f &&
+                 savedOptions->getPropertyValue( "City Source Memory MiB", cityMemory ) && cityMemory == 4096 &&
+                 savedOptions->getPropertyValue( "Generation Error", cityError ) && !cityError.empty(),
+             "Invalid city radii must preserve the last valid settings and memory must stay bounded" );
+    require( !scene::race::prepareCitySourceMemoryBudget( 127, cityError ) && !cityError.empty() &&
+                 !scene::race::prepareCitySourceMemoryBudget( 4097, cityError ) && !cityError.empty(),
+             "Invalid direct city budgets were accepted" );
     auto foliageOwner = workphone::make_ptr<render::Terrain>();
     auto foliage = std::make_shared<render::FoliageWorldData>();
     auto species = std::make_shared<render::FoliageSpecies>();

@@ -3,6 +3,10 @@
         namespace cityFootwayAppearance
         {
             constexpr float curbTileMetres = 5.76f;
+            constexpr u32 pavingPairs = 6, pavingCourses = 10;
+            constexpr float pavingPairMetres = .80f, pavingCourseMetres = .40f;
+            constexpr float pavingTileU = pavingPairs * pavingPairMetres;
+            constexpr float pavingTileV = pavingCourses * pavingCourseMetres;
 
             float unit( u64 key )
             {
@@ -15,66 +19,150 @@
                 return t * t * ( 3.f - 2.f * t );
             }
 
-            SmartPtr<render::IMaterial> curbMaterial( SceneAssets &assets, u32 seed )
+            u8 asByte( float value )
             {
-                constexpr u32 width = 512, height = 64, stones = 8;
-                TextureBuffer colour( width, height ), normal( width, height );
-                SourceBudgetVector<float> level( size_t( width ) * height );
-                const auto byte = []( float value ) { return u8( std::clamp( value, 0.f, 255.f ) ); };
-                for( u32 y = 0; y < height; ++y )
-                {
-                    const float v = ( y + .5f ) / height;
-                    for( u32 x = 0; x < width; ++x )
-                    {
-                        const float coordinate = ( x + .5f ) * stones / width;
-                        const auto course = u32( coordinate );
-                        const float phase = coordinate - course;
-                        const auto grain = unit( ( u64( seed ) << 32 ) | ( y * width + x ) );
-                        const auto flecks = unit( ( u64( seed + 71 ) << 32 ) | ( y / 3 * width + x / 3 ) );
-                        const auto block = unit( seed + 1991u + course );
-                        const float jointDistance = std::min( phase, 1.f - phase );
-                        const float face = ramp( .007f, .027f, jointDistance - .006f * flecks );
-                        const float wornEdge = ( 1.f - ramp( .06f, .23f, v ) ) * ( .68f + .32f * flecks );
-                        const float dirt = ramp( .35f, .95f, v ) * ( .55f + .45f * flecks );
-                        const float joints = 93.f + 14.f * flecks;
-                        const float aggregate = ( grain - .5f ) * 24.f + ( flecks - .5f ) * 12.f;
-                        const float granite = 145.f + 21.f * block + aggregate + 14.f * wornEdge - 31.f * dirt;
-                        auto pixel = colour.pixel( x, y );
-                        pixel[0] = byte( joints + ( granite + 3.f - joints ) * face );
-                        pixel[1] = byte( joints - 4.f + ( granite - joints ) * face );
-                        pixel[2] = byte( joints - 9.f + ( granite - 1.f - joints ) * face );
-                        pixel[3] = 255;
-                        level[size_t( y ) * width + x] = face * ( .0039f + .0011f * grain - .0012f * wornEdge );
-                    }
-                }
+                return u8( std::clamp( value + .5f, 0.f, 255.f ) );
+            }
+
+            float aggregateNoise( u32 seed, float u, float v, u32 columns, u32 rows )
+            {
+                const float x = u * columns, y = v * rows;
+                const auto column = u32( x ), row = u32( y );
+                const auto noise = [&]( u32 ix, u32 iy ) {
+                    return unit( ( u64( seed ) << 32 ) | ( iy % rows * columns + ix % columns ) );
+                };
+                const float fx = ramp( 0, 1, x - column ), fy = ramp( 0, 1, y - row );
+                const float upper = noise( column, row ) * ( 1.f - fx ) + noise( column + 1, row ) * fx;
+                const float lower = noise( column, row + 1 ) * ( 1.f - fx ) + noise( column + 1, row + 1 ) * fx;
+                return upper * ( 1.f - fy ) + lower * fy;
+            }
+
+            void stonePixels( TextureBuffer &colour, TextureBuffer &roughness, u32 x, u32 y,
+                              float tone, float jointTone, float face, float wear, float aggregate, float warmth = 0.f )
+            {
+                auto pixel = colour.pixel( x, y );
+                pixel[0] = asByte( jointTone + 3.f + ( tone - jointTone + warmth ) * face );
+                pixel[1] = asByte( jointTone + 1.f + ( tone - jointTone + 1.f + .5f * warmth ) * face );
+                pixel[2] = asByte( jointTone - 3.f + ( tone - jointTone + 1.f ) * face );
+                pixel[3] = 255;
+                auto rough = roughness.pixel( x, y );
+                rough[0] = rough[1] = rough[2] = asByte( 245.f - face * ( 17.f + 13.f * wear - 7.f * aggregate ) );
+                rough[3] = 255;
+            }
+
+            SmartPtr<render::IMaterial> stoneMaterial( SceneAssets &assets, const TextureBuffer &colour,
+                                                       const TextureBuffer &roughness,
+                                                       const SourceBudgetVector<float> &level,
+                                                       float tileU, float tileV, bool wrapV, float strength )
+            {
+                const auto width = colour.width, height = colour.height;
+                TextureBuffer normal( width, height );
                 const auto point = [&]( u32 x, u32 y ) { return level[size_t( y ) * width + x]; };
                 for( u32 y = 0; y < height; ++y )
                 {
+                    const auto next = wrapV ? ( y + 1 ) % height : std::min( y + 1, height - 1 );
+                    const auto previous = y ? y - 1 : ( wrapV ? height - 1 : 0 );
                     for( u32 x = 0; x < width; ++x )
                     {
                         const float dx = ( point( ( x + 1 ) % width, y ) - point( ( x + width - 1 ) % width, y ) ) *
-                                         ( width / ( 2.f * curbTileMetres ) );
-                        const float dy = ( point( x, std::min( y + 1, height - 1 ) ) - point( x, y ? y - 1 : 0 ) ) *
-                                         ( height / .30f );
+                                         ( width / ( 2.f * tileU ) );
+                        const float dy = ( point( x, next ) - point( x, previous ) ) * ( height / ( 2.f * tileV ) );
                         const auto n = Vector3F( -dx, -dy, 1 ).normaliseCopy();
                         auto pixel = normal.pixel( x, y );
-                        pixel[0] = byte( 127.5f * ( 1.f + n.x ) );
-                        pixel[1] = byte( 127.5f * ( 1.f + n.y ) );
-                        pixel[2] = byte( 127.5f * ( 1.f + n.z ) );
+                        pixel[0] = asByte( 127.5f * ( 1.f + n.x ) );
+                        pixel[1] = asByte( 127.5f * ( 1.f + n.y ) );
+                        pixel[2] = asByte( 127.5f * ( 1.f + n.z ) );
                         pixel[3] = 255;
                     }
                 }
-                auto result = material( assets, ColourF::White, .91f );
+                auto result = material( assets, ColourF::White, 1.f );
                 result->setTexture( upload( assets, colour ), 0 );
                 result->setTexture( upload( assets, normal, render::TextureMipFilter::Normal ), 1 );
+                result->setTexture( upload( assets, roughness, render::TextureMipFilter::Roughness ), 3 );
                 result->setUVProjection( 0 );
-                result->setNormalStrength( .59f );
+                result->setNormalStrength( strength );
                 result->setEditorUInt( "uvFilter", 3 );
                 result->setEditorFloat( "uvAniso", 8.f );
                 return result;
             }
 
-            SmartPtr<render::IMaterial> topMaterial( SceneAssets &assets, SmartPtr<render::IMaterial> shared )
+            SmartPtr<render::IMaterial> curbMaterial( SceneAssets &assets, u32 seed )
+            {
+                constexpr u32 width = 512, height = 64;
+                constexpr std::array<float, 9> joints{ 0.f, .70f, 1.43f, 2.09f, 2.87f, 3.57f, 4.33f, 5.02f,
+                                                       curbTileMetres };
+                TextureBuffer colour( width, height ), roughness( width, height );
+                SourceBudgetVector<float> level( size_t( width ) * height );
+                for( u32 y = 0; y < height; ++y )
+                {
+                    const float v = ( y + .5f ) / height;
+                    for( u32 x = 0; x < width; ++x )
+                    {
+                        const float u = ( x + .5f ) / width;
+                        const float station = u * curbTileMetres;
+                        const auto next = std::upper_bound( joints.begin(), joints.end(), station );
+                        const auto course = u32( next - joints.begin() - 1 );
+                        const auto block = unit( seed + 1991u + course );
+                        const float fine = aggregateNoise( seed + 71u, u, v, 196, 13 );
+                        const float mineral = aggregateNoise( seed + 101u, u, v, 66, 5 );
+                        const float jointDistance = std::min( station - joints[course], *next - station );
+                        const float face = ramp( .003f, .017f, jointDistance - .004f * mineral );
+                        const float wornEdge = 1.f - ramp( .05f, .37f, v );
+                        const float dirt = ramp( .40f, .96f, v ) * ( .25f + .75f * mineral );
+                        const float granite = 151.f + 16.f * block + 12.f * ( fine - .5f ) +
+                                              11.f * wornEdge - 17.f * dirt;
+                        stonePixels( colour, roughness, x, y, granite, 120.f + 10.f * mineral, face, wornEdge, fine );
+                        level[size_t( y ) * width + x] = face * ( .0035f + .0012f * fine - .0011f * wornEdge );
+                    }
+                }
+                return stoneMaterial( assets, colour, roughness, level, curbTileMetres, .15f, false, .57f );
+            }
+
+            SmartPtr<render::IMaterial> pavingMaterial( SceneAssets &assets, u32 seed )
+            {
+                constexpr u32 width = 512, height = 512;
+                constexpr float longSlab = .52f;
+                TextureBuffer colour( width, height ), roughness( width, height );
+                SourceBudgetVector<float> level( size_t( width ) * height );
+                for( u32 y = 0; y < height; ++y )
+                {
+                    const float v = ( y + .5f ) / height;
+                    const float across = v * pavingCourses;
+                    const auto row = u32( across );
+                    const float withinRow = ( across - row ) * pavingCourseMetres;
+                    const float rowDistance = std::min( withinRow, pavingCourseMetres - withinRow );
+                    const float stagger = row % 2 ? .40f : .13f;
+                    for( u32 x = 0; x < width; ++x )
+                    {
+                        const float u = ( x + .5f ) / width;
+                        const float along = u * pavingTileU + stagger;
+                        const auto pair = u32( along / pavingPairMetres );
+                        const float withinPair = along - pair * pavingPairMetres;
+                        const bool shortSlab = withinPair > longSlab;
+                        const float slabDistance = shortSlab ? std::min( withinPair - longSlab,
+                                                                       pavingPairMetres - withinPair ) :
+                                                              std::min( withinPair, longSlab - withinPair );
+                        const float fine = aggregateNoise( seed + 221u, u, v, 184, 152 );
+                        const float bloom = aggregateNoise( seed + 463u, u, v, 49, 39 );
+                        const auto slab = ( row * pavingPairs + pair % pavingPairs ) * 2u + u32( shortSlab );
+                        const u64 slabKey = ( u64( seed ) << 32 ) | slab;
+                        const float variation = unit( slabKey );
+                        const float wear = unit( slabKey ^ 0x9829a1u );
+                        const float distance = std::min( rowDistance, slabDistance );
+                        const float face = ramp( .0035f, .0145f, distance - .0035f * fine );
+                        const float patina = ramp( .55f, .88f, bloom ) * ( 1.f - wear );
+                        const float grain = unit( ( u64( seed + 529u ) << 32 ) | ( y * width + x ) );
+                        const float concrete = 155.f + 16.f * variation + 10.f * ( fine - .5f ) +
+                                               6.f * ( grain - .5f ) - 9.f * patina;
+                        stonePixels( colour, roughness, x, y, concrete, 138.f + 8.f * bloom, face, wear, fine, 4.f );
+                        level[size_t( y ) * width + x] =
+                            face * ( .0026f + .0016f * variation + .0008f * fine + .00025f * grain );
+                    }
+                }
+                return stoneMaterial( assets, colour, roughness, level, pavingTileU, pavingTileV, true, .73f );
+            }
+
+            SmartPtr<render::IMaterial> sharedTopMaterial( SceneAssets &assets, SmartPtr<render::IMaterial> shared )
             {
                 auto result = material( assets, shared->getDiffuse(), shared->getRoughness(), shared->getMetalness() );
                 for( const u32 layer : { 0u, 1u, 2u, 3u, 22u } )
@@ -89,14 +177,14 @@
             }
 
             void addVertex( Geometry &geometry, const CityRoadTerrainVertex &vertex,
-                            Vector2F uv, Vector3F tangent )
+                            Vector2F uv, Vector3F tangent, float handedness = 1.f )
             {
                 tangent -= vertex.normal * tangent.dotProduct( vertex.normal );
                 tangent.normalise();
                 geometry.positions.push_back( vertex.position );
                 geometry.normals.push_back( vertex.normal );
                 geometry.uv.push_back( { uv.x, uv.y, 0 } );
-                geometry.tangents.push_back( { tangent.x, tangent.y, tangent.z, 1 } );
+                geometry.tangents.push_back( { tangent.x, tangent.y, tangent.z, handedness } );
             }
 
             SmartPtr<IMesh> pack( const Geometry &geometry )
@@ -236,17 +324,27 @@
                 for( size_t i = 0; i < ( sectioned ? vertexCount : fitted.vertices.size() ); ++i )
                 {
                     const auto &vertex = fitted.vertices[i];
-                    const auto tangent = std::abs( vertex.normal.y ) > .9f ? Vector3F( 1, 0, 0 ) :
-                                          Vector3F( -vertex.normal.z, 0, vertex.normal.x );
-                    addVertex( slab, vertex, vertex.uv, tangent );
+                    if( sectioned )
+                    {
+                        const auto tangent = std::abs( vertex.normal.y ) > .001f ?
+                            Vector3F( vertex.normal.y, -vertex.normal.x, 0.f ) :
+                            Vector3F( -vertex.normal.z, 0.f, vertex.normal.x );
+                        addVertex( slab, vertex, { vertex.position.x / pavingTileU, vertex.position.z / pavingTileV },
+                                   tangent, -1.f );
+                    }
+                    else
+                    {
+                        const auto tangent = std::abs( vertex.normal.y ) > .9f ? Vector3F( 1, 0, 0 ) :
+                                             Vector3F( -vertex.normal.z, 0, vertex.normal.x );
+                        addVertex( slab, vertex, vertex.uv, tangent );
+                    }
                 }
                 const auto slabEnd = sectioned ? topEnd : fitted.indices.end();
                 slab.indices.reserve( slabEnd - fitted.indices.begin() );
                 for( auto index = fitted.indices.begin(); index != slabEnd; ++index )
                     slab.indices.push_back( *index );
                 auto mesh = pack( slab );
-                auto top = topMaterial( assets, paving );
-                if( !sectioned ) return { mesh, top, nullptr };
+                if( !sectioned ) return { mesh, sharedTopMaterial( assets, paving ), nullptr };
 
                 assignStations( edges, fitted, seed );
                 Geometry curb;
@@ -262,6 +360,6 @@
                     for( const auto index : { 0u, 1u, 2u, 0u, 2u, 3u } ) curb.indices.push_back( base + index );
                 }
                 for( auto section : pack( curb )->getSubMeshes() ) mesh->addSubMesh( section );
-                return { mesh, top, curbMaterial( assets, seed ) };
+                return { mesh, pavingMaterial( assets, seed ), curbMaterial( assets, seed ) };
             }
         }  // namespace cityFootwayAppearance

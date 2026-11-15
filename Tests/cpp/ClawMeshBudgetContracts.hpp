@@ -8,7 +8,10 @@
 #include <Workphone/IO/MemoryFile.hpp>
 #include <Workphone/Memory/PointerUtil.hpp>
 #include <workphone_graphics_mesh_writer.h>
+#include <workphone_graphics_object.h>
 #include <workphone_graphics_renderer.h>
+#include <workphone_graphics_scene.h>
+#include <workphone_graphics_scenenode.h>
 #include <WorkphonePlatformWin32/workphone_graphics_renderer_dx11.h>
 #include <d3d11.h>
 #include <wrl/client.h>
@@ -113,6 +116,43 @@ namespace claw_mesh_budget_contracts
         try
         {
             app->setFileSystem( make_ptr<MeshFiles>() );
+            {
+                std::unique_ptr<wp_graphics_scene, decltype( &wp_graphics_scene_destroy )> scene(
+                    wp_graphics_scene_create(), &wp_graphics_scene_destroy );
+                require( bool( scene ), "Native mesh retirement fixture requires a scene" );
+                const auto originalNodes = wp_graphics_scene_get_node_count( scene.get() );
+                const auto originalObjects = wp_graphics_scene_get_object_count( scene.get() );
+                InspectableMesh mesh;
+                mesh.setMeshName( "retirement.meshbin" );
+                auto mask = IGraphicsObject::SceneFlag;
+                mesh.setVisibilityFlags( mask );
+                for( unsigned iteration = 0; iteration < 2; ++iteration )
+                {
+                    auto node = wp_graphics_scene_create_node( scene.get() );
+                    auto slot = wp_graphics_scene_create_object( scene.get() );
+                    require( node && slot, "Native mesh retirement fixture requires a node and render slot" );
+                    mesh.bindNativeRenderObject( slot );
+                    require( mesh.getVisibilityFlags() == mask && wp_graphics_object_get_visibility_flags( slot ) == mask,
+                        "Native mesh binding must inherit the configured mask without a state context" );
+                    mask |= 1u << ( iteration + 5 );
+                    mesh.setVisibilityFlags( mask );
+                    require( mesh.getVisibilityFlags() == mask && wp_graphics_object_get_visibility_flags( slot ) == mask,
+                        "Native mesh and its wrapper must agree on visibility changes" );
+                    wp_scenenode_attach_object( node, slot );
+                    mesh.load( nullptr );
+                    require( mesh.isLoaded() && mesh.getNativeMesh() &&
+                        wp_graphics_object_get_owner( slot ) == node &&
+                        wp_graphics_scene_get_object_count( scene.get() ) == originalObjects + 1,
+                        "Native mesh load must publish geometry to its attached scene render slot" );
+                    mesh.unload( nullptr );
+                    require( !mesh.getNativeRenderObject() && !mesh.getNativeMesh() &&
+                        wp_graphics_scene_get_object_count( scene.get() ) == originalObjects,
+                        "Native mesh unload must retire its scene render slot and geometry" );
+                    wp_graphics_scene_destroy_node( scene.get(), node );
+                    require( wp_graphics_scene_get_node_count( scene.get() ) == originalNodes,
+                        "Native mesh retirement fixture must restore the scene node count" );
+                }
+            }
             {
                 InspectableMesh mesh;
                 // Empty initialization isolates the persistent mesh object from

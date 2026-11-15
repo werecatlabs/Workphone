@@ -97,6 +97,7 @@ namespace workphone
 
             /** Sets specific visibility flags for filtering during the render pass. */
             void setVisibilityFlags( u32 flags ) override;
+            u32 getVisibilityFlags() const override;
 
             /** Returns the identifier name of the mesh. */
             String getMeshName() const override;
@@ -163,6 +164,7 @@ namespace workphone
             atomic_bool m_visible = true;  ///< Atomic flag indicating the visibility state of the mesh.
             atomic_bool m_castShadows = true;
             atomic_bool m_receiveShadows = true;
+            atomic_u32 m_visibilityFlags = 0xFFFFFFFFu;
             atomic_fixed_string<WP_MAX_PATH> m_meshName;  ///< Name of the mesh resource.
             ProgressiveMeshOptions m_options;  ///< Configuration for progressive mesh / LOD levels.
         };

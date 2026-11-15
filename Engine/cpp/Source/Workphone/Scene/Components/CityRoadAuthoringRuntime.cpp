@@ -6,6 +6,7 @@
 #include "CityRoadCrossings.hpp"
 #include "CityRoadTerminals.hpp"
 #include <Workphone/Scene/Components/CitySurfaceLibrary.hpp>
+#include "CitySurfaceScalar.hpp"
 #include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
 #include <Workphone/Scene/Components/Mesh.hpp>
 #include <Workphone/Scene/Components/MeshRenderer.hpp>
@@ -140,10 +141,12 @@ namespace workphone::scene
                                                    const procedural::TextureBuffer &buffer,
                                                    render::TextureMipFilter filter )
         {
+            const bool constant = buffer.width == 1 && buffer.height == 1;
+            const bool surface = buffer.width >= 256 && buffer.width <= 1024 && buffer.height == buffer.width;
             requireRuntime(
-                buffer.width >= 256 && buffer.width <= 1024 && buffer.height == buffer.width &&
+                ( constant || surface ) &&
                     buffer.pixels.size() == size_t( buffer.width ) * buffer.height * 4,
-                "Authored road surfaces require complete bounded 256-1024px textures." );
+                "Authored road surfaces require complete bounded 256-1024px textures or one exact scalar texel." );
             requireRuntime( state.textures.size() < 16 && state.textures.capacity() >= 16,
                             "Authored road texture ownership must be admitted before publication." );
             // Use the same transactional staging path as the procedural scene:
@@ -189,13 +192,7 @@ namespace workphone::scene
                 surfaceTexture( state, prefix, surface.normal, render::TextureMipFilter::Normal ), 1 );
             for( unsigned channel = 0; channel < 3; ++channel )
             {
-                procedural::TextureBuffer split( surface.orm.width, surface.orm.height );
-                for( size_t pixel = 0; pixel < surface.orm.pixels.size(); pixel += 4 )
-                {
-                    split.pixels[pixel] = split.pixels[pixel + 1] = split.pixels[pixel + 2] =
-                        surface.orm.pixels[pixel + channel];
-                    split.pixels[pixel + 3] = 255;
-                }
+                const auto split = citySurfaceScalar::split( surface.orm, channel );
                 // Existing material slots read scalar red: AO22, roughness3, metal2.
                 material->setTexture( surfaceTexture( state, prefix, split,
                                                       channel == 1 ? render::TextureMipFilter::Roughness
@@ -304,24 +301,24 @@ namespace workphone::scene
                     const u32 sx = ( x * asphaltTiles * surface.albedo.width / size ) % surface.albedo.width;
                     const u32 sy = ( y * asphaltTiles * surface.albedo.height / size ) % surface.albedo.height;
                     const float u = ( x + .5f ) / size, v = ( y + .5f ) / size;
-                    const float binder = .48f * roadVariation( 0x1f73a1u, u, v, 9 ) +
-                                         .31f * roadVariation( 0x673c51u, u, v, 19 ) +
-                                         .21f * roadVariation( 0x5521c3u, u, v, 41 );
+                    const float binder = .23f * roadVariation( 0x1f73a1u, u, v, 11 ) +
+                                         .39f * roadVariation( 0x673c51u, u, v, 27 ) +
+                                         .38f * roadVariation( 0x5521c3u, u, v, 53 );
                     const float exposed = std::clamp( ( binder - .27f ) / .49f, 0.f, 1.f );
                     const float wear = exposed * exposed * ( 3.f - 2.f * exposed );
                     const float grain = ( roadGrain( 0x7f33abu, x, y, size ) - .5f ) * ( 2.5f + 2.f * wear );
                     const auto *source = surface.albedo.pixel( sx, sy );
                     auto *pixel = colour.pixel( x, y );
-                    const float tone = .963f + .074f * wear;
-                    pixel[0] = byte( source[0] * tone + grain + wear );
-                    pixel[1] = byte( source[1] * tone + grain + .5f * wear );
+                    const float tone = .988f + .024f * wear;
+                    pixel[0] = byte( source[0] * tone + grain + .35f * wear );
+                    pixel[1] = byte( source[1] * tone + grain + .175f * wear );
                     pixel[2] = byte( source[2] * tone + grain );
                     pixel[3] = 255;
                     std::copy_n( surface.normal.pixel( sx, sy ), 4, normal.pixel( x, y ) );
                     const auto *surfaceOrm = surface.orm.pixel( sx, sy );
                     auto *response = orm.pixel( x, y );
                     std::copy_n( surfaceOrm, 4, response );
-                    response[1] = byte( surfaceOrm[1] * ( .981f + .019f * wear ) );
+                    // Keep the scan roughness independent of broad binder colour.
                 }
             }
             surface.albedo = std::move( colour );

@@ -806,9 +806,24 @@ namespace workphone
 
         bool ClawScene::removeGraphicsObject( SmartPtr<ISharedObject> object )
         {
+            auto app = core::IApplicationManager::instancePtr();
+            auto graphics = app ? app->getGraphicsSystem() : nullptr;
+            ScopedLock graphicsLock( graphics );
+            auto mesh = dynamic_pointer_cast<ClawMesh>( object );
+            auto nativeObject = mesh ? mesh->getNativeRenderObject() : nullptr;
             if( !GraphicsScene::removeGraphicsObject( object ) )
             {
                 return false;
+            }
+
+            // Native unload may be queued to Render after removing this wrapper from
+            // the scene inventory. Detach its scene slot now, before scene teardown
+            // can destroy the native array. Synchronous unload already releases it.
+            if( nativeObject && mesh->getNativeRenderObject() == nativeObject && m_scene &&
+                wp_graphics_object_get_creator( nativeObject ) == m_scene )
+            {
+                mesh->bindNativeRenderObject( nullptr );
+                wp_graphics_scene_destroy_object( m_scene, nativeObject );
             }
 
             if( auto light = dynamic_pointer_cast<IGraphicsLight>( object ) )

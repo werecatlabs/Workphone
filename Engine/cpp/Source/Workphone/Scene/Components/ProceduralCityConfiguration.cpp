@@ -8,6 +8,7 @@
 #include <Workphone/Interface/Scene/IGameManager.hpp>
 #include <Workphone/Scene/Components/CityBuildingStyles.hpp>
 #include <Workphone/Scene/Components/ProceduralSceneGeneration.hpp>
+#include <Workphone/System/WorldStreamingScheduler.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -54,8 +55,31 @@ namespace workphone::scene
         }
     }  // namespace
 
+    bool race::prepareCitySourceMemoryBudget( int minimumMiB, String &error )
+    {
+        if( minimumMiB < minimumCitySourceMemoryMiB || minimumMiB > maximumCitySourceMemoryMiB )
+        {
+            error = "City Source Memory MiB must be between 128 and 4096.";
+            return false;
+        }
+        try
+        {
+            WorldStreamingScheduler::raiseSharedSourceBudget( u64( minimumMiB ) << 20 );
+            error.clear();
+            return true;
+        }
+        catch( const std::exception &failure )
+        {
+            error = String( "Cannot raise the shared source memory budget for this city: " ) + failure.what();
+            return false;
+        }
+    }
+
     ProceduralCityConfiguration::ProceduralCityConfiguration( bool alwaysOpen ) :
-        m_alwaysOpen( alwaysOpen )
+        m_alwaysOpen( alwaysOpen ),
+        m_streamLoadRadius( race::defaultCityStreamLoadRadius ),
+        m_streamRetainRadius( race::defaultCityStreamRetainRadius ),
+        m_sourceMemoryMiB( race::defaultCitySourceMemoryMiB )
     {
     }
 
@@ -76,6 +100,10 @@ namespace workphone::scene
 
     bool ProceduralCityConfiguration::resolveBindings( IGameManager &manager, String &error )
     {
+        if( isOpenCity() && !race::prepareCitySourceMemoryBudget( m_sourceMemoryMiB, error ) )
+        {
+            return false;
+        }
         if( !m_terrainRoads )
         {
             return true;
@@ -121,6 +149,10 @@ namespace workphone::scene
     void ProceduralCityConfiguration::applyTo( race::SceneAssets &assets ) const
     {
         assets.openCity = isOpenCity();
+        assets.cityStreamingEnabled = assets.openCity && m_streamingEnabled;
+        assets.cityStreamLoadRadius = m_streamLoadRadius;
+        assets.cityStreamRetainRadius = m_streamRetainRadius;
+        assets.citySourceMemoryMiB = m_sourceMemoryMiB;
         assets.cityNaturalRoads = m_naturalRoads;
         assets.cityRoadShowcase = m_roadShowcase;
         assets.cityTerrainRoads = m_terrainRoads;
@@ -240,6 +272,18 @@ namespace workphone::scene
         }
         properties.setProperty( "City Blocks", m_blocks );
         properties.setProperty( "City Route", m_route );
+        properties.setProperty( "City Streaming", m_streamingEnabled );
+        properties.setProperty( "City Stream Load Radius", m_streamLoadRadius );
+        properties.setProperty( "City Stream Retain Radius", m_streamRetainRadius );
+        properties.getPropertyObject( "City Stream Load Radius" ).setAttribute( "description",
+            "Load detailed city patches within this distance in metres." );
+        properties.getPropertyObject( "City Stream Retain Radius" ).setAttribute( "description",
+            "Keep detailed patches until this distance in metres. Use at least the load radius." );
+        properties.setProperty( "City Source Memory MiB", m_sourceMemoryMiB );
+        auto &sourceMemory = properties.getPropertyObject( "City Source Memory MiB" );
+        sourceMemory.setAttribute( "min", StringUtil::toString( race::minimumCitySourceMemoryMiB ) );
+        sourceMemory.setAttribute( "max", StringUtil::toString( race::maximumCitySourceMemoryMiB ) );
+        sourceMemory.setAttribute( "description", "Minimum shared CPU source memory available to the city." );
         properties.setProperty( "City Natural Roads", m_naturalRoads );
         properties.setProperty( "City Terrain Roads", m_terrainRoads );
         properties.setProperty( "City Terrain Relief", m_terrainRelief );
@@ -272,6 +316,29 @@ namespace workphone::scene
         }
         properties.getPropertyValue( "City Blocks", m_blocks );
         properties.getPropertyValue( "City Route", m_route );
+        properties.getPropertyValue( "City Streaming", m_streamingEnabled );
+        float loadRadius = m_streamLoadRadius, retainRadius = m_streamRetainRadius;
+        const bool hasLoadRadius = properties.getPropertyValue( "City Stream Load Radius", loadRadius );
+        const bool hasRetainRadius = properties.getPropertyValue( "City Stream Retain Radius", retainRadius );
+        if( hasLoadRadius || hasRetainRadius )
+        {
+            if( std::isfinite( loadRadius ) && std::isfinite( retainRadius ) &&
+                loadRadius > 0 && retainRadius >= loadRadius )
+            {
+                m_streamLoadRadius = loadRadius;
+                m_streamRetainRadius = retainRadius;
+            }
+            else if( error.empty() )
+            {
+                error = "City streaming requires a positive load radius and a finite retain radius at least as large.";
+            }
+        }
+        s32 sourceMemory = m_sourceMemoryMiB;
+        if( properties.getPropertyValue( "City Source Memory MiB", sourceMemory ) )
+        {
+            m_sourceMemoryMiB = std::clamp( sourceMemory, race::minimumCitySourceMemoryMiB,
+                                           race::maximumCitySourceMemoryMiB );
+        }
         properties.getPropertyValue( "City Natural Roads", m_naturalRoads );
         f32 terrainRelief = m_terrainRelief;
         if( properties.getPropertyValue( "City Terrain Relief", terrainRelief ) &&

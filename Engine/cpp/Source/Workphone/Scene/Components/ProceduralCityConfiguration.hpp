@@ -42,6 +42,9 @@ namespace workphone::scene
         bool m_roadShowcase = false;
         bool m_terrainRoads = false;
         bool m_naturalRoads = false;
+        bool m_streamingEnabled = true;
+        f32 m_streamLoadRadius, m_streamRetainRadius;
+        s32 m_sourceMemoryMiB;
         s32 m_blocks = 8;
         s32 m_route = 0;
         s32 m_streetDetail = 100;

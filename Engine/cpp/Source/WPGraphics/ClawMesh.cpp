@@ -29,6 +29,7 @@
 #include "workphone_graphics_mesh.h"
 #include "workphone_graphics_mesh_reader.h"
 #include "workphone_graphics_object.h"
+#include "workphone_graphics_scene.h"
 #include <workphone_graphics_renderer.h>
 #include "ClawAssetBudget.hpp"
 #include <limits>
@@ -1181,7 +1182,10 @@ namespace workphone
             m_runtimeMorph.reset();
             m_runtimeGeometry.reset();
 
+            auto renderObject = m_renderObject;
+            auto scene = renderObject ? wp_graphics_object_get_creator( renderObject ) : nullptr;
             bindNativeRenderObject( nullptr );
+            if( scene ) wp_graphics_scene_destroy_object( scene, renderObject );
             if( m_runtimeMaterials )
             {
                 m_subMaterials.clear();
@@ -1365,11 +1369,17 @@ namespace workphone
         void ClawMesh::setVisibilityFlags( u32 flags )
         {
             NativeMeshLifecycleLock lifecycleLock;
+            m_visibilityFlags = flags;
             GraphicsMesh::setVisibilityFlags( flags );
             if( m_renderObject )
             {
                 wp_graphics_object_set_visibility_flags( m_renderObject, flags );
             }
+        }
+
+        u32 ClawMesh::getVisibilityFlags() const
+        {
+            return m_visibilityFlags.load();
         }
 
         String ClawMesh::getMeshName() const

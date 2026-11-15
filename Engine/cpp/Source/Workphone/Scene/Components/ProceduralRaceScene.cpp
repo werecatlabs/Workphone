@@ -330,6 +330,7 @@ namespace workphone::scene
 
     void ProceduralRaceScene::update()
     {
+        ProceduralScene::update();
         auto app = core::IApplicationManager::instance();
         if( Thread::getCurrentTask() == TaskId::Application && isLoaded() && isEnabled() &&
             isGenerated() && !m_physicsConfigured )

@@ -22,6 +22,9 @@ param(
     [switch]$ExportMaterials,
     [ValidateRange(30, 7200)][int]$TimeoutSeconds = 600,
     [ValidateRange(0, 100)][int]$CityStreetDetail = 100,
+    [ValidateSet('on', 'off')][string]$CityStreaming = 'off',
+    [ValidateRange(128, 4096)][int]$CitySourceMemoryMiB = 768,
+    [switch]$CityStreamingSmokeTest,
     [ValidateSet('district', 'masonry', 'civic', 'modern', 'terrace', 'parisian', 'warehouse', 'mediterranean', 'artdeco', 'timber')][string]$CityBuildingStyle,
     [hashtable]$CityBuildingMeshes = @{}
 )
@@ -29,6 +32,7 @@ $ErrorActionPreference = 'Stop'
 $streetDetailExplicit = $PSBoundParameters.ContainsKey('CityStreetDetail')
 if ($RoadAuthoringShowcase) { $Scene = 'city' }
 if ($CityTerrainRoads) { $Scene = 'city' }
+if ($CityStreamingSmokeTest -and ($Scene -ne 'city' -or $CityStreaming -ne 'on')) { throw 'CityStreamingSmokeTest requires city and CityStreaming on.' }
 if ($streetDetailExplicit -and !$CityTerrainRoads) { throw '-CityStreetDetail requires -CityTerrainRoads.' }
 if ($Views -contains 'frontage' -and !$CityTerrainRoads) { throw '-Views frontage requires -CityTerrainRoads.' }
 if ($Views -contains 'utilities' -and !$CityTerrainRoads) { throw '-Views utilities requires -CityTerrainRoads.' }
@@ -121,6 +125,9 @@ $manifest = [ordered]@{
     cityTerrainRoads = [bool]$CityTerrainRoads
     cityTerrainRelief = $(if ($CityTerrainRoads) { $CityTerrainRelief } else { $null })
     cityStreetDetail = $(if ($streetDetailExplicit) { $CityStreetDetail } else { $null })
+    cityStreaming = $(if ($Scene -eq 'city') { $CityStreaming } else { $null })
+    citySourceMemoryMiB = $(if ($Scene -eq 'city') { $CitySourceMemoryMiB } else { $null })
+    cityStreamingSmokeTest = [bool]$CityStreamingSmokeTest
     cityBuildingStyle = $(if ($CityBuildingStyle) { $CityBuildingStyle.ToLowerInvariant() } else { $null })
     cityBuildingMeshes = $buildingMeshPaths
     cityBuildingMeshInputs = [ordered]@{}
@@ -142,6 +149,8 @@ try {
         $evidence = Join-Path $output "$view.json"
         $arguments = @('--seed', "$Seed", '--quality', $Quality, '--plugins', (Quote-ProcessArgument $plugins), '--capture', (Quote-ProcessArgument $capture), '--view', $view, '--no-hud', '--resolution', $Resolution, '--no-audio', '--benchmark', $Seconds.ToString([Globalization.CultureInfo]::InvariantCulture), '--evidence', (Quote-ProcessArgument $evidence))
         if ($Scene -eq 'city') { $arguments += @('--city', '--city-blocks', "$CityBlocks", '--city-route', "$CityRoute", '--city-layout', $CityLayout) }
+        if ($Scene -eq 'city') { $arguments += @('--city-streaming', $CityStreaming, '--city-source-memory-mib', "$CitySourceMemoryMiB") }
+        if ($CityStreamingSmokeTest) { $arguments += '--city-streaming-smoke-test' }
         if ($SceneAA -ne 'auto') { $arguments += @('--scene-aa', $SceneAA) }
         if ($RoadAuthoringShowcase) { $arguments += '--road-authoring-showcase' }
         if ($CityTerrainRoads) { $arguments += @('--city-terrain-roads', '--city-terrain-relief', $CityTerrainRelief.ToString([Globalization.CultureInfo]::InvariantCulture)) }
@@ -169,7 +178,7 @@ try {
             if ($Scene -eq 'city' -and !$RoadAuthoringShowcase) {
                 $buildings = $run.evidence.cityBuildingGeometry
                 $run.passed = $run.passed -and $null -ne $buildings -and $buildings.ready -eq $true -and
-                    $buildings.meshes -gt 0 -and $buildings.readyMeshes -eq $buildings.meshes
+                    $buildings.meshes -gt 0 -and ($buildings.readyMeshes + [int]$buildings.streamedOutMeshes) -eq $buildings.meshes
             }
             if ($streetDetailExplicit) {
                 $street = $run.evidence.terrainCity

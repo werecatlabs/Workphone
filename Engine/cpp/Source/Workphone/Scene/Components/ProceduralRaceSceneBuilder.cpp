@@ -3,6 +3,7 @@
 #include <Workphone/Scene/Systems/LODSystem.hpp>
 #include <Workphone/Scene/Components/CityBuildingStyles.hpp>
 #include <Workphone/Scene/Components/CitySurfaceLibrary.hpp>
+#include "CitySurfaceScalar.hpp"
 #include <Workphone/Scene/Components/Terrain/FoliagePlantGenerator.hpp>
 #include <Workphone/Workphone.hpp>
 #include <Workphone/Interface/Mesh/IMeshResource.hpp>
@@ -36,6 +37,7 @@
 #include "../RuntimeSceneMembership.hpp"
 
 #include <algorithm>
+#include <optional>
 #include <cmath>
 #include <random>
 #include <chrono>
@@ -53,6 +55,11 @@ namespace workphone::scene::race
         cityNaturalRoads( other.cityNaturalRoads ),
         cityRoadShowcase( other.cityRoadShowcase ),
         cityTerrainRoads( other.cityTerrainRoads ),
+        cityStreamingEnabled( other.cityStreamingEnabled ),
+        cityStreamLoadRadius( other.cityStreamLoadRadius ),
+        cityStreamRetainRadius( other.cityStreamRetainRadius ),
+        citySourceMemoryMiB( other.citySourceMemoryMiB ),
+        cityStreaming( other.cityStreaming ),
         roadAuthoring( other.roadAuthoring ),
         roadTerrain( other.roadTerrain ),
         terrainGameplaySource( other.terrainGameplaySource ),
@@ -124,6 +131,11 @@ namespace workphone::scene::race
         swap( roadTerrain, other.roadTerrain );
         swap( terrainGameplaySource, other.terrainGameplaySource );
         swap( cityTerrainRoads, other.cityTerrainRoads );
+        swap( cityStreamingEnabled, other.cityStreamingEnabled );
+        swap( cityStreamLoadRadius, other.cityStreamLoadRadius );
+        swap( cityStreamRetainRadius, other.cityStreamRetainRadius );
+        swap( citySourceMemoryMiB, other.citySourceMemoryMiB );
+        cityStreaming.swap( other.cityStreaming );
         cityLayout.swap( other.cityLayout );
         swap( cityBuildingSupportChecks, other.cityBuildingSupportChecks );
         swap( cityCulledParcels, other.cityCulledParcels );
@@ -419,13 +431,7 @@ namespace workphone::scene::race
             {
                 for( auto channel : { 0u, 1u, 2u } )
                 {
-                    TextureBuffer split( orm.width, orm.height );
-                    for( size_t i = 0; i < orm.pixels.size(); i += 4 )
-                    {
-                        split.pixels[i] = split.pixels[i + 1] = split.pixels[i + 2] =
-                            orm.pixels[i + channel];
-                        split.pixels[i + 3] = 255;
-                    }
+                    const auto split = citySurfaceScalar::split( orm, channel );
                     m->setTexture( upload( assets, split,
                                            channel == 1 ? render::TextureMipFilter::Roughness
                                                         : render::TextureMipFilter::Data, 1, citySurface ),
@@ -3417,10 +3423,12 @@ namespace workphone::scene::race
 
 #include "CityCarriagewayUtilities.hpp"
 #include "CityRoadEdgeSurface.hpp"
+#include "CityRoadLaneWear.hpp"
 #include "CityBuildingGroundContact.hpp"
 #include "CityEntranceWayfinding.hpp"
 #include "CityRoundaboutSigns.hpp"
 #include "CityFootwayAppearance.hpp"
+#include "CityKerbCoping.hpp"
 #include "CityCrossingLandings.hpp"
 #include "CityCrossingBollards.hpp"
 #include "CityParkLandscape.hpp"
@@ -3436,6 +3444,7 @@ namespace workphone::scene::race
 #include "CityRoofEquipment.hpp"
 #include "CityPitchedRoofCladding.hpp"
 #include "CityRoofDrainage.hpp"
+#include "CityBuildingImposters.hpp"
 
         void buildCity( SceneAssets &assets, SmartPtr<IGameActor> sourceOwner,
                         SmartPtr<IGameActor> vehicle, u32 seed, VehicleAppearanceQuality quality )
@@ -3492,6 +3501,7 @@ namespace workphone::scene::race
 
             struct CityPatch
             {
+                bool customDetailOutsideFarMesh = false;
                 Geometry walls[3], farWalls[3], glass[3], farGlass, roofs, farRoofs, frames, accents;
                 Geometry windowPanes, timber, tiles, farTiles, officeJoinery;
                 Geometry shopfrontFascia[static_cast<size_t>( cityShopfront::Style::Count )], shopfrontLetters, shopfrontDisplays;
@@ -3799,6 +3809,7 @@ namespace workphone::scene::race
                     continue;
                 }
                 kit.beginBuilding();
+                const auto modulePlacementsBefore = assets.cityBuildingModulePlacements;
                 const auto key =
                     std::make_pair( int( std::floor( lot.x / 128 ) ), int( std::floor( lot.z / 128 ) ) );
                 const Vector3F origin( key.first * 128.f + 64, 0, key.second * 128.f + 64 );
@@ -4518,9 +4529,12 @@ namespace workphone::scene::race
                     // its roof silhouette, while the street-level kit adds smaller features.
                     const float deck = top + .12f;
                     auto &moduleRoof = detailedBuildings ? patch.roofs : patch.farRoofs;
+                    const auto roofVertexStart = moduleRoof.positions.size(), roofIndexStart = moduleRoof.indices.size();
                     const bool replacedRoof = kit.append( CityBuildingPart::Roof, moduleRoof,
                                                           { cx, deck + 1.25f, cz },
                                                           { size.x, 2.5f, size.z }, 0 );
+                    if( detailedBuildings && replacedRoof )
+                        cityBuildingImposters::appendPlacedModule( patch.farRoofs, moduleRoof, roofVertexStart, roofIndexStart );
                     const bool hipped = style == 1 || mediterranean;
                     const bool gabled = terrace || timber;
                     const bool lantern = civic || ( office && lot.variant % 4 == 1 );
@@ -4709,7 +4723,7 @@ namespace workphone::scene::race
                     {
                         roofSilhouette( mediterranean ? patch.tiles : artdeco ? patch.walls[family] : patch.roofs );
                     }
-                    if( detailedBuildings || !replacedRoof )
+                    if( !replacedRoof )
                     {
                         roofSilhouette( mediterranean ? patch.farTiles : artdeco ? patch.farWalls[family] : patch.farRoofs );
                     }
@@ -4899,6 +4913,9 @@ namespace workphone::scene::race
                             ", profiles=" + StringUtil::toString( masonry.profiles ) +
                             ", mullions=" + StringUtil::toString( masonry.mullions ) );
                 }
+                for( size_t role = 0; role < size_t( CityBuildingPart::Roof ); ++role )
+                    if( detailedBuildings && modulePlacementsBefore[role] != assets.cityBuildingModulePlacements[role] )
+                        patch.customDetailOutsideFarMesh = true;
             }
             if( nominalMansardSilhouettes != emittedMansardSilhouettes )
             {
@@ -5164,6 +5181,9 @@ namespace workphone::scene::race
                     add( "LOD0 city timber details", patch.timber, timberMaterial, nearRenderers );
                     add( "LOD0 city terracotta roofs", patch.tiles, tileMaterial, nearRenderers );
                 }
+                SmartPtr<scene::MeshRenderer> imposter;
+                if( assets.cityStreamingEnabled && !patch.customDetailOutsideFarMesh )
+                    imposter = cityBuildingImposters::build( assets, patch, root, quality );
                 for( int family = 0; family < 3; ++family )
                 {
                     add( "LOD1 city massing", patch.farWalls[family], facades[family], farRenderers );
@@ -5178,11 +5198,19 @@ namespace workphone::scene::race
                 lod->setDetailBounds( patch.bounds );
                 lod->setHysteresis( .18f );
                 lod->setCullBelowLastLOD( false );
+                if( assets.cityStreamingEnabled && patch.customDetailOutsideFarMesh )
+                    lod->setForcedLOD( 0 );
                 if( !nearRenderers.empty() )
                 {
                     lod->addLevel( .11f, nearRenderers );
                 }
-                lod->addLevel( 0, farRenderers );
+                lod->addLevel( imposter ? cityBuildingImposters::minimumFarMeshCoverage : 0.f, farRenderers );
+                if( imposter )
+                {
+                    auto imposterRenderers = makeSourceBudgetSnapshot<SmartPtr<scene::Renderer>>();
+                    imposterRenderers.push_back( imposter );
+                    lod->addLevel( 0.f, imposterRenderers );
+                }
                 String error;
                 if( !lod->validate( &error ) )
                 {
@@ -5260,6 +5288,8 @@ namespace workphone::scene::race
                     cityEntranceWayfinding::build( assets, entranceSigns );
                     cityRoundaboutSigns::build( assets, fitted, terrainStreetLamps, quality );
                     cityRoadEdges::buildGutters( assets, fitted, roadSurface, layers.roadMaterial );
+                    cityKerbCoping::build( assets, fitted, roadSurface, walks.curb, seed );
+                    cityRoadLaneWear::build( assets, fitted, layers, seed, quality );
                     buildTerrainCityVergeTransitions( assets, fitted, seed, quality, roadSurface );
                     parkLayouts = cityParkLandscape::build( assets, city, fitted, walks.mesh, roadSurface,
                                                            pavingMaterial, seed, surfaceParams.size, quality );

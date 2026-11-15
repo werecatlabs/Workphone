@@ -1,5 +1,62 @@
 # WPProcedural implementation status
 
+## Generated city building streaming — 15 November 2026
+
+Generated city patches use detailed building meshes, simplified masses and
+roofs, then baked cutout imposters. Each imposter uses two side views and one
+overhead view of that patch's actual simplified geometry. The lowest tier
+stays resident while detail payloads retire and reload through the shared
+streaming scheduler. Custom building geometry without a faithful distant
+representation stays detailed. Generated actors keep their existing parents.
+
+The component saves streaming enablement, a 300 m load radius, a 420 m retain
+radius, and a 768 MiB minimum for the shared SourceCpu ledger. The minimum only
+raises an existing limit. Constant scalar material channels use exact 1×1
+textures, reducing redundant texture storage. The sample and capture runner
+expose these settings and an explicit observer A→B→A streaming probe; see the
+[sample guide](../Samples/cpp/VehicleAdvanced/README.md#city-building-streaming).
+
+The native probe restored all 441 detail meshes in 15 patches after eviction,
+with exact decoded vertex/index fingerprints. Fifteen imposters remained ready.
+Native objects returned from 594 to 153 to 594, and nodes from 596 to 155 to 596.
+Actor, renderer and component state-machine identities were preserved, with zero
+native matrix error or visibility mismatches. Eviction released 46.61 MiB of
+accounted source memory and 2.63 MiB of GPU memory. All admission counters remained
+zero and the generation's 441 cache files were removed at teardown.
+
+Fresh captures caught a renderer lifecycle error and an independent visibility
+mask getter that hid reloaded geometry. The fixes preserve component state,
+retire native objects and parent-held nodes, and retain masks across rebinding.
+Fourteen focused CTest targets passed, including the added source-budget,
+configuration, native retirement and mask contracts. The final software-rendered
+hillside image shows the restored façades, roofs and shadows. See the
+[streaming review](../artifacts/procedural/city-building-streaming-20261115/visual-review.md).
+
+Startup still generates the whole city before caching. This increment pages
+building mesh payloads; actors, shared materials, terrain, roads and collision
+remain resident. Existing foliage paths retain their own lifetime. A writable
+generation cache is required. The shared ledger was higher after the first
+return than at the initial observation, so the probe does not establish a memory
+plateau. Sustained driving, wider FOV/zoom and large-city LOD transition review,
+multithreaded Editor cycling and physical-GPU validation remain open.
+
+## Road wear and sidewalk stonework — 15 November 2026
+
+Terrain-city sidewalks use metre-scaled concrete slabs with staggered long and
+short units, shallow joints and separate normal and roughness maps. The fitted
+sidewalk and collision geometry are unchanged. Road-facing kerbs gain a narrow
+stone top clipped to the accepted sidewalk triangles, including crossing ramps.
+Shared contour stations keep the side and top stone joints aligned.
+
+Dry wheel-path wear follows eligible spans of the editable road network and
+avoids crossings, paint, islands, kerbs and utility repairs. Asphalt has gentler
+broad colour variation while retaining scanned aggregate detail. These render
+finishes use two bounded batches and refresh with city regeneration. The first
+capture revealed terrain materials failing the old source-memory limit; native
+capture validation now also checks terrain material publication and zero rejected
+memory reservations. The matched final road review is recorded under
+`artifacts/procedural/city-road-sidewalk-20261115`.
+
 ## HDR city sky and daylight balance — 15 November 2026
 
 The generated city retains floating-point visible sky faces through the HDR
