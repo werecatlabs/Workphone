@@ -232,6 +232,64 @@ namespace workphone::scene
 
         constexpr u32 asphaltTiles = 4;
 
+        enum class PaintWear : u32 { Edge, Lane, Zebra, Wheel };
+        constexpr u32 paintBand = 64, paintProfiles = 4, paintWidth = 256;
+        constexpr float paintTileMetres = 1.24f;
+        constexpr float paintPadding = 4.f / paintBand;
+
+        float paintV( PaintWear wear, float across )
+        {
+            return ( u32( wear ) + paintPadding + across * ( 1.f - 2.f * paintPadding ) ) / paintProfiles;
+        }
+
+        procedural::TextureBuffer thermoplasticPaint( u32 seed )
+        {
+            procedural::TextureBuffer result( paintWidth, paintBand * paintProfiles );
+            const auto smooth = []( float value ) {
+                const float t = std::clamp( value, 0.f, 1.f );
+                return t * t * ( 3.f - 2.f * t );
+            };
+            const auto encoded = []( float linear ) {
+                return u8( std::lround( ( 1.055f * std::pow( std::clamp( linear, .01f, 1.f ), 1.f / 2.4f ) - .055f ) * 255.f ) );
+            };
+            for( u32 band = 0; band < paintProfiles; ++band )
+            {
+                const float wear[] = { .12f, .38f, .58f, 1.f };
+                const float traffic = wear[band];
+                const u32 key = seed ^ ( 0x476ccbadu + band * 0x770db2bu );
+                for( u32 y = 0; y < paintBand; ++y )
+                    for( u32 x = 0; x < paintWidth; ++x )
+                    {
+                        const float u = ( x + .5f ) / paintWidth;
+                        const float v = ( ( y + .5f ) / paintBand - paintPadding ) / ( 1.f - 2.f * paintPadding );
+                        const float grain = roadGrain( key, x, y, paintWidth );
+                        const float broad = roadVariation( key ^ 0xa1b1fu, u, std::clamp( v, 0.f, 1.f ), 9 );
+                        // Sub-centimetre pores group under wear without a correlated dark cloud.
+                        const float gx = u * 64.f, gy = std::clamp( v, 0.f, .9999f ) * 18.f;
+                        const u32 ix = u32( gx ), iy = u32( gy );
+                        const float shape = roadGrain( key ^ 0xb872u, ix, iy, 64 );
+                        const float dx = ( gx - ix - ( .34f + .32f * shape ) ) / ( .22f + .13f * shape );
+                        const float dy = ( gy - iy - ( .39f + .23f * roadGrain( key ^ 0xeb72u, ix, iy, 64 ) ) ) / .29f;
+                        const bool open = roadGrain( key ^ 0x8d741u, ix, iy, 64 ) < .075f + .18f * traffic;
+                        const float loss = open ? smooth( ( 1.05f - dx * dx - dy * dy + .18f * ( grain - .5f ) ) * 2.5f ) : 0.f;
+                        const u32 line = u32( u * 56.f );
+                        const u32 side = v > .5f ? 1u : 0u;
+                        const float rough = roadGrain( key ^ 0x93133u, line, side, 56 );
+                        const float nick = rough > .88f ? .018f * traffic : 0.f;
+                        const float setback = .003f + .007f * rough + nick;
+                        const float edge = smooth( ( std::min( v, 1.f - v ) - setback ) / .023f );
+                        const float base = .736f - .028f * traffic + .028f * ( broad - .5f ) + .049f * ( grain - .5f );
+                        const float alpha = edge * ( .997f - .88f * loss );
+                        auto *pixel = result.pixel( x, band * paintBand + y );
+                        pixel[0] = encoded( base );
+                        pixel[1] = encoded( base * .991f );
+                        pixel[2] = encoded( base * .963f );
+                        pixel[3] = u8( std::lround( alpha * 255.f ) );
+                    }
+            }
+            return result;
+        }
+
         void weatherScannedAsphalt( procedural::SurfaceBakeResult &surface )
         {
             // Preserve the scan's physical aggregate scale. Binder exposure varies
@@ -280,7 +338,20 @@ namespace workphone::scene
             const bool asphalt = kind == CityRoadTerrainTriangleKind::Road;
             const bool turf = kind == CityRoadTerrainTriangleKind::Island;
             const bool paint = kind == CityRoadTerrainTriangleKind::Marking;
-            if( !paint )
+            if( paint )
+            {
+                material->setDiffuse( ColourF::White );
+                material->setTexture( surfaceTexture( state, prefix, thermoplasticPaint( seed ), render::TextureMipFilter::Colour ), 0 );
+                material->setRoughness( .77f );
+                material->setMetalness( 0 );
+                material->setTransparent( true );
+                material->setBlendMode( 1 );
+                material->setDepthWrite( false );
+                material->setUVProjection( 0 );
+                material->setEditorUInt( "uvFilter", 3 );
+                material->setEditorFloat( "uvAniso", 8.f );
+                return;
+            }
             {
                 const auto family = asphalt ? CitySurface::Asphalt : turf ? CitySurface::Ground
                                                                          : CitySurface::Concrete;
@@ -306,7 +377,6 @@ namespace workphone::scene
             params.size = 256;
             auto surface = forge->bakeSurface( asphalt ? SurfaceTag::Asphalt
                                                : turf  ? SurfaceTag::Dirt
-                                               : paint ? SurfaceTag::Paint
                                                        : SurfaceTag::Concrete,
                                                params );
             const auto complete = []( const TextureBuffer &buffer ) {
@@ -360,18 +430,6 @@ namespace workphone::scene
                         orm[0] = u8( 245 + patch * 10 );
                         orm[1] = u8( 240 + aggregate * 15 );
                     }
-                    else if( paint )
-                    {
-                        // Mip-filtered opacity keeps the chipped paint readable at a distance.
-                        const float flecks = smoothNoise( x, y, 53 );
-                        const float field = .50f * flecks + .22f * grain + .16f * aggregate + .12f * patch;
-                        const float chips = std::clamp( ( field - .57f ) / .23f, 0.f, 1.f );
-                        const float linear = .70f + ( grain - .5f ) * .065f - .18f * chips;
-                        pixel[0] = srgb( linear );
-                        pixel[1] = srgb( linear * .99f );
-                        pixel[2] = srgb( linear * .95f );
-                        pixel[3] = u8( std::lround( 255.f * ( 1.f - .81f * chips ) ) );
-                    }
                     else
                     {
                         const float linear = .30f + ( height - .5f ) * .045f + ( grain - .5f ) * .012f;
@@ -382,29 +440,14 @@ namespace workphone::scene
                         orm[0] = u8( 246 + patch * 9 );
                         orm[1] = u8( 214 + aggregate * 16 );
                     }
-                    if( !paint ) pixel[3] = 255;
+                    pixel[3] = 255;
                     orm[2] = 0;
                     orm[3] = 255;
                 }
             }
-            if( paint )
-            {
-                material->setDiffuse( ColourF::White );
-                material->setTexture(
-                    surfaceTexture( state, prefix, surface.albedo, render::TextureMipFilter::Colour ),
-                    0 );
-                material->setRoughness( .78f );
-                material->setMetalness( 0 );
-                material->setTransparent( true );
-                material->setBlendMode( 1 );
-                material->setDepthWrite( false );
-            }
-            else
-            {
-                forge->heightToNormal( surface.height, surface.normal, asphalt ? .25f : .6f );
-                surfaceMaps( state, prefix, material, surface );
-                material->setNormalStrength( asphalt ? .2f : turf ? .3f : .22f );
-            }
+            forge->heightToNormal( surface.height, surface.normal, asphalt ? .25f : .6f );
+            surfaceMaps( state, prefix, material, surface );
+            material->setNormalStrength( asphalt ? .2f : turf ? .3f : .22f );
             material->setUVProjection( kind == CityRoadTerrainTriangleKind::Kerb ? 1 : 3 );
             material->setTriplanarScale( asphalt ? 1.f / 8.f : turf ? .25f : .5f );
             material->setEditorUInt( "uvFilter", 3 );
@@ -664,8 +707,9 @@ namespace workphone::scene
                 return size;
             };
             size_t quads = 0;
+            using PaintUv = std::array<Vector2F, 3>;
             const auto triangle = [&]( Vector3F a, Vector3F b, Vector3F c, bool draw = true,
-                                       bool optional = false ) -> double {
+                                       bool optional = false, const PaintUv *uv = nullptr ) -> double {
                 auto &visits = optional ? optionalVisits : projectionVisits;
                 const auto maximum = optional ? maximumOptionalVisits : maximumProjectionVisits;
                 for( const auto point : { a, b, c } )
@@ -676,9 +720,13 @@ namespace workphone::scene
                                     "Road marking coordinates exceed the supported projection range." );
                 }
                 PaintPolygon original{}, scratch{}, clipped{};
-                original[0] = { a.x, a.z, 0, 0 };
-                original[1] = { b.x, b.z, 1, 0 };
-                original[2] = { c.x, c.z, 1, 1 };
+                const PaintUv symbol = { Vector2F( 0, paintV( PaintWear::Lane, .20f ) ),
+                                         Vector2F( 1, paintV( PaintWear::Lane, .20f ) ),
+                                         Vector2F( 1, paintV( PaintWear::Lane, .80f ) ) };
+                const auto &mapping = uv ? *uv : symbol;
+                original[0] = { a.x, a.z, mapping[0].x, mapping[0].y };
+                original[1] = { b.x, b.z, mapping[1].x, mapping[1].y };
+                original[2] = { c.x, c.z, mapping[2].x, mapping[2].y };
                 if( std::abs( area( original[0], original[1], original[2] ) ) <= 1e-10 )
                 {
                     return 0;
@@ -796,24 +844,35 @@ namespace workphone::scene
                 }
                 return covered;
             };
-            const auto strip = [&]( Vector3F a, Vector3F b, Vector3F across, float width ) {
+            const auto paintQuad = [&]( const std::array<Vector3F, 4> &p, PaintWear wear, bool draw, bool optional ) {
+                const double dx = double( p[1].x ) - p[0].x, dz = double( p[1].z ) - p[0].z;
+                const double length = std::hypot( dx, dz );
+                const double phase = length > .0001 ? ( p[0].x * dx + p[0].z * dz ) / ( length * paintTileMetres ) : 0.;
+                const float u0 = float( phase - std::floor( phase ) );
+                const float u1 = u0 + float( length / paintTileMetres );
+                const float v0 = paintV( wear, 0 ), v1 = paintV( wear, 1 );
+                const PaintUv a{ Vector2F( u0, v0 ), Vector2F( u1, v0 ), Vector2F( u1, v1 ) };
+                const PaintUv b{ Vector2F( u0, v0 ), Vector2F( u1, v1 ), Vector2F( u0, v1 ) };
+                const double first = triangle( p[0], p[1], p[2], draw, optional, &a );
+                return first + triangle( p[0], p[2], p[3], draw, optional, &b );
+            };
+            const auto strip = [&]( Vector3F a, Vector3F b, Vector3F across, float width,
+                                    PaintWear wear = PaintWear::Edge ) {
                 requireRuntime( ++quads <= 32768, "Road marking work budget exceeded." );
                 const auto half = across * ( width * .5f );
-                Vector3F points[] = { a - half, b - half, b + half, a + half };
-                triangle( points[0], points[1], points[2] );
-                triangle( points[0], points[2], points[3] );
+                paintQuad( { a - half, b - half, b + half, a + half }, wear, true, false );
             };
             const auto rectangle = []( Vector3F centre, Vector3F along, Vector3F across, float length, float width ) {
                 const auto start = along * ( length * .5f ), side = across * ( width * .5f );
                 return std::array{ centre - start - side, centre + start - side,
                                    centre + start + side, centre - start + side };
             };
-            const auto projectRectangle = [&]( const std::array<Vector3F, 4> &p, bool draw ) {
+            const auto projectRectangle = [&]( const std::array<Vector3F, 4> &p, bool draw,
+                                               PaintWear wear = PaintWear::Lane ) {
                 const double expected = std::abs( double( cityRoadCrossings::crossXZ( p[1] - p[0], p[3] - p[0] ) ) );
-                const double first = triangle( p[0], p[1], p[2], draw, true );
-                const double last = triangle( p[0], p[2], p[3], draw, true );
+                const double covered = paintQuad( p, wear, draw, true );
                 return expected > .0001 &&
-                       std::abs( first + last - expected ) < std::max( .001, expected * .0006 );
+                       std::abs( covered - expected ) < std::max( .001, expected * .0006 );
             };
             const auto optionalPaint = [&]( const auto &draw ) {
                 const auto vertices = mesh.vertices.size(), indices = mesh.indices.size(), kinds = mesh.triangleKinds.size();
@@ -842,9 +901,13 @@ namespace workphone::scene
                     return !optionalPaint( [&] {
                         for( int i = 0; i < count; ++i )
                         {
-                            const auto centre = crossing.centre + crossing.across * ( ( i + .5f ) * step - available * .5f );
+                            const float lateral = ( i + .5f ) * step - available * .5f;
+                            const auto centre = crossing.centre + crossing.across * lateral;
+                            const float lane = std::abs( lateral ) / ( crossing.width * .5f );
+                            const bool wheelBand = std::min( std::abs( lane - .27f ), std::abs( lane - .74f ) ) < .14f;
+                            const auto wear = wheelBand ? PaintWear::Wheel : PaintWear::Zebra;
                             if( !projectRectangle( rectangle( centre, crossing.outward, crossing.across,
-                                        crossing.depth, std::min( .53f, .57f * step ) ), true ) ) return false;
+                                        crossing.depth, std::min( .53f, .57f * step ) ), true, wear ) ) return false;
                         }
                         return true;
                     } );
@@ -891,7 +954,7 @@ namespace workphone::scene
                             if( finish - begin < .01f ) return;
                             const auto p = a.position + ( b.position - a.position ) * ( ( begin - a.distance ) / length );
                             const auto q = a.position + ( b.position - a.position ) * ( ( finish - a.distance ) / length );
-                            strip( p, q, across, .12f );
+                            strip( p, q, across, .12f, PaintWear::Lane );
                         };
                         for( const auto &crossing : crossingCandidates )
                         {
@@ -915,8 +978,7 @@ namespace workphone::scene
                     const auto &na = terminal.outward[i - 1], &nb = terminal.outward[i];
                     const auto ai = a - na * .26f, ao = a - na * .14f,
                                bi = b - nb * .26f, bo = b - nb * .14f;
-                    triangle( ai, bi, bo );
-                    triangle( ai, bo, ao );
+                    paintQuad( { ai, bi, bo, ao }, PaintWear::Edge, true, false );
                 }
             }
             // The connector owns the mouth. Keep ordinary centre dashes out of
@@ -931,8 +993,7 @@ namespace workphone::scene
                         const auto &na = corner.outward[i - 1], &nb = corner.outward[i];
                         const auto ai = a - na * .26f, ao = a - na * .14f,
                                    bi = b - nb * .26f, bo = b - nb * .14f;
-                        triangle( ai, bi, bo );
-                        triangle( ai, bo, ao );
+                        paintQuad( { ai, bi, bo, ao }, PaintWear::Edge, true, false );
                     }
                 }
             }

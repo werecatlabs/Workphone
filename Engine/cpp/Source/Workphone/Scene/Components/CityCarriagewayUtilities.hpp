@@ -5,6 +5,7 @@
             struct Layers
             {
                 SmartPtr<IMesh> road, paint, island, kerb;
+                SmartPtr<render::IMaterial> roadMaterial;
             };
 
             Layers activeLayers( const SceneAssets &assets )
@@ -27,7 +28,12 @@
                         const auto resource = component ? component->getMeshResource() : nullptr;
                         if( !resource ) continue;
                         const auto actorName = actor->getName();
-                        if( actorName == "Authored road carriageway" ) result.road = resource->getMesh();
+                        if( actorName == "Authored road carriageway" )
+                        {
+                            result.road = resource->getMesh();
+                            if( const auto binding = actor->getComponent<scene::Material>() )
+                                result.roadMaterial = binding->getMaterial();
+                        }
                         else if( actorName == "Road markings" ) result.paint = resource->getMesh();
                         else if( actorName == "Roundabout island" ) result.island = resource->getMesh();
                         else if( actorName == "Roundabout kerb" ) result.kerb = resource->getMesh();

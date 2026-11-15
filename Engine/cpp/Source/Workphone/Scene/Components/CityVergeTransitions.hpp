@@ -194,8 +194,10 @@
             }
         }
 
+        template <class RoadSurface>
         void buildTerrainCityVergeTransitions( SceneAssets &assets, const CityRoadTerrainMesh &walks,
-                                               u32 seed, VehicleAppearanceQuality quality )
+                                               u32 seed, VehicleAppearanceQuality quality,
+                                               const RoadSurface &roadSurface )
         {
             using namespace cityVerge;
             const auto ground = assets.roadAuthoring->getTerrainSnapshot();
@@ -273,6 +275,12 @@
                     edges.push_back( { b.position, c.position, a.normal } );
             }
 
+            size_t overlapPoints = 0, overlapQuads = 0;
+            const auto clearOfCarriageway = [&]( Vector3F point ) {
+                if( !roadSurface.contains( point ) ) return true;
+                ++overlapPoints;
+                return false;
+            };
             const auto isClear = [&]( Vector3F point ) {
                 for( const auto &junction : source.roundabouts )
                 {
@@ -282,7 +290,7 @@
                     if( offset.lengthSquared() < radius * radius ) return false;
                 }
                 const auto found = cells.find( cellAt( point ) );
-                if( found == cells.end() ) return true;
+                if( found == cells.end() ) return clearOfCarriageway( point );
                 for( const auto index : found->second.roadSpans )
                 {
                     const auto &span = spans[index];
@@ -320,7 +328,8 @@
                     const float ca = crossXZ( a - c, point - c );
                     if( ( ab > 0 && bc > 0 && ca > 0 ) || ( ab < 0 && bc < 0 && ca < 0 ) ) return false;
                 }
-                return true;
+                // Ordinary junction fans and curves may extend beyond the source spans.
+                return clearOfCarriageway( point );
             };
 
             SourceBudgetMap<Cell, Vector3F> joinedNormals;
@@ -551,6 +560,12 @@
                             if( std::abs( crossXZ( q - p, r - p ) ) < .00001f ||
                                 crossXZ( q - p, r - p ) * crossXZ( r - p, s - p ) <= 0 ) break;
                             if( !supported( p ) || !supported( q ) || !supported( r ) || !supported( s ) ) break;
+                            if( roadSurface.overlaps( { p, q, r } ) ||
+                                roadSurface.overlaps( { p, r, s } ) )
+                            {
+                                ++overlapQuads;
+                                break;
+                            }
                             bool matchesTerrain = true;
                             for( auto middle : { ( p + q ) * .5f, ( r + s ) * .5f, ( p + r ) * .5f,
                                                  ( p + q + r ) / 3.f, ( p + r + s ) / 3.f } )
@@ -590,4 +605,7 @@
             };
             publishFringe( "Terrain city verge pavement fringe grass", fringe[0], { .334f, .378f, .192f, 1 } );
             publishFringe( "Terrain city verge pavement fringe dry tips", fringe[1], { .412f, .380f, .217f, 1 } );
+            WP_LOG( String( "Terrain city verge exact carriageway rejects: points=" ) +
+                    StringUtil::toString( overlapPoints ) + ", transition quads=" +
+                    StringUtil::toString( overlapQuads ) );
         }

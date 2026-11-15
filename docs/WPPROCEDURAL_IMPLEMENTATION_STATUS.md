@@ -1,5 +1,28 @@
 # WPProcedural implementation status
 
+## Crossing paint, bollards and gutters — 15 November 2026
+
+Road markings use strip-local UVs for fine thermoplastic grain and chipped
+edges. Edge lines wear more slowly than lane markings, and zebra stripes
+receive more wear where tyre tracks cross them. The markings retain their
+fitted geometry. Rounded bollards use beveled feet and caps, with a foil
+texture on the reflector sleeve.
+
+New asphalt infill meets the footway skirt at supported kerb gaps. It reuses
+the carriageway material and keeps the existing collision surfaces. The
+verge transition also checks the triangles of the active road publication,
+including corner patches at ordinary junctions. Street dressing is placed
+when the city is generated.
+
+The first close-up verified the new paint and bollards. The second pass
+closed the visible soil strip beside the grate and cleared both soil flecks
+in the matched raised junction. High-quality seed 42 fitted 12,252 gutter
+segments. The final utility, junction and frontage captures each passed native
+validation with 256 sidewalk collision probes. All seven focused Debug tests
+passed after rebuilding two retained test executables. See
+`artifacts/procedural/city-road-finish-20261115/visual-review.md` for the
+matched 4× software-rendered captures and test results.
+
 ## Street utilities and asphalt finish — 15 November 2026
 
 The scanned carriageway material keeps the aggregate at its physical scale

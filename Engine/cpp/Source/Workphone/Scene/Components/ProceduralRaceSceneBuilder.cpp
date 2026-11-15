@@ -3402,6 +3402,7 @@ namespace workphone::scene::race
 #include "CityCrossingLandings.hpp"
 #include "CityCrossingBollards.hpp"
 #include "CityCarriagewayUtilities.hpp"
+#include "CityRoadEdgeSurface.hpp"
 #include "CityStormDrains.hpp"
 #include "CityHinterland.hpp"
 
@@ -5081,7 +5082,12 @@ namespace workphone::scene::race
                 cityRoundaboutLandscape::build( assets, seed );
                 cityGroundContact::build( assets, buildingEntries, fitted, pavingMaterial, forge );
                 cityRoundaboutSigns::build( assets, fitted, terrainStreetLamps, quality );
-                buildTerrainCityVergeTransitions( assets, fitted, seed, quality );
+                {
+                    const auto layers = cityCarriagewayUtilities::activeLayers( assets );
+                    const cityRoadEdges::Surface roadSurface( layers.road );
+                    cityRoadEdges::buildGutters( assets, fitted, roadSurface, layers.roadMaterial );
+                    buildTerrainCityVergeTransitions( assets, fitted, seed, quality, roadSurface );
+                }
                 buildTerrainCityVerges( assets, fitted, seed, quality );
                 buildFoliageWorld( assets, seed, quality, &fitted );
             }

@@ -29,33 +29,108 @@
                        area.highest - area.lowest <= maximumRise;
             }
 
+            constexpr u32 bollardSides = 24;
+
+            Vector3F radialDirection( u32 side )
+            {
+                const float angle = 2.f * pi * ( side % bollardSides ) / bollardSides;
+                return { std::cos( angle ), 0, std::sin( angle ) };
+            }
+
+            struct BollardRing
+            {
+                float height, radius, normalY, v;
+            };
+
+            void appendBollardProfile( Geometry &geometry, Vector3F root,
+                                       std::initializer_list<BollardRing> profile )
+            {
+                constexpr u32 pitch = bollardSides + 1;
+                auto row = u32( geometry.positions.size() );
+                for( const auto &ring : profile )
+                {
+                    const float radialNormal = std::sqrt( 1.f - ring.normalY * ring.normalY );
+                    for( u32 side = 0; side <= bollardSides; ++side )
+                    {
+                        const auto radial = radialDirection( side );
+                        geometry.positions.push_back( root + radial * ring.radius + Vector3F( 0, ring.height, 0 ) );
+                        geometry.normals.push_back( radial * radialNormal + Vector3F( 0, ring.normalY, 0 ) );
+                        geometry.tangents.push_back( { -radial.z, 0, radial.x, -1 } );
+                        geometry.uv.push_back( { float( side ) / bollardSides, ring.v, 0 } );
+                    }
+                    if( &ring != profile.begin() )
+                        for( u32 side = 0; side < bollardSides; ++side )
+                        {
+                            const auto top = row + side, bottom = top - pitch;
+                            for( const u32 index : { bottom, top, top + 1, bottom, top + 1, bottom + 1 } )
+                                geometry.indices.push_back( index );
+                        }
+                    row += pitch;
+                }
+            }
+
             void bollard( Geometry &body, Geometry &reflector, Vector3F root, float height )
             {
-                constexpr u32 sides = 12;
-                constexpr float radius = .074f;
-                const auto point = [&]( u32 i, float r, float y ) {
-                    const float angle = 2.f * pi * i / sides;
-                    return root + Vector3F( std::cos( angle ) * r, y, std::sin( angle ) * r );
+                constexpr float shaft = .073f, sleeve = .074f, crown = .035f;
+                const float lower = height - .201f, upper = height - .072f;
+                appendBollardProfile( body, root, {
+                    { -.012f, .092f, 0, 0 }, { .027f, .092f, 0, 0 },
+                    { .036f, .090f, .62f, 0 }, { .049f, .077f, .55f, 0 },
+                    { .060f, shaft, 0, 0 }, { lower, shaft, 0, 0 }
+                } );
+                appendBollardProfile( reflector, root, {
+                    { lower, shaft, -.45f, 0 }, { lower + .004f, sleeve, 0, .03f },
+                    { upper - .004f, sleeve, 0, .97f }, { upper, shaft, .45f, 1 }
+                } );
+                appendBollardProfile( body, root, {
+                    { upper, shaft, 0, 0 }, { height - .044f, shaft, 0, 0 },
+                    { height - .031f, .070f, .46f, 0 }, { height - .012f, .055f, .66f, 0 },
+                    { height, crown, 1, 0 }
+                } );
+                const auto top = root + Vector3F( 0, height, 0 );
+                for( u32 side = 0; side < bollardSides; side += 2 )
+                    body.quad( top, top + radialDirection( side ) * crown,
+                               top + radialDirection( side + 1 ) * crown,
+                               top + radialDirection( side + 2 ) * crown, { 0, 1, 0 } );
+            }
+
+            SmartPtr<render::IMaterial> reflectorMaterial( SceneAssets &assets )
+            {
+                constexpr u32 width = 384, height = 96;
+                TextureBuffer colour( width, height ), normal( width, height );
+                const auto prism = []( float u, float v ) {
+                    const float columns = u * 72.f, rows = v * 20.f;
+                    const auto ridge = []( float x ) { return 1.f - 2.f * std::abs( x - std::floor( x ) - .5f ); };
+                    return std::min( { ridge( columns ), ridge( rows + columns * .5f ),
+                                       ridge( rows - columns * .5f ) } );
                 };
-                const auto strip = [&]( Geometry &geometry, u32 i, float bottom, float top, float r0, float r1 ) {
-                    const float angle = 2.f * pi * ( i + .5f ) / sides;
-                    const auto normal = Vector3F( std::cos( angle ) * ( top - bottom ), r0 - r1,
-                                                  std::sin( angle ) * ( top - bottom ) ).normaliseCopy();
-                    geometry.quad( point( i, r0, bottom ), point( i + 1, r0, bottom ),
-                                   point( i + 1, r1, top ), point( i, r1, top ), normal );
-                };
-                for( u32 i = 0; i < sides; ++i )
+                const auto byte = []( float value ) { return u8( std::clamp( value, 0.f, 255.f ) ); };
+                for( u32 y = 0; y < height; ++y )
                 {
-                    strip( body, i, -.012f, .039f, .092f, .092f );
-                    strip( body, i, .039f, .066f, .092f, radius );
-                    strip( body, i, .066f, height - .202f, radius, radius );
-                    strip( reflector, i, height - .202f, height - .071f, radius, radius );
-                    strip( body, i, height - .071f, height - .036f, radius, radius );
-                    strip( body, i, height - .036f, height, radius, .035f );
-                    if( i % 2 == 0 )
-                        body.quad( root + Vector3F( 0, height, 0 ), point( i, .035f, height ),
-                                   point( i + 1, .035f, height ), point( i + 2, .035f, height ), { 0, 1, 0 } );
+                    for( u32 x = 0; x < width; ++x )
+                    {
+                        const float u = ( x + .5f ) / width, v = ( y + .5f ) / height;
+                        const float seal = std::clamp( std::min( v, 1.f - v ) * 32.f, 0.f, 1.f );
+                        const float foil = 213.f + 15.f * seal + 13.f * prism( u, v );
+                        auto *albedo = colour.pixel( x, y );
+                        albedo[0] = byte( foil ); albedo[1] = byte( foil - 6.f );
+                        albedo[2] = byte( foil - 21.f ); albedo[3] = 255;
+                        const float du = ( prism( u + 1.f / width, v ) - prism( u - 1.f / width, v ) ) * .42f;
+                        const float dv = ( prism( u, v + 1.f / height ) - prism( u, v - 1.f / height ) ) * .42f;
+                        const auto n = Vector3F( -du, -dv, 1 ).normaliseCopy();
+                        auto *pixel = normal.pixel( x, y );
+                        pixel[0] = byte( 127.5f * ( 1.f + n.x ) ); pixel[1] = byte( 127.5f * ( 1.f + n.y ) );
+                        pixel[2] = byte( 127.5f * ( 1.f + n.z ) ); pixel[3] = 255;
+                    }
                 }
+                auto materialInstance = material( assets, ColourF::White, .39f );
+                materialInstance->setTexture( upload( assets, colour ), 0 );
+                materialInstance->setTexture( upload( assets, normal, render::TextureMipFilter::Normal ), 1 );
+                materialInstance->setUVProjection( 0 );
+                materialInstance->setNormalStrength( .28f );
+                materialInstance->setEditorUInt( "uvFilter", 3 );
+                materialInstance->setEditorFloat( "uvAniso", 8.f );
+                return materialInstance;
             }
 
             void build( SceneAssets &assets, const CityRoadTerrainMesh &footways,
@@ -181,10 +256,9 @@
                 if( !body.indices.empty() )
                 {
                     mesh( assets, "Terrain city crossing bollards", body,
-                          material( assets, { .237f, .257f, .254f, 1 }, .66f, .32f ) );
-                    auto collar = material( assets, { .90f, .83f, .64f, 1 }, .46f );
-                    collar->setEmissive( { .022f, .018f, .011f, 1 } );
-                    if( auto actor = mesh( assets, "Terrain city crossing bollard reflectors", reflector, collar ) )
+                          material( assets, { .237f, .257f, .254f, 1 }, .53f, .08f ) );
+                    if( auto actor = mesh( assets, "Terrain city crossing bollard reflectors", reflector,
+                                           reflectorMaterial( assets ) ) )
                         actor->getComponent<scene::MeshRenderer>()->setCastShadows( scene::Renderer::CastShadows::Off );
                 }
                 WP_LOG( String( "Terrain city crossing bollard pairs=" ) + StringUtil::toString( pairs[0] + pairs[1] ) +
