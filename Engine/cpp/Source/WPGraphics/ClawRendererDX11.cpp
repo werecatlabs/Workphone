@@ -1682,28 +1682,38 @@ namespace workphone::render
         }
 
         auto ownedTextures = sky->getTextures();
-        Material::CubicTextureSnapshot materialTextures;
-        if( ownedTextures.empty() )
+        auto *dx11 = wp_renderer_get_dx11( m_renderer );
+        const auto material = sky->getMaterial();
+        bool requestDisplayFallback = false;
+        if( material && !ownedTextures.empty() && dx11 && !wp_renderer_dx11_is_radiance_scene_active( dx11 ) )
         {
-            if( auto material = sky->getMaterial() )
+            constexpr char suffix[] = "/sky-display-fallback";
+            constexpr size_t suffixLength = sizeof( suffix ) - 1;
+            const auto name = material->getName();
+            requestDisplayFallback = name.size() >= suffixLength &&
+                name.compare( name.size() - suffixLength, suffixLength, suffix ) == 0;
+        }
+        Array<SmartPtr<ITexture>> materialFaces;
+        Material::CubicTextureSnapshot materialTextures;
+        if( material && ( ownedTextures.empty() || requestDisplayFallback ) )
+        {
+            if( auto concrete = dynamic_pointer_cast<Material>( material ) )
             {
-                if( auto concrete = dynamic_pointer_cast<Material>( material ) )
-                {
-                    materialTextures = concrete->getCubicTextureSnapshot();
-                }
-                else
-                {
-                    ownedTextures = material->getCubicTextures();
-                }
+                materialTextures = concrete->getCubicTextureSnapshot();
+            }
+            else
+            {
+                materialFaces = material->getCubicTextures();
             }
         }
-        const auto &textures = materialTextures ? *materialTextures : ownedTextures;
+        const auto &cubicTextures = materialTextures ? *materialTextures : materialFaces;
+        const auto &textures = ownedTextures.empty() ? cubicTextures : ownedTextures;
         if( textures.empty() )
         {
             return;
         }
 
-        if( auto dx11 = wp_renderer_get_dx11( m_renderer ) )
+        if( dx11 )
         {
             std::array<ID3D11ShaderResourceView *, 6> views{};
             for( size_t face = 0; face < std::min( textures.size(), views.size() ); ++face )
@@ -1739,6 +1749,20 @@ namespace workphone::render
                 static_cast<ID3D11Device *>( wp_renderer_dx11_get_device( dx11 ) ),
                 static_cast<ID3D11DeviceContext *>( wp_renderer_dx11_get_context( dx11 ) ), views );
             cache.active = m_hasSkyEnvironment ? &entry.cubemap : nullptr;
+        }
+
+        // The display-space sky is optional and atomic. Reflection filtering
+        // continues to use the primary faces whichever output draws the sky.
+        std::array<void *, 6> displayViews{};
+        bool useDisplayFallback = false;
+        if( requestDisplayFallback && cubicTextures.size() == displayViews.size() )
+        {
+            for( size_t face = 0; face < displayViews.size(); ++face )
+            {
+                if( cubicTextures[face] ) cubicTextures[face]->getTextureFinal( &displayViews[face] );
+            }
+            useDisplayFallback = std::all_of( displayViews.begin(), displayViews.end(),
+                                             []( const auto *view ) { return view != nullptr; } );
         }
 
         const auto farClip = std::max( camera->getFarClipDistance(), 10.0f );
@@ -1785,13 +1809,9 @@ namespace workphone::render
 
         for( u32 face = 0; face < 6; ++face )
         {
-            if( face >= textures.size() || !textures[face] )
-            {
-                continue;
-            }
-
             void *nativeTexture = nullptr;
-            textures[face]->getTextureFinal( &nativeTexture );
+            if( useDisplayFallback ) nativeTexture = displayViews[face];
+            else if( face < textures.size() && textures[face] ) textures[face]->getTextureFinal( &nativeTexture );
             if( !nativeTexture )
             {
                 continue;

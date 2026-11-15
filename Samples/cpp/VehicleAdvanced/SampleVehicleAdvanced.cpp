@@ -2697,7 +2697,31 @@ namespace workphone
                                  << ",\"skyFaceSize\":[" << faceSize.x << ',' << faceSize.y << ']'
                                  << ",\"fogMode\":" << static_cast<int>( wp_graphics_scene_get_fog_mode( native ) )
                                  << ",\"fogDensity\":" << wp_graphics_scene_get_fog_density( native )
-                                 << ",\"fogColour\":[" << fog.r << ',' << fog.g << ',' << fog.b << "]}";
+                                 << ",\"fogColour\":[" << fog.r << ',' << fog.g << ',' << fog.b << ']';
+#if defined( _WIN32 )
+                        bool finiteSky = faces.size() == 6;
+                        float peakSky = 0.f;
+                        evidence << ",\"skyRadiance\":[";
+                        for( size_t face = 0; face < faces.size(); ++face )
+                        {
+                            if( face ) evidence << ',';
+                            void *view = nullptr;
+                            if( faces[face] ) faces[face]->getTextureFinal( &view );
+                            bool valid = false;
+                            float peak = 0.f;
+                            evidence << advanced::captureRadianceEvidence( view, valid, false, &peak );
+                            finiteSky &= valid;
+                            peakSky = std::max( peakSky, peak );
+                        }
+                        const bool skyValid = finiteSky && peakSky > 1.f;
+                        cityValid &= skyValid;
+                        evidence << "],\"skyRadianceValid\":" << ( skyValid ? "true" : "false" );
+                        auto displayMaterial = m_assets.sky->getMaterial();
+                        const auto displayFaces = displayMaterial ? displayMaterial->getCubicTextures() : Array<SmartPtr<render::ITexture>>{};
+                        evidence << ",\"skyDisplayFallbackFaces\":" << displayFaces.size();
+                        if( !skyValid ) WP_LOG_ERROR( "VehicleAdvanced: city sky faces did not retain finite HDR radiance." );
+#endif
+                        evidence << '}';
                     }
                     if( !sunlightValid ) WP_LOG_ERROR( "VehicleAdvanced: primary sunlight does not match the generated sky." );
                 }

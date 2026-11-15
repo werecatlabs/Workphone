@@ -1,5 +1,32 @@
 # WPProcedural implementation status
 
+## HDR city sky and daylight balance — 15 November 2026
+
+The generated city retains floating-point visible sky faces through the HDR
+renderer. The visible sky and outdoor reflections sample the same directional
+radiance. The prior byte sky compressed cloud highlights before the filmic
+resolve. Display-space viewports retain byte faces through an explicitly named
+sky material fallback, including targets using render scaling. Reflection
+filtering continues to use the primary HDR faces in either output mode.
+
+The cloud field uses irregular clusters with shaded bodies, lit edges and a
+lighter upper veil. The first native capture exposed rows of smaller clouds
+near the horizon. The next shape pass opens the gaps between clusters and
+softens distant bodies and edge detail. Sun power and cool sky fill are raised
+at the existing morning angle, with slightly less distance haze. Exposure
+stays fixed at 1.0 in the matched sample captures.
+
+`SampleVehicleAdvanced` reads all six native sky faces back as RGBA32F and
+records finite values, peak radiance and texels above one. The added six
+512 × 512 float faces account for 24 MiB of source pixels and 24 MiB of base
+GPU texture storage. All 11 focused city tests and the expanded DX11 output
+test passed. The standalone sky probe confirmed deterministic output and 6,172
+matching cube-boundary samples for each of two seeds. Five fresh native captures
+include the final matched hillside and shopfront pair at 1280 × 720 on the
+software renderer. See
+`artifacts/procedural/city-atmosphere-20261115/visual-review.md` for comparisons
+and validation scope.
+
 ## Pitched roof cladding and rainwater details — 15 November 2026
 
 Built-in gable and hip roofs carry metre-scaled slate or clay albedo, normal

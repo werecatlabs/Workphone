@@ -373,7 +373,7 @@ namespace workphone::scene::race
             auto texture = dynamic_pointer_cast<render::ITexture>( manager->create( name ) );
             if( !texture )
             {
-                throw std::runtime_error( "Cannot create HDR reflection texture" );
+                throw std::runtime_error( "Cannot create HDR radiance texture" );
             }
             try
             {
@@ -381,7 +381,7 @@ namespace workphone::scene::race
                 if( !texture->copyLinearFloatData( rgba, size, error ) )
                 {
                     throw std::runtime_error(
-                        ( String( "Cannot stage HDR reflection face: " ) + error ).c_str() );
+                        ( String( "Cannot stage HDR radiance face: " ) + error ).c_str() );
                 }
                 assets.textures.push_back( texture );
                 assets.textureBytes += rgba.size() * sizeof( f32 );
@@ -5588,6 +5588,7 @@ namespace workphone::scene::race
             auto graphicsScene = app->getGraphicsSystem()->getGraphicsScene();
 
             auto faces = makeSourceBudgetSnapshot<SmartPtr<render::ITexture>>();
+            auto displayFaces = makeSourceBudgetSnapshot<SmartPtr<render::ITexture>>();
             auto reflectionFaces = makeSourceBudgetSnapshot<SmartPtr<render::ITexture>>();
             const auto probePosition = vehicle->getPosition() + Vector3F( 0, 2, 0 );
             const Vector3F corners[8] = { { -1, -1, -1 }, { 1, -1, -1 }, { 1, 1, -1 }, { -1, 1, -1 },
@@ -5603,6 +5604,8 @@ namespace workphone::scene::race
             for( int face = 0; face < 6; ++face )
             {
                 TextureBuffer texture( visibleSize, visibleSize );
+                auto visibleRadiance = makeSourceBudgetSnapshot<f32>();
+                if( assets.openCity ) visibleRadiance.resize( size_t( visibleSize ) * visibleSize * 4, 0.f );
                 auto reflectionFace = makeSourceBudgetSnapshot<f32>();
                 reflectionFace.resize( reflectionSize * reflectionSize * 4, 0.f );
                 for( u32 y = 0; y < texture.height; ++y )
@@ -5637,7 +5640,8 @@ namespace workphone::scene::race
                             c.b = .58f + .24f * haze + c.b * .15f + glow * .4f;
                         }
                         // Keep the solar core as radiance in the reflection source.
-                        // Only the visible sky maps its display value to an 8-bit texture.
+                        // HDR views retain the same radiance as the reflection source.
+                        // The byte face is retained for legacy display-space viewports.
                         const float solarCore = std::pow( sunAlignment, 2048.f ) * sunTransmission;
                         c.r += solarCore * 16.f;
                         c.g += solarCore * 14.f;
@@ -5672,6 +5676,8 @@ namespace workphone::scene::race
                         for( size_t channel = 0; channel < 3; ++channel )
                         {
                             float value = channel == 0 ? c.r : channel == 1 ? c.g : c.b;
+                            if( assets.openCity )
+                                visibleRadiance[( size_t( y ) * visibleSize + x ) * 4 + channel] = std::max( value, 0.f );
                             pixel[channel] = assets.openCity ? cityDaylight::encodeDisplay( value ) :
                                 u8( std::clamp( std::pow( std::max( value, 0.f ), 1.f / 2.2f ) * 255.f, 0.f, 255.f ) );
                             const float reflectedValue = channel == 0   ? reflectionColour.r
@@ -5680,17 +5686,32 @@ namespace workphone::scene::race
                             reflectedPixel[channel] += std::max( reflectedValue, 0.f ) * reflectionWeight;
                         }
                         pixel[3] = 255;
+                        if( assets.openCity ) visibleRadiance[( size_t( y ) * visibleSize + x ) * 4 + 3] = 1.f;
                         reflectedPixel[3] = 1;
                     }
                 }
                 auto skyTexture = upload( assets, texture );
-                faces.push_back( skyTexture );
+                if( assets.openCity )
+                {
+                    displayFaces.push_back( skyTexture );
+                    faces.push_back( uploadLinearRadiance( assets, visibleRadiance, { int( visibleSize ), int( visibleSize ) } ) );
+                }
+                else faces.push_back( skyTexture );
                 reflectionFaces.push_back(
                     uploadLinearRadiance( assets, reflectionFace, { reflectionSize, reflectionSize } ) );
             }
             auto skyObject = graphicsScene->addGraphicsObjectByType<render::ISky>();
             assets.sky = skyObject;
             skyObject->setTextures( faces );
+            if( assets.openCity )
+            {
+                // The existing material cube slot supplies display faces for direct
+                // legacy viewports. HDR draws and environment sampling use owned faces.
+                auto displaySky = material( assets, ColourF::White, 1.f );
+                displaySky->setCubicTextures( displayFaces );
+                displaySky->setName( assets.resourcePrefix + "/sky-display-fallback" );
+                skyObject->setMaterial( displaySky );
+            }
             skyObject->setDistance( 500 );
             skyObject->setVisible( true );
 
@@ -5748,12 +5769,12 @@ namespace workphone::scene::race
                     "materials." );
             }
 
-            graphicsScene->setAmbientLight( assets.openCity ? ColourF( .74f, .83f, .94f, 1 )
+            graphicsScene->setAmbientLight( assets.openCity ? ColourF( 1.16f, 1.29f, 1.43f, 1 )
                                                             : ColourF( .28f, .32f, .38f, 1 ) );
             if( assets.openCity )
             {
                 graphicsScene->setFog( render::IGraphicsScene::FOG_EXP2,
-                    ColourF( citySkyHorizon.x, citySkyHorizon.y, citySkyHorizon.z, 1 ), .00172f, 0, 950 );
+                    ColourF( citySkyHorizon.x, citySkyHorizon.y, citySkyHorizon.z, 1 ), .00145f, 0, 950 );
             }
             else
             {
@@ -5778,7 +5799,7 @@ namespace workphone::scene::race
             sun->setType( LightTypes::LT_DIRECTIONAL );
             sun->setDirection( -result.sunDir );
             sun->setDiffuseColour( assets.openCity ? ColourF( 1, .955f, .885f, 1 ) : ColourF( 1, .96f, .88f, 1 ) );
-            sun->setPowerScale( assets.openCity ? 4.72f : 1.8f );
+            sun->setPowerScale( assets.openCity ? 6.6f : 1.8f );
             sun->setCastShadows( true );
             sun->setVisible( true );
         }

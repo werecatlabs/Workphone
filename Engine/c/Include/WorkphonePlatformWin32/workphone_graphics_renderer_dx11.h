@@ -78,6 +78,9 @@ wp_u32 wp_renderer_dx11_supported_scene_samples( wp_renderer_dx11 *renderer );
 void *wp_renderer_dx11_get_scene_depth_texture( wp_renderer_dx11 *renderer );
 void wp_renderer_dx11_end_hdr_scene( wp_renderer_dx11 *renderer );
 wp_s32 wp_renderer_dx11_is_hdr_scene_active( const wp_renderer_dx11 *renderer );
+/* True when the active scene stores extended radiance, including gamma-space HDR.
+ * An intermediate scene used only for scaling or antialiasing may return false. */
+wp_s32 wp_renderer_dx11_is_radiance_scene_active( const wp_renderer_dx11 *renderer );
 void *wp_renderer_dx11_get_hdr_scene_view( const wp_renderer_dx11 *renderer );
 /* Lifetime successful GPU resolves; independent of resettable frame statistics. */
 wp_u64 wp_renderer_dx11_get_hdr_completed_frames( const wp_renderer_dx11 *renderer );
