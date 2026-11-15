@@ -45,7 +45,7 @@
                         const float sediment = mineral::noise( u, v, 17, key + 719 );
                         const float sand = mineral::noise( u, v, 67, key + 3121 );
                         const float pit = std::clamp( ( sand - .71f ) * 3.8f, 0.f, 1.f );
-                        const float luminance = 178.f + 10.f * ( mottling - .5f ) + 9.f * ( sediment - .5f ) +
+                        const float luminance = 181.f + 10.f * ( mottling - .5f ) + 9.f * ( sediment - .5f ) +
                                                 13.f * ( sand - .5f ) - 13.f * pit;
                         const float warm = 2.f + 3.5f * sediment;
                         auto pixel = colour.pixel( x, y );
@@ -92,7 +92,7 @@
                 };
                 auto metal = material( assets, { .32f, .305f, .28f, 1 }, .54f, .33f );
                 metal->setSpecular( { .055f, .051f, .046f, 1 } );
-                return { stone( { .92f, .91f, .90f, 1 }, .83f, .53f, 1.f ),
+                return { stone( { .964f, .945f, .90f, 1 }, .83f, .53f, 1.f ),
                          stone( { 1.f, .988f, .963f, 1 }, 1.12f, .31f, .96f ), metal };
             }
         }  // namespace cityFacadeDetail

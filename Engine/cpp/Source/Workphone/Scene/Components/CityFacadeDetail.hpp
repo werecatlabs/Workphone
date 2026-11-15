@@ -18,9 +18,9 @@
             void moulding( Geometry &geometry, const Point &point, Vector3F normal, Vector3F along,
                            float left, float right, float bottom, float height, float projection )
             {
-                const std::array<Vector2F, 4> section{ Vector2F( .004f, 0 ),
+                const std::array<Vector2F, 4> section{ Vector2F( -.002f, 0 ),
                     Vector2F( projection, .023f ), Vector2F( projection, height - .029f ),
-                    Vector2F( .016f, height ) };
+                    Vector2F( -.002f, height ) };
                 const auto vertex = [&]( float side, const Vector2F &v ) {
                     return point( side, bottom + v.y, -v.x );
                 };
@@ -37,13 +37,31 @@
             }
 
             template <class Point>
+            void pilaster( Geometry &geometry, const Point &point, Vector3F normal, Vector3F along,
+                           float centre, float low, float high )
+            {
+                const std::array<Vector2F, 4> section{ Vector2F( -.145f, -.002f ), Vector2F( -.120f, .077f ),
+                    Vector2F( .120f, .077f ), Vector2F( .145f, -.002f ) };
+                const auto vertex = [&]( const Vector2F &v, float y ) { return point( centre + v.x, y, -v.y ); };
+                for( size_t i = 1; i < section.size(); ++i )
+                {
+                    const auto &a = section[i - 1], &b = section[i];
+                    const auto face = ( normal * ( b.x - a.x ) - along * ( b.y - a.y ) ).normaliseCopy();
+                    geometry.quad( vertex( a, low ), vertex( b, low ), vertex( b, high ), vertex( a, high ), face );
+                }
+                for( const float y : { low, high } )
+                    geometry.quad( vertex( section[0], y ), vertex( section[1], y ), vertex( section[2], y ),
+                                   vertex( section[3], y ), Vector3F( 0, y == low ? -1.f : 1.f, 0 ) );
+            }
+
+            template <class Point>
             void officeStorey( GeometryBatches &geometry, Counts &counts, const Point &point,
                                Vector3F normal, Vector3F along, float span, int bays, float y0,
                                float sill, float head, float y1, size_t &remaining )
             {
                 if( span < 4.f || sill - y0 < .42f || y1 - head < .37f || head - sill < 1.2f ) return;
                 const int panelCount = std::clamp( bays * 2, 2, 16 );
-                const size_t cost = size_t( 24 * ( 2 * panelCount + 2 + std::max( 0, bays - 1 ) ) + 40 );
+                const size_t cost = size_t( 24 * ( 2 * panelCount + std::max( 0, bays - 1 ) ) + 80 );
                 if( remaining < cost ) return;
                 remaining -= cost;
 
@@ -59,7 +77,7 @@
                     for( int panel = 0; panel < panelCount; ++panel )
                     {
                         const float x = ribbonLeft + step * ( panel + .5f );
-                        box( geometry.panels, x, ( low + high ) * .5f, .020f, step - .021f, high - low, .043f );
+                        box( geometry.panels, x, ( low + high ) * .5f, .020f, step - .025f, high - low, .043f );
                     }
                 };
                 panels( y0 + .042f, sill - .142f );
@@ -67,7 +85,7 @@
                 for( const float side : { -1.f, 1.f } )
                 {
                     const float x = side * ( span * .5f - .195f );
-                    box( geometry.panels, x, ( y0 + y1 ) * .5f, .038f, .29f, y1 - y0 - .082f, .079f );
+                    pilaster( geometry.panels, point, normal, along, x, y0 + .041f, y1 - .041f );
                 }
 
                 // The projecting lower nose and sloping top throw a small shadow

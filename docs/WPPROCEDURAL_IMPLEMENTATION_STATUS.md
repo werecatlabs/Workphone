@@ -1,5 +1,27 @@
 # WPProcedural implementation status
 
+## Office masonry and entrance handrails — 15 November 2026
+
+Built-in office elevations use fitted stone panel courses, bevelled piers,
+projecting sills, head profiles and capped mullions on upper storeys. The
+details derive from the building's existing window ribbons and bay layout.
+The stone and trim share a periodic albedo, normal and roughness set. Custom
+wall, window and corner modules take precedence.
+
+Supported raised entrances can receive paired round handrails fitted from
+the solved treads and landing. The posts attach to the stair cheeks or sit
+on supported ground, and the rails return beside the tread edges. The
+hardware is render geometry. Step and path collision use the fitted stair
+and path meshes.
+
+The first matched façade capture showed the stone reading very close to the
+existing concrete in shade. The next pass warmed the stone, opened the
+panel joints slightly and bevelled the pier edges. Seed 42 produced masonry
+on five office parcels and paired rails on 13 stairs. All nine masonry
+render batches were native-ready and all 11 focused Debug tests passed. See
+`artifacts/procedural/city-masonry-detail-20261115/visual-review.md` for the
+façade, shopfront and entrance-route captures.
+
 ## Commercial display rooms and street trees — 15 November 2026
 
 Built-in commercial windows can open into recessed display rooms with
