@@ -32,6 +32,7 @@
 #include <Workphone/Graphics/GeneratedTextureSource.hpp>
 #include <Workphone/System/SourceBudgetContainers.hpp>
 #include "CityBuildingKit.hpp"
+#include "CityRoadCrossings.hpp"
 #include "../RuntimeSceneMembership.hpp"
 
 #include <algorithm>
@@ -3385,7 +3386,9 @@ namespace workphone::scene::race
         }
 
 #include "CityBuildingGroundContact.hpp"
+#include "CityRoundaboutSigns.hpp"
 #include "CityFootwayAppearance.hpp"
+#include "CityCrossingLandings.hpp"
 #include "CityHinterland.hpp"
 
         void buildCity( SceneAssets &assets, SmartPtr<IGameActor> sourceOwner,
@@ -5007,10 +5010,17 @@ namespace workphone::scene::race
             {
                 CityRoadTerrainMesh fitted;
                 String error;
-                if( !buildCityRoadFootways(
-                        assets.roadAuthoring->getSource(), assets.roadAuthoring->getBake(),
-                        assets.roadAuthoring->getTerrainSnapshot(),
-                        assets.roadAuthoring->getTerrainPlacement(), fitted, error ) )
+                const auto terrain = assets.roadAuthoring->getTerrainSnapshot();
+                const auto roadFootways = assets.roadAuthoring->getRuntimeFootways();
+                const bool sharedFootways = roadFootways && terrain &&
+                    roadFootways->sourceRevision == assets.roadAuthoring->getActiveRevision() &&
+                    roadFootways->terrainRevision == terrain->revision;
+                if( sharedFootways )
+                {
+                    fitted = *roadFootways;
+                }
+                else if( !buildCityRoadFootways( assets.roadAuthoring->getSource(), assets.roadAuthoring->getBake(),
+                                                terrain, assets.roadAuthoring->getTerrainPlacement(), fitted, error ) )
                 {
                     throw std::runtime_error( error.c_str() );
                 }
@@ -5045,9 +5055,11 @@ namespace workphone::scene::race
                         throw std::runtime_error( "Cannot create terrain-city footway rigidbody." );
                     }
                 }
+                if( sharedFootways ) cityCrossingLandings::build( assets, fitted );
                 buildTerrainCityStreetDressing( assets, fitted, terrainStreetLamps, quality );
                 cityRoundaboutLandscape::build( assets, seed );
                 cityGroundContact::build( assets, buildingEntries, fitted, pavingMaterial, forge );
+                cityRoundaboutSigns::build( assets, fitted, terrainStreetLamps, quality );
                 buildTerrainCityVergeTransitions( assets, fitted, seed, quality );
                 buildTerrainCityVerges( assets, fitted, seed, quality );
                 buildFoliageWorld( assets, seed, quality, &fitted );

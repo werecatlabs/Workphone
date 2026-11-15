@@ -12,6 +12,7 @@ namespace workphone::scene
     class TerrainSystem;
     struct CityRoadRuntimeState;
     struct CityRoadTerrainGradeData;
+    struct CityRoadTerrainMesh;
     using CityRoadTerrainGrading = std::shared_ptr<const CityRoadTerrainGradeData>;
 
     /** Scene-owned road source. All editing/publication runs on the owner thread.
@@ -80,6 +81,7 @@ namespace workphone::scene
                              const Transform3<real_Num> &placement, String &error );
         void clearRuntime();
         size_t getRuntimeTriangleCount() const;
+        std::shared_ptr<const CityRoadTerrainMesh> getRuntimeFootways() const;
         bool getRuntimeSurface( f32 x, f32 z, f32 &height, bool &driveable ) const;
         WP_CLASS_REGISTER_DECL;
 

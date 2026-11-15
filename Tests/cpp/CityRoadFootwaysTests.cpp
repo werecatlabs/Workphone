@@ -3,6 +3,7 @@
 #include <Workphone/Interface/Procedural/OpenCityLayout.hpp>
 #include <Workphone/Interface/Procedural/OpenCityRoadSource.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
+#include "../../Engine/cpp/Source/Workphone/Scene/Components/CityRoadCrossings.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -182,6 +183,27 @@ namespace
         CityRoadTerrainMesh road, mesh; String error;
         check( buildCityRoadTerrainMesh( s, bake, data, {}, road, error ), error );
         check( buildCityRoadFootways( s, bake, data, {}, mesh, error ), error ); agreement( mesh, data );
+        const auto crossings = cityRoadCrossings::collect( s, {}, mesh );
+        require( crossings.size() == 4, "Expected a supported crossing on every roundabout arm." );
+        for( const auto &crossing : crossings )
+        {
+            const auto start = crossing.centre - crossing.outward * ( crossing.depth * .5f );
+            require( crossing.roundabout && start.dotProduct( crossing.outward ) > junction.outerRadius + 8.f,
+                     "A crossing overlaps the roundabout's splitter refuge." );
+        }
+        auto southWalks = mesh;
+        southWalks.indices.clear();
+        southWalks.triangleKinds.clear();
+        for( size_t i = 0; i + 2 < mesh.indices.size(); i += 3 )
+        {
+            const auto a = mesh.indices[i], b = mesh.indices[i + 1], c = mesh.indices[i + 2];
+            if( mesh.vertices[a].position.z + mesh.vertices[b].position.z + mesh.vertices[c].position.z >= 0 ) continue;
+            for( const auto index : { a, b, c } ) southWalks.indices.push_back( index );
+            southWalks.triangleKinds.push_back( mesh.triangleKinds[i / 3] );
+        }
+        const auto supported = cityRoadCrossings::collect( s, {}, southWalks );
+        require( supported.size() == 1 && supported.front().centre.z < 0,
+                 "A crossing survived after one or both landings were removed." );
         const double diagonal = 15.5 / std::sqrt( 2. );
         for( int x : { -1, 1 } ) for( int z : { -1, 1 } ) require( topAt( mesh, diagonal * x, diagonal * z ), "Roundabout ring footway is absent between its four mouths" );
         for( const auto &direction : directions ) for( float radius : { 14.2f, 15.5f, 18.f, 25.f, 32.f } )

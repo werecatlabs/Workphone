@@ -2,6 +2,8 @@
 #include <Workphone/Scene/Components/CityRoadAuthoring.hpp>
 #include <Workphone/Scene/Components/CityRoadTerrainMesh.hpp>
 #include <Workphone/Scene/Components/CityRoadJunctions.hpp>
+#include <Workphone/Scene/Components/CityRoadFootways.hpp>
+#include "CityRoadCrossings.hpp"
 #include "CityRoadTerminals.hpp"
 #include <Workphone/Scene/Components/CitySurfaceLibrary.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
@@ -47,6 +49,7 @@ namespace workphone::scene
     struct CityRoadRuntimeState : SourceBudgetObject
     {
         CityRoadTerrainMesh geometry;
+        std::shared_ptr<const CityRoadTerrainMesh> footways;
         SourceBudgetVector<SmartPtr<IGameActor>> actors;
         SourceBudgetVector<SmartPtr<IMeshResource>> meshes;
         SourceBudgetVector<SmartPtr<render::IMaterial>> materials;
@@ -458,10 +461,11 @@ namespace workphone::scene
             return resource;
         }
 
-        void roadMarkings( CityRoadTerrainMesh &mesh, const procedural::CityRoadSplineSource &source,
+        void roadMarkings( CityRoadRuntimeState &state, const procedural::CityRoadSplineSource &source,
                            const procedural::CityRoadSplineBake &bake, render::TerrainSnapshot terrain,
                            const Transform3<real_Num> &placement )
         {
+            auto &mesh = state.geometry;
             CityRoadJunctionBake connections;
             String connectionError;
             const auto sampler = [terrain, placement]( const Vector3F &p, float &height ) {
@@ -470,6 +474,26 @@ namespace workphone::scene
             if( !buildCityRoadJunctions( source, bake, sampler, {}, connections, connectionError ) )
             {
                 throw std::runtime_error( connectionError.c_str() );
+            }
+            SourceBudgetVector<cityRoadCrossings::Crossing> crossingCandidates;
+            if( !source.roundabouts.empty() || !connections.junctions.empty() )
+            {
+                try
+                {
+                    auto walks = std::shared_ptr<CityRoadTerrainMesh>( new CityRoadTerrainMesh );
+                    String walkError;
+                    if( buildCityRoadFootways( source, bake, terrain, placement, *walks, walkError ) )
+                    {
+                        state.footways = walks;
+                        crossingCandidates = cityRoadCrossings::collect( source, connections, *walks );
+                    }
+                }
+                catch( const std::exception & )
+                {
+                    // A sidewalk/crossing diagnostic must not invalidate an otherwise
+                    // admitted road edit; the city may fit sidewalks separately if needed.
+                    crossingCandidates.clear();
+                }
             }
             const auto terminals = buildCityRoadTerminals( source, bake, connections, *terrain, placement );
             SourceBudgetVector<std::array<bool, 2>> rounded( source.roads.size() );
@@ -532,6 +556,7 @@ namespace workphone::scene
 
             constexpr double cellSize = 8;
             constexpr u64 maximumEntries = 2000000, maximumProjectionVisits = 16000000;
+            constexpr u64 maximumOptionalVisits = 2500000;
             SourceBudgetVector<CellTriangle> cells;
             const auto bounds = [&]( size_t triangle, s32 &x0, s32 &z0, s32 &x1, s32 &z1 ) {
                 const auto a = mesh.vertices[mesh.indices[triangle * 3]].position;
@@ -589,7 +614,7 @@ namespace workphone::scene
             } );
             SourceBudgetVector<u32> visited( roadTriangleCount, 0 );
             u32 stamp = 0;
-            u64 projectionVisits = 0;
+            u64 projectionVisits = 0, optionalVisits = 0;
 
             struct PaintPoint
             {
@@ -637,7 +662,10 @@ namespace workphone::scene
                 return size;
             };
             size_t quads = 0;
-            const auto triangle = [&]( Vector3F a, Vector3F b, Vector3F c ) {
+            const auto triangle = [&]( Vector3F a, Vector3F b, Vector3F c, bool draw = true,
+                                       bool optional = false ) -> double {
+                auto &visits = optional ? optionalVisits : projectionVisits;
+                const auto maximum = optional ? maximumOptionalVisits : maximumProjectionVisits;
                 for( const auto point : { a, b, c } )
                 {
                     requireRuntime( std::isfinite( point.x ) && std::isfinite( point.z ) &&
@@ -651,21 +679,24 @@ namespace workphone::scene
                 original[2] = { c.x, c.z, 1, 1 };
                 if( std::abs( area( original[0], original[1], original[2] ) ) <= 1e-10 )
                 {
-                    return;
+                    return 0;
                 }
                 const auto x0 = s32( std::floor( std::min( { a.x, b.x, c.x } ) / cellSize ) );
                 const auto x1 = s32( std::floor( std::max( { a.x, b.x, c.x } ) / cellSize ) );
                 const auto z0 = s32( std::floor( std::min( { a.z, b.z, c.z } ) / cellSize ) );
                 const auto z1 = s32( std::floor( std::max( { a.z, b.z, c.z } ) / cellSize ) );
-                requireRuntime( u64( s64( x1 ) - x0 + 1 ) * u64( s64( z1 ) - z0 + 1 ) <=
-                                    maximumProjectionVisits - projectionVisits,
+                const u64 buckets = u64( s64( x1 ) - x0 + 1 ) * u64( s64( z1 ) - z0 + 1 );
+                if( optional && ( visits >= maximum || buckets > maximum - visits ) ) return 0;
+                requireRuntime( buckets <= maximum - visits,
                                 "Road marking projection work budget exceeded." );
                 ++stamp;
+                double covered = 0;
                 for( s32 x = x0; x <= x1; ++x )
                 {
                     for( s32 z = z0; z <= z1; ++z )
                     {
-                        requireRuntime( ++projectionVisits <= maximumProjectionVisits,
+                        if( optional && visits >= maximum ) return 0;
+                        requireRuntime( ++visits <= maximum,
                                         "Road marking projection work budget exceeded." );
                         auto cell = std::lower_bound(
                             cells.begin(), cells.end(), std::pair<s32, s32>( x, z ),
@@ -675,7 +706,8 @@ namespace workphone::scene
                             } );
                         for( ; cell != cells.end() && cell->x == x && cell->z == z; ++cell )
                         {
-                            requireRuntime( ++projectionVisits <= maximumProjectionVisits,
+                            if( optional && visits >= maximum ) return 0;
+                            requireRuntime( ++visits <= maximum,
                                             "Road marking projection work budget exceeded." );
                             const u32 road = cell->triangle;
                             if( visited[road] == stamp )
@@ -719,12 +751,16 @@ namespace workphone::scene
                             };
                             for( size_t i = 1; i + 1 < count; ++i )
                             {
-                                if( std::abs( area( scratch[0], scratch[i], scratch[i + 1] ) ) <= 1e-10 )
+                                const auto piece = std::abs( area( scratch[0], scratch[i], scratch[i + 1] ) );
+                                if( piece <= 1e-10 )
                                 {
                                     continue;
                                 }
+                                covered += piece * .5;
+                                if( !draw ) continue;
                                 if( mesh.vertices.size() + 3 > 1000000 )
                                 {
+                                    if( optional ) return 0;
                                     throw std::runtime_error(
                                         ( String( "Road marking vertex budget exceeded: base=" ) +
                                           StringUtil::toString( baseVertexCount ) + " added=" +
@@ -756,6 +792,7 @@ namespace workphone::scene
                         }
                     }
                 }
+                return covered;
             };
             const auto strip = [&]( Vector3F a, Vector3F b, Vector3F across, float width ) {
                 requireRuntime( ++quads <= 32768, "Road marking work budget exceeded." );
@@ -764,6 +801,55 @@ namespace workphone::scene
                 triangle( points[0], points[1], points[2] );
                 triangle( points[0], points[2], points[3] );
             };
+            const auto rectangle = []( Vector3F centre, Vector3F along, Vector3F across, float length, float width ) {
+                const auto start = along * ( length * .5f ), side = across * ( width * .5f );
+                return std::array{ centre - start - side, centre + start - side,
+                                   centre + start + side, centre - start + side };
+            };
+            const auto projectRectangle = [&]( const std::array<Vector3F, 4> &p, bool draw ) {
+                const double expected = std::abs( double( cityRoadCrossings::crossXZ( p[1] - p[0], p[3] - p[0] ) ) );
+                const double first = triangle( p[0], p[1], p[2], draw, true );
+                const double last = triangle( p[0], p[2], p[3], draw, true );
+                return expected > .0001 &&
+                       std::abs( first + last - expected ) < std::max( .001, expected * .0006 );
+            };
+            const auto optionalPaint = [&]( const auto &draw ) {
+                const auto vertices = mesh.vertices.size(), indices = mesh.indices.size(), kinds = mesh.triangleKinds.size();
+                try
+                {
+                    if( mesh.vertices.size() < 940000 && draw() ) return true;
+                }
+                catch( const std::bad_alloc & )
+                {
+                }
+                mesh.vertices.resize( vertices );
+                mesh.indices.resize( indices );
+                mesh.triangleKinds.resize( kinds );
+                return false;
+            };
+            // Fit the complete envelope before painting any of its stripes. A partial
+            // zebra across a hole or unsupported branch must leave no stray rectangles.
+            crossingCandidates.erase( std::remove_if( crossingCandidates.begin(), crossingCandidates.end(),
+                [&]( const cityRoadCrossings::Crossing &crossing ) {
+                    const float available = crossing.width - 1.f;
+                    const auto envelope = rectangle( crossing.centre, crossing.outward, crossing.across,
+                                                     crossing.depth, available );
+                    if( !projectRectangle( envelope, false ) ) return true;
+                    const auto count = std::clamp( int( std::round( available / .82f ) ), 5, 16 );
+                    const float step = available / count;
+                    return !optionalPaint( [&] {
+                        for( int i = 0; i < count; ++i )
+                        {
+                            const auto centre = crossing.centre + crossing.across * ( ( i + .5f ) * step - available * .5f );
+                            if( !projectRectangle( rectangle( centre, crossing.outward, crossing.across,
+                                        crossing.depth, std::min( .53f, .57f * step ) ), true ) ) return false;
+                        }
+                        return true;
+                    } );
+                } ), crossingCandidates.end() );
+            std::sort( crossingCandidates.begin(), crossingCandidates.end(), []( const auto &a, const auto &b ) {
+                return a.roadIndex == b.roadIndex ? a.firstStation < b.firstStation : a.roadIndex < b.roadIndex;
+            } );
             for( const auto &run : connections.roadRuns )
             {
                 const auto &recipe = source.roads[run.roadIndex];
@@ -797,17 +883,23 @@ namespace workphone::scene
                     const float length = b.distance - a.distance;
                     for( float dash = std::floor( a.distance / 6 ) * 6; dash < b.distance; dash += 6 )
                     {
-                        const float start = std::max( { dash, a.distance, firstDash } ),
-                                    end = std::min( { dash + 3, b.distance, lastDash } );
-                        if( end - start < .01f )
+                        float start = std::max( { dash, a.distance, firstDash } );
+                        const float end = std::min( { dash + 3, b.distance, lastDash } );
+                        const auto dashSegment = [&]( float begin, float finish ) {
+                            if( finish - begin < .01f ) return;
+                            const auto p = a.position + ( b.position - a.position ) * ( ( begin - a.distance ) / length );
+                            const auto q = a.position + ( b.position - a.position ) * ( ( finish - a.distance ) / length );
+                            strip( p, q, across, .12f );
+                        };
+                        for( const auto &crossing : crossingCandidates )
                         {
-                            continue;
+                            if( crossing.roadIndex > run.roadIndex ) break;
+                            if( crossing.roadIndex != run.roadIndex || crossing.lastStation + .32f <= start ||
+                                crossing.firstStation - .32f >= end ) continue;
+                            dashSegment( start, crossing.firstStation - .32f );
+                            start = std::max( start, crossing.lastStation + .32f );
                         }
-                        const auto p = a.position +
-                                       ( b.position - a.position ) * ( ( start - a.distance ) / length );
-                        const auto q =
-                            a.position + ( b.position - a.position ) * ( ( end - a.distance ) / length );
-                        strip( p, q, across, .12f );
+                        dashSegment( start, end );
                     }
                 }
             }
@@ -843,6 +935,7 @@ namespace workphone::scene
                 }
             }
             constexpr float pi = 3.14159265358979323846f;
+            u32 yieldApproaches = 0;
             for( const auto &junction : source.roundabouts )
             {
                 for( float radius : { junction.islandRadius + .45f, junction.outerRadius - .25f } )
@@ -879,6 +972,7 @@ namespace workphone::scene
                 for( const auto &port : junction.ports )
                 {
                     auto outward = port.outward;
+                    outward.y = 0;
                     outward.normalise();
                     const Vector3F across( outward.z, 0, -outward.x );
                     for( int side : { -1, 1 } )
@@ -890,16 +984,81 @@ namespace workphone::scene
                             across, .12f );
                     }
                     const float incoming = junction.clockwise ? 1.f : -1.f;
-                    for( float row : { 1.1f, 1.45f } )
+                    const auto nose = junction.center + outward * junction.outerRadius;
+                    const auto crossing = std::find_if( crossingCandidates.begin(), crossingCandidates.end(),
+                        [&]( const cityRoadCrossings::Crossing &candidate ) {
+                            const auto offset = candidate.centre - nose;
+                            return candidate.roundabout && candidate.outward.dotProduct( outward ) > .999f &&
+                                   std::abs( offset.dotProduct( across ) ) < .02f &&
+                                   offset.dotProduct( outward ) > 0 && offset.dotProduct( outward ) < port.length;
+                        } );
+                    const float crossingCentre = crossing == crossingCandidates.end() ? 0.f :
+                        ( crossing->centre - nose ).dotProduct( outward );
+                    const float laneWidth = port.width * .5f;
+                    if( laneWidth >= 2.2f && port.length >= 3.15f )
                     {
-                        for( int dash = -1; dash <= 1; ++dash )
-                        {
-                            const auto center = junction.center +
-                                                outward * ( junction.outerRadius + row ) +
-                                                across * ( incoming * port.width * .25f + dash * .68f );
-                            strip( center - across * .22f, center + across * .22f, outward, .16f );
-                        }
+                        // Keep the double broken line on the arriving carriageway. A generous
+                        // middle gap leaves the splitter and its projecting nose unpainted.
+                        const float span = laneWidth - .90f;
+                        const auto count = std::clamp( int( std::round( span / .71f ) ), 2, 7 );
+                        const float pitch = span / count;
+                        if( optionalPaint( [&] {
+                            for( const float row : { 1.04f, 1.45f } )
+                            {
+                                for( int dash = 0; dash < count; ++dash )
+                                {
+                                    const float lateral = .47f + ( dash + .5f ) * pitch;
+                                    const auto p = nose + outward * row + across * ( incoming * lateral );
+                                    if( !projectRectangle( rectangle( p, outward, across, .19f,
+                                                                    std::min( .52f, pitch * .72f ) ), true ) ) return false;
+                                }
+                            }
+                            return true;
+                        } ) ) ++yieldApproaches;
                     }
+                    if( laneWidth >= 2.75f && port.length >= 6.5f &&
+                        ( crossing == crossingCandidates.end() || crossingCentre - crossing->depth * .5f > 3.02f ) )
+                    {
+                        const auto lane = across * ( incoming * laneWidth * .5f );
+                        const auto a = nose + lane + outward * 1.88f - across * .56f;
+                        const auto b = nose + lane + outward * 1.88f + across * .56f;
+                        const auto tip = nose + lane + outward * 2.88f;
+                        const auto centre = ( a + b + tip ) / 3.f;
+                        const std::array outline{ a, b, tip };
+                        const auto inset = [&]( Vector3F p ) { return p + ( centre - p ) * .25f; };
+                        const auto stroke = [&]( Vector3F p, Vector3F q, Vector3F r ) {
+                            const auto expected = .5 * std::abs( cityRoadCrossings::crossXZ( q - p, r - p ) );
+                            return std::abs( triangle( p, q, r, true, true ) - expected ) < .001;
+                        };
+                        optionalPaint( [&] {
+                            for( size_t i = 0; i < outline.size(); ++i )
+                            {
+                                const auto p = outline[i], q = outline[( i + 1 ) % outline.size()];
+                                if( !stroke( p, q, inset( q ) ) || !stroke( p, inset( q ), inset( p ) ) ) return false;
+                            }
+                            return true;
+                        } );
+                    }
+
+                    const bool refuge = port.width >= 6.f && port.length >= 12.f;
+                    float start = refuge ? std::min( 8.f, port.length * .5f ) + .42f : 2.08f;
+                    const float end = port.length - .44f;
+                    const auto laneGuide = [&]( float first, float last ) {
+                        for( float station = first; station + .55f < last; station += 3.05f )
+                        {
+                            const float span = std::min( 1.70f, last - station );
+                            optionalPaint( [&] {
+                                return projectRectangle( rectangle( nose + outward * ( station + span * .5f ),
+                                                     outward, across, span, .12f ), true );
+                            } );
+                        }
+                    };
+                    if( crossing != crossingCandidates.end() )
+                    {
+                        laneGuide( start, crossingCentre - crossing->depth * .5f - .32f );
+                        start = std::max( start, crossingCentre + crossing->depth * .5f + .32f );
+                    }
+                    laneGuide( start, end );
                 }
                 const float radius = ( junction.outerRadius + junction.islandRadius ) * .5f;
                 for( int arrow = 0; arrow < 4; ++arrow )
@@ -913,6 +1072,14 @@ namespace workphone::scene
                              right = center - forward * .8f - radial * .4f;
                     triangle( tip, left, right );
                 }
+            }
+            if( !crossingCandidates.empty() || yieldApproaches )
+            {
+                const auto roundCrossings = std::count_if( crossingCandidates.begin(), crossingCandidates.end(),
+                    []( const auto &crossing ) { return crossing.roundabout; } );
+                WP_LOG( String( "City road projected paint roundaboutCrossings=" ) + StringUtil::toString( roundCrossings ) +
+                        " ordinaryCrossings=" + StringUtil::toString( crossingCandidates.size() - roundCrossings ) +
+                        " yieldApproaches=" + StringUtil::toString( yieldApproaches ) );
             }
         }
     }  // namespace
@@ -1041,7 +1208,7 @@ namespace workphone::scene
             {
                 return false;
             }
-            roadMarkings( candidate->geometry, source, bake, terrain, placement );
+            roadMarkings( *candidate, source, bake, terrain, placement );
             candidate->actors.reserve( 5 );
             candidate->meshes.reserve( 4 );
             candidate->materials.reserve( 4 );
@@ -1150,6 +1317,11 @@ namespace workphone::scene
     size_t CityRoadAuthoring::getRuntimeTriangleCount() const
     {
         return m_runtime ? m_runtime->geometry.triangleKinds.size() : 0;
+    }
+
+    std::shared_ptr<const CityRoadTerrainMesh> CityRoadAuthoring::getRuntimeFootways() const
+    {
+        return m_runtime ? m_runtime->footways : nullptr;
     }
 
     bool CityRoadAuthoring::getRuntimeSurface( f32 x, f32 z, f32 &height, bool &driveable ) const

@@ -1,5 +1,28 @@
 # WPProcedural implementation status
 
+## Junction markings and pedestrian landings — 15 November 2026
+
+Eligible ordinary and roundabout approaches have zebra crossings. A crossing
+needs fitted sidewalk landings on both sides, and the paint is clipped to the
+carriageway with full coverage required. Centre dashes break around accepted
+crossings. Roundabout approaches also gain broken give-way lines, yield
+triangles and lane guides aligned to the authored circulation direction.
+
+Textured tactile panels project onto the fitted sidewalk tops. Roundabout
+signs use the baked approach directions, with roadside and splitter placement
+checked against the fitted surfaces. The road generation publishes its fitted
+footway snapshot for the city builder to reuse. The crossing paint, panels
+and signs are visual dressing on the generated scene and its editable roads.
+
+The seed 42 captures show crossings and tactile panels on all three visible
+arms of the raised junction view, and a close crossing at the roundabout
+frontage. The scene produced 13 roundabout crossings, 51 ordinary crossings
+and 128 tactile panels. Both views passed native validation and the four
+focused road tests passed. The footway fixture verifies that a crossing is
+omitted when one or both sidewalk landings are missing. See
+`artifacts/procedural/city-junction-dressing-20261115/visual-review.md` for the
+matched Microsoft Basic Render Driver captures and placement checks.
+
 ## Street materials and exposed foundations — 15 November 2026
 
 The fitted sidewalk uses separate material sections for the paved top and
