@@ -1002,8 +1002,11 @@ namespace workphone::scene::race
             generator = nullptr;
         }
 
+        namespace cityParkLandscape { struct Layout; }
+
         void buildFoliageWorld( SceneAssets &assets, u32 seed, VehicleAppearanceQuality quality,
-                                const CityRoadTerrainMesh *cityFootways = nullptr );
+                                const CityRoadTerrainMesh *cityFootways = nullptr,
+                                const SourceBudgetVector<cityParkLandscape::Layout> *parkLayouts = nullptr );
 
         void buildTrack( SceneAssets &assets, u32 seed, VehicleAppearanceQuality quality )
         {
@@ -1394,9 +1397,12 @@ namespace workphone::scene::race
         float cityValueNoise( u32 seed, float x, float z );
 
 #include "CityHillsideVegetation.hpp"
+#include "CityParkLayout.hpp"
+#include "CityParkPlanting.hpp"
 
         void buildFoliageWorld( SceneAssets &assets, u32 seed, VehicleAppearanceQuality quality,
-                                const CityRoadTerrainMesh *cityFootways )
+                                const CityRoadTerrainMesh *cityFootways,
+                                const SourceBudgetVector<cityParkLandscape::Layout> *parkLayouts )
         {
             auto app = core::IApplicationManager::instance();
             auto scene = app->getGraphicsSystem()->getGraphicsScene();
@@ -1584,7 +1590,7 @@ namespace workphone::scene::race
             }
             std::mt19937 random( seed );
             std::uniform_real_distribution<float> unit( 0, 1 );
-            const int count = cityFootways && !assets.useFoliageWorld ? 0 :
+            const int count = parkLayouts || ( cityFootways && !assets.useFoliageWorld ) ? 0 :
                               quality == VehicleAppearanceQuality::Preview ? 90 : 220;
             SourceBudgetVector<size_t> cityParks;
             if( assets.openCity && count > 0 )
@@ -1671,7 +1677,13 @@ namespace workphone::scene::race
             if( cityFootways )
             {
                 cityHillside::addSpecies( assets, *world, leafTextureName, seed );
-                cityHillside::scatter( assets, *cityFootways, *world, seed, quality );
+                if( assets.roadAuthoring->getSource().roads.size() == assets.roadAuthoring->getBake().roads.size() )
+                {
+                    cityHillside::Exclusions exclusions;
+                    cityHillside::indexCity( exclusions, assets, *cityFootways );
+                    if( parkLayouts ) cityParkPlanting::scatter( assets, *parkLayouts, exclusions, *world, seed, quality );
+                    cityHillside::scatter( assets, exclusions, *world, seed, quality );
+                }
             }
             if( !render::validateFoliageWorld( *world, error ) ||
                 !assets.foliageTerrain->setFoliageSnapshot( world, error ) )
@@ -1717,6 +1729,7 @@ namespace workphone::scene::race
                     frontages.push_back( &lot );
                     continue;
                 }
+                if( assets.cityTerrainRoads ) continue;
                 parkLots.push_back( &lot );
                 const float hx = lot.parcelWidth * .5f, hz = lot.parcelDepth * .5f;
                 const Vector3F centre( lot.parcelX, lot.groundHeight + .166f, lot.parcelZ );
@@ -3403,6 +3416,8 @@ namespace workphone::scene::race
 #include "CityCrossingBollards.hpp"
 #include "CityCarriagewayUtilities.hpp"
 #include "CityRoadEdgeSurface.hpp"
+#include "CityParkLandscape.hpp"
+#include "CityParkAmenities.hpp"
 #include "CityStormDrains.hpp"
 #include "CityHinterland.hpp"
 
@@ -3525,6 +3540,7 @@ namespace workphone::scene::race
             {
                 for( const auto &lot : city.lots )
                 {
+                    if( lot.park ) continue;  // Parks use the retained ground and its collider.
                     const float top = lot.groundHeight + .15f, bottom = lot.groundMinimumHeight - .25f;
                     const Vector3F centre( lot.parcelX, ( top + bottom ) * .5f, lot.parcelZ );
                     const Vector3F size( lot.parcelWidth, top - bottom, lot.parcelDepth );
@@ -3743,8 +3759,9 @@ namespace workphone::scene::race
             {
                 if( lot.park )
                 {
-                    parks.box( { lot.parcelX, lot.groundHeight + .155f, lot.parcelZ },
-                               { lot.parcelWidth - 1, .01f, lot.parcelDepth - 1 } );
+                    if( !assets.cityTerrainRoads )
+                        parks.box( { lot.parcelX, lot.groundHeight + .155f, lot.parcelZ },
+                                   { lot.parcelWidth - 1, .01f, lot.parcelDepth - 1 } );
                     continue;
                 }
                 kit.beginBuilding();
@@ -5082,14 +5099,18 @@ namespace workphone::scene::race
                 cityRoundaboutLandscape::build( assets, seed );
                 cityGroundContact::build( assets, buildingEntries, fitted, pavingMaterial, forge );
                 cityRoundaboutSigns::build( assets, fitted, terrainStreetLamps, quality );
+                SourceBudgetVector<cityParkLandscape::Layout> parkLayouts;
                 {
                     const auto layers = cityCarriagewayUtilities::activeLayers( assets );
                     const cityRoadEdges::Surface roadSurface( layers.road );
                     cityRoadEdges::buildGutters( assets, fitted, roadSurface, layers.roadMaterial );
                     buildTerrainCityVergeTransitions( assets, fitted, seed, quality, roadSurface );
+                    parkLayouts = cityParkLandscape::build( assets, city, fitted, walks.mesh, roadSurface,
+                                                           pavingMaterial, seed, surfaceParams.size, quality );
                 }
+                cityParkAmenities::build( assets, parkLayouts, seed );
                 buildTerrainCityVerges( assets, fitted, seed, quality );
-                buildFoliageWorld( assets, seed, quality, &fitted );
+                buildFoliageWorld( assets, seed, quality, &fitted, &parkLayouts );
             }
             mesh( assets, "City street furniture", streetMetal,
                   material( assets, { .16f, .19f, .20f, 1 }, .48f, .6f ) );

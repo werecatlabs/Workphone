@@ -1,5 +1,29 @@
 # WPProcedural implementation status
 
+## Terrain-fitted city parks — 15 November 2026
+
+Terrain-city park parcels use the retained ground as collision support. Where
+the terrain and fitted road edges leave enough room, generation adds a gravel
+walking loop, stone edging and a clipped lawn. A short paved entrance connects
+to the fitted sidewalk wherever the frontage passes the clearance checks. Bench
+bays and vegetation clear the usable walk. The terrain fit sets each bench
+foot against the ground while the seat stays level.
+
+The first park capture exposed angular turns, a dark grass border and too much
+empty ground in the smaller sites. The second pass uses finer loop segments,
+keeps the clipped lawn inside the stone edge and sizes trees and understory
+planting to the space available. The `park` view in `SampleVehicleAdvanced`
+records the selected parcel and camera pose for matched captures.
+
+In the seed 42 review scene, two of five park lots accepted the fitted loop.
+Both connected to the sidewalk and received a bench. Generation added one
+tree, six shrubs and eighteen grass placements across those two parks. The
+matched close-up shows the curved walk, timber bench and tree on the selected
+lot. The matched hillside and frontage views passed from the same build. All
+seven focused Debug tests passed. See
+`artifacts/procedural/city-park-realism-20261115/visual-review.md` for the
+matched captures and verification scope.
+
 ## Crossing paint, bollards and gutters — 15 November 2026
 
 Road markings use strip-local UVs for fine thermoplastic grain and chipped

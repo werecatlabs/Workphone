@@ -484,6 +484,53 @@ namespace workphone
             size_t road = 0;
         };
 
+        struct CityParkView
+        {
+            Vector3F eye{}, target{};
+            const procedural::OpenCityLayout::Lot *lot = nullptr;
+        };
+
+        CityParkView cityParkInspectionView( const advanced::SceneAssets &assets )
+        {
+            const auto terrain = assets.roadAuthoring->getTerrainSnapshot();
+            if( !terrain ) throw std::runtime_error( "Park view requires fitted terrain roads." );
+            const auto &placement = assets.roadAuthoring->getTerrainPlacement();
+            CityParkView selected;
+            float best = std::numeric_limits<float>::infinity();
+            using Frontage = procedural::OpenCityLayout::Frontage;
+            for( const auto &lot : assets.cityLayout.lots )
+            {
+                if( !lot.park || std::min( lot.parcelWidth, lot.parcelDepth ) < 10.f ) continue;
+                const float score = std::hypot( lot.parcelX, lot.parcelZ ) -
+                                    .35f * std::min( lot.parcelWidth, lot.parcelDepth );
+                if( score >= best ) continue;
+                Vector3F outward;
+                switch( lot.frontage )
+                {
+                case Frontage::West: outward = { -1, 0, 0 }; break;
+                case Frontage::East: outward = { 1, 0, 0 }; break;
+                case Frontage::North: outward = { 0, 0, -1 }; break;
+                case Frontage::South: outward = { 0, 0, 1 }; break;
+                }
+                const bool side = outward.x != 0;
+                const float depth = side ? lot.parcelWidth : lot.parcelDepth;
+                const float span = side ? lot.parcelDepth : lot.parcelWidth;
+                const Vector3F along( -outward.z, 0, outward.x );
+                const Vector3F centre( lot.parcelX, 0, lot.parcelZ );
+                auto eye = centre + outward * ( depth * .48f ) + along * ( span * .28f );
+                auto target = centre - along * ( span * .06f );
+                if( !render::sampleTerrainHeight( *terrain, placement, eye, eye.y ) ||
+                    !render::sampleTerrainHeight( *terrain, placement, target, target.y ) ) continue;
+                // Keep the old platform and the terrain-fitted parcel in the same framing.
+                eye.y = std::max( eye.y, lot.groundHeight ) + 2.30f;
+                target.y += 1.30f;
+                best = score;
+                selected = { eye, target, &lot };
+            }
+            if( !selected.lot ) throw std::runtime_error( "Park view requires a supported park parcel." );
+            return selected;
+        }
+
         constexpr const char *utilityCoverActor = "Terrain city carriageway cast iron covers";
         constexpr const char *utilityGrateActor = "Terrain city cast iron storm grates";
 
@@ -2024,6 +2071,19 @@ namespace workphone
                         evidence << ",\n  \"cityVergeCamera\":{\"roadIndex\":" << m_cityVergeRoad
                                  << ",\"eye\":[" << m_cityVergeEye.x << ',' << m_cityVergeEye.y << ',' << m_cityVergeEye.z
                                  << "],\"target\":[" << m_cityVergeTarget.x << ',' << m_cityVergeTarget.y << ',' << m_cityVergeTarget.z << "]}";
+                    if( m_captureView == "park" )
+                    {
+                        const auto eye = m_cameraActor->getWorldTransform().getPosition();
+                        const auto lot = std::find_if( m_assets.cityLayout.lots.begin(), m_assets.cityLayout.lots.end(),
+                            [&]( const auto &item ) { return item.park && item.id == m_cityParkLotId; } );
+                        const bool valid = lot != m_assets.cityLayout.lots.end() &&
+                                           ( eye - m_cityParkEye ).lengthSquared() < .0001f;
+                        cityValid = cityValid && valid;
+                        evidence << ",\n  \"cityParkCamera\":{\"valid\":" << ( valid ? "true" : "false" )
+                                 << ",\"lotId\":\"" << m_cityParkLotId << "\",\"eye\":[" << eye.x << ',' << eye.y << ',' << eye.z
+                                 << "],\"target\":[" << m_cityParkTarget.x << ',' << m_cityParkTarget.y << ','
+                                 << m_cityParkTarget.z << "]}";
+                    }
                     if( m_captureView == "utilities" )
                     {
                         const auto eye = m_cameraActor->getWorldTransform().getPosition();
@@ -4184,6 +4244,13 @@ namespace workphone
                 const auto view = cityVergeInspectionView( m_assets );
                 m_cityVergeEye = view.eye; m_cityVergeTarget = view.target; m_cityVergeRoad = view.road;
             }
+            if( m_captureView == "park" )
+            {
+                const auto view = cityParkInspectionView( m_assets );
+                m_cityParkEye = view.eye;
+                m_cityParkTarget = view.target;
+                m_cityParkLotId = view.lot->id;
+            }
             if( m_captureView == "utilities" )
             {
                 const auto view = cityUtilityInspectionView( m_assets );
@@ -4386,6 +4453,11 @@ namespace workphone
                     {
                         m_cameraActor->setPosition( m_cityVergeEye );
                         m_cameraActor->lookAt( m_cityVergeTarget, Vector3F::unitY() );
+                    }
+                    else if( m_captureView == "park" )
+                    {
+                        m_cameraActor->setPosition( m_cityParkEye );
+                        m_cameraActor->lookAt( m_cityParkTarget, Vector3F::unitY() );
                     }
                     else if( m_captureView == "utilities" )
                     {
@@ -4593,7 +4665,7 @@ int main( int argc, char **argv )
                    "  --track-smoke-test            Drive one full lap through the physics controller\n"
                    "  --collision-smoke-test        Verify native boxes; circuit garage impact or city road/sidewalk grades\n"
                    "  --validate-circuit           Validate 100 generated closed circuits\n"
-                   "  --capture PATH.bmp --view follow|car|track|corner|junction|hillside|street|boulevard|frontage|facade|building|utilities   Save a rendered view and "
+                   "  --capture PATH.bmp --view follow|car|track|corner|junction|hillside|street|boulevard|frontage|facade|building|utilities|park   Save a rendered view and "
                    "exit\n"
                    "  --no-hud --force-lod auto|0|1  Clean captures and tree LOD comparisons\n"
                    "  --force-vehicle-lod auto|0|1|2  Override the vehicle level (clamped for low)\n"
@@ -4617,6 +4689,7 @@ int main( int argc, char **argv )
                    "  --view street|boulevard       Opposite street-level city inspections; track is the overview\n"
                    "  --view frontage               Close sidewalk inspection (requires --city-terrain-roads)\n"
                    "  --view utilities              Close inspection of a fitted carriageway cover and nearby grate\n"
+                   "  --view park                   Inspect a generated park parcel from street level\n"
                    "  --view hillside               Inspect a sustained road climb and its surrounding terrain\n"
                    "  --view verge                  Inspect a terrain road end at pavement level\n"
                    "  --view road-edit-before|road-edit-after   Fixed camera after Undo or Redo of a graded road edit\n"
@@ -4885,9 +4958,9 @@ int main( int argc, char **argv )
         }
         if( captureView != "follow" && captureView != "car" && captureView != "track" &&
             captureView != "corner" && captureView != "junction" && captureView != "hillside" && captureView != "verge" && captureView != "street" && captureView != "boulevard" &&
-            captureView != "frontage" && captureView != "facade" && captureView != "building" && captureView != "utilities" &&
+            captureView != "frontage" && captureView != "facade" && captureView != "building" && captureView != "utilities" && captureView != "park" &&
             !isRoadTerrainEditView( captureView ) )
-            throw std::runtime_error( "View must be follow, car, track, corner, junction, hillside, verge, street, boulevard, frontage, facade, building, utilities, road-edit-before, or road-edit-after." );
+            throw std::runtime_error( "View must be follow, car, track, corner, junction, hillside, verge, street, boulevard, frontage, facade, building, utilities, park, road-edit-before, or road-edit-after." );
         if( ( cityOptionsExplicit || captureView == "street" || captureView == "boulevard" ) && !openCity )
             throw std::runtime_error( "City options and street-level views require --city." );
         if(roadAuthoringShowcase && foliageWorld)throw std::runtime_error("Road authoring showcase does not provide foliage-world generation.");
@@ -4900,6 +4973,8 @@ int main( int argc, char **argv )
             throw std::runtime_error( "--view frontage requires --city-terrain-roads." );
         if( captureView == "utilities" && ( !cityTerrainRoads || orbit ) )
             throw std::runtime_error( "--view utilities requires --city-terrain-roads and a fixed camera." );
+        if( captureView == "park" && ( !cityTerrainRoads || orbit ) )
+            throw std::runtime_error( "--view park requires --city-terrain-roads and a fixed camera." );
         if( captureView == "junction" && !cityTerrainRoads )
             throw std::runtime_error( "--view junction requires --city-terrain-roads." );
         if( captureView == "hillside" && !cityTerrainRoads )

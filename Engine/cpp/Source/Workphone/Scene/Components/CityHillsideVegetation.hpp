@@ -60,7 +60,7 @@
 
             struct Exclusions
             {
-                enum class Shape { Road, Footway, Parcel };
+                enum class Shape { Road, Footway, Parcel, Park };
                 struct Footprint
                 {
                     Shape shape;
@@ -83,7 +83,7 @@
                     } );
                 }
 
-                bool clear( Vector3F point, float radius ) const
+                bool clear( Vector3F point, float radius, bool insidePark = false ) const
                 {
                     const Vector3F margin( radius, 0, radius );
                     return visitCells( point - margin, point + margin, [&]( const Cell &cell ) {
@@ -97,8 +97,9 @@
                                 const float width = radius + reserve;
                                 if( segmentDistance( point, a, b ) < width * width ) return false;
                             }
-                            else if( shape == Shape::Parcel )
+                            else if( shape == Shape::Parcel || shape == Shape::Park )
                             {
+                                if( insidePark && shape == Shape::Park ) continue;
                                 if( point.x + radius > a.x && point.x - radius < b.x &&
                                     point.z + radius > a.z && point.z - radius < b.z ) return false;
                             }
@@ -160,7 +161,7 @@
                 {
                     const Vector3F p( lot.parcelX, 0, lot.parcelZ );
                     const Vector3F extent( lot.parcelWidth * .5f + .6f, 0, lot.parcelDepth * .5f + .6f );
-                    exclusions.add( Shape::Parcel, p - extent, p + extent, p );
+                    exclusions.add( lot.park ? Shape::Park : Shape::Parcel, p - extent, p + extent, p );
                 }
             }
 
@@ -242,7 +243,7 @@
                 }
             }
 
-            void scatter( SceneAssets &assets, const CityRoadTerrainMesh &footways,
+            void scatter( SceneAssets &assets, const Exclusions &exclusions,
                           render::FoliageWorldData &world, u32 seed, VehicleAppearanceQuality quality )
             {
                 const auto ground = assets.roadAuthoring->getTerrainSnapshot();
@@ -250,8 +251,6 @@
                                assets.roadAuthoring->getBake().roads.size() ) return;
                 const auto &placement = assets.roadAuthoring->getTerrainPlacement();
                 const auto &scale = placement.getScale();
-                Exclusions exclusions;
-                indexCity( exclusions, assets, footways );
                 struct Group
                 {
                     Vector3F centre, bank;
