@@ -29,6 +29,7 @@
 #include <Workphone/Scene/Components/Material.hpp>
 #include <Workphone/Scene/Components/CollisionMesh.hpp>
 #include <Workphone/Interface/Graphics/IMaterial.hpp>
+#include <Workphone/Interface/Graphics/ISky.hpp>
 
 #if WP_GRAPHICS_SYSTEM_CLAW
 #    include <WPGraphics/ClawMesh.hpp>
@@ -2518,6 +2519,24 @@ namespace workphone
                                  << ", " << direction.z << "], \"colour\": [" << colour.r << ", "
                                  << colour.g << ", " << colour.b << "], \"ambient\": [" << ambient.r
                                  << ", " << ambient.g << ", " << ambient.b << "]}";
+                    }
+                    if( m_assets.openCity && m_assets.sky && scene->getNativeScene() )
+                    {
+                        const auto native = scene->getNativeScene();
+                        const auto fog = wp_graphics_scene_get_fog_colour( native );
+                        const auto faces = m_assets.sky->getTextures();
+                        const auto faceSize = !faces.empty() && faces[0] ? faces[0]->getSize() : Vector2I();
+                        const auto uploadedFaces = std::count_if( faces.begin(), faces.end(), [&]( const auto &face ) {
+                            void *texture = nullptr;
+                            if( face ) face->getTextureFinal( &texture );
+                            return texture && face->getSize() == faceSize;
+                        } );
+                        evidence << ",\n  \"cityDaylight\":{\"skyFaces\":" << faces.size()
+                                 << ",\"uploadedSkyFaces\":" << uploadedFaces
+                                 << ",\"skyFaceSize\":[" << faceSize.x << ',' << faceSize.y << ']'
+                                 << ",\"fogMode\":" << static_cast<int>( wp_graphics_scene_get_fog_mode( native ) )
+                                 << ",\"fogDensity\":" << wp_graphics_scene_get_fog_density( native )
+                                 << ",\"fogColour\":[" << fog.r << ',' << fog.g << ',' << fog.b << "]}";
                     }
                     if( !sunlightValid ) WP_LOG_ERROR( "VehicleAdvanced: primary sunlight does not match the generated sky." );
                 }

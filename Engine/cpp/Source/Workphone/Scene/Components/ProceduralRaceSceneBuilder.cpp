@@ -3427,6 +3427,7 @@ namespace workphone::scene::race
 #include "CityParkAmenities.hpp"
 #include "CityStormDrains.hpp"
 #include "CityHinterland.hpp"
+#include "CityBuildingGlazing.hpp"
 
         void buildCity( SceneAssets &assets, SmartPtr<IGameActor> sourceOwner,
                         SmartPtr<IGameActor> vehicle, u32 seed, VehicleAppearanceQuality quality )
@@ -3477,8 +3478,8 @@ namespace workphone::scene::race
             Geometry asphalt, pavement, markings, parks, courtyards, streetMetal, lampGlass;
             SourceBudgetVector<Vector3F> terrainStreetLamps;
             SourceBudgetVector<cityGroundContact::Entry> buildingEntries;
-            constexpr u32 paneAtlasColumns = 8, paneAtlasCell = 64;
-            constexpr float panePadding = 5.5f / paneAtlasCell;
+            constexpr u32 paneAtlasColumns = cityBuildingGlazing::atlasColumns;
+            constexpr float panePadding = cityBuildingGlazing::padding;
 
             struct CityPatch
             {
@@ -4918,66 +4919,7 @@ namespace workphone::scene::race
             const auto accentMaterial = material( assets, { .18f, .28f, .30f, 1 }, .55f );
             const auto timberMaterial = material( assets, { .24f, .15f, .085f, 1 }, .83f );
             const auto tileMaterial = material( assets, { .57f, .24f, .13f, 1 }, .82f );
-            const std::array<SmartPtr<render::IMaterial>, 3> glassMaterials = {
-                material( assets, { .16f, .21f, .24f, 1 }, .15f ),
-                material( assets, { .20f, .24f, .26f, 1 }, .26f ),
-                material( assets, { .34f, .37f, .37f, 1 }, .46f )
-            };
-            for( auto glass : glassMaterials )
-                glass->setSpecular( { .075f, .078f, .080f, 1 } );
-            SmartPtr<render::IMaterial> paneMaterial;
-            if( detailedBuildings )
-            {
-                // The mip-isolated cells tint the space behind the glass. The
-                // existing outdoor cubemap supplies the view-dependent reflection.
-                TextureBuffer atlas( paneAtlasColumns * paneAtlasCell, paneAtlasCell );
-                const auto edge = []( float value ) {
-                    const float t = std::clamp( value, 0.f, 1.f );
-                    return t * t * ( 3.f - 2.f * t );
-                };
-                const auto coord = [=]( u32 index ) {
-                    return std::clamp( ( ( index + .5f ) / paneAtlasCell - panePadding ) /
-                                       ( 1.f - 2.f * panePadding ), 0.f, 1.f );
-                };
-                for( u32 tile = 0; tile < paneAtlasColumns; ++tile )
-                    for( u32 y = 0; y < paneAtlasCell; ++y )
-                        for( u32 x = 0; x < paneAtlasCell; ++x )
-                        {
-                            const float u = coord( x ), v = coord( y );
-                            const float roomLight = 12.f * v + 5.f * std::cos( ( u + .21f * tile ) * pi );
-                            const float recess = 1.f - .12f * ( 1.f - edge( std::min( { u, 1.f - u, v, 1.f - v } ) * 11.f ) );
-                            Vector3F colour( 52.f + roomLight + 3.f * ( tile % 4 ),
-                                             61.f + roomLight + 3.f * ( tile % 4 ),
-                                             67.f + roomLight + 2.f * ( tile % 4 ) );
-                            if( tile == 4 || tile == 5 )
-                            {
-                                const float fromSide = tile == 4 ? u : std::min( u, 1.f - u );
-                                const float fall = ( tile == 4 ? .41f : .24f ) + .044f * std::cos( pi * v );
-                                const float curtain = edge( ( fall - fromSide ) * 29.f );
-                                const float folds = .92f + .08f * std::cos( ( fromSide * 7.f + .08f * v ) * 2.f * pi );
-                                const Vector3F fabric( 111.f, 104.f, 95.f );
-                                colour += ( fabric * folds - colour ) * ( curtain * .88f );
-                            }
-                            else if( tile >= 6 )
-                            {
-                                const float lowerEdge = tile == 6 ? .44f : .21f;
-                                const float cover = edge( ( v - lowerEdge ) * 31.f );
-                                const float slats = tile == 6 ? 1.f
-                                    : .94f + .06f * std::cos( ( v - lowerEdge ) * 13.f * 2.f * pi );
-                                const Vector3F blind( 109.f, 112.f, 110.f );
-                                colour += ( blind * slats - colour ) * ( cover * .92f );
-                            }
-                            const auto pixel = atlas.pixel( tile * paneAtlasCell + x, y );
-                            pixel[0] = u8( colour.x * recess );
-                            pixel[1] = u8( colour.y * recess );
-                            pixel[2] = u8( colour.z * recess );
-                            pixel[3] = 255;
-                        }
-                paneMaterial = material( assets, ColourF::White, .14f );
-                paneMaterial->setTexture( upload( assets, atlas, render::TextureMipFilter::Colour,
-                                                   paneAtlasColumns ), 0 );
-                paneMaterial->setSpecular( { .098f, .104f, .111f, 1 } );
-            }
+            const auto [glassMaterials, paneMaterial] = cityBuildingGlazing::build( assets, detailedBuildings );
             for( auto &[key, patch] : patches )
             {
                 reserveOwnerSlot( assets.actors );
@@ -5411,36 +5353,7 @@ namespace workphone::scene::race
             }
         }
 
-        const Vector3F citySkyHorizon( .57f, .71f, .86f );
-
-        ColourF cityDaylightColour( Vector3F direction, float sunAlignment, u32 seed )
-        {
-            const float altitude = std::max( 0.f, direction.y );
-            const float blue = std::pow( altitude, .59f );
-            const float sunlight = sunAlignment * sunAlignment;
-            auto colour = citySkyHorizon * ( 1.f - blue ) + Vector3F( .12f, .31f, .64f ) * blue;
-            colour += Vector3F( .16f, .10f, .035f ) * ( sunlight * ( 1.f - .55f * blue ) );
-            if( altitude > .018f )
-            {
-                // Project both sky and reflections onto the same cloud deck, in world direction.
-                // The horizon fade represents longer paths through the haze below the clouds.
-                const float x = 1.45f * direction.x / ( altitude + .19f ) + 9.7f;
-                const float z = 1.10f * direction.z / ( altitude + .19f ) - 3.4f;
-                const float bank = .55f * cityValueNoise( seed, x, z ) +
-                                   .25f * cityValueNoise( seed + 1, 2.10f * x + 3.2f, 2.10f * z ) +
-                                   .14f * cityValueNoise( seed + 2, 4.37f * x, 4.37f * z - 1.8f ) +
-                                   .06f * cityValueNoise( seed + 3, 9.13f * x - 5.2f, 9.13f * z );
-                const float cover = std::clamp( ( bank - .45f ) / .22f, 0.f, 1.f );
-                const float edges = cover * cover * ( 3 - 2 * cover );
-                const float fade = std::clamp( ( altitude - .018f ) / .17f, 0.f, 1.f );
-                const auto cloud = Vector3F( .67f, .75f, .86f ) +
-                                   Vector3F( .57f, .48f, .35f ) * ( .48f * cover + .52f * sunlight );
-                colour += ( cloud - colour ) * ( edges * fade );
-            }
-            const float aureole = std::pow( sunAlignment, 112.f );
-            colour += Vector3F( .56f, .39f, .23f ) * aureole;
-            return { colour.x, colour.y, colour.z, 1 };
-        }
+#include "CityDaylightSky.hpp"
 
         void buildSky( SceneAssets &assets, SmartPtr<scene::IGameActor> vehicle, u32 seed )
         {
@@ -5456,6 +5369,10 @@ namespace workphone::scene::race
             state.turbidity = 2.4f;
             if( assets.openCity )
             {
+                // Morning sun reaches the south and west street elevations before
+                // the cooler sky fill lifts the opposite faces.
+                state.timeOfDay = 9.65f;
+                state.turbidity = 2.7f;
                 state.latitude = 48.f;
                 state.dayOfYear = 117.f;
             }
@@ -5471,11 +5388,17 @@ namespace workphone::scene::race
                                           { -1, -1, 1 },  { 1, -1, 1 },  { 1, 1, 1 },  { -1, 1, 1 } };
             const int faceCorners[6][4] = { { 0, 1, 2, 3 }, { 5, 4, 7, 6 }, { 4, 0, 3, 7 },
                                             { 1, 5, 6, 2 }, { 3, 2, 6, 7 }, { 4, 5, 1, 0 } };
+            constexpr u32 reflectionSize = 256;
+            const u32 samplesPerSide = assets.openCity ? 2 : 1;
+            const u32 visibleSize = reflectionSize * samplesPerSide;
+            // Downsample the same angular field for the HDR probe in linear space.
+            // Keep the probe and its prefilter at their existing allocation size.
+            const float reflectionWeight = 1.f / float( samplesPerSide * samplesPerSide );
             for( int face = 0; face < 6; ++face )
             {
-                TextureBuffer texture( 256, 256 );
+                TextureBuffer texture( visibleSize, visibleSize );
                 auto reflectionFace = makeSourceBudgetSnapshot<f32>();
-                reflectionFace.resize( 256 * 256 * 4 );
+                reflectionFace.resize( reflectionSize * reflectionSize * 4, 0.f );
                 for( u32 y = 0; y < texture.height; ++y )
                 {
                     for( u32 x = 0; x < texture.width; ++x )
@@ -5490,9 +5413,12 @@ namespace workphone::scene::race
                         dir.normalise();
                         const auto sunAlignment = std::clamp( dir.dotProduct( result.sunDir ), 0.f, 1.f );
                         ColourF c;
+                        float sunTransmission = 1.f;
                         if( assets.openCity )
                         {
-                            c = cityDaylightColour( dir, sunAlignment, seed );
+                            const auto city = cityDaylight::sample( dir, result.sunDir, sunAlignment, seed );
+                            c = city.radiance;
+                            sunTransmission = city.sunTransmission;
                         }
                         else
                         {
@@ -5505,8 +5431,8 @@ namespace workphone::scene::race
                             c.b = .58f + .24f * haze + c.b * .15f + glow * .4f;
                         }
                         // Keep the solar core as radiance in the reflection source.
-                        // The visible LDR sky clips its display value; the probe does not.
-                        const float solarCore = std::pow( sunAlignment, 2048.f );
+                        // Only the visible sky maps its display value to an 8-bit texture.
+                        const float solarCore = std::pow( sunAlignment, 2048.f ) * sunTransmission;
                         c.r += solarCore * 16.f;
                         c.g += solarCore * 14.f;
                         c.b += solarCore * 10.f;
@@ -5535,16 +5461,17 @@ namespace workphone::scene::race
                         }
                         auto pixel = texture.pixel( x, y );
                         auto reflectedPixel =
-                            reflectionFace.data() + ( size_t( y ) * texture.width + x ) * 4;
+                            reflectionFace.data() +
+                            ( size_t( y / samplesPerSide ) * reflectionSize + x / samplesPerSide ) * 4;
                         for( size_t channel = 0; channel < 3; ++channel )
                         {
                             float value = channel == 0 ? c.r : channel == 1 ? c.g : c.b;
-                            pixel[channel] = u8( std::clamp(
-                                std::pow( std::max( value, 0.f ), 1.f / 2.2f ) * 255.f, 0.f, 255.f ) );
+                            pixel[channel] = assets.openCity ? cityDaylight::encodeDisplay( value ) :
+                                u8( std::clamp( std::pow( std::max( value, 0.f ), 1.f / 2.2f ) * 255.f, 0.f, 255.f ) );
                             const float reflectedValue = channel == 0   ? reflectionColour.r
                                                          : channel == 1 ? reflectionColour.g
                                                                         : reflectionColour.b;
-                            reflectedPixel[channel] = std::max( reflectedValue, 0.f );
+                            reflectedPixel[channel] += std::max( reflectedValue, 0.f ) * reflectionWeight;
                         }
                         pixel[3] = 255;
                         reflectedPixel[3] = 1;
@@ -5553,7 +5480,7 @@ namespace workphone::scene::race
                 auto skyTexture = upload( assets, texture );
                 faces.push_back( skyTexture );
                 reflectionFaces.push_back(
-                    uploadLinearRadiance( assets, reflectionFace, { 256, 256 } ) );
+                    uploadLinearRadiance( assets, reflectionFace, { reflectionSize, reflectionSize } ) );
             }
             auto skyObject = graphicsScene->addGraphicsObjectByType<render::ISky>();
             assets.sky = skyObject;
@@ -5615,12 +5542,12 @@ namespace workphone::scene::race
                     "materials." );
             }
 
-            graphicsScene->setAmbientLight( assets.openCity ? ColourF( .88f, .94f, 1.f, 1 )
+            graphicsScene->setAmbientLight( assets.openCity ? ColourF( .74f, .83f, .94f, 1 )
                                                             : ColourF( .28f, .32f, .38f, 1 ) );
             if( assets.openCity )
             {
                 graphicsScene->setFog( render::IGraphicsScene::FOG_EXP2,
-                    ColourF( citySkyHorizon.x, citySkyHorizon.y, citySkyHorizon.z, 1 ), .00132f, 0, 950 );
+                    ColourF( citySkyHorizon.x, citySkyHorizon.y, citySkyHorizon.z, 1 ), .00172f, 0, 950 );
             }
             else
             {
@@ -5644,8 +5571,8 @@ namespace workphone::scene::race
             assets.sun = sun;
             sun->setType( LightTypes::LT_DIRECTIONAL );
             sun->setDirection( -result.sunDir );
-            sun->setDiffuseColour( assets.openCity ? ColourF( 1, .94f, .83f, 1 ) : ColourF( 1, .96f, .88f, 1 ) );
-            sun->setPowerScale( assets.openCity ? 4.10f : 1.8f );
+            sun->setDiffuseColour( assets.openCity ? ColourF( 1, .955f, .885f, 1 ) : ColourF( 1, .96f, .88f, 1 ) );
+            sun->setPowerScale( assets.openCity ? 4.72f : 1.8f );
             sun->setCastShadows( true );
             sun->setVisible( true );
         }

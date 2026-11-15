@@ -1,5 +1,24 @@
 # WPProcedural implementation status
 
+## Morning daylight, distance haze and glazing — 15 November 2026
+
+The generated city now uses morning sun, a cooler sky fill and haze tied to
+the sky horizon. The city sky samples two cloud layers from world direction,
+with detailed visible faces and an outdoor reflection probe baked in linear
+radiance from the same sky and sun. `SampleVehicleAdvanced` records the primary
+light, native fog and uploaded sky face sizes in its capture evidence.
+
+Opaque building glass uses per-pane roughness, recessed-edge shading and
+neutral interior tones. The outdoor probe supplies reflections as the view
+angle changes, and the glazing materials cover both near and distant meshes.
+
+The hillside pilot exposed broad, smooth cloud bodies. A separate cloud pass
+breaks up those forms with smaller masses and shaded undertones. The final
+daylight captures used six uploaded 512 × 512 sky faces and native HDR
+radiance. All seven focused Debug tests passed. See
+`artifacts/procedural/city-daylight-20261115/visual-review.md` for the matched
+frontage and hillside comparisons.
+
 ## Public roadside planting and roundabout turf — 15 November 2026
 
 Public roadside planting uses the outer edges of fitted sidewalks to locate
