@@ -2371,6 +2371,12 @@ namespace workphone::scene
     {
         ScopedLock lock( this );
 
+        // Scenes saved before the component rename use the former type name.
+        if( type == "workphone::scene::CarController" || type == "CarController" )
+        {
+            return "FourWheelVehicle";
+        }
+
         if( std::find( m_componentFactoryIgnoreList.begin(), m_componentFactoryIgnoreList.end(),
                        type ) != m_componentFactoryIgnoreList.end() )
         {

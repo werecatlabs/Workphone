@@ -473,7 +473,7 @@ BOOST_AUTO_TEST_CASE( components_car_controller_default_contract_and_inputs )
     TestGuard fixture;
     BOOST_REQUIRE( fixture.isAvailable );
 
-    auto controller = make_ptr<CarController>();
+    auto controller = make_ptr<FourWheelVehicle>();
     BOOST_REQUIRE( controller );
 
     BOOST_CHECK( !controller->isLoaded() );
@@ -499,34 +499,34 @@ BOOST_AUTO_TEST_CASE( components_car_controller_properties_round_trip )
     TestGuard fixture;
     BOOST_REQUIRE( fixture.isAvailable );
 
-    auto source = make_ptr<CarController>();
+    auto source = make_ptr<FourWheelVehicle>();
     BOOST_REQUIRE( source );
     auto properties = source->getProperties();
     BOOST_REQUIRE( properties );
 
-    checkScalarProperty( properties, CarController::radiusStr, 0.35f );
-    checkScalarProperty( properties, CarController::suspensionTravelStr, 0.3f );
-    checkScalarProperty( properties, CarController::dampingStr, 1000.0f );
-    checkEnumProperty( properties, CarController::driveTypeStr,
+    checkScalarProperty( properties, FourWheelVehicle::radiusStr, 0.35f );
+    checkScalarProperty( properties, FourWheelVehicle::suspensionTravelStr, 0.3f );
+    checkScalarProperty( properties, FourWheelVehicle::dampingStr, 1000.0f );
+    checkEnumProperty( properties, FourWheelVehicle::driveTypeStr,
                        static_cast<s32>( VehicleDriveType::AllWheelDrive ) );
 
-    properties->setProperty( CarController::radiusStr, 0.42f );
-    properties->setProperty( CarController::suspensionTravelStr, 0.18f );
-    properties->setProperty( CarController::dampingStr, 2400.0f );
-    properties->setProperty( CarController::driveTypeStr,
+    properties->setProperty( FourWheelVehicle::radiusStr, 0.42f );
+    properties->setProperty( FourWheelVehicle::suspensionTravelStr, 0.18f );
+    properties->setProperty( FourWheelVehicle::dampingStr, 2400.0f );
+    properties->setProperty( FourWheelVehicle::driveTypeStr,
                              static_cast<s32>( VehicleDriveType::FrontWheelDrive ) );
     properties->setProperty( VehicleController::massStr, 1550.0f );
     properties->setProperty( VehicleController::tireModelStr, static_cast<s32>( TireModel::Brush ) );
 
-    auto restored = make_ptr<CarController>();
+    auto restored = make_ptr<FourWheelVehicle>();
     BOOST_REQUIRE( restored );
     restored->setProperties( properties );
     auto restoredProperties = restored->getProperties();
 
-    checkScalarProperty( restoredProperties, CarController::radiusStr, 0.42f );
-    checkScalarProperty( restoredProperties, CarController::suspensionTravelStr, 0.18f );
-    checkScalarProperty( restoredProperties, CarController::dampingStr, 2400.0f );
-    checkEnumProperty( restoredProperties, CarController::driveTypeStr,
+    checkScalarProperty( restoredProperties, FourWheelVehicle::radiusStr, 0.42f );
+    checkScalarProperty( restoredProperties, FourWheelVehicle::suspensionTravelStr, 0.18f );
+    checkScalarProperty( restoredProperties, FourWheelVehicle::dampingStr, 2400.0f );
+    checkEnumProperty( restoredProperties, FourWheelVehicle::driveTypeStr,
                        static_cast<s32>( VehicleDriveType::FrontWheelDrive ) );
     checkClose( restored->getMass(), 1550.0f );
     BOOST_CHECK( restored->getTireModel() == TireModel::Brush );
@@ -537,7 +537,7 @@ BOOST_AUTO_TEST_CASE( components_car_controller_vehicle_association_is_a_child_o
     TestGuard fixture;
     BOOST_REQUIRE( fixture.isAvailable );
 
-    auto controller = make_ptr<CarController>();
+    auto controller = make_ptr<FourWheelVehicle>();
     auto physicsVehicle = make_ptr<CCarController>();
     BOOST_REQUIRE( controller );
     BOOST_REQUIRE( physicsVehicle );
@@ -558,7 +558,7 @@ BOOST_AUTO_TEST_CASE( components_car_input_override_has_one_channel_writer )
     BOOST_REQUIRE( fixture.isAvailable );
     VehicleFactoryGuard factoryGuard;
     auto actor = fixture.sceneManager->createActor();
-    auto controller = actor->addComponent<CarController>();
+    auto controller = actor->addComponent<FourWheelVehicle>();
     auto vehicle = controller->getVehicleController();
     BOOST_REQUIRE( vehicle );
     const auto previousTask = Thread::getCurrentTask();
@@ -579,7 +579,7 @@ BOOST_AUTO_TEST_CASE( components_car_input_override_has_one_channel_writer )
     const auto throttleChannel = s32( vehicle::IVehicle::Input::THROTTLE );
     vehicle->setChannel( throttleChannel, 0 );
     controller->setControls( .7f, .1f, -.4f );
-    auto listener = make_ptr<CarController::InputListener>();
+    auto listener = make_ptr<FourWheelVehicle::InputListener>();
     listener->setOwner( controller );
     auto key = make_ptr<KeyboardState>();
     key->setKeyCode( u32( KeyCodes::KEY_KEY_W ) );
@@ -614,7 +614,7 @@ BOOST_AUTO_TEST_CASE( components_car_controller_loads_concrete_vehicle_and_relea
     BOOST_REQUIRE( actor );
     auto collision = actor->addComponent<CollisionBox>();
     auto chassis = actor->addComponent<Rigidbody>();
-    auto controller = actor->addComponent<CarController>();
+    auto controller = actor->addComponent<FourWheelVehicle>();
     BOOST_REQUIRE( collision );
     BOOST_REQUIRE( chassis );
     BOOST_REQUIRE( controller );
@@ -669,7 +669,7 @@ BOOST_AUTO_TEST_CASE( components_car_controller_wires_four_wheels_by_drive_type 
         BOOST_REQUIRE( wheels[i] );
     }
 
-    auto controller = actor->addComponent<CarController>();
+    auto controller = actor->addComponent<FourWheelVehicle>();
     BOOST_REQUIRE( controller );
     BOOST_REQUIRE( controller->getVehicleController() );
     controller->setDriveType( VehicleDriveType::RearWheelDrive );
@@ -717,7 +717,7 @@ BOOST_AUTO_TEST_CASE( components_car_controller_handling_presets_apply_and_round
         BOOST_REQUIRE( wheels[i] );
     }
 
-    auto controller = actor->addComponent<CarController>();
+    auto controller = actor->addComponent<FourWheelVehicle>();
     BOOST_REQUIRE( controller );
     auto vehicle = dynamic_pointer_cast<CCarController>( controller->getVehicleController() );
     BOOST_REQUIRE( vehicle );
@@ -732,17 +732,17 @@ BOOST_AUTO_TEST_CASE( components_car_controller_handling_presets_apply_and_round
     wheelActors[0]->setLocalPosition( authoredWheelPosition );
 
     auto original = controller->getProperties();
-    checkEnumProperty( original, CarController::handlingPresetStr, 0 );
+    checkEnumProperty( original, FourWheelVehicle::handlingPresetStr, 0 );
 
     const auto selectPreset = [&]( const String &value ) {
         auto edited = controller->getProperties();
-        auto &preset = edited->getPropertyObject( CarController::handlingPresetStr );
+        auto &preset = edited->getPropertyObject( FourWheelVehicle::handlingPresetStr );
         preset.setValue( value );
         preset.setAttribute( "applyHandlingPreset", "true" );
         controller->setProperties( edited );
     };
     selectPreset( "1" );
-    checkEnumProperty( controller->getProperties(), CarController::handlingPresetStr, 1 );
+    checkEnumProperty( controller->getProperties(), FourWheelVehicle::handlingPresetStr, 1 );
     checkClose( chassis->getMass(), 1200.0f );
     checkClose( vehicle->getMass(), 1200.0f );
     checkClose( vehicle->getPlaySteeringScale(), 34.0f );
@@ -756,7 +756,7 @@ BOOST_AUTO_TEST_CASE( components_car_controller_handling_presets_apply_and_round
     }
 
     selectPreset( "4" );
-    checkEnumProperty( controller->getProperties(), CarController::handlingPresetStr, 4 );
+    checkEnumProperty( controller->getProperties(), FourWheelVehicle::handlingPresetStr, 4 );
     checkClose( chassis->getMass(), 1300.0f );
     checkClose( vehicle->getMass(), 1300.0f );
     checkClose( vehicle->getPlaySteeringScale(), 29.0f );
@@ -773,22 +773,22 @@ BOOST_AUTO_TEST_CASE( components_car_controller_handling_presets_apply_and_round
 
     auto edited = controller->getProperties();
     edited->setProperty( VehicleController::massStr, 1360.0f );
-    edited->setProperty( CarController::dampingStr, 3900.0f );
+    edited->setProperty( FourWheelVehicle::dampingStr, 3900.0f );
     controller->setProperties( edited );
     checkClose( vehicle->getMass(), 1360.0f );
     checkClose( wheels[0]->getWheelController()->getDamping(), 3900.0f );
 
     auto saved = static_pointer_cast<Properties>( controller->toData() );
     saved->removeProperty( VehicleController::chassisStr );
-    auto restored = make_ptr<CarController>();
+    auto restored = make_ptr<FourWheelVehicle>();
     restored->fromData( saved );
     auto restoredProperties = restored->getProperties();
-    checkEnumProperty( restoredProperties, CarController::handlingPresetStr, 4 );
+    checkEnumProperty( restoredProperties, FourWheelVehicle::handlingPresetStr, 4 );
     checkScalarProperty( restoredProperties, VehicleController::massStr, 1360.0f );
-    checkScalarProperty( restoredProperties, CarController::dampingStr, 3900.0f );
+    checkScalarProperty( restoredProperties, FourWheelVehicle::dampingStr, 3900.0f );
 
     controller->setProperties( original );
-    checkEnumProperty( controller->getProperties(), CarController::handlingPresetStr, 0 );
+    checkEnumProperty( controller->getProperties(), FourWheelVehicle::handlingPresetStr, 0 );
     checkClose( vehicle->getMass(), 1370.0f );
     checkClose( vehicle->getPlaySteeringScale(), 50.0f );
     checkClose( wheels[0]->getWheelController()->getDamping(), 1000.0f );

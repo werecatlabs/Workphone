@@ -1,5 +1,5 @@
-#ifndef WORKPHONE_CAR_CONTROLLER_INPUT_HPP
-#define WORKPHONE_CAR_CONTROLLER_INPUT_HPP
+#ifndef WORKPHONE_FOUR_WHEEL_VEHICLE_INPUT_HPP
+#define WORKPHONE_FOUR_WHEEL_VEHICLE_INPUT_HPP
 
 // Private input-profile sampling shared with deterministic contracts. Profiles
 // are immutable snapshots published through IApplicationManager::playerSettings.

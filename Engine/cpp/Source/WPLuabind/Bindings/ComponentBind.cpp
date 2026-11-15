@@ -828,17 +828,17 @@ namespace workphone
                     .def( "setRollwiseDamping", &VehicleController::setRollwiseDamping )
                     .scope[def( "typeInfo", VehicleController::typeInfo )]];
 
-        module( L )[class_<CarController, VehicleController, SmartPtr<CarController>>( "CarController" )
-                        .def( "getThrottle", &CarController::getThrottle )
-                        .def( "setThrottle", &CarController::setThrottle )
-                        .def( "getBrake", &CarController::getBrake )
-                        .def( "setBrake", &CarController::setBrake )
-                        .def( "getSteering", &CarController::getSteering )
-                        .def( "setSteering", &CarController::setSteering )
-                        .def( "setControls", &CarController::setControls )
-                        .def( "usePlayerControls", &CarController::usePlayerControls )
-                        .def( "getVehicleController", &CarController::getVehicleController )
-                        .scope[def( "typeInfo", CarController::typeInfo )]];
+        module( L )[class_<FourWheelVehicle, VehicleController, SmartPtr<FourWheelVehicle>>( "FourWheelVehicle" )
+                        .def( "getThrottle", &FourWheelVehicle::getThrottle )
+                        .def( "setThrottle", &FourWheelVehicle::setThrottle )
+                        .def( "getBrake", &FourWheelVehicle::getBrake )
+                        .def( "setBrake", &FourWheelVehicle::setBrake )
+                        .def( "getSteering", &FourWheelVehicle::getSteering )
+                        .def( "setSteering", &FourWheelVehicle::setSteering )
+                        .def( "setControls", &FourWheelVehicle::setControls )
+                        .def( "usePlayerControls", &FourWheelVehicle::usePlayerControls )
+                        .def( "getVehicleController", &FourWheelVehicle::getVehicleController )
+                        .scope[def( "typeInfo", FourWheelVehicle::typeInfo )]];
 
         module( L )[class_<HelicopterController, VehicleController, SmartPtr<HelicopterController>>(
                         "HelicopterController" )
@@ -1359,11 +1359,11 @@ namespace workphone
         module( L )[class_<EditorCameraController::EditorCameraInputListener, IEventListener,
                            SmartPtr<IEventListener>>( "EditorCameraInputListener" )];
 
-        module( L )[class_<CarController::InputListener, IEventListener, SmartPtr<IEventListener>>(
-            "CarControllerInputListener" )];
+        module( L )[class_<FourWheelVehicle::InputListener, IEventListener, SmartPtr<IEventListener>>(
+            "FourWheelVehicleInputListener" )];
 
-        module( L )[class_<CarController::VehicleCallback, vehicle::IVehicleCallback,
-                           SmartPtr<vehicle::IVehicleCallback>>( "CarControllerVehicleCallback" )];
+        module( L )[class_<FourWheelVehicle::VehicleCallback, vehicle::IVehicleCallback,
+                           SmartPtr<vehicle::IVehicleCallback>>( "FourWheelVehicleVehicleCallback" )];
         module(
             L )[class_<Material::MaterialStateObjectListener, IEventListener, SmartPtr<IEventListener>>(
             "MaterialStateObjectListener" )];

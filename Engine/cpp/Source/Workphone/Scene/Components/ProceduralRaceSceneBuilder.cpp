@@ -6568,7 +6568,7 @@ namespace workphone::scene::race
     void configurePhysics( const SceneAssets &assets, SmartPtr<scene::IGameActor> actor )
     {
         const auto &config = assets.vehicle.physics;
-        auto car = actor->getComponent<scene::CarController>();
+        auto car = actor->getComponent<scene::FourWheelVehicle>();
         auto vehicle = car->getVehicleController();
         auto body = actor->getComponent<scene::Rigidbody>();
         auto com = vector( config.massProperties.centreOfMass );

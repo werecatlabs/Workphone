@@ -12,7 +12,7 @@
 #include <Workphone/Graphics/GraphicsSystem.hpp>
 #include <Workphone/Graphics/GraphicsWindow.hpp>
 #include <Workphone/Graphics/GraphicsPipeline.hpp>
-#include "../../Engine/cpp/Source/Workphone/Scene/Components/CarControllerInput.hpp"
+#include "../../Engine/cpp/Source/Workphone/Scene/Components/FourWheelVehicleInput.hpp"
 #include <luabind/luabind.hpp>
 #include <filesystem>
 #include <cstdio>

@@ -460,7 +460,7 @@ BOOST_AUTO_TEST_CASE( terrain_city_source_anchor_roundtrip_test )
     {
         BOOST_CHECK( child->getParent() == scenery );
         BOOST_CHECK( child->getFlag( scene::IGameActor::ActorFlagDontSave ) );
-        BOOST_CHECK( !child->getComponent<scene::CarController>() );
+        BOOST_CHECK( !child->getComponent<scene::FourWheelVehicle>() );
         if( child->getName() == "Circuit collision plane" ) ground = child;
     }
     BOOST_REQUIRE( ground );
@@ -501,7 +501,7 @@ BOOST_AUTO_TEST_CASE( terrain_city_source_anchor_roundtrip_test )
     BOOST_CHECK( !standaloneCity->getAssets().cityLayout.lots.empty() );
     BOOST_CHECK( !standaloneCity->getAssets().meshes.empty() );
     BOOST_CHECK( !standaloneCity->getAssets().vehicle.geometry.hasGeometry() );
-    BOOST_CHECK( !cityOwner->getComponent<scene::CarController>() );
+    BOOST_CHECK( !cityOwner->getComponent<scene::FourWheelVehicle>() );
     BOOST_REQUIRE_EQUAL( cityOwner->getChildren().size(), 1u );
     const auto cityScenery = standaloneCity->getAssets().sceneryRoot;
     BOOST_REQUIRE( cityScenery );

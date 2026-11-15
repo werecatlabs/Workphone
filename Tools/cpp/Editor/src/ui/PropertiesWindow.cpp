@@ -11,7 +11,7 @@
 #include <ui/ActorWindow.hpp>
 #include <Workphone/Workphone.hpp>
 #include <Workphone/Scene/Components/Camera.hpp>
-#include <Workphone/Scene/Components/CarController.hpp>
+#include <Workphone/Scene/Components/FourWheelVehicle.hpp>
 #include <Workphone/Scene/Components/Cubemap.hpp>
 #include <Workphone/Scene/Components/RenderTexture.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsCubemap.hpp>
@@ -1154,7 +1154,7 @@ namespace workphone::editor
             property.setValue( value );
             if( name == scene::Camera::s_isActiveStr && target->isDerived<scene::Camera>() )
                 property.setAttribute( "manualActivation", "true" );
-            if( name == scene::CarController::handlingPresetStr && target->isDerived<scene::CarController>() )
+            if( name == scene::FourWheelVehicle::handlingPresetStr && target->isDerived<scene::FourWheelVehicle>() )
                 property.setAttribute( "applyHandlingPreset", "true" );
         }
         target->setProperties( replacement );

@@ -154,7 +154,7 @@
 #include <Workphone/Scene/Components/AudioEmitter.hpp>
 #include <Workphone/Scene/Components/Billboard.hpp>
 #include <Workphone/Scene/Components/Billboards.hpp>
-#include <Workphone/Scene/Components/CarController.hpp>
+#include <Workphone/Scene/Components/FourWheelVehicle.hpp>
 #include <Workphone/Scene/Components/HelicopterController.hpp>
 #include <Workphone/Scene/Components/Camera.hpp>
 #include <Workphone/Scene/Components/CharacterController.hpp>

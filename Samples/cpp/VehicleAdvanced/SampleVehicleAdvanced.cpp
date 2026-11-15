@@ -1557,7 +1557,7 @@ namespace workphone
             applicationManager->setPaused( false );
             sceneManager->play();
 
-            auto car = m_vehicleActor->getComponent<scene::CarController>();
+            auto car = m_vehicleActor->getComponent<scene::FourWheelVehicle>();
             auto vehicleController = car->getVehicleController();
             m_raceScene->configurePhysics();
 
@@ -2081,7 +2081,7 @@ namespace workphone
             if ( m_effectsSmokeTest && m_effectsEnabled ) updateVehicleEffects();
             if( m_smokeTest && m_smokePhase > 0 )
             {
-                auto car = m_vehicleActor->getComponent<scene::CarController>();
+                auto car = m_vehicleActor->getComponent<scene::FourWheelVehicle>();
                 auto vehicle = car->getVehicleController();
                 // Check the sustained turn and return to centre after the application
                 // task has published the pose; input changes can precede it by one frame.
@@ -3212,7 +3212,7 @@ namespace workphone
         if(!m_physicsConfigured){if(m_raceScene)m_raceScene->setControls(0,1,0);return;}
         auto applicationManager = core::IApplicationManager::instancePtr();
         auto input = applicationManager ? applicationManager->getInputDeviceManager() : nullptr;
-        auto car = m_vehicleActor ? m_vehicleActor->getComponent<scene::CarController>() : nullptr;
+        auto car = m_vehicleActor ? m_vehicleActor->getComponent<scene::FourWheelVehicle>() : nullptr;
         auto vehicle = car ? car->getVehicleController() : nullptr;
         if( !input || !vehicle )
         {
@@ -4105,7 +4105,7 @@ namespace workphone
             }
             WP_LOG( "Trackside collision smoke: verified static boxes=" + StringUtil::toString(count) );
             // Coast into the first garage to verify actual contact response.
-            auto car = m_vehicleActor->getComponent<scene::CarController>();
+            auto car = m_vehicleActor->getComponent<scene::FourWheelVehicle>();
             car->getVehicleController()->reset();
             const Transform3F spawn( { -28, .42f, -3 }, QuaternionF::identity() );
             chassis->clearForce();
@@ -4230,7 +4230,7 @@ namespace workphone
                 " peak yaw rate=" + StringUtil::toString( m_smokePeakYawRate ) +
                 " height range=" + StringUtil::toString( heightRange ) +
                 " peak vertical speed=" + StringUtil::toString( m_smokePeakVerticalSpeed ) );
-        if( auto car = m_vehicleActor->getComponent<scene::CarController>() )
+        if( auto car = m_vehicleActor->getComponent<scene::FourWheelVehicle>() )
             for( u32 i = 0; i < 4; ++i )
             {
                 auto wheel = car->getVehicleController()->getWheelController( i );
@@ -4275,7 +4275,7 @@ namespace workphone
         }
         if( m_lapStart == 0 )
             m_lapStart = now;
-        auto car = m_vehicleActor->getComponent<scene::CarController>();
+        auto car = m_vehicleActor->getComponent<scene::FourWheelVehicle>();
         auto vehicle = car ? car->getVehicleController() : nullptr;
         auto rigidbody = m_vehicleActor->getComponent<scene::Rigidbody>();
         const auto velocity = rigidbody ? rigidbody->getLinearVelocity() : Vector3<real_Num>::zero();

@@ -885,7 +885,7 @@ namespace workphone
         scene::CameraManager::setupTypeInfo();
         scene::CameraTarget::setupTypeInfo();
         scene::PrefabInstance::setupTypeInfo();
-        scene::CarController::setupTypeInfo();
+        scene::FourWheelVehicle::setupTypeInfo();
         scene::CharacterController::setupTypeInfo();
         scene::Collision::setupTypeInfo();
         scene::CollisionBox::setupTypeInfo();

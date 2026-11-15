@@ -110,13 +110,13 @@ drawing, graphics preparation, Editor UI, UI submission and presentation.
 
 ## Reusable component
 
-CarController owns keyboard/gamepad input and is the single publisher of throttle,
+FourWheelVehicle owns keyboard/gamepad input and is the single publisher of throttle,
 brake and steering channels. W/A/S/D and the arrow keys are read together, so
 opposing steering keys cancel and releasing one alias does not cancel a held
 alias. Speed-dependent steering limiting is applied to player input there.
 The samples retain reset/camera commands and smoke-test/AI policy only.
 `ProceduralRaceScene::setControls()` delegates an exclusive programmatic override
-to CarController; `usePlayerControls()` returns to keyboard/gamepad input.
+to FourWheelVehicle; `usePlayerControls()` returns to keyboard/gamepad input.
 Input events cannot overwrite an active override. Pausing or leaving play mode
 publishes zero channels instead of leaving the last driving command active.
 
@@ -124,7 +124,7 @@ publishes zero channels instead of leaving the last driving command active.
 closed circuit, collision plane, trackside scenery, sky, reflection probe and
 contact shadow. Both this C++ sample and the Lua sample use it. Attach it to the
 vehicle actor, set its seed and quality, and call `regenerate()` while stopped.
-It adds the required CollisionBox, Rigidbody and CarController siblings. Publish
+It adds the required CollisionBox, Rigidbody and FourWheelVehicle siblings. Publish
 input through `setControls(throttle, brake, steering)` and request reset with
 `reset()`. The component registers physics and render callbacks and releases its
 generated actors and resources on unload. Circuit queries and vehicle parameters

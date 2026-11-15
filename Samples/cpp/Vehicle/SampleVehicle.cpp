@@ -276,7 +276,7 @@ namespace workphone
                 for( auto child : wheelActor->getChildren() )
                     child->setLocalPosition( Vector3<real_Num>::zero() );
 
-            auto car = m_vehicleActor->getComponent<scene::CarController>();
+            auto car = m_vehicleActor->getComponent<scene::FourWheelVehicle>();
             if( m_smokeTest )
                 car->setControls( 0, 0, 0 );
             auto vehicleController = car->getVehicleController();
@@ -412,7 +412,7 @@ namespace workphone
     {
         if( m_vehicleActor )
         {
-            if( auto carController = m_vehicleActor->getComponent<scene::CarController>() )
+            if( auto carController = m_vehicleActor->getComponent<scene::FourWheelVehicle>() )
             {
                 carController->setThrottle( 0.0f );
                 carController->setBrake( 0.0f );
@@ -457,7 +457,7 @@ namespace workphone
     {
         auto applicationManager = core::IApplicationManager::instancePtr();
         auto input = applicationManager ? applicationManager->getInputDeviceManager() : nullptr;
-        auto car = m_vehicleActor ? m_vehicleActor->getComponent<scene::CarController>() : nullptr;
+        auto car = m_vehicleActor ? m_vehicleActor->getComponent<scene::FourWheelVehicle>() : nullptr;
         auto vehicle = car ? car->getVehicleController() : nullptr;
         if( !input || !vehicle )
         {
@@ -492,7 +492,7 @@ namespace workphone
         if( !m_vehicleActor )
             return;
 
-        auto car = m_vehicleActor->getComponent<scene::CarController>();
+        auto car = m_vehicleActor->getComponent<scene::FourWheelVehicle>();
         auto vehicle = car ? car->getVehicleController() : nullptr;
         auto physicsScene = core::IApplicationManager::instance()->getPhysicsManager()->getPhysicsScene();
         if( !vehicle || !physicsScene )
@@ -618,7 +618,7 @@ namespace workphone
         }
         const auto now = timer->getTime();
         m_nextDebugUpdate = now + 0.25;
-        auto car = m_vehicleActor->getComponent<scene::CarController>();
+        auto car = m_vehicleActor->getComponent<scene::FourWheelVehicle>();
         auto vehicle = car ? car->getVehicleController() : nullptr;
         auto rigidbody = m_vehicleActor->getComponent<scene::Rigidbody>();
         const auto velocity = rigidbody ? rigidbody->getLinearVelocity() : Vector3<real_Num>::zero();
@@ -826,7 +826,7 @@ namespace workphone
         auto chassis = m_vehicleActor->addComponent<scene::Rigidbody>();
         chassis->setAngularDamping( 0.3f );
         chassis->setLinearDamping( 0.05f );
-        auto car = m_vehicleActor->addComponent<scene::CarController>();
+        auto car = m_vehicleActor->addComponent<scene::FourWheelVehicle>();
         if( !car->getVehicleController() )
         {
             throw std::runtime_error( "SampleVehicle requires the WPVehiclePhysics plugin." );
