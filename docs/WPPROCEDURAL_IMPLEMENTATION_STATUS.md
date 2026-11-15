@@ -1,5 +1,36 @@
 # WPProcedural implementation status
 
+## Paved connections from commercial entrances to sidewalks — 15 November 2026
+
+When a raised commercial entrance cannot connect straight ahead, the fitter
+can leave the bottom landing at an angle or ease around a bend. It samples
+the retained terrain along the path and joins the upper edge of an actual
+fitted sidewalk. It rejects unsupported or steep strips and intersections
+with carriageways, neighboring parcels, or other new paths. The admitted
+route keeps frontage planting, verge cover, and meadow placement clear.
+
+The paved walking surface has running-bond blocks, stone edges seated in
+the bank, and a flush drainage channel where the route crosses a supported
+low point. The paving and edging meshes also supply the collision surfaces.
+The `entry-route` view in `SampleVehicleAdvanced` records the selected
+parcel, fixed camera pose, and body-specific physics probes in the approach
+corridor.
+
+The seed-42 district produced two new connectors. The photographed studio
+route measures 7.30 m across 13 fitted rows, from the five-riser stair
+apron to the sidewalk. The final 72-ray corridor probe hit the connector
+seven times and the sidewalk 13 times. The storefront close-up retained
+18 native stair hits.
+
+Roundabout approach sidewalks now reuse the adjoining fitted road's end
+section when the port and road align. A coordinate mismatch of a few
+micrometres had dropped a 3.6 m sidewalk panel in the studio view. The
+oblique-port regression checks sidewalk coverage on both sides and verifies
+that the carriageway stays clear. It reproduced the missing panel on the old
+fitter. All seven focused Debug tests passed with the repair. See
+`artifacts/procedural/city-connected-frontages-20261115/visual-review.md`
+for the native captures and verification.
+
 ## Commercial storefronts and entrance details — 15 November 2026
 
 Built-in commercial frontages gain three storefront treatments with recessed

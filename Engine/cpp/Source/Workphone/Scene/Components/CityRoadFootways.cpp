@@ -978,17 +978,19 @@ namespace workphone::scene
                                    grade, source );
                 }
             };
+            const auto sectionSpan = []( const procedural::CityRoadSplineSample &p ) {
+                return std::hypot( double( p.right.x ) - p.left.x, double( p.right.z ) - p.left.z );
+            };
+            const auto sectionAcross = [&]( const procedural::CityRoadSplineSample &p ) {
+                const auto span = sectionSpan( p );
+                return Point{ ( p.right.x - p.left.x ) / span, ( p.right.z - p.left.z ) / span };
+            };
             for( const auto &run : runs )
             {
                 const auto &road = source.roads[connections.roadRuns[run.road].roadIndex];
                 const auto &points = connections.roadRuns[run.road].points;
                 const auto &a = points[run.first], &b = points[run.last];
-                const auto across = []( const procedural::CityRoadSplineSample &p ) {
-                    const double span =
-                        std::hypot( double( p.right.x ) - p.left.x, double( p.right.z ) - p.left.z );
-                    return Point{ ( p.right.x - p.left.x ) / span, ( p.right.z - p.left.z ) / span };
-                };
-                const auto na = across( a ), nb = across( b );
+                const auto na = sectionAcross( a ), nb = sectionAcross( b );
                 for( int side : { -1, 1 } )
                 {
                     const auto ea = point( side < 0 ? a.left : a.right ),
@@ -1057,19 +1059,46 @@ namespace workphone::scene
                     const auto outerBase =
                         add( center, walk.direction,
                              std::sqrt( outerRadius * outerRadius - outerAcross * outerAcross ) );
+                    const auto end = add( center, walk.direction, junction.outerRadius + port.length );
+                    const procedural::CityRoadSplineSample *runEnd = nullptr;
+                    Point runAcross{};
+                    double alignment = 0, closest = .0002;
+                    for( const auto &roadRun : connections.roadRuns )
+                    {
+                        if( source.roads[roadRun.roadIndex].id != port.approachId || roadRun.points.size() < 2 ) continue;
+                        for( const auto *sample : { &roadRun.points.front(), &roadRun.points.back() } )
+                        {
+                            const double error = std::hypot( double( sample->position.x ) - end.x,
+                                                             double( sample->position.z ) - end.z );
+                            if( error > closest || std::abs( sectionSpan( *sample ) - port.width ) > .003 ) continue;
+                            const auto across = sectionAcross( *sample );
+                            const double dot = across.x * walk.across.x + across.z * walk.across.z;
+                            if( std::abs( dot ) <= .99998 ) continue;
+                            runEnd = sample;
+                            runAcross = across;
+                            alignment = dot;
+                            closest = error;
+                        }
+                    }
                     for( int side : { -1, 1 } )
                     {
                         const size_t index = side < 0 ? 0 : 1;
                         walk.inner[index] = add( innerBase, walk.across, side * innerAcross );
                         walk.outer[index] = add( outerBase, walk.across, side * outerAcross );
-                        const auto end =
-                            add( center, walk.direction, junction.outerRadius + port.length );
-                        // Both circular and straight domains share this exact
-                        // skew cross-section; whole-quad mouth culling previously
-                        // left an unbridgeable grass gap between these surfaces.
-                        strip( walk.inner[index], walk.outer[index],
-                               add( end, walk.across, side * innerAcross ),
-                               add( end, walk.across, side * outerAcross ), junction.maxGrade );
+                        auto innerEnd = add( end, walk.across, side * innerAcross );
+                        auto outerEnd = add( end, walk.across, side * outerAcross );
+                        if( runEnd )
+                        {
+                            // A shared cross section prevents micrometre overlaps from
+                            // rejecting an otherwise supported roundabout sidewalk strip.
+                            const bool right = side * alignment > 0;
+                            const auto margin = point( right ? runEnd->right : runEnd->left );
+                            const double direction = right ? 1. : -1.;
+                            innerEnd = add( margin, runAcross, direction * gap );
+                            outerEnd = add( margin, runAcross, direction * ( gap + width ) );
+                        }
+                        // Both circular and straight domains share this exact skew cross section.
+                        strip( walk.inner[index], walk.outer[index], innerEnd, outerEnd, junction.maxGrade );
                     }
                 }
                 const size_t portCount = junction.ports.size();

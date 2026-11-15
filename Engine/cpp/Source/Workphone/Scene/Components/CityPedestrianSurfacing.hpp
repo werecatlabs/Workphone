@@ -7,7 +7,7 @@
 
             struct Batches
             {
-                Geometry paving, edging, drainage;
+                Geometry paving, edging, drainage, bedding;
             };
 
             struct Vertex
@@ -101,7 +101,8 @@
                 return std::hypot( b.x - a.x, b.z - a.z );
             }
 
-            bool append( Batches &batches, const cityEntranceRoute::Route &route )
+            template <class Surface>
+            bool append( Batches &batches, const cityEntranceRoute::Route &route, const Surface &surface )
             {
                 if( route.rowCount < 2 || route.rowCount > route.rows.size() ) return false;
                 std::array<float, 96> stations{};
@@ -140,6 +141,18 @@
                         const auto high = section( to, stations[i], right );
                         emitTop( batches, low[0], low[1], high[1], across, drain );
                         emitTop( batches, low[0], high[1], high[0], across, drain );
+
+                        const auto a = right ? from.right : from.left;
+                        const auto b = right ? to.right : to.left;
+                        auto baseA = a, baseB = b;
+                        if( !surface( baseA ) || !surface( baseB ) ) continue;
+                        // Sink the supported edge into the bank. Leave the two
+                        // shared end rows open where they meet the existing walks.
+                        baseA.y = std::min( a.y, baseA.y - .054f );
+                        baseB.y = std::min( b.y, baseB.y - .054f );
+                        const auto normal = cityEntranceRoute::horizontal( right ? across : -across ).normaliseCopy();
+                        batches.bedding.quad( a, b, baseB, baseA, normal,
+                            stations[i - 1] / tileMetres, stations[i] / tileMetres, .28f, .35f );
                     }
                 }
                 return batches.paving.indices.size() > first;
@@ -172,11 +185,11 @@
                         const float finish = random( seed + course * 117u + stone * 37u );
                         const float bevel = std::clamp( ( gap - .0015f ) / .006f, 0.f, 1.f );
                         const float face = bevel * bevel * ( 3.f - 2.f * bevel );
-                        const float dust = 120.f + grain * 10.f;
-                        const float top = 161.f + 20.f * finish + 11.f * ( grain - .5f );
+                        const float dust = 110.f + grain * 9.f;
+                        const float top = 144.f + 15.f * finish + 13.f * ( grain - .5f );
                         const float base = dust + ( top - dust ) * face;
                         const auto pixel = colour.pixel( x, y );
-                        pixel[0] = channel( base + 3.f ); pixel[1] = channel( base ); pixel[2] = channel( base - 5.f ); pixel[3] = 255;
+                        pixel[0] = channel( base + 8.f ); pixel[1] = channel( base ); pixel[2] = channel( base - 9.f ); pixel[3] = 255;
                         relief[size_t( y ) * size + x] = face * ( .0023f + .00065f * grain );
                     }
                 const auto height = [&]( u32 x, u32 y ) { return relief[size_t( y ) * size + x]; };
@@ -221,6 +234,9 @@
                 if( !batches.drainage.indices.empty() )
                     actors[2] = add( "Terrain city pedestrian connector drainage", batches.drainage,
                          material( assets, { .245f, .250f, .235f, 1 }, .67f, .54f ) );
+                if( !batches.bedding.indices.empty() )
+                    add( "Terrain city pedestrian connector stone bedding", batches.bedding,
+                        stone( { .58f, .57f, .52f, 1 }, .18f ) );
                 return actors;
             }
         }  // namespace cityPedestrianSurfacing

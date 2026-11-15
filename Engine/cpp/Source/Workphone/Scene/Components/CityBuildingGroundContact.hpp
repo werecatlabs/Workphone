@@ -519,7 +519,7 @@
                     };
                     cityEntranceRoute::Route route;
                     if( !cityEntranceRoute::plan( edges, launch, normal, std::min( .84f, half ), clear, surface, route ) ||
-                        !cityPedestrianSurfacing::append( routedPaving, route ) ) continue;
+                        !cityPedestrianSurfacing::append( routedPaving, route, surface ) ) continue;
 
                     for( size_t row = 1; row < route.rowCount; ++row )
                     {

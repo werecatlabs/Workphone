@@ -176,6 +176,49 @@ namespace
         require( topAt( asphalt, 0, 19 ) && !topAt( asphalt, 0, 22 ) && !topAt( walks, 0, 24 ) &&
                      topAt( walks, 0, -24 ), "An unsupported terminal must retain the original road and omit only its own cap." );
     }
+
+    void obliqueRoundaboutPortSeam()
+    {
+        auto s = source();
+        CityRoadRoundaboutSpec junction;
+        junction.junctionId = "50000000-0000-4000-8000-000000000001";
+        junction.center = { 0, .025f, 77.00616455078125f };
+        Vector3F direction{ -.7936766743659973f, 0, -.608339786529541f };
+        const auto outward = direction;
+        for( unsigned i = 0; i < 4; ++i )
+        {
+            if( i == 0 )
+            {
+                addRoad( s, i, { -32.017032623291f, 0, 52.465648651123f },
+                               { -25.3976535797119f, 0, 57.53929138183594f } );
+                s.roads.back().knots.back().inHandle = { -2.2064597606658936f, 0, -1.6912142038345337f };
+            }
+            else
+                addRoad( s, i, junction.center + direction * 32.f, junction.center + direction * 46.f );
+            s.roads.back().width = 7.f;
+            junction.ports.push_back( { s.roads.back().id, direction, 7.f, 18.f } );
+            direction = { -direction.z, 0, direction.x };
+        }
+        s.roundabouts.push_back( junction );
+        const auto data = terrain( 129, 2.f );
+        const auto bake = sample( s, data );
+        CityRoadTerrainMesh mesh;
+        String error;
+        check( buildCityRoadFootways( s, bake, data, {}, mesh, error ), error );
+        agreement( mesh, data );
+        const Vector3F across{ -outward.z, 0, outward.x };
+        for( float station : { 28.f, 29.f, 30.f, 31.8f, 32.2f } )
+        {
+            const auto centre = junction.center + outward * station;
+            require( !topAt( mesh, centre.x, centre.z ), "Oblique sidewalk join crossed the carriageway" );
+            for( float sign : { -1.f, 1.f } )
+            {
+                const auto p = centre + across * ( sign * 4.8f );
+                require( topAt( mesh, p.x, p.z ), "Oblique port precision left a missing sidewalk strip" );
+            }
+        }
+    }
+
     void roundabout()
     {
         auto s = source(); CityRoadRoundaboutSpec junction; junction.junctionId = "50000000-0000-4000-8000-000000000001";
@@ -537,6 +580,7 @@ int main()
     try
     {
         run( "streets and exact terrain", streetsAndTerrain ); run( "four-port roundabout", roundabout );
+        run( "oblique roundabout port sidewalk seam", obliqueRoundaboutPortSeam );
         run( "rounded dead-end and unsupported fallback", roundedStreetEnd );
         run( "tight editable curve", tightEditableCurve );
         run( "ordinary unequal-width T/X pedestrian joins", ordinaryJunctionWalks );
