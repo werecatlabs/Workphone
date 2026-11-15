@@ -1056,20 +1056,57 @@ namespace workphone
             return result;
         }
 
-        bool checkSceneWinding( const advanced::SceneAssets &assets )
+        bool checkSceneWinding( const advanced::SceneAssets &assets, size_t &checked, size_t &skippedStreamedMeshes )
         {
-            size_t checked = 0;
+            checked = skippedStreamedMeshes = 0;
+            auto app = core::IApplicationManager::instancePtr();
+            auto manager = assets.cityStreaming && app ? app->getGameManager() : nullptr;
+            auto graphics = assets.cityStreaming && app ? app->getGraphicsSystem() : nullptr;
+            ScopedLock managerLock( manager );
+            ScopedLock graphicsLock( graphics );
+            SourceBudgetSet<const IMeshResource *> streamedOut;
+            if( assets.cityStreaming )
+            {
+                for( const auto &actor : assets.actors )
+                {
+                    const auto component = actor ? actor->getComponent<scene::Mesh>() : nullptr;
+                    const auto resource = component ? component->getMeshResource() : nullptr;
+                    if( !resource || resource->getMesh() ) continue;
+                    const auto renderer = actor->getComponent<scene::MeshRenderer>();
+                    if( assets.cityStreaming->isStreamedOut( renderer.get() ) )
+                        streamedOut.insert( resource.get() );
+                }
+            }
             for( const auto &resource : assets.meshes )
             {
-                for( const auto &section : resource->getMesh()->getSubMeshes() )
+                if( !resource )
+                {
+                    WP_LOG_ERROR( "VehicleAdvanced: a scene mesh has no resource." );
+                    return false;
+                }
+                const auto mesh = resource->getMesh();
+                if( !mesh )
+                {
+                    if( streamedOut.count( resource.get() ) )
+                    {
+                        ++skippedStreamedMeshes;
+                        continue;
+                    }
+                    WP_LOG_ERROR( "VehicleAdvanced: a scene mesh payload is unexpectedly absent: " + resource->getFilePath() );
+                    return false;
+                }
+                for( const auto &section : mesh->getSubMeshes() )
                 {
                     double alignment = 0;
+                    if( !section ) return false;
                     auto vertices = section->getVertexBuffer();
+                    auto indices = section->getIndexBuffer();
+                    if( !vertices || !indices ) return false;
                     auto declaration = vertices->getVertexDeclaration();
+                    if( !declaration ) return false;
                     auto position = declaration->findElementBySemantic( VertexElementSemantic::VES_POSITION );
                     auto normal = declaration->findElementBySemantic( VertexElementSemantic::VES_NORMAL );
-                    auto indices = section->getIndexBuffer();
-                    if( !position || !normal || !indices || indices->getNumIndices() % 3 != 0 )
+                    if( !position || !normal || indices->getNumIndices() % 3 != 0 )
                         return false;
                     auto readVector = [&]( u32 index, u32 offset ) {
                         const auto data = reinterpret_cast<const f32 *>(
@@ -1108,7 +1145,8 @@ namespace workphone
                     }
                 }
             }
-            WP_LOG( "VehicleAdvanced outward winding validated: triangles=" + StringUtil::toString( checked ) );
+            WP_LOG( "VehicleAdvanced outward winding validated: triangles=" + StringUtil::toString( checked ) +
+                    " streamedOutMeshes=" + StringUtil::toString( skippedStreamedMeshes ) );
             return checked > 0;
         }
 
@@ -1570,6 +1608,7 @@ namespace workphone
             m_captureAttempted = false;
             m_capturePassed = false;
             m_citySmokePhase = CitySmokePhase::Startup;
+            m_citySmokeStartupIdentity = 0;
             m_citySmokeRequested.store( CitySmokeObserver::Automatic );
             m_citySmokeApplied.store( CitySmokeObserver::Automatic );
             m_citySmokeDeadline = {};
@@ -1752,8 +1791,8 @@ namespace workphone
             m_citySmokeLast.nativeNodeCount = u32( std::max( 0, wp_graphics_scene_get_node_count( nativeScene->getNativeScene() ) ) );
         }
 #endif
-        if( !native.componentOwnershipValid || ( m_citySmokeNear.recorded &&
-            native.componentIdentity != m_citySmokeNear.componentIdentity ) )
+        if( !native.componentOwnershipValid || ( m_citySmokePhase != CitySmokePhase::Startup &&
+            native.componentIdentity != m_citySmokeStartupIdentity ) )
         {
             failCityStreamingSmoke( "City streaming changed an actor, renderer or component state-machine identity" );
             return false;
@@ -1769,6 +1808,8 @@ namespace workphone
 
         const bool detailReady = streaming.residentPatches > 0 && streaming.residentMeshes > 0 &&
             native.readyMeshes > native.readyImposterMeshes;
+        const bool detailEvicted = streaming.residentPatches == 0 && streaming.residentMeshes == 0 &&
+            streaming.residentSourceBytes == 0;
         const auto usedSource = []( const CitySmokeSnapshot &snapshot ) {
             return snapshot.memory.used[size_t( StreamMemoryClass::SourceCpu )];
         };
@@ -1802,16 +1843,24 @@ namespace workphone
                 return false;
             }
             m_cityBuildingStartupDeadline = 0;
-            transition( CitySmokePhase::Near, CitySmokeObserver::Near );
+            m_citySmokeStartupIdentity = native.componentIdentity;
+            // Generated patches start resident and can occupy the retain-only
+            // radius. Measure both near samples after entering from cold.
+            transition( CitySmokePhase::ColdAway, CitySmokeObserver::Away );
             break;
         }
+        case CitySmokePhase::ColdAway:
+            if( !detailEvicted || !native.streamedOutMeshes || !streaming.evictedPatches ||
+                !streaming.meshPayloadEvictions || !streaming.nativeMeshUnloads ) return false;
+            transition( CitySmokePhase::Near, CitySmokeObserver::Near );
+            break;
         case CitySmokePhase::Near:
             if( !detailReady ) return false;
             m_citySmokeNear = m_citySmokeLast;
             transition( CitySmokePhase::Away, CitySmokeObserver::Away );
             break;
         case CitySmokePhase::Away:
-            if( streaming.residentPatches || streaming.residentMeshes || streaming.residentSourceBytes ||
+            if( !detailEvicted ||
                 m_citySmokeLast.nativeObjectCount >= m_citySmokeNear.nativeObjectCount ||
                 m_citySmokeLast.nativeNodeCount >= m_citySmokeNear.nativeNodeCount ||
                 native.readyMeshes >= m_citySmokeNear.readyMeshes ||
@@ -1864,7 +1913,7 @@ namespace workphone
             output << ",\"memory\":";
             writeSharedMemoryLedger( output, snapshot.memory );
             output << ",\"nativeGraphValid\":" << ( snapshot.nativeGraphValid ? "true" : "false" )
-                   << ",\"componentIdentityPreserved\":" << ( snapshot.componentIdentity == m_citySmokeNear.componentIdentity ? "true" : "false" )
+                   << ",\"componentIdentityPreserved\":" << ( snapshot.componentIdentity == m_citySmokeStartupIdentity ? "true" : "false" )
                    << ",\"nativeObjectCount\":" << snapshot.nativeObjectCount << ",\"nativeNodeCount\":" << snapshot.nativeNodeCount
                    << ",\"visibleMeshes\":" << snapshot.visibleMeshes
                    << ",\"visibleDetailMeshes\":" << snapshot.visibleDetailMeshes
@@ -1874,6 +1923,7 @@ namespace workphone
                    << ",\"nativeTriangles\":" << snapshot.nativeTriangles << '}';
         };
         output << "{\"passed\":" << ( m_citySmokePhase == CitySmokePhase::Passed ? "true" : "false" )
+               << ",\"coldStartPrepared\":" << ( m_citySmokeNear.recorded ? "true" : "false" )
                << ",\"observers\":{\"nearCamera\":";
         position( m_citySmokeCamera );
         output << ",\"nearVehicle\":"; position( m_citySmokeVehicle );
@@ -1892,7 +1942,7 @@ namespace workphone
 
     void SampleVehicleAdvanced::failCityStreamingSmoke( const std::string &reason )
     {
-        const char *phases[] = { "startup", "near", "away", "return", "automatic", "passed", "failed" };
+        const char *phases[] = { "startup", "coldAway", "near", "away", "return", "automatic", "passed", "failed" };
         const std::string failedPhase = phases[size_t( m_citySmokePhase )];
         m_citySmokePhase = CitySmokePhase::Failed;
         m_citySmokeRequested.store( CitySmokeObserver::Automatic, std::memory_order_release );
@@ -3149,7 +3199,11 @@ namespace workphone
                     WP_LOG_ERROR(
                         "VehicleAdvanced: cubemap actor, texture or vehicle material binding is "
                         "invalid." );
-                const bool windingValid = checkSceneWinding( m_assets );
+                size_t windingTriangles = 0, skippedWindingMeshes = 0;
+                const bool windingValid = checkSceneWinding( m_assets, windingTriangles, skippedWindingMeshes );
+                evidence << ",\n  \"sceneWinding\": {\"trianglesChecked\":" << windingTriangles
+                         << ",\"skippedStreamedMeshes\":" << skippedWindingMeshes
+                         << ",\"valid\":" << ( windingValid ? "true" : "false" ) << '}';
                 m_capturePassed = ( m_capturePath.empty() || advanced::captureFrame( m_capturePath ) ) &&
                                   treeLODValid && vehicleLODValid && reflectionValid && windingValid &&
                                   nativeFrameValid && foliageValid && radianceValid && sunlightValid && linearSceneValid && sceneSamplingValid && cityValid &&

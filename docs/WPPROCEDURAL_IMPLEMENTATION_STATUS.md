@@ -1,5 +1,40 @@
 # WPProcedural implementation status
 
+## Close junction fitting and streaming regression coverage — 15 November 2026
+
+An eight-block, seed-42 terrain-city capture exposed a connection failure between
+nearby junctions. The connection fitter now shares short approach runs according
+to road width and angle, and fits each rounded corner to the available caps.
+Already-fitting junctions retain their previous geometry. A 0.25 m minimum
+corner radius, exact shared ribbon edges, winding and overlap validation still
+apply. The canonical editable splines remain unchanged.
+
+The formerly failing relief-2 fixture now passes, along with an unequal-width
+short-road regression that checks continuous coverage, exact seams, determinism
+and transactional rejection of impossible spacing. All five affected road
+suites passed after the fix; the merged build had also passed all 14 focused
+city, streaming and native graphics suites. The streaming observer uses the
+merged `FourWheelVehicle` component name.
+
+The larger streaming probe exposed a separate warm-start assumption: initial
+geometry can remain within the retain radius even when it is outside the load
+radius. The sample now performs a preparatory eviction before its measured
+near-away-return sequence. It checks actor, renderer and state-machine identities
+from startup and retains exact native return counts, pose and visibility checks.
+
+The final eight-block native capture passed on the software renderer. Its measured
+cycle restored 717 detail meshes across 27 patches while keeping 28 imposters
+ready. One distant patch intentionally retained only its imposter. The resident
+winding check covered 893,647 triangles and skipped exactly its 19 evicted mesh
+payloads, fixing a capture-only null dereference exposed by the larger scene.
+Eviction released 83.20 MiB of source reservations and 27.19 MiB of GPU
+reservations. Both ledgers returned to their measured near-state values, with
+zero rejected reservations, pose errors or visibility mismatches. This establishes
+one measured cycle after preparation, not a long-duration memory plateau.
+The successful run removed its 736-file cache at exit. See the
+[eight-block capture and audits](../artifacts/procedural/city-building-streaming-20261115/iteration-09/streaming-review.json)
+and [visual review](../artifacts/procedural/city-building-streaming-20261115/visual-review.md).
+
 ## Generated city building streaming — 15 November 2026
 
 Generated city patches use detailed building meshes, simplified masses and

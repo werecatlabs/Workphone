@@ -197,7 +197,7 @@ namespace workphone
         s32 m_cityStreetDetail = -1;
         bool m_cityStreaming = true;
         bool m_cityStreamingSmokeTest = false;
-        enum class CitySmokePhase { Startup, Near, Away, Return, Automatic, Passed, Failed };
+        enum class CitySmokePhase { Startup, ColdAway, Near, Away, Return, Automatic, Passed, Failed };
         struct CitySmokeSnapshot
         {
             scene::race::CityStreamingStats streaming;
@@ -211,6 +211,7 @@ namespace workphone
             f32 maximumPoseError = 0;
         };
         CitySmokePhase m_citySmokePhase = CitySmokePhase::Startup;
+        u64 m_citySmokeStartupIdentity = 0;
         std::atomic<CitySmokeObserver> m_citySmokeRequested{ CitySmokeObserver::Automatic };
         std::atomic<CitySmokeObserver> m_citySmokeApplied{ CitySmokeObserver::Automatic };
         std::chrono::steady_clock::time_point m_citySmokeDeadline;

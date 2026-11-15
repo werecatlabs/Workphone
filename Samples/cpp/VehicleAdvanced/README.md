@@ -169,8 +169,11 @@ these as `-CityStreaming on|off` and `-CitySourceMemoryMiB N`. It defaults to
 `off` for stable comparisons with earlier captures.
 
 The Windows Claw streaming probe requires a generated city, streaming enabled,
-and a capture. It moves the streaming observer beyond the city and back while
-leaving the capture camera in place. The `cityStreamingSmoke` evidence records
+and a capture. It first evicts initial detail and reloads from the near observers,
+so the measured near and return states use the same load-radius conditions.
+It then moves the streaming observer beyond the city and back while leaving the
+capture camera in place. Actor and component identities are checked from startup
+through this preparation and the measured round trip. The `cityStreamingSmoke` evidence records
 settled near, evicted, returned and automatic-observer states, including native
 mesh residency, imposter readiness and the shared source ledger. The sample
 requires native detail eviction and reload and a decrease in source memory
