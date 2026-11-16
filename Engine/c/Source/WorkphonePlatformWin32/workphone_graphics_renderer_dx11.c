@@ -326,12 +326,13 @@ static const wp_c8 s_ps_pntc_src[] = WP_HDR_OUTPUT_HLSL
     " if (terrain_controls.x > 0.5) alpha = 1.0;\n"
     " if (controls.z >= 0.0) clip(alpha - controls.z);\n"
     /* Hash the same undeformed surface cells in every view, including shadow. */
-    " [branch] if (i.foliage_coverage.w > 0.0) {\n"
+    " [branch] if (i.foliage_coverage.w != 0.0) {\n"
     "   uint3 cell = uint3(frac(i.foliage_coverage.xyz * (1.0 / 4096.0)) * 524288.0);\n"
     "   uint bits = cell.x * 1597334677u ^ cell.y * 3812015801u ^ cell.z * 2798796415u;\n"
     "   bits = (bits ^ (bits >> 16u)) * 2246822519u;\n"
     "   float threshold = float((bits ^ (bits >> 13u)) >> 8u) * (1.0 / 16777216.0);\n"
-    "   clip(threshold - i.foliage_coverage.w); }\n"
+    "   if (i.foliage_coverage.w > 0.0) clip(threshold - i.foliage_coverage.w);\n"
+    "   else clip(-i.foliage_coverage.w - threshold); }\n"
     " if (shadow_controls.y > 0.5) { clip(alpha - 0.001); return packUnlit(0.0); }\n"
     " float3 emission = emissive_color.rgb;\n"
     " if (map_flags.w > 0.5) { float3 e=emission_tex.Sample(tex_sampler, i.uv).rgb;\n"
@@ -5705,7 +5706,7 @@ wp_s32 wp_renderer_dx11_validate_foliage_instances(
         p = (const wp_f32 *)&instances[i].uv_rect;
         for( j = 0; j < 12; ++j ) if( !(p[j] >= -1000000.0f && p[j] <= 1000000.0f) ) return 0;
         if( p[0] < 0 || p[1] < 0 || p[2] <= 0 || p[3] <= 0 || p[0]+p[2] > 1.000001f || p[1]+p[3] > 1.000001f ) return 0;
-        if( instances[i].interaction.z < 0 || instances[i].interaction.z > 1 ||
+        if( instances[i].interaction.z < -1 || instances[i].interaction.z > 1 ||
             instances[i].interaction.w < 0 || instances[i].interaction.w > 1 ) return 0;
     }
     return 1;

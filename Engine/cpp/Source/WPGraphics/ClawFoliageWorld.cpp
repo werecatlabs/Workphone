@@ -1084,68 +1084,80 @@ namespace workphone::render
                 }
                 const auto hash = foliageStableHash( instance.id ^ instance.seed );
                 const auto fraction = double( hash >> 11 ) * ( 1.0 / 9007199254740992.0 );
-                if( fraction >= species.densityFractions[size_t( lod )] )
-                {
-                    ++stats.culledInstances;
-                    continue;
-                }
-                wp_foliage_instance_dx11 output{};
-                output.uv_rect = { 0, 0, 1, 1 };
-                if( lod == 2 && species.farBillboard )
-                {
-                    ClawFoliageImpostorPlacement placement;
-                    if( !buildFoliageImpostorPlacement( species, world, view,
-                            nextHistory.entries.back().impostorView, placement ) )
-                    {
-                        error = "Invalid foliage impostor camera or captured projection.";
-                        p.error = error;
-                        return false;
-                    }
-                    nextHistory.entries.back().impostorView = placement.selectedView;
-                    const auto &atlas = species.impostor.views[size_t( placement.selectedView )];
-                    output.uv_rect = { atlas.uvMinimum.x, atlas.uvMinimum.y,
-                                       atlas.uvMaximum.x - atlas.uvMinimum.x,
-                                       atlas.uvMaximum.y - atlas.uvMinimum.y };
-                    world = placement.transform;
-                }
-                std::memcpy( output.instance.transform.m, world.ptr(),
-                             sizeof( output.instance.transform ) );
-                output.instance.tint = { instance.tint.r, instance.tint.g, instance.tint.b,
-                                         instance.tint.a };
-                const auto localWind = vector( world.inverse(), { species.wind.amplitude, 0, 0 } );
-                const auto phase = std::fmod( double( p.seconds ) * species.wind.frequency +
-                                                  double( hash & 65535u ) / 65535.0 * 6.283185307,
-                                              6.283185307 );
-                output.wind = { localWind.x, localWind.z, f32( phase ), species.wind.flutter };
-                Vector3F bend{};
+                Vector3F worldBend{};
                 for( const auto &interaction : p.interactions )
                 {
                     auto delta = root - interaction.position;
                     delta.y = 0;
                     const auto length = delta.length();
-                    if( length >= interaction.radius )
-                    {
-                        continue;
-                    }
-                    if( length < 1e-5f )
-                    {
-                        delta = { 1, 0, 0 };
-                    }
-                    else
-                    {
-                        delta /= length;
-                    }
-                    bend += delta * ( interaction.strength * ( 1 - length / interaction.radius ) );
+                    if( length >= interaction.radius ) continue;
+                    delta = length < 1e-5f ? Vector3F( 1, 0, 0 ) : delta / length;
+                    worldBend += delta * ( interaction.strength * ( 1 - length / interaction.radius ) );
                 }
-                if( bend.lengthSquared() > 1 )
+                if( worldBend.lengthSquared() > 1 ) worldBend.normalise();
+                const auto phase = std::fmod( double( p.seconds ) * species.wind.frequency +
+                                                  double( hash & 65535u ) / 65535.0 * 6.283185307,
+                                              6.283185307 );
+                // A signed coverage value selects complementary, seeded cutout
+                // masks. Forced LODs and shadows remain single-geometry reviews.
+                const auto emit = [&]( s32 level, f32 opacity, bool entering ) -> bool {
+                    if( opacity <= 0 || fraction >= species.densityFractions[size_t( level )] ) return true;
+                    auto transform = world;
+                    wp_foliage_instance_dx11 output{};
+                    output.uv_rect = { 0, 0, 1, 1 };
+                    if( level == 2 && species.farBillboard )
+                    {
+                        ClawFoliageImpostorPlacement placement;
+                        if( !buildFoliageImpostorPlacement( species, transform, view,
+                                nextHistory.entries.back().impostorView, placement ) )
+                        {
+                            error = "Invalid foliage impostor camera or captured projection.";
+                            p.error = error;
+                            return false;
+                        }
+                        nextHistory.entries.back().impostorView = placement.selectedView;
+                        const auto &atlas = species.impostor.views[size_t( placement.selectedView )];
+                        output.uv_rect = { atlas.uvMinimum.x, atlas.uvMinimum.y,
+                                           atlas.uvMaximum.x - atlas.uvMinimum.x,
+                                           atlas.uvMaximum.y - atlas.uvMinimum.y };
+                        transform = placement.transform;
+                    }
+                    std::memcpy( output.instance.transform.m, transform.ptr(),
+                                 sizeof( output.instance.transform ) );
+                    output.instance.tint = { instance.tint.r, instance.tint.g, instance.tint.b,
+                                             instance.tint.a };
+                    const auto inverse = transform.inverse();
+                    const auto localWind = vector( inverse, { species.wind.amplitude, 0, 0 } );
+                    const auto bend = vector( inverse, worldBend * species.wind.maximumInteractionBend );
+                    output.wind = { localWind.x, localWind.z, f32( phase ), species.wind.flutter };
+                    const auto alpha = opacity * ( 1 - coverageFade );
+                    const auto fade = alpha >= 1 ? 0.f : entering ? -alpha : 1 - alpha;
+                    output.interaction = { bend.x, bend.z, fade, f32( hash & 65535u ) / 65535.0f };
+                    bins[{ instance.species, u32( level ) }].push_back( output );
+                    ++stats.lodInstances[size_t( level )];
+                    return true;
+                };
+                s32 blendNear = -1;
+                f32 blendFarWeight = 0;
+                if( !view.shadow && view.forcedLod < 0 )
+                    for( s32 boundary = 0; boundary < 2; ++boundary )
+                    {
+                        const auto threshold = thresholds[instance.species][size_t( boundary )];
+                        const auto width = threshold * std::max( .08f, species.hysteresis );
+                        if( width <= 0 || screen < threshold - width || screen > threshold + width ) continue;
+                        const auto t = std::clamp( ( threshold + width - screen ) / ( 2 * width ), 0.f, 1.f );
+                        blendNear = boundary;
+                        blendFarWeight = t * t * ( 3 - 2 * t );
+                        break;
+                    }
+                const auto beforeCount = stats.lodInstances;
+                if( blendNear >= 0 )
                 {
-                    bend.normalise();
+                    if( !emit( blendNear, 1 - blendFarWeight, false ) ||
+                        !emit( blendNear + 1, blendFarWeight, true ) ) return false;
                 }
-                bend = vector( world.inverse(), bend * species.wind.maximumInteractionBend );
-                const auto coverageSeed = f32( hash & 65535u ) / 65535.0f;
-                output.interaction = { bend.x, bend.z, coverageFade, coverageSeed };
-                bins[{ instance.species, u32( lod ) }].push_back( output );
-                ++stats.lodInstances[size_t( lod )];
+                else if( !emit( lod, 1, false ) ) return false;
+                if( stats.lodInstances == beforeCount ) ++stats.culledInstances;
             }
         }
         std::sort( nextHistory.entries.begin(), nextHistory.entries.end(),

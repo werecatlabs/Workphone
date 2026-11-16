@@ -2781,6 +2781,46 @@ namespace workphone
 #endif
             }
             updateRenderCamera();
+            if( m_foliageMotionCapture && m_foliageMotionStage < 6 && m_cameraActor && m_assets.foliageTerrain )
+            {
+                const auto eye = m_cameraActor->getWorldTransform().getPosition();
+                const auto elapsed = core::IApplicationManager::instance()->getTimer()->getTimeSinceSceneLoad();
+                u32 serial = 0;
+                const auto properties = core::IApplicationManager::instance()->getGraphicsSystem()->getProperties();
+                const auto state = m_assets.foliageTerrain->getFoliageDiagnostics();
+                const auto source = m_assets.foliageTerrain->getFoliageSnapshot();
+                if( m_foliageMotionStartSeconds < 0 && state.currentGenerationReady &&
+                    !state.pendingPages && state.actualDraws ) m_foliageMotionStartSeconds = elapsed;
+                const auto motionElapsed = elapsed - m_foliageMotionStartSeconds;
+                if( m_foliageMotionStartSeconds >= 0 && motionElapsed >= 1.5 * m_foliageMotionStage && properties &&
+                    properties->getPropertyValue( "native_render_serial", serial ) &&
+                    serial > m_foliageMotionLastSerial + 1 && state.currentGenerationReady &&
+                    !state.pendingPages && !state.failedPages && state.actualDraws && source )
+                {
+                    const std::filesystem::path target( m_capturePath );
+                    const auto image = target.parent_path() / ( target.stem().string() + "-motion-" +
+                        std::to_string( m_foliageMotionStage ) + ".bmp" );
+                    const auto record = target.parent_path() / ( target.stem().string() + "-motion.csv" );
+                    if( !advanced::captureFrame( image.string() ) )
+                    {
+                        m_capturePassed = false;
+                        core::IApplicationManager::instancePtr()->setQuit( true );
+                        return;
+                    }
+                    std::ofstream stream( record, std::ios::app );
+                    if( m_foliageMotionStage == 0 ) stream << "stage,renderSerial,seconds,eyeX,eyeY,eyeZ,sourceRevision,sourcePopulationHash,residentPages,residentInstances,lod0,lod1,lod2,submittedTriangles\n";
+                    stream << m_foliageMotionStage << ',' << serial << ',' << elapsed << ','
+                           << m_foliageMotionPreviousEye.x << ',' << m_foliageMotionPreviousEye.y << ','
+                           << m_foliageMotionPreviousEye.z << ',' << state.sourceRevision << ','
+                           << foliagePopulationHash( *source ) << ',' << state.residentPages << ','
+                           << state.residentInstances << ',' << state.lodInstances[0] << ','
+                           << state.lodInstances[1] << ',' << state.lodInstances[2] << ','
+                           << state.submittedTriangles << '\n';
+                    m_foliageMotionLastSerial = serial;
+                    ++m_foliageMotionStage;
+                }
+                m_foliageMotionPreviousEye = { f32( eye.x ), f32( eye.y ), f32( eye.z ) };
+            }
             if( m_cityStreamingSmokeTest && !advanceCityStreamingSmoke() ) return;
             if( m_foliageLODSmokeTest && !advanceFoliageLODReview() ) return;
             if ( m_effectsSmokeTest && m_effectsEnabled ) updateVehicleEffects();
@@ -5651,7 +5691,7 @@ namespace workphone
                 const auto view = cityVergeInspectionView( m_assets );
                 m_cityVergeEye = view.eye; m_cityVergeTarget = view.target; m_cityVergeRoad = view.road;
             }
-            if( m_captureView == "park" )
+            if( m_captureView == "park" || m_foliageMotionCapture )
             {
                 const auto view = cityParkInspectionView( m_assets );
                 m_cityParkEye = view.eye;
@@ -6051,10 +6091,21 @@ namespace workphone
                     else if( m_orbitCamera )
                     {
                         const auto elapsed = core::IApplicationManager::instance()->getTimer()->getTimeSinceSceneLoad();
+                        const auto motionElapsed = m_foliageMotionStartSeconds < 0 ? 0.0 :
+                            std::max( 0.0, elapsed - m_foliageMotionStartSeconds );
                         const auto angle = float( std::max( elapsed - 5.0, 0.0 ) * .15 );
-                        const auto target = (m_assets.circuit.samples.empty()?m_cityOverviewCentre:m_assets.circuit.samples.front().position) + Vector3F( 0, 1, 0 );
-                        const auto radius = 45.f + 35.f * ( 1 + std::sin( angle * .5f ) );
-                        m_cameraActor->setPosition( target + Vector3F( std::sin(angle)*radius, 8, std::cos(angle)*radius ) );
+                        const auto target = m_foliageMotionCapture ? m_cityParkTarget :
+                            (m_assets.circuit.samples.empty()?m_cityOverviewCentre:m_assets.circuit.samples.front().position) + Vector3F( 0, 1, 0 );
+                        const auto radius = m_foliageMotionCapture
+                            ? 20.f + 220.f * float( std::clamp( motionElapsed / 9.0, 0.0, 1.0 ) )
+                            : 45.f + 35.f * ( 1 + std::sin( angle * .5f ) );
+                        // A rising dolly keeps the same park foliage in view through
+                        // the LOD bands. A horizontal orbit can cross building walls
+                        // or the fitted terrain and invalidate the visual comparison.
+                        const auto offset = m_foliageMotionCapture ?
+                            Vector3F( 0, 8.f + .95f * radius, .75f * radius ) :
+                            Vector3F( std::sin(angle)*radius, 8, std::cos(angle)*radius );
+                        m_cameraActor->setPosition( target + offset );
                         m_cameraActor->lookAt( target, Vector3F::unitY() );
                     }
                     else if( m_captureView == "corner" && !m_assets.circuit.samples.empty() )
@@ -6327,6 +6378,7 @@ int main( int argc, char **argv )
                    "  --foliage-world               Use paged instanced broadleaf vegetation\n"
                    "  --foliage-lod auto|0|1|2       Override paged foliage independently of legacy tree/vehicle LOD\n"
                    "  --foliage-lod-smoke-test       Capture settled LOD0/1/2/auto in one scene; requires a fixed capture\n"
+                   "  --foliage-motion-capture       Capture six moving active-camera frames with --orbit --benchmark 10\n"
                    "  --city                        Generate the existing open-city scene instead of a circuit\n"
                    "  --city-blocks 6|8|10           Blocks per side (requires --city; default 8)\n"
                    "  --city-route 0|1|2             Street race route (requires --city; default 0)\n"
@@ -6389,7 +6441,7 @@ int main( int argc, char **argv )
     u32 seed = 7;
     auto quality = procedural::VehicleAppearanceQuality::High;
     bool hud = true, orbit = false;
-    bool foliageWorld = false, foliageLODSmokeTest = false;
+    bool foliageWorld = false, foliageLODSmokeTest = false, foliageMotionCapture = false;
     s32 forcedFoliageLOD = -2;  // Absent preserves legacy --force-lod; explicit auto overrides it.
     bool openCity = false, cityOptionsExplicit = false;
     bool cityNaturalRoads = false;
@@ -6446,6 +6498,8 @@ int main( int argc, char **argv )
                 hud = false;
             else if( String( argv[i] ) == "--orbit" )
                 orbit = true;
+            else if( String( argv[i] ) == "--foliage-motion-capture" )
+                foliageMotionCapture = true;
             else if( String( argv[i] ) == "--foliage-world" )
                 foliageWorld = true;
             else if( String( argv[i] ) == "--city" )
@@ -6657,6 +6711,19 @@ int main( int argc, char **argv )
                     throw std::runtime_error( "Choose fresh, distinct foliage atlas and evidence paths." );
             }
         }
+        if( foliageMotionCapture )
+        {
+            if( !cityTerrainRoads || !orbit || benchmarkSeconds < 10 || capturePath.empty() ||
+                foliageLODSmokeTest || captureView == "follow" )
+                throw std::runtime_error( "--foliage-motion-capture requires a terrain city, --orbit, --benchmark 10 or longer, and --capture." );
+            const std::filesystem::path target( capturePath );
+            if( std::filesystem::exists( target.parent_path() / ( target.stem().string() + "-motion.csv" ) ) )
+                throw std::runtime_error( "Foliage motion capture requires fresh output paths." );
+            for( int stage = 0; stage < 6; ++stage )
+                if( std::filesystem::exists( target.parent_path() / ( target.stem().string() +
+                    "-motion-" + std::to_string( stage ) + ".bmp" ) ) )
+                    throw std::runtime_error( "Foliage motion capture requires fresh output paths." );
+        }
         if( terrainGameplay )
         {
 #if !WP_TERRAIN_GAMEPLAY_PACKAGE
@@ -6839,6 +6906,7 @@ int main( int argc, char **argv )
         app->setEvidenceOptions( evidencePath, replayPath, std::move( replayControls ) );
         app->setFoliageWorldEnabled( foliageWorld );
         app->setFoliageLODOptions( forcedFoliageLOD, foliageLODSmokeTest );
+        app->setFoliageMotionCapture( foliageMotionCapture );
         app->setCityOptions( openCity, cityBlocks, cityRoute, cityNaturalRoads );
         app->setRoadAuthoringShowcase( roadAuthoringShowcase );
         app->setCityTerrainRoads( cityTerrainRoads );

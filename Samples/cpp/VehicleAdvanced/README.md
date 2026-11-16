@@ -93,6 +93,9 @@ direction; each camera retains independent transition history.
 legacy tree actors. `--foliage-lod-smoke-test` captures all three forced levels
 and automatic selection from one fixed camera, checks decreasing submitted
 triangles and unchanged source population, then restores the requested setting.
+For a moving-camera review, use `--foliage-motion-capture --orbit --benchmark 10`
+with a terrain city and a capture path. It saves six frames along the active
+camera's outward path plus a CSV of camera positions and native LOD counts.
 The capture harness exposes `-FoliageLOD` and `-FoliageLODSmokeTest`. These controls
 cover the paged population; merged ornamental planting meshes retain their
 existing scene/streaming lifetimes.

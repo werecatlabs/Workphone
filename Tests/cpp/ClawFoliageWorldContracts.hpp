@@ -457,6 +457,50 @@ namespace claw_foliage_world_contracts
         compare("captured-basis interaction bounds must match uncull pixels on nonuniform placements");
         setup(native);
     }
+    inline void movingCameraTransitions(ClawRendererDX11 &renderer,wp_renderer_dx11 *native)
+    {
+        setup(native);String error;auto plant=species();
+        plant->boundsMinimum={-.4f,-.4f,0};plant->boundsMaximum={.4f,.4f,0};
+        plant->screenHeightThresholds={.12f,.02f,0};plant->maximumDistance=100;
+        auto data=std::make_shared<FoliageWorldData>();data->species={plant};data->revision=94;
+        FoliageInstance instance;instance.id=94;data->instances={instance};
+        ClawFoliageWorld world;require(world.setSource(data,{},error),error.c_str());
+        ClawFoliageView view;view.key=940;view.cull=false;view.projectionScale=1;
+        view.position={0,0,3};prepare(world,renderer,view,94);
+        const auto renderAt=[&](f32 distance)
+        {
+            view.position.z=distance;
+            if(!world.prepare(renderer,{view},distance,error))
+                throw std::runtime_error((String("moving foliage prepare: ")+error).c_str());
+            wp_renderer_dx11_clear(native,WORKPHONE_CLEAR_FLAG_ALL);
+            if(!world.render(renderer,view,error))
+                throw std::runtime_error((String("moving foliage render: ")+error).c_str());
+            return world.diagnostics().lodInstances;
+        };
+        require(renderAt(3)[0]==1,"moving camera must begin with near foliage geometry");
+        const auto firstBoundary=(plant->boundsMaximum-plant->boundsMinimum).length()*.5f/.12f;
+        const auto nearBlend=renderAt(firstBoundary);
+        require(nearBlend[0]==1&&nearBlend[1]==1&&nearBlend[2]==0,
+            "moving camera must overlap near and middle geometry at the first threshold");
+        const auto blendedPixels=pixels(native);
+        view.forcedLod=0;renderAt(firstBoundary);const auto fullPixels=pixels(native);
+        require(blendedPixels==fullPixels,
+            "complementary transition masks must retain complete coverage when LOD geometry matches");
+        view.forcedLod=-1;
+        require(renderAt(8)[1]==1,"moving camera must finish the middle level");
+        const auto secondBoundary=(plant->boundsMaximum-plant->boundsMinimum).length()*.5f/.02f;
+        const auto farBlend=renderAt(secondBoundary);
+        require(farBlend[0]==0&&farBlend[1]==1&&farBlend[2]==1,
+            "moving camera must overlap middle and far geometry at the second threshold");
+        require(renderAt(40)[2]==1,"moving camera must finish the far level");
+        const auto returning=renderAt(firstBoundary);
+        require(returning[0]==1&&returning[1]==1,
+            "returning active camera must cross the same stable near transition");
+        view.forcedLod=1;require(renderAt(firstBoundary)[1]==1&&
+            world.diagnostics().lodInstances[0]==0&&world.diagnostics().lodInstances[2]==0,
+            "forced reviews must submit one foliage geometry level");
+        setup(native);
+    }
     inline void sourceImpostorReopen(ClawRendererDX11 &renderer,wp_renderer_dx11 *native)
     {
         namespace fs=std::filesystem;
@@ -622,7 +666,7 @@ namespace claw_foliage_world_contracts
         {
             auto target=make_ptr<ClawRenderTarget>();target->setSize({128,128});renderer.setRenderTarget(target);
             renderer.setCamera(nullptr);renderer.setViewport(nullptr);renderer.disableShadows();
-            auto native=wp_renderer_get_dx11(renderer.getNativeRenderer());impostorPlacement();wind(native);atlas(native);atlasNormalLighting(native);worldAtlasHistory(renderer,native);cpuTexture(native);deformationBounds(renderer,native);tiltedCardBounds(renderer,native);sourceImpostorReopen(renderer,native);extentPaging(renderer,native);
+            auto native=wp_renderer_get_dx11(renderer.getNativeRenderer());impostorPlacement();wind(native);atlas(native);atlasNormalLighting(native);worldAtlasHistory(renderer,native);cpuTexture(native);deformationBounds(renderer,native);tiltedCardBounds(renderer,native);movingCameraTransitions(renderer,native);sourceImpostorReopen(renderer,native);extentPaging(renderer,native);
             grassFade( renderer, native );
             auto data=std::make_shared<FoliageWorldData>();data->pageSize=1;data->revision=1;auto sourceSpecies=species();data->species={sourceSpecies};
             for(u32 n=0;n<5000;++n){FoliageInstance i;i.id=n+1;i.seed=n;i.position={f32(n%100)*.016f-.8f,f32(n/100)*.016f-.4f,0};data->instances.push_back(i);}

@@ -703,7 +703,7 @@ typedef struct wp_foliage_instance_dx11
     wp_instance_pntc_dx11 instance;
     wp_vec4f uv_rect;
     wp_vec4f wind;        /* local x/z amplitude, phase, flutter amplitude */
-    wp_vec4f interaction; /* local x/z bend, coverage fade amount and seed in [0,1] */
+    wp_vec4f interaction; /* local x/z bend, signed coverage fade [-1,1], seed [0,1] */
 } wp_foliage_instance_dx11;
 typedef struct wp_foliage_parameters_dx11
 {

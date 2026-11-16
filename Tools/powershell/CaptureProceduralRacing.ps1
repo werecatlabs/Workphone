@@ -18,6 +18,7 @@ param(
     [switch]$FoliageWorld,
     [ValidateSet('auto', '0', '1', '2')][string]$FoliageLOD = 'auto',
     [switch]$FoliageLODSmokeTest,
+    [switch]$FoliageMotionCapture,
     [switch]$RoadAuthoringShowcase,
     [switch]$CityTerrainRoads,
     [ValidateRange(0, 2)][double]$CityTerrainRelief = 1,
@@ -67,6 +68,10 @@ if ($CityTerrainRoads -and !$PSBoundParameters.ContainsKey('Views')) { $Views = 
 if ($FoliageLODSmokeTest -and !$PSBoundParameters.ContainsKey('Views')) { $Views = @($(if ($CityTerrainRoads) { 'park' } else { 'corner' })) }
 if ($FoliageLODSmokeTest -and @($Views | Where-Object { $_ -eq 'follow' -or $_ -in $imposterViews -or $_ -in $roadEditViews }).Count) {
     throw '-FoliageLODSmokeTest requires a fixed camera outside road-edit and building imposter review views.'
+}
+if ($FoliageMotionCapture -and (!$CityTerrainRoads -or $Seconds -lt 10 -or $FoliageLODSmokeTest -or
+    @($Views | Where-Object { $_ -ne 'car' }).Count)) {
+    throw '-FoliageMotionCapture requires terrain-city roads, 10+ benchmark seconds and only the car view.'
 }
 if ($Scene -ne 'city' -and ($Views -contains 'street' -or $Views -contains 'boulevard' -or $PSBoundParameters.ContainsKey('CityBlocks') -or $PSBoundParameters.ContainsKey('CityRoute') -or $PSBoundParameters.ContainsKey('CityLayout'))) {
     throw 'Street-level views and city layout options require -Scene city.'
@@ -144,7 +149,7 @@ $manifest = [ordered]@{
     cityStreaming = $(if ($Scene -eq 'city') { $CityStreaming } else { $null })
     citySourceMemoryMiB = $(if ($Scene -eq 'city') { $CitySourceMemoryMiB } else { $null })
     cityStreamingSmokeTest = [bool]$CityStreamingSmokeTest
-    foliageLOD = $FoliageLOD; foliageLODSmokeTest = [bool]$FoliageLODSmokeTest
+    foliageLOD = $FoliageLOD; foliageLODSmokeTest = [bool]$FoliageLODSmokeTest; foliageMotionCapture = [bool]$FoliageMotionCapture
     cityBuildingStyle = $(if ($CityBuildingStyle) { $CityBuildingStyle.ToLowerInvariant() } else { $null })
     cityBuildingMeshes = $buildingMeshPaths
     cityBuildingMeshInputs = [ordered]@{}
@@ -183,6 +188,7 @@ try {
         if ($FoliageWorld) { $arguments += '--foliage-world' }
         $arguments += @('--foliage-lod', $FoliageLOD)
         if ($FoliageLODSmokeTest) { $arguments += '--foliage-lod-smoke-test' }
+        if ($FoliageMotionCapture) { $arguments += @('--orbit', '--foliage-motion-capture') }
         if ($ExportMaterials) { $arguments += @('--export-materials', (Quote-ProcessArgument (Join-Path $output "$view-materials"))) }
         Write-Host "Capturing $Scene/$view ($Quality, seed $Seed)"
         $process = Start-Process -FilePath $executable -ArgumentList $arguments -WorkingDirectory $sampleWorkingDirectory -WindowStyle Hidden -RedirectStandardOutput (Join-Path $output "$view.stdout.log") -RedirectStandardError (Join-Path $output "$view.stderr.log") -PassThru
@@ -254,6 +260,32 @@ try {
                         $run.foliageAtlasSheets += [ordered]@{ kind = $kind; image = Get-Identity $expectedSheet }
                     } else { $run.passed = $false }
                 }
+            }
+            if ($FoliageMotionCapture) {
+                $trace = Join-Path $output "$view-motion.csv"
+                $rows = @(Import-Csv -LiteralPath $trace)
+                $run.motionTrace = Get-Identity $trace
+                $run.motionCaptures = @()
+                $run.passed = $run.passed -and $rows.Count -eq 6
+                for ($stage = 0; $stage -lt $rows.Count; ++$stage) {
+                    $row = $rows[$stage]
+                    $image = Join-Path $output "$view-motion-$stage.bmp"
+                    $run.passed = $run.passed -and [int]$row.stage -eq $stage -and
+                        [int]$row.residentPages -gt 0 -and [int]$row.residentInstances -gt 0 -and
+                        [int]$row.submittedTriangles -gt 0 -and (Test-Path -LiteralPath $image -PathType Leaf)
+                    if (Test-Path -LiteralPath $image -PathType Leaf) { $run.motionCaptures += Get-Identity $image }
+                }
+                $eyes = @($rows | ForEach-Object { "$($_.eyeX),$($_.eyeY),$($_.eyeZ)" } | Sort-Object -Unique)
+                $bins = @($rows | ForEach-Object { "$($_.lod0),$($_.lod1),$($_.lod2)" } | Sort-Object -Unique)
+                $revisions = @($rows | ForEach-Object sourceRevision | Sort-Object -Unique)
+                $populations = @($rows | ForEach-Object sourcePopulationHash | Sort-Object -Unique)
+                $firstEye = $rows[0]; $lastEye = $rows[-1]
+                $displacement = [Math]::Sqrt([Math]::Pow([double]$firstEye.eyeX - [double]$lastEye.eyeX, 2) +
+                    [Math]::Pow([double]$firstEye.eyeY - [double]$lastEye.eyeY, 2) +
+                    [Math]::Pow([double]$firstEye.eyeZ - [double]$lastEye.eyeZ, 2))
+                $run.motionDisplacementMetres = $displacement
+                $run.passed = $run.passed -and $eyes.Count -eq 6 -and $bins.Count -gt 1 -and
+                    $revisions.Count -eq 1 -and $populations.Count -eq 1 -and $displacement -gt 110
             }
             if ($Scene -eq 'city' -and !$RoadAuthoringShowcase) {
                 $buildings = $run.evidence.cityBuildingGeometry

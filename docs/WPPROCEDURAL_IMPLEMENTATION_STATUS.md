@@ -1,5 +1,24 @@
 # WPProcedural implementation status
 
+## Moving-camera foliage LOD transitions — 16 November 2026
+
+Automatic foliage LOD now overlaps adjacent geometry tiers around each screen-size
+threshold. A smoothstep weight drives complementary, stable cutout masks, so a
+plant fades between detailed mesh, reduced mesh and directional sprite instead
+of switching both representations on one frame. The existing grass range fade
+multiplies this coverage. Forced LOD inspection and shadow views still submit a
+single geometry tier. The two-tier work allocation remains within the existing
+foliage instance budget.
+
+`--foliage-motion-capture --orbit --benchmark 10 --capture PATH` moves the
+active scene camera upward and outward above a terrain-city park and writes six
+native frames with a CSV of completed-frame camera positions, source identity,
+resident pages and LOD submissions. The [validation report](../artifacts/procedural/city-foliage-transitions-20261116/validation.md)
+records the passing renderer contract and fresh WARP capture. The final capture
+kept 2,616 plants and 56 pages resident throughout the 266 m sweep, with no
+camera path obstruction. Six stills support spatial appearance review; a
+continuous physical-GPU temporal review remains open.
+
 ## Paged foliage LOD and directional sprites — 16 November 2026
 
 The generated city's four tree and two shrub species now use detailed mesh,

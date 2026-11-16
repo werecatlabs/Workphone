@@ -67,6 +67,7 @@ namespace workphone
             m_forcedFoliageLOD = level == -2 ? m_forcedLOD : level;
             m_foliageLODSmokeTest = smokeTest;
         }
+        void setFoliageMotionCapture( bool enabled ) { m_foliageMotionCapture = enabled; }
         void setCityOptions( bool enabled, s32 blocks, s32 route, bool naturalRoads = false )
         { m_openCity = enabled; m_cityBlocks = blocks; m_cityRoute = route; m_cityNaturalRoads = naturalRoads; }
         void setRoadAuthoringShowcase(bool enabled) { m_roadAuthoringShowcase=enabled; }
@@ -205,6 +206,10 @@ namespace workphone
         bool m_foliageWorldEnabled = false;
         s32 m_forcedFoliageLOD = -1;
         bool m_foliageLODSmokeTest = false;
+        bool m_foliageMotionCapture = false;
+        u32 m_foliageMotionStage = 0, m_foliageMotionLastSerial = 0;
+        f64 m_foliageMotionStartSeconds = -1;
+        Vector3F m_foliageMotionPreviousEye = Vector3F::zero();
         struct FoliageLODSnapshot
         {
             s32 level = -1;
