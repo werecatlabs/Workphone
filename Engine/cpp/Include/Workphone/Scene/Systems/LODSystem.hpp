@@ -36,6 +36,11 @@ namespace workphone
                 f32 nearClipDistance = 0.1f;
                 f32 lodBias = 1.0f;
                 bool orthographic = false;
+                /** World-space camera forward; orthographic rays share this direction.
+                 * Appended to preserve existing aggregate initializers. Perspective
+                 * LOD and streaming observers continue to depend on position.
+                 */
+                Vector3<real_Num> direction = { 0, 0, -1 };
             };
 
             LODSystem();

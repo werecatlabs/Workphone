@@ -1,5 +1,62 @@
 # WPProcedural implementation status
 
+## Directional building imposters — 16 November 2026
+
+Generated city patches now use a 49-frame sprite sheet: 16 azimuths at elevations
+0, 30 and 60 degrees, plus a zenith view. A reusable `MeshImposter` component
+selects frames through the active `LODSystem` view, including parallel rays for
+orthographic Editor cameras. Each patch retains one quad and its atlas while
+detail meshes stream out. UVs change only on frame selection; camera movement
+updates the projected placement without replacing render resources.
+
+High-quality frames use 128-pixel tiles, 2x supersampling, transparent gutters
+and independent cutout mip filtering. The generic baker supports grids; city
+uploads use a 49-column strip compatible with the existing native mip path.
+Diagnostic captures export those actual pixels as a lossless 7-by-7 sheet.
+
+Elevated visual review exposed terrain slicing through the original centre-plane
+quad. Frames now record the front support depth of their source bounds. Camera-ray
+placement moves the quad to that plane while retaining its screen footprint,
+including off-axis orthographic views. Near/inside cameras use a positive-scale
+centre-plane fallback covered by detail LODs. Depth ordering and lighting remain
+approximations; this does not provide per-pixel depth or continuous parallax.
+
+The Debug engine, sample and both test executables build. All four focused CTest
+targets pass, including eight component cases covering projection preservation,
+camera selection, resource identity, reload, invalid inputs and near fallback.
+Four fresh native angles pass matching inventory, projection/UV/binding checks
+and independent static visual review. In the final camera-only streaming cycle,
+detail meshes changed **407 -> 0 -> 407**, detailed LOD groups **11 -> 0 -> 11**,
+and all **28 imposters** remained ready. SourceCpu and GPU reservations returned
+exactly, with zero rejected admissions. Existing budgets were sufficient.
+The restored hillside still also passed review. Physical-GPU and moving-camera
+transition quality remain unverified. See the
+[implementation and validation report](../artifacts/procedural/city-directional-imposters-20261116/validation.md).
+
+## Active-camera streaming and LOD — 16 November 2026
+
+City residency and LOD now use `LODSystem::getView`, which resolves the active
+Editor camera or highest-priority active game camera, including Editor Play
+fallback. It reads live camera position and projection; inactive cameras and
+authored offscreen output cameras are excluded. Explicit view/streaming-observer
+overrides remain available. Clearing the observer override resumes camera-driven
+demand, and a missing or invalid camera preserves existing residency/visibility.
+Managed-camera Lua samples no longer pin the view to their gameplay camera.
+
+All three focused CTest targets passed, including nine LOD cases. The pinned
+native validation binaries passed 168 cases and 7,713 assertions. In a fresh
+eight-block camera-only regression, resident detail meshes changed
+**407 -> 0 -> 407**, visible detailed LOD groups changed **11 -> 0 -> 11**,
+and all **28 imposters** remained ready. Eviction released 47.50 MiB of SourceCpu
+and 17.69 MiB of GPU reservations; both ledgers returned exactly. The stationary
+vehicle fixture moved less than 1 cm and restored its original physics state.
+
+The final source/binary/asset inventory and native residency audits passed.
+The sample used isolated, pinned dependencies while an unrelated Visual Studio
+build updated shared outputs. The fresh software-rendered still was inspected;
+physical-GPU transition quality and mouse-driven Editor switching remain open.
+See the [implementation and validation report](../artifacts/procedural/city-active-camera-20261115/validation.md).
+
 ## Sharper road and paving materials — 15 November 2026
 
 Terrain-city asphalt now uses a 512-pixel source scan in the existing 1024-pixel

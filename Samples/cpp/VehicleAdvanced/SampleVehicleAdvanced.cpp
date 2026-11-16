@@ -11,6 +11,8 @@
 #include <sstream>
 #include <stdexcept>
 #include <cmath>
+#include <filesystem>
+#include <fstream>
 #include <Workphone/Interface/Mesh/IMeshResource.hpp>
 #include <Workphone/Mesh/MeshManager.hpp>
 #include <Workphone/Mesh/MeshUtil.hpp>
@@ -24,6 +26,7 @@
 #include <Workphone/Scene/Components/CityRoadTerrainMesh.hpp>
 #include <Workphone/Scene/Components/CityBuildingStyles.hpp>
 #include <Workphone/Scene/Components/LODGroup.hpp>
+#include <Workphone/Scene/Components/MeshImposter.hpp>
 #include <Workphone/Scene/Components/ProceduralCityStreaming.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
 #include <Workphone/Interface/System/ITask.hpp>
@@ -38,6 +41,7 @@
 
 #if WP_GRAPHICS_SYSTEM_CLAW
 #    include <WPGraphics/ClawMaterial.hpp>
+#    include <WPGraphics/ClawTexture.hpp>
 #    include <WPGraphics/ClawMesh.hpp>
 #    include <WPGraphics/ClawRendererDX11.hpp>
 #    include <workphone_graphics_material.h>
@@ -96,6 +100,12 @@ namespace workphone
         bool isRoadTerrainEditView( std::string_view view )
         {
             return view == "road-edit-before" || view == "road-edit-after";
+        }
+
+        bool isCityImposterView( std::string_view view )
+        {
+            return view == "imposter-front" || view == "imposter-diagonal" ||
+                view == "imposter-back" || view == "imposter-high";
         }
 
         void writeSharedMemoryLedger( std::ostream &output, const WorldStreamStats &stats )
@@ -1672,6 +1682,7 @@ namespace workphone
 
             m_boxGround = nullptr;
             m_cameraActor = nullptr;
+            m_cityImposterActor = nullptr;
             m_vehicleActor = nullptr;
             m_chassisMeshActor = nullptr;
             for( auto &wheelActor : m_wheelActors )
@@ -1726,7 +1737,8 @@ namespace workphone
     void SampleVehicleAdvanced::updateCitySmokeVehicleHold()
     {
         // Only the physics task mutates a running body. Render merely publishes demand.
-        if( !m_citySmokeHoldRequested.load( std::memory_order_acquire ) )
+        if( getLoadingState() != LoadingState::Loaded ||
+            !m_citySmokeHoldRequested.load( std::memory_order_acquire ) )
         {
             if( m_citySmokeHeldBody ) restoreCitySmokeVehicleHold();
             return;
@@ -1737,6 +1749,8 @@ namespace workphone
             auto component = m_vehicleActor ? m_vehicleActor->getComponent<scene::Rigidbody>() : nullptr;
             auto body = component ? component->getRigidDynamic() : nullptr;
             if( !body ) throw std::runtime_error( "Missing vehicle body for camera-only hold" );
+            if( component->isKinematic() || body->isKinematic() )
+                throw std::runtime_error( "Camera-only vehicle hold requires the normal dynamic chassis" );
             m_citySmokeHeldComponent = component;
             m_citySmokeHeldBody = body;
             m_citySmokeSavedKinematic = component->isKinematic();
@@ -1772,6 +1786,7 @@ namespace workphone
             if( m_citySmokeSavedSleeping && !m_citySmokeSavedNativeKinematic ) m_citySmokeHeldBody->putToSleep();
             const bool restored = m_citySmokeHeldComponent->isKinematic() == m_citySmokeSavedKinematic &&
                 m_citySmokeHeldBody->isKinematic() == m_citySmokeSavedNativeKinematic &&
+                m_citySmokeHeldBody->isSleeping() == m_citySmokeSavedSleeping &&
                 ( m_citySmokeHeldBody->getLinearVelocity() - m_citySmokeSavedLinearVelocity ).length() <= .00001 &&
                 ( m_citySmokeHeldBody->getAngularVelocity() - m_citySmokeSavedAngularVelocity ).length() <= .00001;
             m_citySmokeHoldRestored.store( restored, std::memory_order_release );
@@ -2081,6 +2096,7 @@ namespace workphone
             if( !detailEvicted ||
                 ( m_citySmokeLast.cameraPosition - m_citySmokeAway ).length() > .01f ||
                 m_citySmokeLast.detailedLodGroups != 0 ||
+                m_citySmokeLast.imposterLodGroups != streaming.totalPatches ||
                 m_citySmokeLast.imposterLodGroups <= m_citySmokeCameraNear.imposterLodGroups ||
                 native.readyImposterMeshes != m_citySmokeCameraNear.readyImposters ||
                 native.visibleDetailMeshes >= m_citySmokeCameraNear.visibleDetailMeshes ||
@@ -2697,6 +2713,8 @@ namespace workphone
                     const auto buildings = checkCityBuildingGeometry( m_assets, m_quality != procedural::VehicleAppearanceQuality::Preview );
                     cityValid = cityValid && buildings.valid;
                     evidence << ",\n  \"cityBuildingGeometry\": "; writeCityBuildingGeometry( evidence, buildings );
+                    evidence << ",\n  \"cityImposters\":";
+                    cityValid = writeCityImposterReview( evidence ) && cityValid;
                     if( m_assets.cityStreaming )
                     {
                         const auto streaming = m_assets.cityStreaming->stats();
@@ -5330,6 +5348,7 @@ namespace workphone
                 throw std::runtime_error( "Cannot select the procedural sky's sunlight." );
 #endif
         for( auto &group : m_assets.treeLODs ) group->setForcedLOD( m_forcedLOD );
+        if( isCityImposterView( m_captureView ) ) prepareCityImposterReview();
         if( m_assets.foliageTerrain )
         {
             String error;
@@ -5397,8 +5416,219 @@ namespace workphone
         }
     }
 
+    void SampleVehicleAdvanced::prepareCityImposterReview()
+    {
+        m_cityImposterActor = nullptr;
+        m_cityImposterInitialView = -1;
+        m_cityImposterInitialChanges = 0;
+        float best = std::numeric_limits<float>::max();
+        size_t patch = 0;
+        for( const auto &actor : m_assets.actors )
+        {
+            if( !actor || actor->getName() != "LOD2 city building imposters" ) continue;
+            const auto index = patch++;
+            const auto component = actor->getComponent<scene::MeshImposter>();
+            MeshImposterView frame{};
+            if( !component || !component->getSelectedFrame( frame ) ) continue;
+            const auto centre = component->getLocalCentre();
+            const auto parent = actor->getParent();
+            const auto world = parent ? parent->getWorldTransform().transformPoint(
+                Vector3<real_Num>( centre.x, centre.y, centre.z ) ) : Vector3<real_Num>( centre.x, centre.y, centre.z );
+            const Vector3F target( f32( world.x ), f32( world.y ), f32( world.z ) );
+            const auto width = frame.maximum.x - frame.minimum.x;
+            const auto height = frame.maximum.y - frame.minimum.y;
+            // A moderate, tall patch exposes facade and roof silhouettes without
+            // allowing a city-wide batch to fill the entire review frame.
+            const auto score = std::abs( width - 65.f ) + std::abs( height - 40.f ) * 1.5f +
+                ( target - m_cityOverviewCentre ).length() * .015f;
+            if( score >= best ) continue;
+            best = score;
+            m_cityImposterActor = actor;
+            m_cityImposterPatchIndex = index;
+            m_cityImposterTarget = target;
+        }
+        if( !m_cityImposterActor ) throw std::runtime_error( "No directional city imposter is available for review." );
+        constexpr float radians = 3.14159265358979323846f / 180.f;
+        const float azimuth = m_captureView == "imposter-back" ? 180.f :
+            ( m_captureView == "imposter-diagonal" || m_captureView == "imposter-high" ? 45.f : 0.f );
+        const float elevation = m_captureView == "imposter-high" ? 60.f : 3.f;
+        const Vector3F direction( std::sin( azimuth * radians ) * std::cos( elevation * radians ),
+            std::sin( elevation * radians ), std::cos( azimuth * radians ) * std::cos( elevation * radians ) );
+        const auto parent = m_cityImposterActor->getParent();
+        const auto rotation = parent ? parent->getWorldTransform().getOrientation() : Quaternion<real_Num>();
+        const auto offset = rotation * Vector3<real_Num>( direction.x * 300, direction.y * 300, direction.z * 300 );
+        const Vector3F initialDirection( -std::sin( azimuth * radians ) * std::cos( 3 * radians ),
+            std::sin( 3 * radians ), -std::cos( azimuth * radians ) * std::cos( 3 * radians ) );
+        const auto initial = rotation * Vector3<real_Num>( initialDirection.x * 300, initialDirection.y * 300, initialDirection.z * 300 );
+        m_cityImposterEye = m_cityImposterTarget + Vector3F( f32( offset.x ), f32( offset.y ), f32( offset.z ) );
+        m_cityImposterInitialEye = m_cityImposterTarget + Vector3F( f32( initial.x ), f32( initial.y ), f32( initial.z ) );
+    }
+
+    bool SampleVehicleAdvanced::writeCityImposterReview( std::ostream &output ) const
+    {
+        const auto app = core::IApplicationManager::instancePtr();
+        ScopedLock managerLock( app ? app->getGameManager() : nullptr );
+        ScopedLock graphicsLock( app ? app->getGraphicsSystem() : nullptr );
+        const auto system = m_assets.vehicleLOD ? dynamic_pointer_cast<scene::LODSystem>(
+            m_assets.vehicleLOD->getComponentSystem() ) : nullptr;
+        scene::LODSystem::View active;
+        const bool viewReady = system && system->getView( active );
+        const bool cameraMatches = viewReady && m_cameraActor &&
+            ( active.position - m_cameraActor->getWorldTransform().getPosition() ).length() <= .01;
+        bool valid = viewReady && cameraMatches;
+        size_t patch = 0;
+        bool changed = !isCityImposterView( m_captureView );
+        output << "{\"activeViewReady\":" << ( viewReady ? "true" : "false" )
+               << ",\"cameraMatches\":" << ( cameraMatches ? "true" : "false" ) << ",\"patches\":[";
+        for( const auto &actor : m_assets.actors )
+        {
+            if( !actor || actor->getName() != "LOD2 city building imposters" ) continue;
+            if( patch ) output << ',';
+            const auto component = actor->getComponent<scene::MeshImposter>();
+            const auto renderer = actor->getComponent<scene::MeshRenderer>();
+            const auto materialComponent = actor->getComponent<scene::Material>();
+            const auto material = materialComponent ? materialComponent->getMaterial() : nullptr;
+            MeshImposterView frame{};
+            const bool frameReady = component && component->isLoaded() && component->getActor() == actor &&
+                component->getSelectedFrame( frame );
+            const auto selected = component ? component->getSelectedView() : -1;
+            const auto count = component ? component->getViewCount() : 0;
+            const auto changes = component ? component->getSelectionChanges() : 0;
+            const auto centre = component ? component->getLocalCentre() : Vector3F::zero();
+            auto localCamera = active.position;
+            if( const auto parent = actor->getParent() )
+            {
+                const auto pose = parent->getWorldTransform();
+                localCamera = pose.getOrientation().inverse() * ( localCamera - pose.getPosition() );
+                const auto scale = pose.getScale();
+                if( std::min( { std::abs( scale.x ), std::abs( scale.y ), std::abs( scale.z ) } ) <= 1e-8 )
+                    valid = false;
+                else { localCamera.x /= scale.x; localCamera.y /= scale.y; localCamera.z /= scale.z; }
+            }
+            Vector3F direction( f32( localCamera.x ) - centre.x, f32( localCamera.y ) - centre.y,
+                                f32( localCamera.z ) - centre.z );
+            const bool directionValid = direction.isFinite() && direction.lengthSquared() > 1e-12f;
+            if( directionValid ) direction.normalise(); else direction = Vector3F::zero();
+            float nearest = -1.f;
+            constexpr float pi = 3.14159265358979323846f;
+            // Independently score the city's authored 16 x 3 hemisphere and pole.
+            for( u32 i = 0; i < 49; ++i )
+            {
+                const auto elevation = i == 48 ? pi * .5f : float( i / 16 ) * pi / 6;
+                const auto azimuth = float( i % 16 ) * pi / 8;
+                const Vector3F sample( std::sin( azimuth ) * std::cos( elevation ),
+                    std::sin( elevation ), std::cos( azimuth ) * std::cos( elevation ) );
+                nearest = std::max( nearest, direction.dotProduct( sample ) );
+            }
+            const auto alignment = frameReady ? direction.dotProduct( frame.towardCamera ) : -1.f;
+            const auto publishedPosition = actor->getLocalTransform().getPosition();
+            const Vector3F planeOffset( f32( publishedPosition.x ) - centre.x,
+                                       f32( publishedPosition.y ) - centre.y,
+                                       f32( publishedPosition.z ) - centre.z );
+            const auto planeDepth = planeOffset.dotProduct( frame.towardCamera );
+            const bool conservativePlane = frameReady && std::isfinite( planeDepth ) &&
+                std::isfinite( frame.maximumDepth ) && planeDepth >= frame.maximumDepth - .01f;
+            const auto offset = material ? material->getUVOffset() : Vector2F();
+            const auto tiling = material ? material->getUVTiling() : Vector2F();
+            const bool uvMatches = frameReady && material &&
+                ( offset - frame.uvMinimum ).length() <= .00001f &&
+                ( tiling - ( frame.uvMaximum - frame.uvMinimum ) ).length() <= .00001f;
+            bool nativeBound = false, nativeQuad = false, visible = false;
+            u32 vertices = 0, indices = 0;
+#if WP_GRAPHICS_SYSTEM_CLAW
+            const auto mesh = renderer ? dynamic_pointer_cast<render::ClawMesh>( renderer->getGraphicsObject() ) : nullptr;
+            const auto native = mesh ? mesh->getNativeMesh() : nullptr;
+            const auto object = mesh ? mesh->getNativeRenderObject() : nullptr;
+            const auto surface = dynamic_pointer_cast<render::ClawMaterial>( material );
+            vertices = native ? wp_graphics_mesh_get_vertex_count( native ) : 0;
+            indices = native ? wp_graphics_mesh_get_index_count( native ) : 0;
+            nativeQuad = vertices == 4 && indices == 6;
+            nativeBound = renderer && mesh && mesh->isLoaded() && native && object && surface &&
+                wp_graphics_object_get_mesh( object ) == native &&
+                wp_graphics_object_get_material( object ) == surface->getNativeMaterial();
+            visible = object && wp_graphics_object_is_visible( object ) != 0;
+#endif
+            const bool ready = frameReady && selected >= 0 && selected < s32( count ) && count == 49 &&
+                directionValid && alignment >= nearest - .0102f && uvMatches && nativeBound && nativeQuad &&
+                ( !visible || conservativePlane );
+            valid = valid && ready;
+            output << "{\"patch\":" << patch << ",\"selectedView\":" << selected << ",\"viewCount\":" << count
+                   << ",\"selectionChanges\":" << changes << ",\"selectedDirection\":[" << frame.towardCamera.x << ','
+                   << frame.towardCamera.y << ',' << frame.towardCamera.z << "],\"cameraDirection\":[" << direction.x
+                   << ',' << direction.y << ',' << direction.z << "],\"alignment\":" << alignment
+                   << ",\"nearestAlignment\":" << nearest << ",\"uvOffset\":[" << offset.x << ',' << offset.y
+                   << "],\"uvTiling\":[" << tiling.x << ',' << tiling.y << "],\"uvMatches\":" << ( uvMatches ? "true" : "false" )
+                   << ",\"nativeVertices\":" << vertices << ",\"nativeTriangles\":" << indices / 3
+                   << ",\"nativeBound\":" << ( nativeBound ? "true" : "false" )
+                   << ",\"sourceFrontDepth\":" << frame.maximumDepth << ",\"publishedPlaneDepth\":" << planeDepth
+                   << ",\"conservativePlane\":" << ( conservativePlane ? "true" : "false" )
+                   << ",\"visible\":" << ( visible ? "true" : "false" ) << ",\"ready\":" << ( ready ? "true" : "false" ) << '}';
+            if( actor == m_cityImposterActor )
+                changed = m_cityImposterInitialView >= 0 && selected != m_cityImposterInitialView &&
+                    changes > m_cityImposterInitialChanges && visible;
+            ++patch;
+        }
+        valid = valid && changed && ( !isCityImposterView( m_captureView ) || patch > 0 );
+        output << "],\"patchCount\":" << patch << ",\"cameraOnlySelectionChanged\":" << ( changed ? "true" : "false" );
+        if( isCityImposterView( m_captureView ) )
+        {
+            output << ",\"review\":{\"targetPatch\":" << m_cityImposterPatchIndex
+                   << ",\"initialView\":" << m_cityImposterInitialView << ",\"initialChanges\":" << m_cityImposterInitialChanges
+                   << ",\"forcedLastLOD\":true,\"forcedTargetOnly\":true,\"radiusMetres\":300,\"eye\":[" << m_cityImposterEye.x << ','
+                   << m_cityImposterEye.y << ',' << m_cityImposterEye.z << "],\"target\":[" << m_cityImposterTarget.x
+                   << ',' << m_cityImposterTarget.y << ',' << m_cityImposterTarget.z << "]}";
+#if WP_GRAPHICS_SYSTEM_CLAW
+            const auto materialComponent = m_cityImposterActor ? m_cityImposterActor->getComponent<scene::Material>() : nullptr;
+            const auto material = materialComponent ? materialComponent->getMaterial() : nullptr;
+            auto texture = material ? dynamic_pointer_cast<render::ClawTexture>( material->getTexture( 0 ) ) : nullptr;
+            String error;
+            const auto pixels = texture ? texture->getCpuBaseMip( error ) : nullptr;
+            if( !pixels || !pixels->width || !pixels->height || pixels->width % 49 ||
+                pixels->bgra.size() != size_t( pixels->width ) * pixels->height * 4 )
+                throw std::runtime_error( "Cannot export the actual city imposter atlas: " + std::string( error.c_str() ) );
+            const auto tileWidth = pixels->width / 49;
+            const auto width = tileWidth * 7, height = pixels->height * 7;
+            if( width > 65535 || height > 65535 ) throw std::runtime_error( "Imposter review sheet exceeds TGA dimensions." );
+            const std::filesystem::path capture( m_capturePath );
+            const auto path = capture.parent_path() / ( capture.stem().string() + "-imposter-sheet.tga" );
+            if( std::filesystem::exists( path ) ) throw std::runtime_error( "Refusing to overwrite existing imposter review sheet." );
+            std::ofstream file( path, std::ios::binary | std::ios::out );
+            std::array<unsigned char, 18> header{};
+            header[2] = 2; header[12] = width & 255; header[13] = width >> 8;
+            header[14] = height & 255; header[15] = height >> 8; header[16] = 32; header[17] = 0x28;
+            file.write( reinterpret_cast<const char *>( header.data() ), header.size() );
+            // Repack the untouched 49-column runtime atlas into a readable 7x7
+            // review sheet. Write original BGRA pixels directly, without resizing.
+            for( u32 row = 0; row < 7; ++row ) for( u32 y = 0; y < pixels->height; ++y )
+                for( u32 column = 0; column < 7; ++column )
+                {
+                    const auto offset = ( size_t( y ) * pixels->width + ( row * 7 + column ) * tileWidth ) * 4;
+                    file.write( reinterpret_cast<const char *>( pixels->bgra.data() + offset ), size_t( tileWidth ) * 4 );
+                }
+            file.flush();
+            if( !file ) throw std::runtime_error( "Failed to write imposter review sheet." );
+            output << ",\"atlasExport\":{\"path\":" << advanced::jsonString( path.string() )
+                   << ",\"width\":" << width << ",\"height\":" << height
+                   << ",\"sourceWidth\":" << pixels->width << ",\"sourceHeight\":" << pixels->height
+                   << ",\"columns\":7,\"rows\":7,\"losslessRepack\":true}";
+#endif
+        }
+        output << ",\"ready\":" << ( valid ? "true" : "false" ) << '}';
+        return valid;
+    }
+
     void SampleVehicleAdvanced::updateRenderCamera()
     {
+        if( isCityImposterView( m_captureView ) && m_assets.cityStreaming && m_assets.cityStreaming->stats().initialized )
+        {
+            // Residency initialization must observe the normal authored groups.
+            // Reassert the diagnostic tier after any asynchronous detail reload.
+            // Keep nearby patches under normal LOD selection. Forcing foreground
+            // cards magnifies a distant representation far beyond its intended size.
+            if( auto patch = m_cityImposterActor ? m_cityImposterActor->getParent() : nullptr )
+                if( auto group = patch->getComponent<scene::LODGroup>(); group && group->getNumLevels() > 1 )
+                    group->setForcedLOD( s32( group->getNumLevels() ) - 1 );
+        }
         if( m_cameraSceneNode && m_cameraActor )
         {
             if( auto transform = m_cameraActor->getTransform() )
@@ -5406,7 +5636,21 @@ namespace workphone
                 m_cameraSceneNode->setTransform( transform->getWorldTransform() );
                 if( ( !m_capturePath.empty() || m_benchmarkSeconds > 0 ) && ( m_captureView != "follow" || m_orbitCamera ) )
                 {
-                    if( m_orbitCamera )
+                    if( isCityImposterView( m_captureView ) && m_cityImposterActor )
+                    {
+                        // Observe a different direction through the normal active-camera
+                        // update before settling on the requested fixed review pose.
+                        if( m_cityImposterInitialView < 0 && m_reviewFrames >= 10 )
+                        {
+                            const auto imposter = m_cityImposterActor->getComponent<scene::MeshImposter>();
+                            m_cityImposterInitialView = imposter ? imposter->getSelectedView() : -1;
+                            m_cityImposterInitialChanges = imposter ? imposter->getSelectionChanges() : 0;
+                        }
+                        m_cameraActor->setPosition( m_cityImposterInitialView < 0 ?
+                            m_cityImposterInitialEye : m_cityImposterEye );
+                        m_cameraActor->lookAt( m_cityImposterTarget, Vector3F::unitY() );
+                    }
+                    else if( m_orbitCamera )
                     {
                         const auto elapsed = core::IApplicationManager::instance()->getTimer()->getTimeSinceSceneLoad();
                         const auto angle = float( std::max( elapsed - 5.0, 0.0 ) * .15 );
@@ -5551,7 +5795,9 @@ namespace workphone
             if( system )
             {
                 scene::LODSystem::View view;
-                view.position = m_cameraActor->getWorldTransform().getPosition();
+                const auto cameraPose = m_cameraActor->getWorldTransform();
+                view.position = cameraPose.getPosition();
+                view.direction = cameraPose.getOrientation() * -Vector3<real_Num>::unitZ();
                 view.verticalFovRadians = Math<f32>::DegToRad( m_camera->getFOVy() );
                 view.nearClipDistance = m_camera->getNearClipDistance();
                 view.lodBias = m_camera->getLodBias();
@@ -5672,6 +5918,7 @@ int main( int argc, char **argv )
                    "  --validate-circuit           Validate 100 generated closed circuits\n"
                    "  --capture PATH.bmp --view follow|car|track|corner|junction|hillside|street|boulevard|frontage|facade|building|utilities|park|shopfront|entry-route|rooftop|pitched-roof   Save a rendered view and "
                    "exit\n"
+                   "  --view imposter-front|imposter-diagonal|imposter-back|imposter-high  Same city patch from four angles, with exported sprite sheet\n"
                    "  --no-hud --force-lod auto|0|1  Clean captures and tree LOD comparisons\n"
                    "  --force-vehicle-lod auto|0|1|2  Override the vehicle level (clamped for low)\n"
                    "  --benchmark SECONDS [--orbit] Measure after five seconds of warmup\n"
@@ -5992,8 +6239,12 @@ int main( int argc, char **argv )
         if( captureView != "follow" && captureView != "car" && captureView != "track" &&
             captureView != "corner" && captureView != "junction" && captureView != "hillside" && captureView != "verge" && captureView != "street" && captureView != "boulevard" &&
             captureView != "frontage" && captureView != "facade" && captureView != "building" && captureView != "utilities" && captureView != "park" && captureView != "shopfront" && captureView != "entry-route" && captureView != "rooftop" && captureView != "pitched-roof" &&
-            !isRoadTerrainEditView( captureView ) )
-            throw std::runtime_error( "View must be follow, car, track, corner, junction, hillside, verge, street, boulevard, frontage, facade, building, utilities, park, shopfront, entry-route, rooftop, pitched-roof, road-edit-before, or road-edit-after." );
+            !isRoadTerrainEditView( captureView ) && !isCityImposterView( captureView ) )
+            throw std::runtime_error( "Unknown capture view; use --help for scene and directional imposter review views." );
+        if( isCityImposterView( captureView ) && ( !openCity || roadAuthoringShowcase || !cityStreaming ||
+            orbit || capturePath.empty() || cityStreamingSmokeTest || smokeTest || trackSmokeTest ||
+            collisionSmokeTest || audioSmokeTest || effectsSmokeTest ) )
+            throw std::runtime_error( "Imposter views require a generated city, streaming on, a fixed capture camera and no smoke test." );
         if( ( cityOptionsExplicit || captureView == "street" || captureView == "boulevard" ) && !openCity )
             throw std::runtime_error( "City options and street-level views require --city." );
         if(roadAuthoringShowcase && foliageWorld)throw std::runtime_error("Road authoring showcase does not provide foliage-world generation.");

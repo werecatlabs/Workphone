@@ -12,7 +12,7 @@ param(
     [ValidatePattern('^\d+x\d+$')][string]$Resolution = '1280x720',
     [ValidateSet('auto', 'none', 'msaa2', 'msaa4')][string]$SceneAA = 'auto',
     [ValidateRange(0.1, 3600)][double]$Seconds = 10,
-    [ValidateSet('follow', 'car', 'track', 'corner', 'junction', 'hillside', 'verge', 'street', 'boulevard', 'frontage', 'facade', 'building', 'utilities', 'park', 'shopfront', 'entry-route', 'rooftop', 'pitched-roof', 'road-edit-before', 'road-edit-after')][string[]]$Views = @('car', 'track', 'corner', 'follow'),
+    [ValidateSet('follow', 'car', 'track', 'corner', 'junction', 'hillside', 'verge', 'street', 'boulevard', 'frontage', 'facade', 'building', 'utilities', 'park', 'shopfront', 'entry-route', 'rooftop', 'pitched-roof', 'road-edit-before', 'road-edit-after', 'imposter-front', 'imposter-diagonal', 'imposter-back', 'imposter-high')][string[]]$Views = @('car', 'track', 'corner', 'follow'),
     [string]$Replay,
     [switch]$NoEffects,
     [switch]$FoliageWorld,
@@ -33,6 +33,10 @@ $streetDetailExplicit = $PSBoundParameters.ContainsKey('CityStreetDetail')
 if ($RoadAuthoringShowcase) { $Scene = 'city' }
 if ($CityTerrainRoads) { $Scene = 'city' }
 if ($CityStreamingSmokeTest -and ($Scene -ne 'city' -or $CityStreaming -ne 'on')) { throw 'CityStreamingSmokeTest requires city and CityStreaming on.' }
+$imposterViews = @($Views | Where-Object { $_ -in @('imposter-front', 'imposter-diagonal', 'imposter-back', 'imposter-high') })
+if ($imposterViews.Count -and ($Scene -ne 'city' -or $RoadAuthoringShowcase -or $CityStreaming -ne 'on' -or $CityStreamingSmokeTest)) {
+    throw 'Imposter views require a generated city, CityStreaming on and no streaming smoke test.'
+}
 if ($streetDetailExplicit -and !$CityTerrainRoads) { throw '-CityStreetDetail requires -CityTerrainRoads.' }
 if ($Views -contains 'frontage' -and !$CityTerrainRoads) { throw '-Views frontage requires -CityTerrainRoads.' }
 if ($Views -contains 'utilities' -and !$CityTerrainRoads) { throw '-Views utilities requires -CityTerrainRoads.' }
@@ -113,6 +117,8 @@ $sourceRoots = @('Engine/cpp/Include/WPProcedural', 'Engine/cpp/Source/WPProcedu
 $sourceRoots += @('Engine/c/Include/WorkphonePhysics', 'Engine/c/Source/WorkphonePhysics')
 $sources = @($sourceRoots | ForEach-Object { Get-ChildItem -LiteralPath (Join-Path $repoRoot $_) -Recurse -File | Where-Object { $_.Extension -in '.cpp', '.c', '.hpp', '.h', '.txt' } } | Sort-Object FullName -Unique | ForEach-Object { Get-Identity $_.FullName })
 $sources += @('Engine/cpp/Source/Workphone/System/FSM.cpp', 'Engine/cpp/Source/Workphone/System/FSMManager.cpp', 'Engine/cpp/Include/Workphone/System/FSM.hpp', 'Engine/cpp/Include/Workphone/System/FSMManager.hpp') | ForEach-Object { Get-Identity (Join-Path $repoRoot $_) }
+$sources += @('Engine/cpp/Source/Workphone/Mesh/MeshImposterGenerator.cpp', 'Engine/cpp/Include/Workphone/Mesh/MeshImposterGenerator.hpp') | ForEach-Object { Get-Identity (Join-Path $repoRoot $_) }
+$sources += @('Engine/cpp/Source/Workphone/WorkphonePlugin.cpp', 'Tools/powershell/CaptureProceduralRacing.ps1') | ForEach-Object { Get-Identity (Join-Path $repoRoot $_) }
 $binaries = @(Get-ChildItem -LiteralPath $binaryRoot -File | Where-Object { $_.Extension -eq '.dll' -or $_.Name -eq 'SampleVehicleAdvanced.exe' } | Sort-Object Name | ForEach-Object { Get-Identity $_.FullName })
 $assets = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot 'bin/Media') -Recurse -File | Where-Object { $_.Extension -in '.png', '.jpg', '.jpeg', '.tga', '.dds', '.mesh', '.hdr', '.texres', '.matres', '.folspec', '.folworld' } | Sort-Object FullName | ForEach-Object { Get-Identity $_.FullName })
 $manifest = [ordered]@{
@@ -179,6 +185,20 @@ try {
                 $buildings = $run.evidence.cityBuildingGeometry
                 $run.passed = $run.passed -and $null -ne $buildings -and $buildings.ready -eq $true -and
                     $buildings.meshes -gt 0 -and ($buildings.readyMeshes + [int]$buildings.streamedOutMeshes) -eq $buildings.meshes
+                $run.passed = $run.passed -and $run.evidence.cityImposters.ready -eq $true
+            }
+            if ($view -in $imposterViews) {
+                $imposters = $run.evidence.cityImposters
+                $sheet = $imposters.atlasExport
+                $run.passed = $run.passed -and $imposters.cameraOnlySelectionChanged -eq $true -and
+                    $imposters.review.forcedLastLOD -eq $true -and $imposters.review.forcedTargetOnly -eq $true -and
+                    $imposters.review.radiusMetres -eq 300 -and
+                    $imposters.patchCount -gt 0 -and @($imposters.patches | Where-Object {
+                        $_.ready -ne $true -or $_.viewCount -ne 49 -or $_.nativeVertices -ne 4 -or $_.nativeTriangles -ne 2
+                    }).Count -eq 0 -and $sheet.losslessRepack -eq $true -and $sheet.columns -eq 7 -and $sheet.rows -eq 7
+                if ($sheet.path -and (Test-Path -LiteralPath $sheet.path -PathType Leaf)) {
+                    $run.imposterSheet = Get-Identity $sheet.path
+                } else { $run.passed = $false }
             }
             if ($streetDetailExplicit) {
                 $street = $run.evidence.terrainCity
@@ -241,6 +261,16 @@ try {
             ($before.oldKnot -join ',') -eq ($after.oldKnot -join ',') -and ($before.newKnot -join ',') -eq ($after.newKnot -join ',') -and
             ($before.probe -join ',') -eq ($after.probe -join ',')
         if (!$manifest.matchedRoadEdit) { $failed = $true }
+    }
+    if ($imposterViews.Count -gt 1) {
+        $reviews = @($manifest.runs | Where-Object { $_.view -in $imposterViews })
+        $first = $reviews[0]
+        $manifest.matchedImposterReview = @($reviews | Where-Object {
+            $_.evidence.cityImposters.review.targetPatch -ne $first.evidence.cityImposters.review.targetPatch -or
+            ($_.evidence.cityImposters.review.target -join ',') -cne ($first.evidence.cityImposters.review.target -join ',') -or
+            $_.imposterSheet.sha256 -cne $first.imposterSheet.sha256
+        }).Count -eq 0
+        if (!$manifest.matchedImposterReview) { $failed = $true }
     }
 } finally {
     $manifest.completedUtc = [DateTime]::UtcNow.ToString('o')

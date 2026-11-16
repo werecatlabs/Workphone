@@ -11,6 +11,7 @@
 #include <Workphone/Mesh/MeshManager.hpp>
 #include <Workphone/Mesh/MeshUtil.hpp>
 #include <Workphone/Mesh/MeshImposterGenerator.hpp>
+#include <Workphone/Scene/Components/MeshImposter.hpp>
 #include <Workphone/Memory/TypeManager.hpp>
 #include <Workphone/Interface/Procedural/ITextureForge.hpp>
 #include <Workphone/Interface/Procedural/IRoadSystem.hpp>

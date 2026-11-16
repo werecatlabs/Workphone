@@ -7,7 +7,7 @@
 
             struct Baked
             {
-                MeshImposterAtlas atlas;
+                MeshImposterSpriteSheet atlas;
                 Vector3F centre, minimum, maximum;
                 size_t sourceTriangles;
             };
@@ -95,14 +95,19 @@
                     for( auto &point : triangle.positions ) point -= centre;
 
                 const u32 resolution = quality == VehicleAppearanceQuality::Preview ? 64u : 128u;
-                auto atlas = generateMeshImposters( triangles, minimum - centre, maximum - centre,
-                                                    resolution, resolution );
+                MeshImposterSpriteSheetOptions options;
+                options.tileWidth = options.tileHeight = resolution;
+                // A strip keeps every view's mip filtering and alpha coverage
+                // independent through the existing native atlas upload path.
+                options.columns = 49;
+                options.supersampling = quality == VehicleAppearanceQuality::Preview ? 1u : 2u;
+                auto atlas = bakeMeshImposterSpriteSheet( triangles, minimum - centre, maximum - centre, options );
                 for( size_t view = 0; view < atlas.views.size(); ++view )
                 {
                     bool occupied = false;
-                    for( u32 y = 1; y + 1 < atlas.height && !occupied; ++y )
+                    for( u32 y = 0; y < atlas.tileHeight && !occupied; ++y )
                     {
-                        for( u32 x = 1; x + 1 < atlas.tileWidth; ++x )
+                        for( u32 x = 0; x < atlas.tileWidth; ++x )
                         {
                             const auto pixel = ( size_t( y ) * atlas.width + view * atlas.tileWidth + x ) * 4;
                             if( !atlas.rgba[pixel + 3] ) continue;
@@ -118,29 +123,13 @@
             Geometry cards( const Baked &baked )
             {
                 Geometry geometry;
-                const auto &atlas = baked.atlas;
-                for( size_t i = 0; i < atlas.views.size(); ++i )
-                {
-                    const auto &view = atlas.views[i];
-                    // Side cards cross at the patch centre. The overhead chart sits
-                    // in the upper storeys, within the same fitted local bounds.
-                    const auto centre = baked.centre + ( i == 2 ?
-                        Vector3F( 0, ( baked.maximum.y - baked.minimum.y ) * .28f, 0 ) : Vector3F() );
-                    const auto point = [&]( float x, float y ) { return centre + view.right * x + view.up * y; };
-                    const auto base = geometry.positions.size();
-                    geometry.quad( point( view.minimum.x, view.minimum.y ), point( view.maximum.x, view.minimum.y ),
-                                   point( view.maximum.x, view.maximum.y ), point( view.minimum.x, view.maximum.y ),
-                                   view.towardCamera );
-                    const auto u0 = float( i * atlas.tileWidth + 1 ) / atlas.width;
-                    const auto u1 = float( ( i + 1 ) * atlas.tileWidth - 2 ) / atlas.width;
-                    const auto top = 1.f / atlas.height, bottom = float( atlas.height - 2 ) / atlas.height;
-                    geometry.uv[base] = { u0, bottom, 0 };
-                    geometry.uv[base + 1] = { u1, bottom, 0 };
-                    geometry.uv[base + 2] = { u1, top, 0 };
-                    geometry.uv[base + 3] = { u0, top, 0 };
-                    for( size_t vertex = base; vertex < base + 4; ++vertex )
-                        geometry.tangents[vertex] = { view.right.x, view.right.y, view.right.z, -1.f };
-                }
+                // One persistent unit quad. MeshImposter publishes the selected
+                // baked projection through its transform and material UV rectangle.
+                geometry.quad( { -.5f, -.5f, 0 }, { .5f, -.5f, 0 }, { .5f, .5f, 0 }, { -.5f, .5f, 0 },
+                               Vector3F::unitZ() );
+                geometry.uv[0] = { 0, 1, 0 }; geometry.uv[1] = { 1, 1, 0 };
+                geometry.uv[2] = { 1, 0, 0 }; geometry.uv[3] = { 0, 0, 0 };
+                for( auto &tangent : geometry.tangents ) tangent = { 1, 0, 0, -1 };
                 return geometry;
             }
 
@@ -164,11 +153,13 @@
                 surface->setEditorFloat( "uvAniso", 8.f );
                 if( auto actor = mesh( assets, "LOD2 city building imposters", cards( baked ), surface, root ) )
                 {
+                    actor->setStatic( false );
+                    actor->addComponent<scene::MeshImposter>()->configure( atlas.views, baked.centre, surface );
                     auto renderer = actor->getComponent<scene::MeshRenderer>();
                     renderer->setCastShadows( scene::Renderer::CastShadows::Off );
                     WP_LOG( String( "City building imposter atlas " ) + StringUtil::toString( atlas.width ) +
                         "x" + StringUtil::toString( atlas.height ) + " sourceTriangles=" +
-                        StringUtil::toString( baked.sourceTriangles ) );
+                        StringUtil::toString( baked.sourceTriangles ) + " views=" + StringUtil::toString( atlas.views.size() ) );
                     return renderer;
                 }
                 return nullptr;

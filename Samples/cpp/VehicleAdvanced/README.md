@@ -186,11 +186,40 @@ mesh residency, imposter readiness and the shared source ledger. The sample
 requires native detail eviction and reload and a decrease in source memory
 during eviction before it resumes normal capture and collision validation.
 The probe also moves the actual render camera away and back with explicit
-streaming observers cleared, while the vehicle remains in the city. A separate
+streaming observers cleared, while a test-only kinematic hold keeps the vehicle
+in the city. The Physics task applies the hold and restores the original dynamic
+state, velocities and sleep state; capture success requires restoration. A separate
 cold preparation makes that camera-only near/return comparison independent of
 the earlier multi-observer demand. `cameraOnly` records camera/view agreement,
-detail and imposter LOD counts, native residency, and measured vehicle drift
+native-visible detail and imposter tier counts, residency, and measured vehicle drift
 (at most 0.25 m). The original camera pose is restored before the capture.
+
+Building imposters use 49 directional frames: 16 azimuths at three elevations,
+plus an overhead frame. The active LOD camera selects a frame with angular
+hysteresis. Each patch keeps one two-triangle quad, updating its transform and
+material UV rectangle; its atlas stays resident while detail meshes stream out.
+High-quality frames are 128 pixels with 2x supersampling and transparent gutters.
+Orthographic Editor views use parallel camera rays. The quad sits in front of
+the baked source bounds to avoid slicing elevated silhouettes into the ground;
+its placement follows camera rays so its projected footprint stays fixed.
+This is a distant representation with approximate depth. Detail LODs cover views
+inside the source bounds; per-pixel depth, dynamic lighting and frame crossfades
+are not provided by this sprite-sheet path.
+
+The `imposter-front`, `imposter-diagonal`, `imposter-back` and `imposter-high`
+review views use the same patch and a 300 m camera radius. They force the city
+imposter tier on the distant target patch for inspection, first move from an
+opposite bearing to verify
+automatic frame selection, and export the actual atlas as a losslessly repacked
+7-by-7 TGA next to each capture. Normal views retain automatic LOD selection.
+These review views require a generated city with streaming enabled, and cannot
+be combined with `--orbit` or the streaming smoke test.
+
+```powershell
+.\Tools\powershell\CaptureProceduralRacing.ps1 -Scene city -CityLayout lsystem `
+  -CityTerrainRoads -CityTerrainRelief 2 -CityStreaming on -Seconds 1 `
+  -Views imposter-front,imposter-diagonal,imposter-back,imposter-high
+```
 
 ```powershell
 ./SampleVehicleAdvanced.exe --city-terrain-roads --city-layout lsystem --view hillside `

@@ -3,6 +3,7 @@
 #include <Workphone/WorkphonePlugin.hpp>
 #include <Workphone/Scene/Components/Script.hpp>
 #include <Workphone/Scene/Components/CityRoadAuthoring.hpp>
+#include <Workphone/Scene/Components/MeshImposter.hpp>
 #include <Workphone/Jobs/RunCommandJob.hpp>
 #include <Workphone/IO/FolderListing.hpp>
 #include <Workphone/IO/FileSystem.hpp>
@@ -147,6 +148,7 @@ namespace workphone
         FactoryUtil::addFactory<scene::FiniteStateMachine>();
         FactoryUtil::addFactory<scene::Light>();
         FactoryUtil::addFactory<scene::LODGroup>();
+        FactoryUtil::addFactory<scene::MeshImposter>();
         FactoryUtil::addFactory<scene::Material>();
         FactoryUtil::addFactory<scene::Material::MaterialStateObjectListener>();
         FactoryUtil::addFactory<scene::Material::MaterialStateListener>();
@@ -708,6 +710,7 @@ namespace workphone
         FactoryUtil::removeFactory<scene::CollisionTerrain>();
         FactoryUtil::removeFactory<scene::FiniteStateMachine>();
         FactoryUtil::removeFactory<scene::Light>();
+        FactoryUtil::removeFactory<scene::MeshImposter>();
         FactoryUtil::removeFactory<scene::LODGroup>();
         FactoryUtil::removeFactory<scene::Material>();
         FactoryUtil::removeFactory<scene::Mesh>();

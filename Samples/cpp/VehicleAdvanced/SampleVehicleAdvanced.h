@@ -149,6 +149,8 @@ namespace workphone
         void updateCitySmokeVehicleHold();
         void restoreCitySmokeVehicleHold();
         void writeCityStreamingSmoke( std::ostream &output ) const;
+        void prepareCityImposterReview();
+        bool writeCityImposterReview( std::ostream &output ) const;
         void updateControls();
         void updateWheelVisuals();
         void performReset();
@@ -244,6 +246,11 @@ namespace workphone
         Vector3F m_cityBoulevardCentre{};
         Vector3F m_cityFrontageEye{}, m_cityFrontageTarget{};
         Vector3F m_cityFacadeEye{}, m_cityFacadeTarget{};
+        SmartPtr<scene::IGameActor> m_cityImposterActor;
+        Vector3F m_cityImposterEye{}, m_cityImposterTarget{}, m_cityImposterInitialEye{};
+        size_t m_cityImposterPatchIndex = 0;
+        s32 m_cityImposterInitialView = -1;
+        u64 m_cityImposterInitialChanges = 0;
         Vector3F m_cityEntryWalkEdge{};
         Vector3F m_cityConnectionEye{}, m_cityConnectionTarget{};
         Vector3F m_cityHillsideEye{}, m_cityHillsideTarget{};

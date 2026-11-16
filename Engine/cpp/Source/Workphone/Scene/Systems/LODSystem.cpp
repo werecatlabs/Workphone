@@ -292,7 +292,9 @@ namespace workphone::scene
         if( !selected ) return false;
 
         View resolved;
-        resolved.position = selected->getActor()->getWorldTransform().getPosition();
+        const auto cameraPose = selected->getActor()->getWorldTransform();
+        resolved.position = cameraPose.getPosition();
+        resolved.direction = cameraPose.getOrientation() * -Vector3<real_Num>::unitZ();
         if( !finitePosition( resolved.position ) ) return false;
         resolved.verticalFovRadians = Math<f32>::DegToRad( std::max( selected->getFOV(), 0.001f ) );
         resolved.orthographicHeight = selected->getOrthoWindowHeight();
