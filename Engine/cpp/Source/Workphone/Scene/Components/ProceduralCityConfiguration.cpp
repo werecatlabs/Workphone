@@ -166,6 +166,7 @@ namespace workphone::scene
         assets.cityBlocks = m_blocks;
         assets.cityRoute = m_route;
         assets.cityStreetDetail = m_streetDetail;
+        assets.cityBuildingDensity = m_buildingDensity;
         assets.cityFoliageLODDistances = m_foliageLODDistances;
         assets.cityFoliageImpostorResolution = cityImpostorResolutions[size_t( m_foliageImpostorResolution )];
         assets.cityBuildingImpostorResolution = cityImpostorResolutions[size_t( m_buildingImpostorResolution )];
@@ -300,6 +301,11 @@ namespace workphone::scene
         properties.getPropertyObject( "City Terrain Relief" ).setAttribute( "description",
             "Initial terrain hills (0 to 2). Edit existing ground with the Terrain tools." );
         properties.setProperty( "City Street Detail", m_streetDetail );
+        properties.setProperty( "City Building Density", m_buildingDensity );
+        auto &density = properties.getPropertyObject( "City Building Density" );
+        density.setAttribute( "min", "0" );
+        density.setAttribute( "max", "100" );
+        density.setAttribute( "description", "Percent of buildable lots occupied. Lower values keep more central buildings and landscape the other parcels; 100 keeps the full layout." );
         for( size_t i = 0; i < cityFoliageDistanceProperties.size(); ++i )
         {
             const auto name = cityFoliageDistanceProperties[i];
@@ -404,6 +410,12 @@ namespace workphone::scene
         if( properties.getPropertyValue( "City Street Detail", streetDetail ) )
         {
             m_streetDetail = std::clamp( streetDetail, 0, 100 );
+        }
+        s32 buildingDensity = m_buildingDensity;
+        if( properties.getPropertyValue( "City Building Density", buildingDensity ) )
+        {
+            if( buildingDensity >= 0 && buildingDensity <= 100 ) m_buildingDensity = buildingDensity;
+            else if( error.empty() ) error = "City Building Density must be between 0 and 100 percent.";
         }
         auto distances = m_foliageLODDistances;
         bool changedDistances = false;

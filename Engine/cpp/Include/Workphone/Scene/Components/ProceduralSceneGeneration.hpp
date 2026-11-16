@@ -110,6 +110,7 @@ namespace workphone::scene::race
         String cityRaceRouteError;
         u64 cityAppliedSourceRevision = 0;
         int cityStreetDetail = 100;
+        int cityBuildingDensity = 100;
         // LOD0->1 and LOD1->2 distances for trees, shrubs and grass (metres).
         std::array<f32, 6> cityFoliageLODDistances = { 65, 260, 20, 100, 8, 35 };
         // Zero follows the appearance-quality default; otherwise pixels per view.
@@ -169,6 +170,11 @@ namespace workphone::scene::race
      * @return true if reflection resources are valid and usable.
      */
     WPCore_API bool validateReflection( const SceneAssets &assets );
+    /// Stable lot occupancy for 0..100 density; lower values retain central lots first.
+    WPCore_API bool selectCityBuilding( u64 lotId, u32 seed, f32 centreDistanceFraction,
+                                       s32 densityPercent );
+    WPCore_API void applyCityBuildingDensity( procedural::OpenCityLayout &city, u32 seed,
+                                              s32 densityPercent );
 
     /**
      * Build scene assets for a procedural race scene and attach them to the

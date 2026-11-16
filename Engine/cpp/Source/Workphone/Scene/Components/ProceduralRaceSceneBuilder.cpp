@@ -78,6 +78,7 @@ namespace workphone::scene::race
         cityRaceRouteError( other.cityRaceRouteError ),
         cityAppliedSourceRevision( other.cityAppliedSourceRevision ),
         cityStreetDetail( other.cityStreetDetail ),
+        cityBuildingDensity( other.cityBuildingDensity ),
         cityFoliageLODDistances( other.cityFoliageLODDistances ),
         cityFoliageImpostorResolution( other.cityFoliageImpostorResolution ),
         cityBuildingImpostorResolution( other.cityBuildingImpostorResolution ),
@@ -154,6 +155,7 @@ namespace workphone::scene::race
         swap( cityRaceRouteError, other.cityRaceRouteError );
         swap( cityAppliedSourceRevision, other.cityAppliedSourceRevision );
         swap( cityStreetDetail, other.cityStreetDetail );
+        swap( cityBuildingDensity, other.cityBuildingDensity );
         swap( cityFoliageLODDistances, other.cityFoliageLODDistances );
         swap( cityFoliageImpostorResolution, other.cityFoliageImpostorResolution );
         swap( cityBuildingImpostorResolution, other.cityBuildingImpostorResolution );
@@ -187,6 +189,42 @@ namespace workphone::scene::race
         swap( exportSourceDirectory, other.exportSourceDirectory );
         swap( triangles, other.triangles );
         swap( textureBytes, other.textureBytes );
+    }
+
+    bool selectCityBuilding( u64 lotId, u32 seed, f32 centreDistanceFraction,
+                             s32 densityPercent )
+    {
+        if( densityPercent >= 100 ) return true;
+        if( densityPercent <= 0 ) return false;
+        const auto hash = render::foliageStableHash(
+            lotId ^ ( u64( seed ) << 32 ) ^ 0x4349545944454e53ull );
+        const auto random = f32( hash >> 40 ) / 16777216.f;
+        const auto distance = std::clamp( centreDistanceFraction, 0.f, 1.f );
+        return .7f * random + .3f * distance < densityPercent / 100.f;
+    }
+
+    void applyCityBuildingDensity( procedural::OpenCityLayout &city, u32 seed,
+                                   s32 densityPercent )
+    {
+        if( densityPercent >= 100 || city.lots.empty() ) return;
+        float minX = city.lots.front().parcelX, maxX = minX;
+        float minZ = city.lots.front().parcelZ, maxZ = minZ;
+        for( const auto &lot : city.lots )
+        {
+            minX = std::min( minX, lot.parcelX ); maxX = std::max( maxX, lot.parcelX );
+            minZ = std::min( minZ, lot.parcelZ ); maxZ = std::max( maxZ, lot.parcelZ );
+        }
+        const float centreX = ( minX + maxX ) * .5f, centreZ = ( minZ + maxZ ) * .5f;
+        const float radius = std::max( 1.f, std::hypot( maxX - minX, maxZ - minZ ) * .5f );
+        for( auto &lot : city.lots )
+        {
+            const float distance = std::hypot( lot.parcelX - centreX,
+                                                lot.parcelZ - centreZ ) / radius;
+            if( lot.park || selectCityBuilding( lot.id, seed, distance, densityPercent ) ) continue;
+            lot.park = true;
+            lot.x = lot.parcelX; lot.z = lot.parcelZ;
+            lot.width = lot.parcelWidth; lot.depth = lot.parcelDepth;
+        }
     }
 
     namespace
@@ -1562,11 +1600,13 @@ namespace workphone::scene::race
                     "Generated foliage atlas lost its registered texture identity." );
             }
             const cityFoliageLOD::LeafSource leafSource( leafAtlas, leafTextureName );
-            const auto city = assets.cityTerrainRoads ? assets.cityLayout
+            auto city = assets.cityTerrainRoads ? assets.cityLayout
                               : assets.openCity
                                   ? OpenCityLayout::generate( seed, assets.cityBlocks, assets.cityRoute,
                                                               assets.cityNaturalRoads )
                                   : OpenCityLayout{};
+            if( assets.openCity && !assets.cityTerrainRoads )
+                applyCityBuildingDensity( city, seed, assets.cityBuildingDensity );
             auto world = std::make_shared<render::FoliageWorldData>();
             world->revision = 1;
             // The bounded city overview needs a longer tree view range. Larger city
@@ -3466,6 +3506,11 @@ namespace workphone::scene::race
             if( assets.cityTerrainRoads )
             {
                 fittedRoute = prepareTerrainCity( assets, city, sourceOwner, vehicle, seed );
+            }
+            if( assets.cityBuildingDensity < 100 )
+            {
+                applyCityBuildingDensity( city, seed, assets.cityBuildingDensity );
+                if( assets.cityTerrainRoads ) assets.cityLayout = city;
             }
             const auto buildingCount = std::count_if( city.lots.begin(), city.lots.end(),
                                                       []( const auto &lot ) { return !lot.park; } );

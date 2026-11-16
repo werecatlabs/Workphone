@@ -1,5 +1,15 @@
 # WPProcedural implementation status
 
+## Editable city building density — 16 November 2026
+
+**City Building Density** on the city scene components sets the percentage of
+eligible lots occupied by buildings, from 0 to 100. The default 100 preserves
+the existing city. Lower values use a seeded, stable lot ranking that retains
+more central buildings and converts vacant lots to landscaped park parcels.
+The same selected lots feed foundations, buildings, street detail, terrain
+parks and foliage after **Regenerate**. Road geometry and fitted terrain stay
+fixed. Invalid values retain the last valid setting.
+
 ## Editable impostor resolution — 16 November 2026
 
 The city scene components now expose **City Foliage Impostor Resolution** and

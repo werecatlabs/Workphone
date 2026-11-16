@@ -317,6 +317,40 @@ void checkClientContracts( SmartPtr<IFactoryManager> factories )
              "The default circuit does not create a city streaming controller" );
     auto city = workphone::make_ptr<scene::ProceduralCityScene>();
     auto cityOptions = city->getProperties();
+    s32 buildingDensity = -1;
+    require( cityOptions->getPropertyValue( "City Building Density", buildingDensity ) && buildingDensity == 100,
+             "City building density must preserve the full existing layout by default" );
+    size_t sparse = 0, dense = 0, central = 0, peripheral = 0;
+    for( u64 id = 1; id <= 1000; ++id )
+    {
+        const bool low = scene::race::selectCityBuilding( id, 42, .5f, 25 );
+        const bool high = scene::race::selectCityBuilding( id, 42, .5f, 75 );
+        require( !low || high, "Increasing density must never remove a selected building" );
+        require( !scene::race::selectCityBuilding( id, 42, .5f, 0 ) &&
+                 scene::race::selectCityBuilding( id, 42, .5f, 100 ),
+                 "City density endpoints must select no lots or all lots" );
+        sparse += low; dense += high;
+        central += scene::race::selectCityBuilding( id, 42, 0.f, 45 );
+        peripheral += scene::race::selectCityBuilding( id, 42, 1.f, 45 );
+    }
+    require( sparse < dense && central > peripheral,
+             "Density must change building count while favoring the city centre" );
+    auto fullCity = procedural::OpenCityLayout::generate( 42, 8, 0, true );
+    auto sparseCity = fullCity;
+    const auto originalBuildings = std::count_if( fullCity.lots.begin(), fullCity.lots.end(),
+        []( const auto &lot ) { return !lot.park; } );
+    scene::race::applyCityBuildingDensity( sparseCity, 42, 40 );
+    const auto remainingBuildings = std::count_if( sparseCity.lots.begin(), sparseCity.lots.end(),
+        []( const auto &lot ) { return !lot.park; } );
+    require( remainingBuildings > 0 && remainingBuildings < originalBuildings &&
+             sparseCity.roads.edges.size() == fullCity.roads.edges.size() &&
+             sparseCity.lots.size() == fullCity.lots.size(),
+             "City density must change building occupancy without changing roads or parcels" );
+    for( size_t i = 0; i < sparseCity.lots.size(); ++i )
+        if( !fullCity.lots[i].park && sparseCity.lots[i].park )
+            require( sparseCity.lots[i].x == sparseCity.lots[i].parcelX &&
+                     sparseCity.lots[i].width == sparseCity.lots[i].parcelWidth,
+                     "Vacant building lots must become complete landscape parcels" );
     bool cityStreamingEnabled = false;
     f32 streamLoad = 0, streamRetain = 0;
     s32 cityMemory = 0;
@@ -339,6 +373,7 @@ void checkClientContracts( SmartPtr<IFactoryManager> factories )
     cityOptions->setProperty( "City Grass LOD1 Distance", 42.f );
     cityOptions->setProperty( "City Foliage Impostor Resolution", s32( 3 ) );
     cityOptions->setProperty( "City Building Impostor Resolution", s32( 1 ) );
+    cityOptions->setProperty( "City Building Density", s32( 55 ) );
     city->setProperties( cityOptions );
     auto restoredCity = workphone::make_ptr<scene::ProceduralCityScene>();
     restoredCity->setProperties( city->getProperties() );
@@ -357,6 +392,13 @@ void checkClientContracts( SmartPtr<IFactoryManager> factories )
     require( savedOptions->getPropertyValue( "City Foliage Impostor Resolution", foliageResolution ) && foliageResolution == 3 &&
              savedOptions->getPropertyValue( "City Building Impostor Resolution", buildingResolution ) && buildingResolution == 1,
              "City imposter resolutions did not survive the component property round-trip" );
+    require( savedOptions->getPropertyValue( "City Building Density", buildingDensity ) && buildingDensity == 55,
+             "City building density did not survive the component property round-trip" );
+    savedOptions->setProperty( "City Building Density", s32( 101 ) );
+    restoredCity->setProperties( savedOptions );
+    savedOptions = restoredCity->getProperties();
+    require( savedOptions->getPropertyValue( "City Building Density", buildingDensity ) && buildingDensity == 55,
+             "Invalid building density must preserve the previous setting" );
     savedOptions->setProperty( "City Building Impostor Resolution", s32( 4 ) );
     restoredCity->setProperties( savedOptions );
     savedOptions = restoredCity->getProperties();

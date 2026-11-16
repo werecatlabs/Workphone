@@ -112,6 +112,10 @@ Auto, 64, 128 or 256 pixels per direction. Auto uses 64 pixels in Preview and
 128 otherwise. Press **Regenerate** after changing either setting. A 256-pixel
 city can need a higher **City Source Memory MiB** budget.
 
+**City Building Density** controls how many eligible lots contain buildings
+(0–100%). Its default 100% keeps the full layout. Lower values retain more
+central buildings and landscape the vacant lots. Press **Regenerate** to apply.
+
 With `--view verge`, the sample looks across an open road end from pavement
 level. Use `-Views verge` in the capture harness with `-CityTerrainRoads`.
 The evidence records the selected endpoint camera and counts uploaded planting
