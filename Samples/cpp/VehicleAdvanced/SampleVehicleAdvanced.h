@@ -146,6 +146,8 @@ namespace workphone
         CitySmokeObserver applyCitySmokeObservers();
         bool advanceCityStreamingSmoke();
         void failCityStreamingSmoke( const std::string &reason );
+        void updateCitySmokeVehicleHold();
+        void restoreCitySmokeVehicleHold();
         void writeCityStreamingSmoke( std::ostream &output ) const;
         void updateControls();
         void updateWheelVisuals();
@@ -198,7 +200,7 @@ namespace workphone
         s32 m_cityStreetDetail = -1;
         bool m_cityStreaming = true;
         bool m_cityStreamingSmokeTest = false;
-        enum class CitySmokePhase { Startup, ColdAway, Near, Away, Return, Automatic, CameraColdAway, CameraNear, CameraAway, CameraReturn, Passed, Failed };
+        enum class CitySmokePhase { Startup, ColdAway, Near, Away, Return, Automatic, VehicleHold, CameraColdAway, CameraNear, CameraAway, CameraReturn, VehicleRelease, Passed, Failed };
         struct CitySmokeSnapshot
         {
             scene::race::CityStreamingStats streaming;
@@ -213,6 +215,7 @@ namespace workphone
             Vector3F cameraPosition{}, lodViewPosition{}, vehiclePosition{};
             bool cameraViewMatches = false;
             u32 detailedLodGroups = 0, imposterLodGroups = 0;
+            bool vehicleKinematicHeld = false;
         };
         CitySmokePhase m_citySmokePhase = CitySmokePhase::Startup;
         u64 m_citySmokeStartupIdentity = 0;
@@ -224,6 +227,13 @@ namespace workphone
         CitySmokeSnapshot m_citySmokeCameraNear, m_citySmokeCameraEvicted, m_citySmokeCameraReturned;
         Quaternion<real_Num> m_citySmokeCameraOrientation;
         f32 m_citySmokeMaximumVehicleDisplacement = 0;
+        std::atomic<bool> m_citySmokeHoldRequested{ false }, m_citySmokeHoldApplied{ false };
+        std::atomic<bool> m_citySmokeHoldRestored{ false }, m_citySmokeHoldFailed{ false };
+        SmartPtr<scene::Rigidbody> m_citySmokeHeldComponent;
+        SmartPtr<physics::IRigidDynamic3> m_citySmokeHeldBody;
+        Vector3<real_Num> m_citySmokeSavedLinearVelocity{}, m_citySmokeSavedAngularVelocity{};
+        bool m_citySmokeSavedKinematic = false, m_citySmokeSavedNativeKinematic = false;
+        bool m_citySmokeSavedSleeping = false;
         s32 m_citySourceMemoryMiB = 768;
         s32 m_cityBuildingStyle = -1;
         std::array<String, 5> m_cityBuildingMeshes;

@@ -26,6 +26,8 @@
 #include <Workphone/Scene/Components/LODGroup.hpp>
 #include <Workphone/Scene/Components/ProceduralCityStreaming.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
+#include <Workphone/Interface/System/ITask.hpp>
+#include <Workphone/Interface/System/ITaskManager.hpp>
 #include <Workphone/Thread/ScopedLock.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
 #include <Workphone/Scene/Components/Terrain/CollisionTerrain.hpp>
@@ -1617,6 +1619,8 @@ namespace workphone
             m_citySmokeCameraNear = m_citySmokeCameraEvicted = m_citySmokeCameraReturned = {};
             m_citySmokeCameraOrientation = {};
             m_citySmokeMaximumVehicleDisplacement = 0;
+            m_citySmokeHoldRequested = m_citySmokeHoldApplied = false;
+            m_citySmokeHoldRestored = m_citySmokeHoldFailed = false;
             m_replayTick = 0;
             setLoadingState( LoadingState::Loaded );
         }
@@ -1641,7 +1645,16 @@ namespace workphone
             }
 
             setLoadingState( LoadingState::Unloading );
-
+            // Failure/early shutdown can precede the physics-task release acknowledgement.
+            // Restore the captured body state before destroying the vehicle generation.
+            m_citySmokeHoldRequested.store( false, std::memory_order_release );
+            if( m_cityStreamingSmokeTest )
+            {
+                const auto app = core::IApplicationManager::instancePtr();
+                const auto tasks = app ? app->getTaskManager() : nullptr;
+                ScopedLock physicsLock( tasks ? tasks->getTask( TaskId::Physics ) : nullptr );
+                restoreCitySmokeVehicleHold();
+            }
 
             if( m_inputListener )
             {
@@ -1710,6 +1723,70 @@ namespace workphone
         }
     }
 
+    void SampleVehicleAdvanced::updateCitySmokeVehicleHold()
+    {
+        // Only the physics task mutates a running body. Render merely publishes demand.
+        if( !m_citySmokeHoldRequested.load( std::memory_order_acquire ) )
+        {
+            if( m_citySmokeHeldBody ) restoreCitySmokeVehicleHold();
+            return;
+        }
+        if( m_citySmokeHoldApplied.load( std::memory_order_relaxed ) ) return;
+        try
+        {
+            auto component = m_vehicleActor ? m_vehicleActor->getComponent<scene::Rigidbody>() : nullptr;
+            auto body = component ? component->getRigidDynamic() : nullptr;
+            if( !body ) throw std::runtime_error( "Missing vehicle body for camera-only hold" );
+            m_citySmokeHeldComponent = component;
+            m_citySmokeHeldBody = body;
+            m_citySmokeSavedKinematic = component->isKinematic();
+            m_citySmokeSavedNativeKinematic = body->isKinematic();
+            m_citySmokeSavedSleeping = body->isSleeping();
+            m_citySmokeSavedLinearVelocity = body->getLinearVelocity();
+            m_citySmokeSavedAngularVelocity = body->getAngularVelocity();
+            body->setLinearVelocity( Vector3<real_Num>::zero(), false );
+            body->setAngularVelocity( Vector3<real_Num>::zero(), false );
+            component->setKinematic( true );
+            if( !body->isKinematic() ) throw std::runtime_error( "Vehicle kinematic hold was not applied" );
+            m_citySmokeHoldApplied.store( true, std::memory_order_release );
+        }
+        catch( const std::exception &failure )
+        {
+            std::cerr << "City camera hold failed: " << failure.what() << '\n';
+            m_citySmokeHoldFailed.store( true, std::memory_order_release );
+            m_citySmokeHoldRequested.store( false, std::memory_order_release );
+            restoreCitySmokeVehicleHold();
+        }
+    }
+
+    void SampleVehicleAdvanced::restoreCitySmokeVehicleHold()
+    {
+        // Called on Physics, or during unload with that task excluded.
+        if( !m_citySmokeHeldBody ) return;
+        try
+        {
+            m_citySmokeHeldComponent->setKinematic( m_citySmokeSavedKinematic );
+            m_citySmokeHeldBody->setKinematic( m_citySmokeSavedNativeKinematic );
+            m_citySmokeHeldBody->setLinearVelocity( m_citySmokeSavedLinearVelocity, false );
+            m_citySmokeHeldBody->setAngularVelocity( m_citySmokeSavedAngularVelocity, false );
+            if( m_citySmokeSavedSleeping && !m_citySmokeSavedNativeKinematic ) m_citySmokeHeldBody->putToSleep();
+            const bool restored = m_citySmokeHeldComponent->isKinematic() == m_citySmokeSavedKinematic &&
+                m_citySmokeHeldBody->isKinematic() == m_citySmokeSavedNativeKinematic &&
+                ( m_citySmokeHeldBody->getLinearVelocity() - m_citySmokeSavedLinearVelocity ).length() <= .00001 &&
+                ( m_citySmokeHeldBody->getAngularVelocity() - m_citySmokeSavedAngularVelocity ).length() <= .00001;
+            m_citySmokeHoldRestored.store( restored, std::memory_order_release );
+            if( !restored ) m_citySmokeHoldFailed.store( true, std::memory_order_release );
+            m_citySmokeHeldBody = nullptr;
+            m_citySmokeHeldComponent = nullptr;
+            m_citySmokeHoldApplied.store( false, std::memory_order_release );
+        }
+        catch( const std::exception &failure )
+        {
+            std::cerr << "City camera hold restoration failed: " << failure.what() << '\n';
+            m_citySmokeHoldFailed.store( true, std::memory_order_release );
+        }
+    }
+
     SampleVehicleAdvanced::CitySmokeObserver SampleVehicleAdvanced::applyCitySmokeObservers()
     {
         const auto requested = m_citySmokeRequested.load( std::memory_order_acquire );
@@ -1747,6 +1824,12 @@ namespace workphone
     {
         if( m_citySmokePhase == CitySmokePhase::Passed ) return true;
         if( m_citySmokePhase == CitySmokePhase::Failed ) return false;
+
+        if( m_citySmokeHoldFailed.load( std::memory_order_acquire ) )
+        {
+            failCityStreamingSmoke( "The camera-only vehicle hold or restoration failed" );
+            return false;
+        }
 
         auto app = core::IApplicationManager::instancePtr();
         ScopedLock managerLock( app->getGameManager() );
@@ -1789,6 +1872,7 @@ namespace workphone
         m_citySmokeLast.visibleDetailMeshes = native.visibleDetailMeshes;
         m_citySmokeLast.visibilityMismatches = native.visibilityMismatches;
         m_citySmokeLast.maximumPoseError = native.maximumPoseError;
+        m_citySmokeLast.vehicleKinematicHeld = m_citySmokeHoldApplied.load( std::memory_order_acquire );
         if( m_cameraActor && m_vehicleActor )
         {
             const auto camera = m_cameraActor->getWorldTransform().getPosition();
@@ -1811,11 +1895,39 @@ namespace workphone
             if( !actor || actor->getName() != "City LOD patch" ) continue;
             const auto group = actor->getComponent<scene::LODGroup>();
             if( !group ) continue;
-            const auto level = group->getDisplayedLOD();
             const auto levels = group->getLevels();
-            if( level < 0 || levels.size() < 2 ) continue;
-            if( size_t( level ) + 1 == levels.size() ) ++m_citySmokeLast.imposterLodGroups;
-            else ++m_citySmokeLast.detailedLodGroups;
+            if( levels.size() < 2 ) continue;
+            for( size_t level = 0; level < levels.size(); ++level )
+            {
+                // Streaming can publish its fallback before the next LOD batch.
+                // Count the native-visible tier rather than its previous selection.
+                const bool visible = !levels[level].renderers.empty() && std::all_of(
+                    levels[level].renderers.begin(), levels[level].renderers.end(), []( const auto &entry ) {
+                        const auto renderer = dynamic_pointer_cast<scene::MeshRenderer>( entry );
+                        const auto actor = renderer ? renderer->getActor() : nullptr;
+                        const auto object = renderer ? renderer->getGraphicsObject() : nullptr;
+                        const auto node = renderer ? renderer->getMeshNode() : nullptr;
+                        if( !renderer || !renderer->isLoaded() || !renderer->isLODVisible() || !renderer->isEnabled() ||
+                            !actor || !actor->isEnabledInScene() || !object || !object->isLoaded() ||
+                            !node || !node->isLoaded() || !object->isVisible() ) return false;
+#if WP_GRAPHICS_SYSTEM_CLAW
+                        const auto mesh = dynamic_pointer_cast<render::ClawMesh>( object );
+                        const auto nativeObject = mesh ? mesh->getNativeRenderObject() : nullptr;
+                        const auto nativeNode = dynamic_pointer_cast<render::ClawSceneNode>( node );
+                        return mesh && mesh->getNativeMesh() && nativeObject && nativeNode && nativeNode->getNativeNode() &&
+                            wp_graphics_object_get_mesh( nativeObject ) == mesh->getNativeMesh() &&
+                            wp_graphics_object_get_owner( nativeObject ) == nativeNode->getNativeNode() &&
+                            wp_graphics_object_is_visible( nativeObject ) != 0;
+#else
+                        return true;
+#endif
+                    } );
+                if( visible )
+                {
+                    if( level + 1 == levels.size() ) ++m_citySmokeLast.imposterLodGroups;
+                    else ++m_citySmokeLast.detailedLodGroups;
+                }
+            }
         }
 #if WP_GRAPHICS_SYSTEM_CLAW
         if( auto nativeScene = dynamic_pointer_cast<render::ClawScene>( app->getGraphicsSystem()->getGraphicsScene() ) )
@@ -1838,6 +1950,11 @@ namespace workphone
         if( m_citySmokePhase == CitySmokePhase::CameraColdAway || m_citySmokePhase == CitySmokePhase::CameraNear ||
             m_citySmokePhase == CitySmokePhase::CameraAway || m_citySmokePhase == CitySmokePhase::CameraReturn )
         {
+            if( !m_citySmokeLast.vehicleKinematicHeld )
+            {
+                failCityStreamingSmoke( "The camera-only vehicle hold was released prematurely" );
+                return false;
+            }
             const auto displacement = float( ( m_citySmokeLast.vehiclePosition - m_citySmokeFinal.vehiclePosition ).length() );
             if( !std::isfinite( displacement ) || displacement > .25f )
             {
@@ -1938,6 +2055,11 @@ namespace workphone
                 !m_citySmokeLast.cameraViewMatches || !m_citySmokeLast.detailedLodGroups ) return false;
             m_citySmokeFinal = m_citySmokeLast;
             m_citySmokeCameraOrientation = m_cameraActor->getWorldTransform().getOrientation();
+            m_citySmokeHoldRequested.store( true, std::memory_order_release );
+            transition( CitySmokePhase::VehicleHold, CitySmokeObserver::Automatic );
+            break;
+        case CitySmokePhase::VehicleHold:
+            if( !m_citySmokeLast.vehicleKinematicHeld ) return false;
             // The preceding observer override can retain vehicle-near patches
             // outside the camera load radius. Establish camera-only demand cold.
             transition( CitySmokePhase::CameraColdAway, CitySmokeObserver::CameraAway );
@@ -1958,7 +2080,7 @@ namespace workphone
         case CitySmokePhase::CameraAway:
             if( !detailEvicted ||
                 ( m_citySmokeLast.cameraPosition - m_citySmokeAway ).length() > .01f ||
-                m_citySmokeLast.detailedLodGroups >= m_citySmokeCameraNear.detailedLodGroups ||
+                m_citySmokeLast.detailedLodGroups != 0 ||
                 m_citySmokeLast.imposterLodGroups <= m_citySmokeCameraNear.imposterLodGroups ||
                 native.readyImposterMeshes != m_citySmokeCameraNear.readyImposters ||
                 native.visibleDetailMeshes >= m_citySmokeCameraNear.visibleDetailMeshes ||
@@ -1982,6 +2104,12 @@ namespace workphone
                 streaming.reloadedPatches <= m_citySmokeCameraEvicted.streaming.reloadedPatches ||
                 streaming.nativeMeshLoads <= m_citySmokeCameraEvicted.streaming.nativeMeshLoads ) return false;
             m_citySmokeCameraReturned = m_citySmokeLast;
+            m_citySmokeHoldRequested.store( false, std::memory_order_release );
+            transition( CitySmokePhase::VehicleRelease, CitySmokeObserver::CameraReturn );
+            break;
+        case CitySmokePhase::VehicleRelease:
+            if( m_citySmokeHoldApplied.load( std::memory_order_acquire ) ||
+                !m_citySmokeHoldRestored.load( std::memory_order_acquire ) ) return false;
             m_citySmokePhase = CitySmokePhase::Passed;
             return true;
         case CitySmokePhase::Passed:
@@ -2009,6 +2137,7 @@ namespace workphone
                    << ",\"visibleMeshes\":" << snapshot.visibleMeshes
                    << ",\"visibleDetailMeshes\":" << snapshot.visibleDetailMeshes
                    << ",\"cameraViewMatches\":" << ( snapshot.cameraViewMatches ? "true" : "false" )
+                   << ",\"vehicleKinematicHeld\":" << ( snapshot.vehicleKinematicHeld ? "true" : "false" )
                    << ",\"detailedLodGroups\":" << snapshot.detailedLodGroups
                    << ",\"imposterLodGroups\":" << snapshot.imposterLodGroups
                    << ",\"visibilityMismatches\":" << snapshot.visibilityMismatches << ",\"maximumPoseError\":" << snapshot.maximumPoseError
@@ -2031,6 +2160,7 @@ namespace workphone
         output << ",\"returned\":"; stage( m_citySmokeReturned );
         output << ",\"automatic\":"; stage( m_citySmokeFinal );
         output << ",\"cameraOnly\":{\"passed\":" << ( m_citySmokePhase == CitySmokePhase::Passed ? "true" : "false" )
+               << ",\"vehicleHoldRestored\":" << ( m_citySmokeHoldRestored.load( std::memory_order_acquire ) ? "true" : "false" )
                << ",\"coldStartPrepared\":" << ( m_citySmokeCameraNear.recorded ? "true" : "false" )
                << ",\"explicitObserverOverride\":false,\"vehicleMovementToleranceMetres\":0.25,\"maximumVehicleDisplacementMetres\":"
                << m_citySmokeMaximumVehicleDisplacement << ",\"near\":";
@@ -2048,7 +2178,7 @@ namespace workphone
 
     void SampleVehicleAdvanced::failCityStreamingSmoke( const std::string &reason )
     {
-        const char *phases[] = { "startup", "coldAway", "near", "away", "return", "automatic", "cameraColdAway", "cameraNear", "cameraAway", "cameraReturn", "passed", "failed" };
+        const char *phases[] = { "startup", "coldAway", "near", "away", "return", "automatic", "vehicleHold", "cameraColdAway", "cameraNear", "cameraAway", "cameraReturn", "vehicleRelease", "passed", "failed" };
         const std::string failedPhase = phases[size_t( m_citySmokePhase )];
         if( ( m_citySmokePhase == CitySmokePhase::CameraColdAway || m_citySmokePhase == CitySmokePhase::CameraNear ||
               m_citySmokePhase == CitySmokePhase::CameraAway || m_citySmokePhase == CitySmokePhase::CameraReturn ) && m_cameraActor )
@@ -2059,6 +2189,7 @@ namespace workphone
             if( m_cameraSceneNode ) m_cameraSceneNode->setTransform( m_cameraActor->getWorldTransform() );
         }
         m_citySmokePhase = CitySmokePhase::Failed;
+        m_citySmokeHoldRequested.store( false, std::memory_order_release );
         m_citySmokeRequested.store( CitySmokeObserver::Automatic, std::memory_order_release );
         std::ostringstream evidence;
         evidence << "{\"schema\":\"workphone.vehicle-review.v1\",\"validationPassed\":false,\"failure\":"
@@ -2113,6 +2244,7 @@ namespace workphone
         }
         if( Thread::getCurrentTask() == TaskId::Physics )
         {
+            if( m_cityStreamingSmokeTest ) updateCitySmokeVehicleHold();
             if( !m_physicsConfigured &&
                 core::IApplicationManager::instance()->getTimer()->getTimeSinceSceneLoad() > 3 )
             {
@@ -5403,7 +5535,8 @@ namespace workphone
         // The publication below is the same path used by normal camera movement.
         if( m_cityStreamingSmokeTest && m_cameraActor && m_cameraSceneNode &&
             ( m_citySmokePhase == CitySmokePhase::CameraColdAway || m_citySmokePhase == CitySmokePhase::CameraNear ||
-              m_citySmokePhase == CitySmokePhase::CameraAway || m_citySmokePhase == CitySmokePhase::CameraReturn ) )
+              m_citySmokePhase == CitySmokePhase::CameraAway || m_citySmokePhase == CitySmokePhase::CameraReturn ||
+              m_citySmokePhase == CitySmokePhase::VehicleRelease ) )
         {
             m_cameraActor->setPosition( m_citySmokePhase == CitySmokePhase::CameraColdAway || m_citySmokePhase == CitySmokePhase::CameraAway ?
                 m_citySmokeAway : m_citySmokeFinal.cameraPosition );

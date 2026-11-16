@@ -279,7 +279,7 @@ namespace workphone::scene
             for( const auto &actor : cameras->getCameras() )
             {
                 if( !actor ) continue;
-                for( const auto &camera : actor->getComponents<Camera>() )
+                for( const auto &camera : actor->getComponentsByType<Camera>() )
                 {
                     // Keep registration order for equal Z, avoiding frame-to-frame
                     // changes when two viewports have the same priority.

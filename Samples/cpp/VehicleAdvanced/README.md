@@ -185,6 +185,12 @@ settled near, evicted, returned and automatic-observer states, including native
 mesh residency, imposter readiness and the shared source ledger. The sample
 requires native detail eviction and reload and a decrease in source memory
 during eviction before it resumes normal capture and collision validation.
+The probe also moves the actual render camera away and back with explicit
+streaming observers cleared, while the vehicle remains in the city. A separate
+cold preparation makes that camera-only near/return comparison independent of
+the earlier multi-observer demand. `cameraOnly` records camera/view agreement,
+detail and imposter LOD counts, native residency, and measured vehicle drift
+(at most 0.25 m). The original camera pose is restored before the capture.
 
 ```powershell
 ./SampleVehicleAdvanced.exe --city-terrain-roads --city-layout lsystem --view hillside `
@@ -217,6 +223,11 @@ and `setCullBelowLastLOD` control selection. Automatic scene-camera discovery is
 the default; applications with a separate rendering camera can publish a plain
 `LODSystem::View` through `setViewOverride`, or restore discovery with
 `clearViewOverride`. VehicleAdvanced publishes its actual follow/capture camera.
+`getView` exposes the same snapshot to city residency. Automatic discovery uses
+the active Editor view when present, otherwise the active game camera with the
+highest viewport Z order; equal priorities keep registration order. Authored
+offscreen output cameras are excluded. Scene Camera users, including the Lua
+racing samples, do not need to publish an override every frame.
 
 Small sets up to the configured grain size calculate synchronously, avoiding job
 dispatch and a frame of result latency. Tree patches use `setDetailBounds` with
