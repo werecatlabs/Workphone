@@ -76,8 +76,26 @@ For a generated terrain city, `--city-terrain-roads --city-layout lsystem
 accepts 0–2 and affects newly created terrain; regenerating a retained city
 preserves its edited terrain. The hillside camera is cached for the capture and
 its road ID, selected rise, eye and target are written to the evidence JSON.
-Terrain cities on Claw include hillside vegetation. `--foliage-world` also
-enables the managed park tree population in these cities.
+Terrain cities on Claw automatically include paged park, street and hillside
+vegetation. `--foliage-world` selects paged trees for circuits and cities without
+terrain roads.
+
+Paged trees and shrubs use detailed geometry, reduced geometry, then a
+two-triangle imposter selected from 25 captured directions (eight azimuths at
+three elevations, plus overhead). The generated albedo, normal and material
+atlases support the existing lighting and isolated cutout mip filtering. Far
+shadows retain reduced mesh geometry. Grass uses three progressively smaller
+clump meshes with stable blade roots, stable density subsets and distance fade.
+The render camera controls these levels, including its LOD bias and orthographic
+direction; each camera retains independent transition history.
+
+`--foliage-lod auto|0|1|2` controls paged foliage independently of the car and
+legacy tree actors. `--foliage-lod-smoke-test` captures all three forced levels
+and automatic selection from one fixed camera, checks decreasing submitted
+triangles and unchanged source population, then restores the requested setting.
+The capture harness exposes `-FoliageLOD` and `-FoliageLODSmokeTest`. These controls
+cover the paged population; merged ornamental planting meshes retain their
+existing scene/streaming lifetimes.
 
 With `--view verge`, the sample looks across an open road end from pavement
 level. Use `-Views verge` in the capture harness with `-CityTerrainRoads`.
@@ -356,7 +374,8 @@ For repeatable comparisons, use the following controls from the executable direc
 ./SampleVehicleAdvanced.exe --quality high --seed 7 --no-hud --benchmark 15 --orbit
 ```
 
-`--force-lod auto|0|1` applies to trees. `--force-vehicle-lod auto|0|1|2`
+`--force-lod auto|0|1` applies to legacy trees and remains the paged foliage
+fallback when `--foliage-lod` is absent. `--force-vehicle-lod auto|0|1|2`
 selects a vehicle level within the current preset; low has two levels and clamps
 the index accordingly. Benchmark mode holds the car stationary,
 waits five seconds for warmup, resets native statistics and measures the requested

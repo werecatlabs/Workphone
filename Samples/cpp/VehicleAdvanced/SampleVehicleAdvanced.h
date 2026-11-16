@@ -62,6 +62,11 @@ namespace workphone
         void setSceneAA( u32 samples ) { m_preferredSceneSamples = samples; }
         void reset();
         void setFoliageWorldEnabled( bool enabled ) { m_foliageWorldEnabled = enabled; }
+        void setFoliageLODOptions( s32 level, bool smokeTest )
+        {
+            m_forcedFoliageLOD = level == -2 ? m_forcedLOD : level;
+            m_foliageLODSmokeTest = smokeTest;
+        }
         void setCityOptions( bool enabled, s32 blocks, s32 route, bool naturalRoads = false )
         { m_openCity = enabled; m_cityBlocks = blocks; m_cityRoute = route; m_cityNaturalRoads = naturalRoads; }
         void setRoadAuthoringShowcase(bool enabled) { m_roadAuthoringShowcase=enabled; }
@@ -151,6 +156,11 @@ namespace workphone
         void writeCityStreamingSmoke( std::ostream &output ) const;
         void prepareCityImposterReview();
         bool writeCityImposterReview( std::ostream &output ) const;
+        bool advanceFoliageLODReview();
+        void restoreFoliageLODReview();
+        void failFoliageLODReview( const std::string &reason );
+        bool writeFoliageLODReview( std::ostream &output ) const;
+        bool writeFoliageSpeciesEvidence( std::ostream &output ) const;
         void updateControls();
         void updateWheelVisuals();
         void performReset();
@@ -193,6 +203,28 @@ namespace workphone
         bool m_capturePassed = false, m_captureAttempted = false, m_physicsConfigured = false;
         bool m_hudEnabled = true, m_orbitCamera = false, m_benchmarkStarted = false;
         bool m_foliageWorldEnabled = false;
+        s32 m_forcedFoliageLOD = -1;
+        bool m_foliageLODSmokeTest = false;
+        struct FoliageLODSnapshot
+        {
+            s32 level = -1;
+            bool recorded = false, capturePassed = false;
+            u64 worldIdentity = 0, populationHash = 0, population = 0, sourceRevision = 0;
+            u64 residentInstances = 0, actualDraws = 0, submittedTriangles = 0;
+            u64 geometryBytes = 0, uploadBytes = 0, completedFrames = 0;
+            u32 residentPages = 0, nativeRenderSerial = 0;
+            std::array<u64, 3> lodInstances{};
+            Vector3F cameraPosition{};
+            QuaternionF cameraOrientation = QuaternionF::identity();
+            std::string capturePath;
+        };
+        std::array<FoliageLODSnapshot, 4> m_foliageLODStages;
+        FoliageLODSnapshot m_foliageLODLast;
+        s32 m_foliageLODStage = -1, m_foliageLODSavedLevel = -1;
+        u32 m_foliageLODLastRenderSerial = 0, m_foliageLODFrames = 0, m_foliageLODStableFrames = 0;
+        bool m_foliageLODStarted = false, m_foliageLODRestored = false, m_foliageLODPassed = false;
+        std::string m_foliageLODFailure;
+        std::chrono::steady_clock::time_point m_foliageLODDeadline;
         bool m_openCity = false;
         bool m_cityNaturalRoads = false;
         bool m_roadAuthoringShowcase = false;

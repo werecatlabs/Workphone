@@ -324,15 +324,17 @@ namespace workphone::scene
                 const auto cards = branches;
                 for( u32 i = 0; i < cards; ++i )
                 {
-                    const auto yaw = unit( u64( r.seed ) * 17 + i * ( 1u << lod ) ) * 2 * pi;
+                    const u32 master = i * ( 1u << lod );
+                    const auto yaw = unit( u64( r.seed ) * 17 + master ) * 2 * pi;
                     auto right = Vector3F( std::cos( yaw ), 0, std::sin( yaw ) );
                     const float halfWidth = r.radius / std::sqrt( float( branches ) );
-                    auto centre = Vector3F( std::cos( yaw ) * r.radius * unit( i + r.seed ), 0,
-                                            std::sin( yaw ) * r.radius * unit( i + r.seed ) );
-                    const float cardHeight = r.height * ( .7f + .3f * unit( i + 71 * r.seed ) );
+                    auto centre = Vector3F( std::cos( yaw ) * r.radius * unit( master + r.seed ), 0,
+                                            std::sin( yaw ) * r.radius * unit( master + r.seed ) );
+                    const float cardHeight = r.height * ( .7f + .3f * unit( master + 71 * r.seed ) );
                     const auto up = Vector3F( 0, cardHeight, 0 );
-                    // Real textured cards, generated independently at each LOD. The stable seed
-                    // controls the near/mid clump; UVs cover the configured cutout atlas slot.
+                    // Retain a subset of the same rooted cards at every LOD. Only width
+                    // grows as card count falls, preserving coverage without moving roots
+                    // or changing the height, orientation and cutout of retained blades.
                     quad( mesh, centre - right * halfWidth, centre + right * halfWidth,
                           centre + up + right * halfWidth * .5f, centre + up - right * halfWidth * .5f );
                 }

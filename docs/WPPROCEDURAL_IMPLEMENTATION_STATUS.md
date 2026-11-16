@@ -1,5 +1,44 @@
 # WPProcedural implementation status
 
+## Paged foliage LOD and directional sprites — 16 November 2026
+
+The generated city's four tree and two shrub species now use detailed mesh,
+reduced mesh and two-triangle sprite LODs. Each woody species bakes 25 directions:
+eight azimuths at elevations 0, 30 and 60 degrees, plus overhead. High-quality
+tiles are 128 pixels with four-pixel gutters, isolated cutout mips, and separate
+albedo, normal and material maps. Generated CPU leaf pixels feed the baker
+directly. Temporary bake storage and retained textures use the existing memory
+admission paths; publication rolls back incomplete texture sets.
+
+The renderer selects captured directions in each plant's local space, supports
+rotated/scaled instances and orthographic cameras, and retains per-camera angle
+hysteresis. Camera-ray placement moves sprites to their source bounds' support
+plane while preserving the projected footprint. Reduced meshes supply far
+shadows within the existing shadow ranges. Conservative wind and interaction
+bounds cover tilted sprites on nonuniformly scaled plants. Foliage normal reconstruction now
+uses tile UVs independently of atlas sampling UVs, preventing strip aspect ratio
+from distorting lighting. Camera LOD bias also reaches paged foliage.
+
+The two grass species retain three geometry tiers, stable density subsets and
+distance fade. Coarser clumps now reuse the corresponding detailed blade roots
+and heights; width compensation remains intentional. These changes cover the
+paged population. Merged ornamental verge, roundabout and planter meshes retain
+their existing lifetimes and are not converted by this pass.
+
+`--foliage-lod auto|0|1|2` and `--foliage-lod-smoke-test` provide independent
+selection and a fixed-camera four-stage capture. The probe checks actual native
+triangle reduction, unchanged source population/camera/residency, and restoration
+of the original setting. It exports the actual runtime tree and shrub atlas
+pixels, with hashes verified by the artifact-local audit. See the
+[validation report](../artifacts/procedural/city-foliage-lod-20261116/validation.md)
+for build, contract and fresh capture results. All five focused suites pass.
+Two fresh native views each pass 110 capture checks; the final park view reduces
+submitted foliage triangles from 379,618 at LOD0 to 11,824 at LOD2 (96.89%), with
+2,616 source plants and 56 resident pages unchanged throughout the four-stage
+probe. Automatic selection retains nearby geometry. Existing memory budgets
+admit the final scene with zero rejected reservations. Sprite depth and parallax remain
+approximations; this work does not establish physical-GPU or temporal acceptance.
+
 ## Directional building imposters — 16 November 2026
 
 Generated city patches now use a 49-frame sprite sheet: 16 azimuths at elevations

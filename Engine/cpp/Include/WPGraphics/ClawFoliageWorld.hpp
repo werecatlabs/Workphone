@@ -19,7 +19,25 @@ namespace workphone::render
         bool orthographic = false, cull = true, shadow = false;
         s32 forcedLod = -1;
         u32 visibilityMask = ~u32( 0 );
+        // World-space camera forward; parallel projections share this ray.
+        Vector3F direction = { 0, 0, -1 };
     };
+
+    struct ClawFoliageImpostorPlacement
+    {
+        Matrix4F transform = Matrix4F::identity();
+        s32 selectedView = -1;
+        bool conservative = false;
+    };
+
+    /** Builds a captured-basis card on a conservative source support plane.
+     * Camera-ray placement preserves the unshifted card's projected footprint.
+     * Near/inside cameras retain a positive-scale centre plane; detail LODs cover
+     * that use. Invalid inputs leave output unchanged. No allocation or upload.
+     */
+    WPGraphics_API bool buildFoliageImpostorPlacement(
+        const FoliageSpecies &, const Matrix4F &instanceWorld, const ClawFoliageView &,
+        s32 previousView, ClawFoliageImpostorPlacement &output );
 
     struct ClawFoliageInteraction
     {

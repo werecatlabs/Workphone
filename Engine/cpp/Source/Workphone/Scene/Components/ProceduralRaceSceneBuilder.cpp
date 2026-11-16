@@ -32,7 +32,9 @@
 #include <Workphone/Graphics/TextureMipGenerator.hpp>
 #include <Workphone/Graphics/ProceduralSurfaceSourceExport.hpp>
 #include <Workphone/Graphics/GeneratedTextureSource.hpp>
+#include <Workphone/Graphics/FoliageImpostorBaker.hpp>
 #include <Workphone/System/SourceBudgetContainers.hpp>
+#include <Workphone/System/WorldStreamingScheduler.hpp>
 #include "CityBuildingKit.hpp"
 #include "CityRoadCrossings.hpp"
 #include "../RuntimeSceneMembership.hpp"
@@ -302,7 +304,7 @@ namespace workphone::scene::race
         SmartPtr<render::ITexture> uploadPixels(
             SceneAssets &assets, const u8 *pixels, size_t bytes, u32 width, u32 height,
             render::TextureMipFilter filter = render::TextureMipFilter::Colour, u32 atlasColumns = 1,
-            const char *citySurface = nullptr )
+            const char *citySurface = nullptr, bool sourceIsBgra = false )
         {
             if( !bytes )
             {
@@ -311,7 +313,7 @@ namespace workphone::scene::race
             if( !pixels || !width || !height || width > 16384 || height > 16384 ||
                 u64( width ) * height * 4 != bytes )
             {
-                throw std::invalid_argument( "Procedural upload requires exact bounded RGBA pixels." );
+                throw std::invalid_argument( "Procedural upload requires exact bounded RGBA/BGRA pixels." );
             }
             // Admit conversion before creating a manager-owned texture. The
             // caller's atlas and this BGRA snapshot remain independently owned.
@@ -319,10 +321,9 @@ namespace workphone::scene::race
             bgra.reserve( bytes );
             bgra.resize( bytes );
             std::copy_n( pixels, bytes, bgra.begin() );
-            for( size_t i = 0; i < bgra.size(); i += 4 )
-            {
-                std::swap( bgra[i], bgra[i + 2] );
-            }
+            if( !sourceIsBgra )
+                for( size_t i = 0; i < bgra.size(); i += 4 )
+                    std::swap( bgra[i], bgra[i + 2] );
             auto graphics = core::IApplicationManager::instance()->getGraphicsSystem();
             auto manager = graphics->getTextureManager();
             reserveOwnerSlot( assets.textures );
@@ -1405,6 +1406,7 @@ namespace workphone::scene::race
 
         float cityValueNoise( u32 seed, float x, float z );
 
+#include "CityFoliageLOD.hpp"
 #include "CityHillsideVegetation.hpp"
 #include "CityParkLayout.hpp"
 #include "CityParkPlanting.hpp"
@@ -1553,6 +1555,7 @@ namespace workphone::scene::race
                 throw std::runtime_error(
                     "Generated foliage atlas lost its registered texture identity." );
             }
+            const cityFoliageLOD::LeafSource leafSource( leafAtlas, leafTextureName );
             const auto city = assets.cityTerrainRoads ? assets.cityLayout
                               : assets.openCity
                                   ? OpenCityLayout::generate( seed, assets.cityBlocks, assets.cityRoute,
@@ -1594,6 +1597,7 @@ namespace workphone::scene::race
                 species->maximumDistance =
                     assets.openCity ? std::max( 600.f, city.extent * 5.f ) : 600.f;
                 species->shadowDistance = 120;
+                cityFoliageLOD::configure( assets, *species, leafSource, quality );
                 world->species.push_back( species );
                 for( const auto &lod : species->lods )
                 {
@@ -1688,7 +1692,7 @@ namespace workphone::scene::race
             }
             if( cityFootways )
             {
-                cityHillside::addSpecies( assets, *world, leafTextureName, seed );
+                cityHillside::addSpecies( assets, *world, leafTextureName, seed, leafSource, quality );
                 if( assets.roadAuthoring->getSource().roads.size() == assets.roadAuthoring->getBake().roads.size() )
                 {
                     cityHillside::Exclusions exclusions;

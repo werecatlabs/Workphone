@@ -16,6 +16,8 @@ param(
     [string]$Replay,
     [switch]$NoEffects,
     [switch]$FoliageWorld,
+    [ValidateSet('auto', '0', '1', '2')][string]$FoliageLOD = 'auto',
+    [switch]$FoliageLODSmokeTest,
     [switch]$RoadAuthoringShowcase,
     [switch]$CityTerrainRoads,
     [ValidateRange(0, 2)][double]$CityTerrainRelief = 1,
@@ -32,6 +34,10 @@ $ErrorActionPreference = 'Stop'
 $streetDetailExplicit = $PSBoundParameters.ContainsKey('CityStreetDetail')
 if ($RoadAuthoringShowcase) { $Scene = 'city' }
 if ($CityTerrainRoads) { $Scene = 'city' }
+if ($FoliageLOD -ne 'auto' -and !($FoliageWorld -or $CityTerrainRoads)) { throw '-FoliageLOD requires -FoliageWorld or -CityTerrainRoads.' }
+if ($FoliageLODSmokeTest -and (!($FoliageWorld -or $CityTerrainRoads) -or $CityStreamingSmokeTest -or $RoadAuthoringShowcase -or $Replay)) {
+    throw '-FoliageLODSmokeTest requires paged foliage, without another smoke test, road showcase or replay.'
+}
 if ($CityStreamingSmokeTest -and ($Scene -ne 'city' -or $CityStreaming -ne 'on')) { throw 'CityStreamingSmokeTest requires city and CityStreaming on.' }
 $imposterViews = @($Views | Where-Object { $_ -in @('imposter-front', 'imposter-diagonal', 'imposter-back', 'imposter-high') })
 if ($imposterViews.Count -and ($Scene -ne 'city' -or $RoadAuthoringShowcase -or $CityStreaming -ne 'on' -or $CityStreamingSmokeTest)) {
@@ -58,6 +64,10 @@ if ($CityTerrainRoads -and $ExportMaterials) { throw 'Terrain-city source materi
 if ($RoadAuthoringShowcase -and $FoliageWorld) { throw 'Road authoring showcase does not provide foliage-world generation.' }
 if ($RoadAuthoringShowcase -and !$PSBoundParameters.ContainsKey('Views')) { $Views = @('street', 'track') }
 if ($CityTerrainRoads -and !$PSBoundParameters.ContainsKey('Views')) { $Views = @('street', 'track') }
+if ($FoliageLODSmokeTest -and !$PSBoundParameters.ContainsKey('Views')) { $Views = @($(if ($CityTerrainRoads) { 'park' } else { 'corner' })) }
+if ($FoliageLODSmokeTest -and @($Views | Where-Object { $_ -eq 'follow' -or $_ -in $imposterViews -or $_ -in $roadEditViews }).Count) {
+    throw '-FoliageLODSmokeTest requires a fixed camera outside road-edit and building imposter review views.'
+}
 if ($Scene -ne 'city' -and ($Views -contains 'street' -or $Views -contains 'boulevard' -or $PSBoundParameters.ContainsKey('CityBlocks') -or $PSBoundParameters.ContainsKey('CityRoute') -or $PSBoundParameters.ContainsKey('CityLayout'))) {
     throw 'Street-level views and city layout options require -Scene city.'
 }
@@ -134,6 +144,7 @@ $manifest = [ordered]@{
     cityStreaming = $(if ($Scene -eq 'city') { $CityStreaming } else { $null })
     citySourceMemoryMiB = $(if ($Scene -eq 'city') { $CitySourceMemoryMiB } else { $null })
     cityStreamingSmokeTest = [bool]$CityStreamingSmokeTest
+    foliageLOD = $FoliageLOD; foliageLODSmokeTest = [bool]$FoliageLODSmokeTest
     cityBuildingStyle = $(if ($CityBuildingStyle) { $CityBuildingStyle.ToLowerInvariant() } else { $null })
     cityBuildingMeshes = $buildingMeshPaths
     cityBuildingMeshInputs = [ordered]@{}
@@ -170,6 +181,8 @@ try {
         if ($Replay) { $arguments += @('--replay', (Quote-ProcessArgument $Replay)) }
         if ($NoEffects) { $arguments += '--no-effects' }
         if ($FoliageWorld) { $arguments += '--foliage-world' }
+        $arguments += @('--foliage-lod', $FoliageLOD)
+        if ($FoliageLODSmokeTest) { $arguments += '--foliage-lod-smoke-test' }
         if ($ExportMaterials) { $arguments += @('--export-materials', (Quote-ProcessArgument (Join-Path $output "$view-materials"))) }
         Write-Host "Capturing $Scene/$view ($Quality, seed $Seed)"
         $process = Start-Process -FilePath $executable -ArgumentList $arguments -WorkingDirectory $sampleWorkingDirectory -WindowStyle Hidden -RedirectStandardOutput (Join-Path $output "$view.stdout.log") -RedirectStandardError (Join-Path $output "$view.stderr.log") -PassThru
@@ -181,6 +194,67 @@ try {
         if (Test-Path -LiteralPath $evidence) {
             $run.evidence = Get-Content -LiteralPath $evidence -Raw | ConvertFrom-Json
             $run.passed = !$timedOut -and $process.ExitCode -eq 0 -and $null -ne $run.capture -and $run.evidence.validationPassed
+            if ($CityTerrainRoads -or $FoliageWorld) {
+                $species = $run.evidence.foliageSpecies
+                $run.passed = $run.passed -and $null -ne $species -and $species.valid -eq $true -and
+                    $species.woodySpecies -gt 0 -and $species.realisedWoodyAtlases -eq $species.woodySpecies
+                if ($CityTerrainRoads) { $run.passed = $run.passed -and $species.woodySpecies -eq 6 }
+            }
+            if ($FoliageLODSmokeTest) {
+                $probe = $run.evidence.foliageLODReview
+                $stages = @($probe.stages)
+                $run.foliageLODCaptures = @()
+                $run.foliageAtlasSheets = @()
+                $run.passed = $run.passed -and $null -ne $probe -and $probe.passed -eq $true -and
+                    $probe.restored -eq $true -and $stages.Count -eq 4
+                if ($stages.Count -eq 4) {
+                    $first = $stages[0]
+                    $expectedLevels = @(0, 1, 2, -1)
+                    $previousSerial = 0
+                    for ($stageIndex = 0; $stageIndex -lt 4; ++$stageIndex) {
+                        $stage = $stages[$stageIndex]
+                        $label = if ($stageIndex -eq 3) { 'auto' } else { "$stageIndex" }
+                        $expectedCapture = Join-Path $output "$view-foliage-lod$label.bmp"
+                        $run.passed = $run.passed -and $stage.level -eq $expectedLevels[$stageIndex] -and
+                            $stage.recorded -eq $true -and $stage.capturePassed -eq $true -and
+                            $stage.completedFrames -ge 8 -and $stage.nativeRenderSerial -gt $previousSerial -and
+                            $stage.actualDraws -gt 0 -and $stage.submittedTriangles -gt 0 -and
+                            $stage.population -gt 0 -and $stage.population -eq $first.population -and
+                            $stage.populationHash -ceq $first.populationHash -and $stage.worldIdentity -ceq $first.worldIdentity -and
+                            $stage.sourceRevision -eq $first.sourceRevision -and $stage.residentPages -eq $first.residentPages -and
+                            $stage.residentInstances -eq $first.residentInstances -and
+                            ($stage.cameraPosition -join ',') -ceq ($first.cameraPosition -join ',') -and
+                            ($stage.cameraOrientation -join ',') -ceq ($first.cameraOrientation -join ',')
+                        if ($stageIndex -lt 3) {
+                            for ($level = 0; $level -lt 3; ++$level) {
+                                $run.passed = $run.passed -and $(if ($level -eq $stageIndex) {
+                                    $stage.lodInstances[$level] -gt 0
+                                } else { $stage.lodInstances[$level] -eq 0 })
+                            }
+                        }
+                        if ($stage.capturePath -and [IO.Path]::GetFullPath($stage.capturePath) -ieq $expectedCapture -and
+                            (Test-Path -LiteralPath $expectedCapture -PathType Leaf)) {
+                            $identity = Get-Identity $expectedCapture
+                            $run.foliageLODCaptures += [ordered]@{ level = $stage.level; image = $identity }
+                        } else { $run.passed = $false }
+                        $previousSerial = $stage.nativeRenderSerial
+                    }
+                    $run.passed = $run.passed -and $stages[0].submittedTriangles -gt $stages[1].submittedTriangles -and
+                        $stages[1].submittedTriangles -gt $stages[2].submittedTriangles
+                }
+                foreach ($kind in @('tree', 'bush')) {
+                    $kindValue = if ($kind -eq 'tree') { 0 } else { 1 }
+                    $expectedSpecies = @($run.evidence.foliageSpecies.species | Where-Object { $_.kind -eq $kindValue })
+                    if (!$expectedSpecies.Count) { continue }
+                    $sheet = $expectedSpecies[0].atlas.maps[0].atlasExport
+                    $expectedSheet = Join-Path $output "$view-foliage-$kind-sheet.tga"
+                    if ($sheet.path -and [IO.Path]::GetFullPath($sheet.path) -ieq $expectedSheet -and
+                        $sheet.losslessRepack -eq $true -and $sheet.columns -eq 5 -and $sheet.rows -eq 5 -and
+                        (Test-Path -LiteralPath $expectedSheet -PathType Leaf)) {
+                        $run.foliageAtlasSheets += [ordered]@{ kind = $kind; image = Get-Identity $expectedSheet }
+                    } else { $run.passed = $false }
+                }
+            }
             if ($Scene -eq 'city' -and !$RoadAuthoringShowcase) {
                 $buildings = $run.evidence.cityBuildingGeometry
                 $run.passed = $run.passed -and $null -ne $buildings -and $buildings.ready -eq $true -and

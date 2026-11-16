@@ -80,12 +80,16 @@ namespace workphone::render
             // unit norm for rotated, nonuniformly scaled or sheared instances.
             const auto x = vector( world, { inverse[0][0], 0, inverse[2][0] } );
             const auto z = vector( world, { inverse[0][2], 0, inverse[2][2] } );
-            const auto wind = species.wind.amplitude * std::max( 1.0f, x.length() );
+            // Captured cards insert an orthogonal basis R before the shader's
+            // XZ projection P. Bound M*R*P*R^-1*M^-1 for every view, including
+            // tilted cards on rotated/nonuniform placements. Perspective card
+            // scale cancels between the transform and its inverse.
+            const auto cardBend = species.farBillboard ?
+                std::max( 1.0f, scale * maximumScale( inverse ) ) : 1.0f;
+            const auto wind = species.wind.amplitude * std::max( cardBend, x.length() );
             const auto interaction =
                 species.wind.maximumInteractionBend *
-                std::max( 1.0f, std::sqrt( x.lengthSquared() + z.lengthSquared() ) );
-            // A far card has an orthogonal basis, so the unit lower bounds
-            // above also cover every camera-facing impostor orientation.
+                std::max( cardBend, std::sqrt( x.lengthSquared() + z.lengthSquared() ) );
             return ( ( species.boundsMaximum - species.boundsMinimum ).length() * .5f +
                      species.wind.flutter * 1.415f ) *
                        scale +
@@ -335,6 +339,83 @@ namespace workphone::render
         }
     }  // namespace
 
+    bool buildFoliageImpostorPlacement( const FoliageSpecies &species,
+        const Matrix4F &instanceWorld, const ClawFoliageView &view, s32 previousView,
+        ClawFoliageImpostorPlacement &output )
+    {
+        if( species.impostor.views.empty() || species.impostor.views.size() > 64 ||
+            !affine( instanceWorld ) || !finite( view.position ) ||
+            !finite( species.boundsMinimum ) || !finite( species.boundsMaximum ) ) return false;
+        const auto centre = ( species.boundsMinimum + species.boundsMaximum ) * .5f;
+        const auto half = ( species.boundsMaximum - species.boundsMinimum ) * .5f;
+        if( !finite( centre ) || !finite( half ) || half.x < 0 || half.y < 0 || half.z < 0 ) return false;
+        const auto inverse = instanceWorld.inverse();
+        const auto eye = point( inverse, view.position );
+        auto toward = view.orthographic ? vector( inverse, -view.direction ) : eye - centre;
+        if( !finite( toward ) || !std::isfinite( toward.lengthSquared() ) ) return false;
+        const bool previousValid = previousView >= 0 && size_t( previousView ) < species.impostor.views.size();
+        if( toward.lengthSquared() < 1e-12f )
+        {
+            if( view.orthographic ) return false;
+            toward = species.impostor.views[previousValid ? size_t( previousView ) : 0].direction;
+        }
+        toward.normalise();
+        s32 selected = -1;
+        f32 best = -2;
+        for( size_t index = 0; index < species.impostor.views.size(); ++index )
+        {
+            const auto &direction = species.impostor.views[index].direction;
+            if( !finite( direction ) || std::abs( direction.lengthSquared() - 1 ) > .011f ) return false;
+            const auto score = toward.dotProduct( direction );
+            if( score > best ) { best = score; selected = s32( index ); }
+        }
+        if( previousValid && best - toward.dotProduct( species.impostor.views[size_t( previousView )].direction ) <= .01f )
+            selected = previousView;
+        if( selected < 0 ) return false;
+        const auto normal = species.impostor.views[size_t( selected )].direction.normaliseCopy();
+        const auto referenceUp = std::abs( normal.y ) > .98f ? Vector3F( 0, 0, 1 ) : Vector3F( 0, 1, 0 );
+        const auto right = referenceUp.crossProduct( normal ).normaliseCopy();
+        const auto up = normal.crossProduct( right );
+        const auto support = half.x * std::abs( normal.x ) + half.y * std::abs( normal.y ) +
+                             half.z * std::abs( normal.z );
+        auto origin = centre;
+        f32 scale = 1;
+        bool conservative = support <= 1e-6f;
+        if( view.orthographic )
+        {
+            const auto alignment = toward.dotProduct( normal );
+            if( alignment > 1e-6f )
+            {
+                origin += toward * ( support / alignment );
+                conservative = true;
+            }
+        }
+        else
+        {
+            const auto distance = ( eye - centre ).dotProduct( normal );
+            const auto gap = distance - support;
+            if( std::isfinite( distance ) && std::isfinite( gap ) && distance > 1e-6f && gap > 1e-4f )
+            {
+                scale = gap / distance;
+                origin = eye + ( centre - eye ) * scale;
+                conservative = true;
+            }
+        }
+        if( !finite( origin ) || !std::isfinite( scale ) || scale <= 0 ) return false;
+        Matrix4F local = Matrix4F::identity();
+        for( int axis = 0; axis < 3; ++axis )
+        {
+            local[axis][0] = right[axis] * scale;
+            local[axis][1] = up[axis] * scale;
+            local[axis][2] = normal[axis] * scale;
+            local[axis][3] = origin[axis];
+        }
+        const auto transformed = instanceWorld * local;
+        if( !affine( transformed ) ) return false;
+        output = { transformed, selected, conservative };
+        return true;
+    }
+
     struct ClawFoliageWorld::Impl
     {
         std::thread::id owner;
@@ -360,8 +441,13 @@ namespace workphone::render
 
         struct History
         {
+            struct Entry
+            {
+                u64 id;
+                s32 lod, impostorView;
+            };
             StreamBudget budget;
-            Array<std::pair<u64, s32>> entries;
+            Array<Entry> entries;
         };
 
         std::map<u64, History> history;
@@ -857,7 +943,9 @@ namespace workphone::render
         }
         if( !finite( view.position ) || !std::isfinite( view.projectionScale ) ||
             view.projectionScale <= 0 || !std::isfinite( view.lodBias ) || view.lodBias <= 0 ||
-            view.forcedLod < -1 || view.forcedLod > 2 )
+            view.forcedLod < -1 || view.forcedLod > 2 ||
+            ( view.orthographic && ( !finite( view.direction ) ||
+                !std::isfinite( view.direction.lengthSquared() ) || view.direction.lengthSquared() < 1e-12f ) ) )
         {
             error = "Invalid foliage view.";
             p.error = error;
@@ -942,7 +1030,6 @@ namespace workphone::render
                 Matrix4F local;
                 local.makeTransform( instance.position, instance.scale, instance.rotation );
                 auto world = p.activePlacement * local;
-                const auto inverse = world.inverse();
                 const auto root = point( world, species.pivot );
                 const auto centre =
                     point( world, ( species.boundsMinimum + species.boundsMaximum ) * .5f );
@@ -973,12 +1060,13 @@ namespace workphone::render
                 }
                 const auto previous =
                     std::lower_bound( history.begin(), history.end(), instance.id,
-                                      []( const auto &a, u64 id ) { return a.first < id; } );
+                                      []( const auto &a, u64 id ) { return a.id < id; } );
+                const bool previousValid = previous != history.end() && previous->id == instance.id;
                 const auto screen = baseRadius * maxScale * view.projectionScale * view.lodBias /
                                     ( view.orthographic ? 1.0f : std::max( .001f, distance ) );
                 auto lod = scene::LODSystem::selectLOD(
                     screen, thresholds[instance.species],
-                    previous == history.end() || previous->first != instance.id ? -1 : previous->second,
+                    previousValid ? previous->lod : -1,
                     view.forcedLod, species.hysteresis, false );
                 if( nextHistory.entries.size() >= maximumVisible )
                 {
@@ -986,10 +1074,13 @@ namespace workphone::render
                     p.error = error;
                     return false;
                 }
-                nextHistory.entries.emplace_back( instance.id, lod );
+                nextHistory.entries.push_back( { instance.id, lod, previousValid ? previous->impostorView : -1 } );
                 if( view.shadow )
                 {
                     lod = std::min<s32>( 2, lod + species.shadowLodBias );
+                    // Camera-selected cards do not reconstruct light-space depth.
+                    // Keep bounded woody shadows on the reduced geometry LOD.
+                    if( species.farBillboard ) lod = std::min<s32>( lod, 1 );
                 }
                 const auto hash = foliageStableHash( instance.id ^ instance.seed );
                 const auto fraction = double( hash >> 11 ) * ( 1.0 / 9007199254740992.0 );
@@ -1002,50 +1093,20 @@ namespace workphone::render
                 output.uv_rect = { 0, 0, 1, 1 };
                 if( lod == 2 && species.farBillboard )
                 {
-                    const auto centreLocal = ( species.boundsMinimum + species.boundsMaximum ) * .5f;
-                    auto toward = point( inverse, view.position ) - centreLocal;
-                    if( toward.lengthSquared() < 1e-8f )
+                    ClawFoliageImpostorPlacement placement;
+                    if( !buildFoliageImpostorPlacement( species, world, view,
+                            nextHistory.entries.back().impostorView, placement ) )
                     {
-                        toward = { 0, 0, 1 };
+                        error = "Invalid foliage impostor camera or captured projection.";
+                        p.error = error;
+                        return false;
                     }
-                    toward.normalise();
-                    size_t selected = 0;
-                    f32 best = -2;
-                    for( size_t v = 0; v < species.impostor.views.size(); ++v )
-                    {
-                        const auto d = toward.dotProduct( species.impostor.views[v].direction );
-                        if( d > best )
-                        {
-                            best = d;
-                            selected = v;
-                        }
-                    }
-                    const auto &atlas = species.impostor.views[selected];
+                    nextHistory.entries.back().impostorView = placement.selectedView;
+                    const auto &atlas = species.impostor.views[size_t( placement.selectedView )];
                     output.uv_rect = { atlas.uvMinimum.x, atlas.uvMinimum.y,
                                        atlas.uvMaximum.x - atlas.uvMinimum.x,
                                        atlas.uvMaximum.y - atlas.uvMinimum.y };
-                    auto direction = view.position - point( world, centreLocal );
-                    if( direction.lengthSquared() < 1e-8f )
-                    {
-                        direction = { 0, 0, 1 };
-                    }
-                    direction.normalise();
-                    const auto localUp =
-                        std::abs( toward.y ) > .98f ? Vector3F( 0, 0, 1 ) : Vector3F( 0, 1, 0 );
-                    auto right =
-                        vector( world, localUp.crossProduct( toward ).normaliseCopy() ).normaliseCopy();
-                    auto up = direction.crossProduct( right ).normaliseCopy();
-                    right = up.crossProduct( direction );
-                    const auto origin = point( world, centreLocal );
-                    const f32 sx = maxScale, sy = maxScale;
-                    world = Matrix4F::identity();
-                    for( int axis = 0; axis < 3; ++axis )
-                    {
-                        world[axis][0] = right[axis] * sx;
-                        world[axis][1] = up[axis] * sy;
-                        world[axis][2] = direction[axis] * sx;
-                        world[axis][3] = origin[axis];
-                    }
+                    world = placement.transform;
                 }
                 std::memcpy( output.instance.transform.m, world.ptr(),
                              sizeof( output.instance.transform ) );
@@ -1087,7 +1148,8 @@ namespace workphone::render
                 ++stats.lodInstances[size_t( lod )];
             }
         }
-        std::sort( nextHistory.entries.begin(), nextHistory.entries.end() );
+        std::sort( nextHistory.entries.begin(), nextHistory.entries.end(),
+                   []( const auto &a, const auto &b ) { return a.id < b.id; } );
         p.history[view.key] = std::move( nextHistory );
         // Validate every group before the first draw: a late invalid transform
         // cannot leave a partially submitted population in the current pass.

@@ -40,6 +40,184 @@ namespace claw_foliage_world_contracts
         }while(std::chrono::steady_clock::now()<deadline);
         require(false,"foliage pages must complete within bounded worker wait");
     }
+    inline Vector3F transformedPoint(const Matrix4F &m,const Vector3F &p)
+    {
+        return {m[0][0]*p.x+m[0][1]*p.y+m[0][2]*p.z+m[0][3],
+            m[1][0]*p.x+m[1][1]*p.y+m[1][2]*p.z+m[1][3],
+            m[2][0]*p.x+m[2][1]*p.y+m[2][2]*p.z+m[2][3]};
+    }
+    inline void impostorPlacement()
+    {
+        FoliageSpecies plant;plant.boundsMinimum={-1,0,-1};plant.boundsMaximum={1,4,1};
+        plant.impostor.views={{{0,0,1}},{{1,0,0}},{{0,1,0}}};
+        auto world=Matrix4F::identity();
+        // A rotated, nonuniformly scaled tree retains its captured local basis.
+        world[0][0]=0;world[0][2]=.7f;world[2][0]=-2;world[2][2]=0;
+        world[1][1]=1.5f;world[0][3]=3;world[1][3]=.4f;world[2][3]=-2;
+        ClawFoliageView view;const Vector3F localEye={.3f,4,9},centre={0,2,0};
+        view.position=transformedPoint(world,localEye);ClawFoliageImpostorPlacement card;
+        require(buildFoliageImpostorPlacement(plant,world,view,-1,card)&&card.selectedView==0&&card.conservative,
+            "rotated scaled impostor must use its matching captured projection");
+        const auto local=world.inverse()*card.transform;
+        require(std::abs(local[2][3]-1)<1e-5f&&local[0][0]>0&&local[0][0]<1&&
+            std::abs(local[0][1])<1e-5f&&std::abs(local[1][0])<1e-5f,
+            "perspective card must keep the bake basis and move to the front support plane");
+        for(const Vector3F p: {Vector3F(-2,-2,0),Vector3F(2,-2,0),Vector3F(2,2,0),Vector3F(-2,2,0)})
+        {
+            const auto oldRay=transformedPoint(world,centre+p)-view.position;
+            const auto newRay=transformedPoint(card.transform,p)-view.position;
+            require(oldRay.crossProduct(newRay).length()<1e-4f&&oldRay.dotProduct(newRay)>0,
+                "support-plane adjustment must preserve every perspective corner ray");
+        }
+        view.orthographic=true;const auto ray=Vector3F(.2f,.35f,1).normaliseCopy();
+        view.direction=transformedPoint(world,Vector3F::zero())-transformedPoint(world,ray);
+        require(buildFoliageImpostorPlacement(plant,world,view,-1,card)&&card.selectedView==0&&card.conservative,
+            "off-axis orthographic impostor must select from its parallel camera ray");
+        const auto first=card;view.position={-1000,500,400};
+        require(buildFoliageImpostorPlacement(plant,world,view,-1,card)&&card.selectedView==first.selectedView,
+            "orthographic frame choice must ignore camera translation");
+        for(int row=0;row<4;++row)for(int column=0;column<4;++column)
+            require(std::abs(card.transform[row][column]-first.transform[row][column])<1e-6f,
+                "orthographic camera translation must not move or reorient foliage cards");
+        for(const Vector3F p: {Vector3F(-2,-2,0),Vector3F(2,2,0)})
+        {
+            const auto shift=transformedPoint(card.transform,p)-transformedPoint(world,centre+p);
+            require(shift.crossProduct(view.direction).length()<1e-5f,
+                "off-axis orthographic support shift must follow the actual camera ray");
+        }
+        view.direction={0,-1,0};
+        require(buildFoliageImpostorPlacement(plant,world,view,-1,card)&&card.selectedView==2,
+            "top-down parallel camera must select the pole frame on rotated trees");
+        const auto pole=world.inverse()*card.transform;
+        require(pole[0][0]<-.99f&&pole[2][1]>.99f&&std::abs(pole[1][3]-4)<1e-5f,
+            "pole card must exactly match the baker's Z-up basis on the canopy support plane");
+        world=Matrix4F::identity();view.orthographic=false;view.position=centre;
+        require(buildFoliageImpostorPlacement(plant,world,view,0,card)&&!card.conservative&&card.transform[0][0]>0,
+            "inside-camera fallback must retain a finite positive-scale centre card");
+        const auto retained=card;view.orthographic=true;view.direction={0,0,0};
+        require(!buildFoliageImpostorPlacement(plant,world,view,0,card)&&card.selectedView==retained.selectedView&&
+            std::memcmp(card.transform.ptr(),retained.transform.ptr(),16*sizeof(f32))==0,
+            "invalid parallel ray must leave placement output untouched");
+        view.direction={-.7072f,0,-.7070f};
+        require(buildFoliageImpostorPlacement(plant,world,view,0,card)&&card.selectedView==0,
+            "capture boundary jitter must retain the previous frame within the angular margin");
+        require(buildFoliageImpostorPlacement(plant,world,view,1,card)&&card.selectedView==1,
+            "separate camera history must retain its own previous capture");
+        view.direction={-1,0,0};
+        require(buildFoliageImpostorPlacement(plant,world,view,0,card)&&card.selectedView==1,
+            "angular hysteresis must release after a genuine viewpoint change");
+    }
+    inline void worldAtlasHistory(ClawRendererDX11 &renderer,wp_renderer_dx11 *native)
+    {
+        setup(native);String error;auto plant=species();
+        plant->boundsMinimum={-.25f,-.25f,0};plant->boundsMaximum={.25f,.25f,0};
+        for(auto &lod:plant->lods)for(auto &p:lod.positions){p.x*=12.5f;p.y=p.y*12.5f-.25f;}
+        plant->farBillboard=true;plant->impostor.albedo="two-view-alpha-atlas";
+        plant->impostor.width=32;plant->impostor.height=16;
+        const auto left=Vector3F(-.2f,0,1).normaliseCopy(),right=Vector3F(.2f,0,1).normaliseCopy();
+        plant->impostor.views={{left,{0,0},{.5f,1}},{right,{.5f,0},{1,1}}};
+        TextureMipLevel mip{32,16,std::vector<u8>(32*16*4,0)};
+        for(u32 y=0;y<16;++y)for(u32 x=0;x<32;++x)
+        {
+            const size_t pixel=(y*32+x)*4;mip.bgra[pixel+(x<16?2:1)]=255;
+            mip.bgra[pixel+3]=(x%16>=6&&x%16<=9)?0:255;
+        }
+        auto texture=make_ptr<ClawTexture>();TextureMipSettings settings;
+        require(texture->uploadCookedMips({mip},settings,native,error),error.c_str());
+        auto data=std::make_shared<FoliageWorldData>();data->revision=31;data->species={plant};
+        FoliageInstance item;item.id=31;data->instances={item};ClawFoliageWorld world;
+        require(world.setSource(data,[texture](const String &,String &e)->SmartPtr<ITexture>{e.clear();return texture;},error),error.c_str());
+        ClawFoliageView view;view.key=301;view.orthographic=true;view.cull=false;view.forcedLod=2;
+        view.direction=-left;prepare(world,renderer,view,31);
+        const auto draw=[&](const ClawFoliageView &camera,bool red)
+        {
+            wp_renderer_dx11_clear(native,WORKPHONE_CLEAR_FLAG_ALL);require(world.render(renderer,camera,error),error.c_str());
+            const auto image=pixels(native);size_t redPixels=0,greenPixels=0;
+            for(size_t i=0;i<image.size();i+=4){redPixels+=image[i]>100&&image[i+1]<30;greenPixels+=image[i+1]>100&&image[i]<30;}
+            require(red?(redPixels>250&&greenPixels==0):(greenPixels>250&&redPixels==0),
+                "world impostor must render the selected frame's native texture colour");
+            const auto centrePixel=(64*128+64)*4;
+            require(image[centrePixel]<10&&image[centrePixel+1]<10,
+                "world impostor leaf alpha must preserve the transparent interior");
+            require(world.diagnostics().lodInstances[2]==1&&world.diagnostics().submittedTriangles==2,
+                "far foliage must draw the two-triangle atlas LOD");
+        };
+        draw(view,true);auto second=view;second.key=302;second.direction=-right;draw(second,false);
+        view.direction={-.001f,0,-1};second.direction={.001f,0,-1};draw(view,true);draw(second,false);
+        view.direction=-right;draw(view,false);second.direction=-left;draw(second,true);
+        auto shadow=view;shadow.key=303;shadow.shadow=true;
+        require(world.render(renderer,shadow,error)&&world.diagnostics().lodInstances[1]==1&&
+            world.diagnostics().actualDraws==2&&world.diagnostics().lodInstances[2]==0,
+            "far foliage shadows must retain reduced source geometry instead of camera-facing cards");
+        auto invalid=view;invalid.direction={0,0,0};const auto before=statistics(native);
+        require(!world.render(renderer,invalid,error)&&statistics(native).draws==before.draws,
+            "invalid orthographic camera must reject before any native draw");
+        setup(native);
+    }
+    inline void atlasNormalLighting(wp_renderer_dx11 *native)
+    {
+        setup(native);
+        auto *device=static_cast<ID3D11Device*>(wp_renderer_dx11_get_device(native));
+        const auto normalTexture=[&](u32 width,u32 height)
+        {
+            // A diagonal normal with substantial tangent X and Y components.
+            const std::vector<u32> data(size_t(width)*height,0xffcca6df);
+            D3D11_TEXTURE2D_DESC desc{};desc.Width=width;desc.Height=height;
+            desc.MipLevels=desc.ArraySize=1;desc.Format=DXGI_FORMAT_R8G8B8A8_UNORM;
+            desc.SampleDesc.Count=1;desc.BindFlags=D3D11_BIND_SHADER_RESOURCE;
+            const D3D11_SUBRESOURCE_DATA input{data.data(),width*4,0};
+            ComPtr<ID3D11Texture2D> texture;ComPtr<ID3D11ShaderResourceView> view;
+            require(SUCCEEDED(device->CreateTexture2D(&desc,&input,&texture))&&
+                SUCCEEDED(device->CreateShaderResourceView(texture.Get(),nullptr,&view)),
+                "normal atlas contract texture must upload");
+            return view;
+        };
+        const std::array<ComPtr<ID3D11ShaderResourceView>,3> maps={
+            normalTexture(16,16),normalTexture(400,16),normalTexture(16,400)};
+        const std::array<wp_vec4f,3> rectangles={wp_vec4f{.125f,.125f,.75f,.75f},
+            wp_vec4f{12.125f/25,.125f,.75f/25,.75f},wp_vec4f{.125f,12.125f/25,.75f,.75f/25}};
+        auto shared=geometry(native,{{{-.4f,-.4f,0},{0,0,1},{0,1},0xffffffff},
+            {{.4f,-.4f,0},{0,0,1},{1,1},0xffffffff},{{.4f,.4f,0},{0,0,1},{1,0},0xffffffff},
+            {{-.4f,.4f,0},{0,0,1},{0,0},0xffffffff}},{0,1,2,0,2,3});
+        wp_foliage_parameters_dx11 parameters{{0,1,0,0},{0,1,0,0}};
+        wp_foliage_instance_dx11 card{};card.instance=instance(0,0,1,{1,1,1,1});
+        auto lit=material({.7f,.7f,.7f,1});lit.uv_transform.z=1;lit.map_flags.x=1;
+        lit.light_color={1,1,1,3};lit.camera_position={0,0,3,.02f};
+        lit.specular_color={.04f,.04f,.04f,0};
+        wp_renderer_dx11_set_material_sampler(native,1,1,0,1);
+        const auto draw=[&](size_t atlas)
+        {
+            card.uv_rect=rectangles[atlas];void *textures[6]={maps[atlas].Get(),nullptr,nullptr,nullptr,nullptr,nullptr};
+            wp_renderer_dx11_set_material_textures(native,textures);wp_renderer_dx11_set_material(native,&lit);
+            wp_renderer_dx11_clear(native,WORKPHONE_CLEAR_FLAG_ALL);
+            require(wp_renderer_dx11_draw_foliage_instances(native,shared.get(),0,6,&card,1,&parameters)==1,
+                "relit normal atlas card must submit");
+            return pixels(native);
+        };
+        for(int transform=0;transform<2;++transform)
+        {
+            if(transform)
+            {
+                card.instance.transform.m[0][0]=1.3f*.8660254f;card.instance.transform.m[0][2]=.5f*.7f;
+                card.instance.transform.m[2][0]=-.5f*1.3f;card.instance.transform.m[2][2]=.8660254f*.7f;
+                card.instance.transform.m[1][1]=.8f;
+            }
+            for(int light=0;light<2;++light)
+            {
+                lit.light_direction=light?wp_vec4f{.7f,-.4f,-.3f,0}:wp_vec4f{-.8f,.4f,-.5f,0};
+                const auto reference=draw(0);
+                equivalent(reference,draw(1),"25-column packing must not attenuate captured normal X lighting");
+                equivalent(reference,draw(2),"25-row packing must not attenuate captured normal Y lighting");
+                if(light==0)
+                {
+                    lit.controls.x=0;const auto flat=draw(0);lit.controls.x=1;size_t changed=0;
+                    for(size_t i=0;i<reference.size();i+=4)changed+=std::abs(int(reference[i])-int(flat[i]))>10;
+                    require(changed>300,"atlas parity must exercise visible normal-map lighting, not an unlit fallback");
+                }
+            }
+        }
+        setup(native);
+    }
     inline void wind(wp_renderer_dx11 *native)
     {
         setup(native);
@@ -151,6 +329,14 @@ namespace claw_foliage_world_contracts
         while(std::chrono::steady_clock::now()<deadline);
         require(submitted==4&&scene->getFoliageError().empty(),"real scene must render terrain snapshot plus standalone world with two sections each");
         require(terrain->getActiveFoliage().snapshot==data,"scene must publish the same active foliage generation through the terrain gate");
+        auto camera=make_ptr<claw_foliage_scene_contracts::IdentityCamera>();renderer.setCamera(camera);
+        camera->setLodBias(.02f);scene->render(static_cast<IRenderer*>(&renderer));
+        require(terrain->getFoliageDiagnostics().lodInstances[2]==1,
+            "active camera low LOD bias must reach terrain foliage selection");
+        camera->setLodBias(2);scene->render(static_cast<IRenderer*>(&renderer));
+        require(terrain->getFoliageDiagnostics().lodInstances[0]==1,
+            "active camera high LOD bias must restore detailed foliage");
+        renderer.setCamera(nullptr);
         require(terrain->setFoliageForcedLod(2,error),error.c_str());scene->render(static_cast<IRenderer*>(&renderer));
         const auto diagnostics=terrain->getFoliageDiagnostics();
         require(diagnostics.currentGenerationReady&&diagnostics.lodInstances[2]==1&&diagnostics.actualDraws==2,
@@ -219,6 +405,57 @@ namespace claw_foliage_world_contracts
         wp_renderer_dx11_clear(native,WORKPHONE_CLEAR_FLAG_ALL);require(world.render(renderer,view,error),error.c_str());const auto bent=pixels(native);
         size_t changed=0;for(size_t i=0;i<still.size();i+=4)changed+=still[i]!=bent[i];
         require(changed>20,"far impostor interaction must sample authored root, not shifted capture centre");
+    }
+    inline void tiltedCardBounds(ClawRendererDX11 &renderer,wp_renderer_dx11 *native)
+    {
+        setup(native);String error;auto source=species();
+        source->boundsMinimum={-.4f,0,0};source->boundsMaximum={.4f,.8f,0};
+        for(auto &lod:source->lods)for(auto &p:lod.positions)p*=20;
+        source->wind.amplitude=.6f;source->wind.maximumInteractionBend=.6f;source->wind.bendEnd=.8f;
+        source->farBillboard=true;source->impostor.albedo="tilted-culling-atlas";
+        source->impostor.width=source->impostor.height=4;
+        const auto capture=Vector3F(1,1,1).normaliseCopy();source->impostor.views={{capture}};
+        auto texture=make_ptr<ClawTexture>();TextureMipLevel white{4,4,std::vector<u8>(64,255)};TextureMipSettings settings;
+        require(texture->uploadCookedMips({white},settings,native,error),error.c_str());
+        auto data=std::make_shared<FoliageWorldData>();data->species={source};data->revision=92;
+        FoliageInstance plant;plant.id=92;data->instances={plant};ClawFoliageWorld world;
+        require(world.setSource(data,[texture](const String &,String &e)->SmartPtr<ITexture>{e.clear();return texture;},error),error.c_str());
+        // Rotate a strongly flattened instance so its selected capture ray is
+        // exactly the native camera's +Z ray. Its static crown is above view.
+        const auto axis=Vector3F(capture.x,capture.y,.05f*capture.z).normaliseCopy();
+        const auto right=Vector3F(0,1,0).crossProduct(axis).normaliseCopy(),up=axis.crossProduct(right);
+        auto placement=Matrix4F::identity();
+        for(int column=0;column<3;++column)
+        {
+            const auto scale=column==2?.05f:1.0f;
+            placement[0][column]=right[column]*scale;
+            placement[1][column]=up[column]*scale;
+            placement[2][column]=axis[column]*scale;
+        }
+        placement[1][3]=3;require(world.setPlacement(placement,error),error.c_str());
+        ClawFoliageView view;view.key=920;view.orthographic=true;view.forcedLod=2;
+        prepare(world,renderer,view,92);auto uncull=view;uncull.cull=false;
+        const auto compare=[&](const char *message)
+        {
+            wp_renderer_dx11_clear(native,WORKPHONE_CLEAR_FLAG_ALL);require(world.render(renderer,uncull,error),error.c_str());
+            const auto reference=pixels(native);size_t covered=0;
+            for(size_t i=0;i<reference.size();i+=4)covered+=reference[i]>20;
+            std::printf("Tilted card culling: covered=%zu, instances=%llu, draws=%llu, case=%s\n",covered,
+                static_cast<unsigned long long>(world.diagnostics().lodInstances[2]),
+                static_cast<unsigned long long>(world.diagnostics().actualDraws),message);
+            require(covered>64,"tilted nonuniform card must deform into actual visible pixels");
+            wp_renderer_dx11_clear(native,WORKPHONE_CLEAR_FLAG_ALL);require(world.render(renderer,view,error),error.c_str());
+            require(world.diagnostics().lodInstances[2]==1&&reference==pixels(native),message);
+        };
+        const double phase=double(foliageStableHash(plant.id)&65535u)/65535.0*6.283185307;
+        const auto windTime=f32(std::fmod(1.570796327+6.283185307-phase,6.283185307));
+        require(world.prepare(renderer,{view},windTime,error),error.c_str());
+        compare("captured-basis wind bounds must match uncull pixels on nonuniform placements");
+        require(world.setInteractions({{{-.02f,3,0},.2f,1}},error),error.c_str());
+        const auto stillTime=f32(std::fmod(6.283185307-phase,6.283185307));
+        require(world.prepare(renderer,{view},stillTime,error),error.c_str());
+        compare("captured-basis interaction bounds must match uncull pixels on nonuniform placements");
+        setup(native);
     }
     inline void sourceImpostorReopen(ClawRendererDX11 &renderer,wp_renderer_dx11 *native)
     {
@@ -385,7 +622,7 @@ namespace claw_foliage_world_contracts
         {
             auto target=make_ptr<ClawRenderTarget>();target->setSize({128,128});renderer.setRenderTarget(target);
             renderer.setCamera(nullptr);renderer.setViewport(nullptr);renderer.disableShadows();
-            auto native=wp_renderer_get_dx11(renderer.getNativeRenderer());wind(native);atlas(native);cpuTexture(native);deformationBounds(renderer,native);sourceImpostorReopen(renderer,native);extentPaging(renderer,native);
+            auto native=wp_renderer_get_dx11(renderer.getNativeRenderer());impostorPlacement();wind(native);atlas(native);atlasNormalLighting(native);worldAtlasHistory(renderer,native);cpuTexture(native);deformationBounds(renderer,native);tiltedCardBounds(renderer,native);sourceImpostorReopen(renderer,native);extentPaging(renderer,native);
             grassFade( renderer, native );
             auto data=std::make_shared<FoliageWorldData>();data->pageSize=1;data->revision=1;auto sourceSpecies=species();data->species={sourceSpecies};
             for(u32 n=0;n<5000;++n){FoliageInstance i;i.id=n+1;i.seed=n;i.position={f32(n%100)*.016f-.8f,f32(n/100)*.016f-.4f,0};data->instances.push_back(i);}

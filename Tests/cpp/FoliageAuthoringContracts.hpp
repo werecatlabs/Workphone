@@ -3,6 +3,7 @@
 #include <Workphone/Scene/Components/Terrain/FoliageAuthoring.hpp>
 #include <Workphone/Scene/Components/Terrain/FoliagePlantGenerator.hpp>
 #include <Workphone/Memory/PointerUtil.hpp>
+#include <algorithm>
 #include <cmath>
 #include <set>
 #include <stdexcept>
@@ -105,6 +106,56 @@ inline void runFoliageAuthoringContracts( bool plantGeometryOnly = false )
                  grass.lods[lod].indices.size() == ( 16u >> lod ) * 6 && grass.lods[lod].sections.size() == 1 &&
                  grass.lods[lod].sections[0].material == 1,
                  "Broadleaf improvements must preserve existing grass card topology." );
+    // Compare generated geometry across levels rather than reproducing the random
+    // generator: a retained card must keep its root, top centre, normal and UVs.
+    // Wider cards are the intentional coverage compensation for fewer triangles.
+    for( const auto kind : { render::FoliageKind::Grass, render::FoliageKind::GroundCover } )
+        for( const u32 seed : { 0u, 42u, 0xffffffffu } )
+            for( const u32 cards : { 1u, 3u, 7u, 16u, 127u, 128u } )
+            {
+                auto recipe = plant;
+                recipe.kind = kind;
+                recipe.seed = seed;
+                recipe.branches = cards;
+                render::FoliageSpecies stable;
+                require( generateFoliagePlant( recipe, stable, error ), error.c_str() );
+                const auto &detailedMesh = stable.lods[0];
+                const float tolerance = .00001f * std::max( recipe.radius, recipe.height );
+                for( u32 lod = 1; lod < 3; ++lod )
+                {
+                    const auto &coarse = stable.lods[lod];
+                    const u32 retained = std::max( 1u, cards >> lod );
+                    require( detailedMesh.positions.size() == cards * 4 && coarse.positions.size() == retained * 4 &&
+                             coarse.normals.size() == coarse.positions.size() &&
+                             coarse.uvs.size() == coarse.positions.size() && coarse.indices.size() == retained * 6,
+                             "Grass LODs retain complete cards with matching attributes." );
+                    const float widthRatio = std::sqrt( float( cards ) / float( retained ) );
+                    for( u32 card = 0; card < retained; ++card )
+                    {
+                        const u32 nearVertex = card * ( 1u << lod ) * 4, coarseVertex = card * 4;
+                        const auto root = ( detailedMesh.positions[nearVertex] + detailedMesh.positions[nearVertex + 1] ) * .5f;
+                        const auto coarseRoot = ( coarse.positions[coarseVertex] + coarse.positions[coarseVertex + 1] ) * .5f;
+                        const auto top = ( detailedMesh.positions[nearVertex + 2] + detailedMesh.positions[nearVertex + 3] ) * .5f;
+                        const auto coarseTop = ( coarse.positions[coarseVertex + 2] + coarse.positions[coarseVertex + 3] ) * .5f;
+                        require( ( root - coarseRoot ).length() < tolerance && ( top - coarseTop ).length() < tolerance,
+                                 "Grass LOD must not move the roots or alter heights of retained cards." );
+                        for( u32 vertex = 0; vertex < 4; ++vertex )
+                        {
+                            const auto offset = detailedMesh.positions[nearVertex + vertex] - root;
+                            const auto expected = root + Vector3F( offset.x * widthRatio, offset.y, offset.z * widthRatio );
+                            require( ( coarse.positions[coarseVertex + vertex] - expected ).length() < tolerance,
+                                     "Grass LOD may widen retained cards only around their unchanged roots." );
+                            require( ( coarse.normals[coarseVertex + vertex] - detailedMesh.normals[nearVertex + vertex] ).length() < .00001f &&
+                                     coarse.uvs[coarseVertex + vertex] == detailedMesh.uvs[nearVertex + vertex],
+                                     "Grass LOD must preserve the lighting normal and cutout UVs of each retained card." );
+                        }
+                        for( u32 index = 0; index < 6; ++index )
+                            require( coarse.indices[card * 6 + index] - coarseVertex ==
+                                     detailedMesh.indices[card * ( 1u << lod ) * 6 + index] - nearVertex,
+                                     "Grass LOD must preserve complete triangle winding on retained cards." );
+                    }
+                }
+            }
     if( plantGeometryOnly ) return;
     // Population persistence/concurrency tests need species identity and bounds, not
     // thousands of repeated hero-tree vertices in each JSON round trip.

@@ -150,13 +150,13 @@ static const wp_c8 s_vs_pntc_src[] =
     "struct VS_OUT { float4 pos : SV_POSITION; float3 world_pos : TEXCOORD0;\n"
     " float3 normal : TEXCOORD1; float2 uv : TEXCOORD2; float4 color : COLOR;\n"
     " float3 object_pos : TEXCOORD3; float3 object_normal : TEXCOORD4; float4 clip_pos : TEXCOORD5; float vertex_light:TEXCOORD6;\n"
-    " float4 foliage_coverage : TEXCOORD7; };\n"
+    " float4 foliage_coverage : TEXCOORD7; float3 foliage_normal_uv : TEXCOORD8; };\n"
     "VS_OUT vs_main(VS_IN i) { VS_OUT o;\n"
     " o.pos = mul(mvp, float4(i.pos, 1.0));\n"
     " o.pos.z = 0.5 * (o.pos.z + o.pos.w);\n"
     " o.world_pos = mul(world, float4(i.pos, 1.0)).xyz;\n"
     " o.normal = normalize(mul((float3x3)normal_matrix, i.normal));\n"
-    " o.uv = i.uv; o.object_pos = i.pos; o.object_normal = i.normal; o.clip_pos = o.pos; o.foliage_coverage = 0.0;\n"
+    " o.uv = i.uv; o.object_pos = i.pos; o.object_normal = i.normal; o.clip_pos = o.pos; o.foliage_coverage = 0.0; o.foliage_normal_uv = 0.0;\n"
     " o.color = float4(float((i.color >> 24u) & 255u),\n"
     "  float((i.color >> 16u) & 255u), float((i.color >> 8u) & 255u),\n"
     "  float(i.color & 255u)) / 255.0; o.vertex_light=saturate(dot(o.normal,-vertex_light_direction.xyz)*rsqrt(max(dot(vertex_light_direction.xyz,vertex_light_direction.xyz),1e-8))); return o; }\n";
@@ -261,7 +261,7 @@ static const wp_c8 s_ps_pntc_src[] = WP_HDR_OUTPUT_HLSL
     "struct PS_IN { float4 pos : SV_POSITION; float3 world_pos : TEXCOORD0;\n"
     " float3 normal : TEXCOORD1; float2 uv : TEXCOORD2; float4 color : COLOR;\n"
     " float3 object_pos : TEXCOORD3; float3 object_normal : TEXCOORD4; float4 clip_pos : TEXCOORD5; float vertex_light:TEXCOORD6;\n"
-    " float4 foliage_coverage : TEXCOORD7; };\n"
+    " float4 foliage_coverage : TEXCOORD7; float3 foliage_normal_uv : TEXCOORD8; };\n"
     "float2 boxUV(float3 p, float3 n) { float3 axis = abs(n);\n"
     " if (axis.x >= axis.y && axis.x >= axis.z) return float2(n.x < 0.0 ? p.z : -p.z, p.y);\n"
     " if (axis.y >= axis.z) return float2(p.x, n.y < 0.0 ? -p.z : p.z);\n"
@@ -356,7 +356,10 @@ static const wp_c8 s_ps_pntc_src[] = WP_HDR_OUTPUT_HLSL
     " float3 n = normalize(front ? i.normal : -i.normal);\n"
     " if (map_flags.x > 0.5 && terrain_controls.x < 0.5) {\n"
     "     float3 dp1 = ddx(i.world_pos), dp2 = ddy(i.world_pos);\n"
-    "     float2 duv1 = ddx(i.uv), duv2 = ddy(i.uv);\n"
+    /* Captured foliage normals use tile coordinates, independent of atlas packing.
+       Ordinary materials retain their projected/transformed sampling derivatives. */
+    "     float2 normalUv = i.foliage_normal_uv.z > 0.5 ? i.foliage_normal_uv.xy : i.uv;\n"
+    "     float2 duv1 = ddx(normalUv), duv2 = ddy(normalUv);\n"
     "     float3 p2 = cross(dp2, n), p1 = cross(n, dp1);\n"
     "     float3 t = p2 * duv1.x + p1 * duv2.x, b = p2 * duv1.y + p1 * duv2.y;\n"
     "     float inv = rsqrt(max(max(dot(t,t), dot(b,b)), 1e-8));\n"
@@ -455,7 +458,7 @@ static const wp_c8 s_vs_pntc_instanced_src[] =
     "struct VS_OUT { float4 pos : SV_POSITION; float3 world_pos : TEXCOORD0;\n"
     " float3 normal : TEXCOORD1; float2 uv : TEXCOORD2; float4 color : COLOR;\n"
     " float3 object_pos : TEXCOORD3; float3 object_normal : TEXCOORD4; float4 clip_pos : TEXCOORD5; float vertex_light:TEXCOORD6;\n"
-    " float4 foliage_coverage : TEXCOORD7; };\n"
+    " float4 foliage_coverage : TEXCOORD7; float3 foliage_normal_uv : TEXCOORD8; };\n"
     "VS_OUT vs_main(VS_IN i) { VS_OUT o; float4 p = float4(i.pos, 1.0);\n"
     " float3 instance_pos = float3(dot(i.row0,p), dot(i.row1,p), dot(i.row2,p));\n"
     " float3 instance_normal = float3(dot(i.normal0.xyz,i.normal),\n"
@@ -463,7 +466,7 @@ static const wp_c8 s_vs_pntc_instanced_src[] =
     " o.pos = mul(mvp, float4(instance_pos,1.0)); o.pos.z = 0.5*(o.pos.z+o.pos.w);\n"
     " o.world_pos = mul(world, float4(instance_pos,1.0)).xyz;\n"
     " o.normal = normalize(mul((float3x3)normal_matrix, instance_normal));\n"
-    " o.uv=i.uv; o.object_pos=i.pos; o.object_normal=i.normal; o.clip_pos=o.pos; o.foliage_coverage=0.0;\n"
+    " o.uv=i.uv; o.object_pos=i.pos; o.object_normal=i.normal; o.clip_pos=o.pos; o.foliage_coverage=0.0; o.foliage_normal_uv=0.0;\n"
     " o.color=float4(float((i.color>>24u)&255u),float((i.color>>16u)&255u),\n"
     " float((i.color>>8u)&255u),float(i.color&255u))/255.0*i.tint; o.vertex_light=saturate(dot(o.normal,-vertex_light_direction.xyz)*rsqrt(max(dot(vertex_light_direction.xyz,vertex_light_direction.xyz),1e-8))); return o; }\n";
 
@@ -484,7 +487,7 @@ static const wp_c8 s_vs_foliage_src[] =
     " float4 atlas:INSTANCE7; float4 wind:INSTANCE8; float4 interaction:INSTANCE9; };\n"
     "struct VS_OUT { float4 pos:SV_POSITION; float3 world_pos:TEXCOORD0; float3 normal:TEXCOORD1;\n"
     " float2 uv:TEXCOORD2; float4 color:COLOR; float3 object_pos:TEXCOORD3; float3 object_normal:TEXCOORD4; float4 clip_pos:TEXCOORD5; float vertex_light:TEXCOORD6;\n"
-    " float4 foliage_coverage:TEXCOORD7; };\n"
+    " float4 foliage_coverage:TEXCOORD7; float3 foliage_normal_uv:TEXCOORD8; };\n"
     "VS_OUT vs_main(VS_IN i) { VS_OUT o; float inverseHeight=rcp(foliage_height.y-foliage_height.x);\n"
     " float weight=saturate((i.pos.y-foliage_height.x)*inverseHeight);\n"
     " float phase=foliage_time.x*foliage_time.y+i.wind.z;\n"
@@ -496,7 +499,7 @@ static const wp_c8 s_vs_foliage_src[] =
     " float3 normal=float3(dot(i.normal0.xyz,n),dot(i.normal1.xyz,n),dot(i.normal2.xyz,n));\n"
     " o.pos=mul(mvp,float4(ip,1)); o.pos.z=0.5*(o.pos.z+o.pos.w); o.clip_pos=o.pos;\n"
     " o.world_pos=mul(world,float4(ip,1)).xyz; o.normal=normalize(mul((float3x3)normal_matrix,normal));\n"
-    " o.uv=i.uv*i.atlas.zw+i.atlas.xy; o.object_pos=p; o.object_normal=normalize(n);\n"
+    " o.uv=i.uv*i.atlas.zw+i.atlas.xy; o.foliage_normal_uv=float3(i.uv,1.0); o.object_pos=p; o.object_normal=normalize(n);\n"
     " o.foliage_coverage=float4(i.pos+i.interaction.w*float3(2.17,4.31,7.13),i.interaction.z);\n"
     " o.color=float4(float((i.color>>24u)&255u),float((i.color>>16u)&255u),float((i.color>>8u)&255u),float(i.color&255u))/255.0*i.tint; o.vertex_light=saturate(dot(o.normal,-vertex_light_direction.xyz)*rsqrt(max(dot(vertex_light_direction.xyz,vertex_light_direction.xyz),1e-8))); return o; }\n";
 typedef struct wp_foliage_gpu_dx11

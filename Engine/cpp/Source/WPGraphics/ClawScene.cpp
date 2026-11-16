@@ -1840,9 +1840,11 @@ namespace workphone
                                     cameraView( value->getViewMatrix().ptr() );
                                 const auto pose = cameraView.inverse();
                                 view.position = { pose[0][3], pose[1][3], pose[2][3] };
+                                view.direction = { -pose[0][2], -pose[1][2], -pose[2][2] };
                                 view.worldToClip = projection * cameraView;
                                 view.orthographic = std::abs( projection[3][3] ) > .5f;
                                 view.projectionScale = std::max( .0001f, std::abs( projection[1][1] ) );
+                                view.lodBias = std::max( .01f, value->getLodBias() );
                             }
                             return view;
                         };

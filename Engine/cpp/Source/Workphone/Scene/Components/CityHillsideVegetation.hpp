@@ -201,7 +201,8 @@
             }
 
             void addSpecies( SceneAssets &assets, render::FoliageWorldData &world,
-                             const String &leafTextureName, u32 seed )
+                             const String &leafTextureName, u32 seed,
+                             const cityFoliageLOD::LeafSource &leafSource, VehicleAppearanceQuality quality )
             {
                 const auto grassName = assets.resourcePrefix + "/texture/" +
                                        StringUtil::toString( assets.textures.size() );
@@ -238,6 +239,7 @@
                     species->shadowDistance = shrub ? 55.f : 0.f;
                     species->castShadows = shrub;
                     if( !shrub ) species->densityFractions = { 1, .83f, .55f };
+                    if( shrub ) cityFoliageLOD::configure( assets, *species, leafSource, quality );
                     for( const auto &lod : species->lods ) assets.triangles += lod.indices.size() / 3;
                     world.species.push_back( species );
                 }

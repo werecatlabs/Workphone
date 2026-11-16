@@ -97,6 +97,53 @@ namespace workphone
         };
         constexpr auto &cityBuildingStyles = scene::race::cityBuildingStyleKeys;
 
+        u64 foliagePopulationHash( const render::FoliageWorldData &world )
+        {
+            // Hash explicit scalar bytes, never struct padding or density-selected subsets.
+            u64 hash = 14695981039346656037ull;
+            const auto scalar = [&]( const auto &value ) {
+                const auto bytes = reinterpret_cast<const unsigned char *>( &value );
+                for( size_t i = 0; i < sizeof( value ); ++i ) hash = ( hash ^ bytes[i] ) * 1099511628211ull;
+            };
+            for( const auto &plant : world.instances )
+            {
+                scalar( plant.id ); scalar( plant.species );
+                scalar( plant.position.x ); scalar( plant.position.y ); scalar( plant.position.z );
+                scalar( plant.rotation.w ); scalar( plant.rotation.x ); scalar( plant.rotation.y ); scalar( plant.rotation.z );
+                scalar( plant.scale.x ); scalar( plant.scale.y ); scalar( plant.scale.z );
+                scalar( plant.tint.r ); scalar( plant.tint.g ); scalar( plant.tint.b ); scalar( plant.tint.a );
+                scalar( plant.seed ); scalar( plant.flags );
+            }
+            return hash;
+        }
+
+#if WP_GRAPHICS_SYSTEM_CLAW
+        void exportFoliageReviewSheet( const render::TextureMipLevel &pixels, const std::filesystem::path &path )
+        {
+            if( !pixels.width || !pixels.height || pixels.width % 25 ||
+                pixels.bgra.size() != size_t( pixels.width ) * pixels.height * 4 )
+                throw std::runtime_error( "Cannot export the realised 25-view foliage atlas." );
+            const auto tileWidth = pixels.width / 25;
+            const auto width = tileWidth * 5, height = pixels.height * 5;
+            if( width > 65535 || height > 65535 || std::filesystem::exists( path ) )
+                throw std::runtime_error( "Choose a fresh, bounded foliage atlas export." );
+            std::ofstream file( path, std::ios::binary | std::ios::out );
+            std::array<unsigned char, 18> header{};
+            header[2] = 2; header[12] = width & 255; header[13] = width >> 8;
+            header[14] = height & 255; header[15] = height >> 8; header[16] = 32; header[17] = 0x28;
+            file.write( reinterpret_cast<const char *>( header.data() ), header.size() );
+            // Unmodified runtime BGRA tiles, repacked from a strip to five rows.
+            for( u32 row = 0; row < 5; ++row ) for( u32 y = 0; y < pixels.height; ++y )
+                for( u32 column = 0; column < 5; ++column )
+                {
+                    const auto offset = ( size_t( y ) * pixels.width + ( row * 5 + column ) * tileWidth ) * 4;
+                    file.write( reinterpret_cast<const char *>( pixels.bgra.data() + offset ), size_t( tileWidth ) * 4 );
+                }
+            file.flush();
+            if( !file ) throw std::runtime_error( "Could not write the foliage atlas review sheet." );
+        }
+#endif
+
         bool isRoadTerrainEditView( std::string_view view )
         {
             return view == "road-edit-before" || view == "road-edit-after";
@@ -1655,6 +1702,7 @@ namespace workphone
             }
 
             setLoadingState( LoadingState::Unloading );
+            restoreFoliageLODReview();
             // Failure/early shutdown can precede the physics-task release acknowledgement.
             // Restore the captured body state before destroying the vehicle generation.
             m_citySmokeHoldRequested.store( false, std::memory_order_release );
@@ -1833,6 +1881,350 @@ namespace workphone
             std::cerr << "City streaming smoke observer update failed: " << failure.what() << '\n';
             return CitySmokeObserver::Failed;
         }
+    }
+
+    void SampleVehicleAdvanced::restoreFoliageLODReview()
+    {
+        if( !m_foliageLODStarted || m_foliageLODRestored || !m_assets.foliageTerrain ) return;
+        String error;
+        m_foliageLODRestored = m_assets.foliageTerrain->setFoliageForcedLod( m_foliageLODSavedLevel, error ) &&
+            m_assets.foliageTerrain->getFoliageForcedLod() == m_foliageLODSavedLevel;
+        if( !m_foliageLODRestored )
+            WP_LOG_ERROR( String( "Foliage LOD review could not restore the original setting: " ) + error );
+    }
+
+    void SampleVehicleAdvanced::failFoliageLODReview( const std::string &reason )
+    {
+        m_foliageLODFailure = reason;
+        restoreFoliageLODReview();
+        m_capturePassed = false;
+        m_captureAttempted = true;
+        std::ostringstream evidence;
+        evidence << "{\"schema\":\"workphone.vehicle-review.v1\",\"validationPassed\":false,\"failure\":" << advanced::jsonString( reason );
+        writeFoliageLODReview( evidence );
+        evidence << '}';
+        if( !m_evidencePath.empty() ) advanced::writeReviewEvidence( m_evidencePath, evidence.str() );
+        WP_LOG_ERROR( String( "Foliage LOD review: " ) + String( reason.c_str() ) );
+        core::IApplicationManager::instancePtr()->setQuit( true );
+    }
+
+    bool SampleVehicleAdvanced::advanceFoliageLODReview()
+    {
+        if( m_foliageLODPassed ) return true;
+        if( !m_foliageLODFailure.empty() ) return false;
+        const auto app = core::IApplicationManager::instancePtr();
+        ScopedLock managerLock( app->getGameManager() );
+        ScopedLock graphicsLock( app->getGraphicsSystem() );
+        const auto now = std::chrono::steady_clock::now();
+        if( m_foliageLODDeadline == std::chrono::steady_clock::time_point{} )
+            m_foliageLODDeadline = now + std::chrono::seconds( 180 );
+        if( now > m_foliageLODDeadline )
+        {
+            failFoliageLODReview( "Foliage pages or completed native draws did not settle within 180 seconds for this stage." );
+            return false;
+        }
+        auto terrain = m_assets.foliageTerrain;
+        const auto world = terrain ? terrain->getFoliageSnapshot() : nullptr;
+        if( !terrain || !world || !m_cameraActor ) return false;
+        const auto diagnostics = terrain->getFoliageDiagnostics();
+        if( diagnostics.failedPages || !diagnostics.error.empty() )
+        {
+            failFoliageLODReview( "Foliage paging failed: " + std::string( diagnostics.error.c_str() ) );
+            return false;
+        }
+        u32 updates = 0, renders = 0;
+        s32 passes = 0;
+        const auto properties = app->getGraphicsSystem()->getProperties();
+        if( !properties || !properties->getPropertyValue( "native_update_serial", updates ) ||
+            !properties->getPropertyValue( "native_render_serial", renders ) ||
+            !properties->getPropertyValue( "native_completed_passes", passes ) ||
+            !renders || updates != renders || passes <= 0 || renders == m_foliageLODLastRenderSerial ) return false;
+        m_foliageLODLastRenderSerial = renders;
+        ++m_foliageLODFrames;
+        if( !diagnostics.currentGenerationReady || diagnostics.pendingPages || !diagnostics.residentPages ||
+            !diagnostics.residentInstances || !diagnostics.actualDraws || !diagnostics.submittedTriangles )
+        {
+            m_foliageLODStableFrames = 0;
+            return false;
+        }
+        if( !m_foliageLODStarted )
+        {
+            if( m_foliageLODFrames < 24 ) return false;
+            m_foliageLODSavedLevel = terrain->getFoliageForcedLod();
+            m_foliageLODStarted = true;
+            const std::filesystem::path target( m_capturePath );
+            for( size_t stage = 0; stage < m_foliageLODStages.size(); ++stage )
+            {
+                auto &snapshot = m_foliageLODStages[stage];
+                snapshot.level = stage == 3 ? -1 : s32( stage );
+                const auto label = stage == 3 ? std::string( "auto" ) : std::to_string( stage );
+                snapshot.capturePath = ( target.parent_path() /
+                    ( target.stem().string() + "-foliage-lod" + label + ".bmp" ) ).string();
+                if( std::filesystem::exists( snapshot.capturePath ) )
+                {
+                    failFoliageLODReview( "Choose a fresh output directory; foliage stage captures already exist." );
+                    return false;
+                }
+            }
+            String error;
+            if( !terrain->setFoliageForcedLod( 0, error ) )
+            {
+                failFoliageLODReview( error.c_str() );
+                return false;
+            }
+            m_foliageLODStage = 0;
+            m_foliageLODFrames = m_foliageLODStableFrames = 0;
+            m_foliageLODDeadline = now + std::chrono::seconds( 180 );
+            return false;
+        }
+        const s32 expected = m_foliageLODStage == 4 ? m_foliageLODSavedLevel :
+            m_foliageLODStages[size_t( m_foliageLODStage )].level;
+        bool binsMatch = terrain->getFoliageForcedLod() == expected;
+        for( s32 level = 0; level < 3; ++level )
+            if( expected >= 0 ) binsMatch = binsMatch &&
+                ( level == expected ? diagnostics.lodInstances[level] > 0 : diagnostics.lodInstances[level] == 0 );
+        if( !binsMatch ) { m_foliageLODStableFrames = 0; return false; }
+
+        FoliageLODSnapshot current;
+        current.level = expected;
+        current.worldIdentity = u64( reinterpret_cast<uintptr_t>( world.get() ) );
+        current.populationHash = foliagePopulationHash( *world );
+        current.population = world->instances.size();
+        current.sourceRevision = diagnostics.sourceRevision;
+        current.residentInstances = diagnostics.residentInstances;
+        current.residentPages = diagnostics.residentPages;
+        current.lodInstances = diagnostics.lodInstances;
+        current.actualDraws = diagnostics.actualDraws;
+        current.submittedTriangles = diagnostics.submittedTriangles;
+        current.geometryBytes = diagnostics.geometryBytes;
+        current.uploadBytes = diagnostics.uploadBytes;
+        current.completedFrames = m_foliageLODFrames;
+        current.nativeRenderSerial = renders;
+        const auto pose = m_cameraActor->getWorldTransform();
+        const auto position = pose.getPosition();
+        const auto rotation = pose.getOrientation();
+        current.cameraPosition = { f32( position.x ), f32( position.y ), f32( position.z ) };
+        current.cameraOrientation = { f32( rotation.w ), f32( rotation.x ), f32( rotation.y ), f32( rotation.z ) };
+        const auto samePopulation = []( const FoliageLODSnapshot &a, const FoliageLODSnapshot &b ) {
+            return a.worldIdentity == b.worldIdentity && a.populationHash == b.populationHash &&
+                a.population == b.population && a.sourceRevision == b.sourceRevision &&
+                a.residentInstances == b.residentInstances && a.residentPages == b.residentPages;
+        };
+        const auto sameCamera = []( const FoliageLODSnapshot &a, const FoliageLODSnapshot &b ) {
+            return ( a.cameraPosition - b.cameraPosition ).length() < .0001f &&
+                std::abs( a.cameraOrientation.w - b.cameraOrientation.w ) < .00001f &&
+                std::abs( a.cameraOrientation.x - b.cameraOrientation.x ) < .00001f &&
+                std::abs( a.cameraOrientation.y - b.cameraOrientation.y ) < .00001f &&
+                std::abs( a.cameraOrientation.z - b.cameraOrientation.z ) < .00001f;
+        };
+        if( m_foliageLODStage > 0 &&
+            ( !samePopulation( current, m_foliageLODStages[0] ) || !sameCamera( current, m_foliageLODStages[0] ) ) )
+        {
+            failFoliageLODReview( "Source IDs/poses, page residency, or the fixed camera changed between foliage LOD stages." );
+            return false;
+        }
+        if( samePopulation( current, m_foliageLODLast ) && sameCamera( current, m_foliageLODLast ) &&
+            current.lodInstances == m_foliageLODLast.lodInstances &&
+            current.actualDraws == m_foliageLODLast.actualDraws &&
+            current.submittedTriangles == m_foliageLODLast.submittedTriangles ) ++m_foliageLODStableFrames;
+        else m_foliageLODStableFrames = 0;
+        m_foliageLODLast = current;
+        // Changing the override cannot certify a screenshot of the preceding render.
+        // Require distinct completed native frames and four stable draw snapshots.
+        if( m_foliageLODFrames < 8 || m_foliageLODStableFrames < 4 ) return false;
+        if( m_foliageLODStage == 4 )
+        {
+            m_foliageLODPassed = m_foliageLODRestored;
+            return m_foliageLODPassed;
+        }
+        auto &stage = m_foliageLODStages[size_t( m_foliageLODStage )];
+        current.capturePath = stage.capturePath;
+        current.recorded = true;
+        current.capturePassed = advanced::captureFrame( current.capturePath );
+        stage = current;
+        if( !current.capturePassed )
+        {
+            failFoliageLODReview( "A settled foliage LOD stage could not be captured." );
+            return false;
+        }
+        ++m_foliageLODStage;
+        m_foliageLODFrames = m_foliageLODStableFrames = 0;
+        m_foliageLODDeadline = now + std::chrono::seconds( 180 );
+        if( m_foliageLODStage == 4 )
+        {
+            restoreFoliageLODReview();
+            if( !m_foliageLODRestored ||
+                m_foliageLODStages[0].submittedTriangles <= m_foliageLODStages[1].submittedTriangles ||
+                m_foliageLODStages[1].submittedTriangles <= m_foliageLODStages[2].submittedTriangles )
+                failFoliageLODReview( "Native submitted triangles must decrease strictly from LOD0 to LOD1 to LOD2 and the original setting must restore." );
+        }
+        else
+        {
+            String error;
+            if( !terrain->setFoliageForcedLod( m_foliageLODStages[size_t( m_foliageLODStage )].level, error ) )
+                failFoliageLODReview( error.c_str() );
+        }
+        return false;
+    }
+
+    bool SampleVehicleAdvanced::writeFoliageLODReview( std::ostream &output ) const
+    {
+        if( !m_foliageLODSmokeTest ) return true;
+        output << ",\n  \"foliageLODReview\":{\"passed\":" << ( m_foliageLODPassed ? "true" : "false" )
+               << ",\"savedLevel\":" << m_foliageLODSavedLevel
+               << ",\"restored\":" << ( m_foliageLODRestored ? "true" : "false" )
+               << ",\"populationHashScope\":\"ordered full source IDs, species, exact poses, tint, seed and flags; no density-selected subset claim\""
+               << ",\"failure\":" << advanced::jsonString( m_foliageLODFailure ) << ",\"stages\":[";
+        for( size_t i = 0; i < m_foliageLODStages.size(); ++i )
+        {
+            const auto &stage = m_foliageLODStages[i];
+            if( i ) output << ',';
+            output << "{\"level\":" << stage.level << ",\"recorded\":" << ( stage.recorded ? "true" : "false" )
+                   << ",\"capturePassed\":" << ( stage.capturePassed ? "true" : "false" )
+                   << ",\"capturePath\":" << advanced::jsonString( stage.capturePath )
+                   << ",\"worldIdentity\":" << advanced::jsonString( std::to_string( stage.worldIdentity ) )
+                   << ",\"populationHash\":" << advanced::jsonString( std::to_string( stage.populationHash ) )
+                   << ",\"population\":" << stage.population << ",\"sourceRevision\":" << stage.sourceRevision
+                   << ",\"residentPages\":" << stage.residentPages << ",\"residentInstances\":" << stage.residentInstances
+                   << ",\"lodInstances\":[" << stage.lodInstances[0] << ',' << stage.lodInstances[1] << ',' << stage.lodInstances[2]
+                   << "],\"actualDraws\":" << stage.actualDraws << ",\"submittedTriangles\":" << stage.submittedTriangles
+                   << ",\"geometryBytes\":" << stage.geometryBytes << ",\"uploadBytes\":" << stage.uploadBytes
+                   << ",\"completedFrames\":" << stage.completedFrames << ",\"nativeRenderSerial\":" << stage.nativeRenderSerial
+                   << ",\"cameraPosition\":[" << stage.cameraPosition.x << ',' << stage.cameraPosition.y << ',' << stage.cameraPosition.z
+                   << "],\"cameraOrientation\":[" << stage.cameraOrientation.w << ',' << stage.cameraOrientation.x << ','
+                   << stage.cameraOrientation.y << ',' << stage.cameraOrientation.z << "]}";
+        }
+        output << "]}";
+        return m_foliageLODPassed;
+    }
+
+    bool SampleVehicleAdvanced::writeFoliageSpeciesEvidence( std::ostream &output ) const
+    {
+        const auto world = m_assets.foliageTerrain ? m_assets.foliageTerrain->getFoliageSnapshot() : nullptr;
+        if( !world ) return !m_foliageWorldEnabled && !m_assets.cityTerrainRoads;
+        const auto app = core::IApplicationManager::instancePtr();
+        auto textures = app->getGraphicsSystem()->getTextureManager();
+        bool valid = true;
+        bool treeExported = false, bushExported = false;
+        size_t woodySpecies = 0, realisedWoodyAtlases = 0;
+        output << ",\n  \"foliageSpecies\":{\"population\":" << world->instances.size()
+               << ",\"populationHash\":" << advanced::jsonString( std::to_string( foliagePopulationHash( *world ) ) )
+               << ",\"species\":[";
+        for( size_t i = 0; i < world->species.size(); ++i )
+        {
+            if( i ) output << ',';
+            const auto &species = *world->species[i];
+            const bool woody = species.kind == render::FoliageKind::Tree || species.kind == render::FoliageKind::Bush;
+            woodySpecies += woody;
+            output << "{\"id\":" << advanced::jsonString( species.id ) << ",\"kind\":" << u32( species.kind )
+                   << ",\"farBillboard\":" << ( species.farBillboard ? "true" : "false" ) << ",\"geometry\":[";
+            for( size_t lod = 0; lod < species.lods.size(); ++lod )
+            {
+                if( lod ) output << ',';
+                const auto &mesh = species.lods[lod];
+                output << "{\"vertices\":" << mesh.positions.size() << ",\"triangles\":" << mesh.indices.size() / 3
+                       << ",\"sections\":" << mesh.sections.size() << ",\"screenHeight\":" << species.screenHeightThresholds[lod]
+                       << ",\"density\":" << species.densityFractions[lod] << '}';
+            }
+            output << "],\"sourceMaterials\":[";
+            for( size_t materialIndex = 0; materialIndex < species.materials.size(); ++materialIndex )
+            {
+                if( materialIndex ) output << ',';
+                const auto &material = species.materials[materialIndex];
+                output << "{\"albedo\":" << advanced::jsonString( material.albedo )
+                       << ",\"normal\":" << advanced::jsonString( material.normal )
+                       << ",\"orm\":" << advanced::jsonString( material.orm )
+                       << ",\"alphaCutoff\":" << material.alphaCutoff << '}';
+            }
+            output << "],\"maximumDistance\":" << species.maximumDistance
+                   << ",\"atlas\":{\"views\":" << species.impostor.views.size() << ",\"width\":" << species.impostor.width
+                   << ",\"height\":" << species.impostor.height << ",\"gutter\":" << species.impostor.gutter
+                   << ",\"relightable\":" << ( species.impostor.relightable ? "true" : "false" )
+                   << ",\"rendererBillboardPolicy\":{\"active\":" << ( species.farBillboard ? "true" : "false" )
+                   << ",\"vertices\":4,\"triangles\":2,\"materialSource\":\"impostor metadata\",\"privateNativeBindingInspected\":false},\"maps\":[";
+            bool mapsReady = true;
+            size_t mapIndex = 0;
+            for( const auto *name : { &species.impostor.albedo, &species.impostor.normal, &species.impostor.orm } )
+            {
+                if( mapIndex++ ) output << ',';
+                const auto resource = textures && !name->empty() ? textures->getByName( *name ) : nullptr;
+                const bool retainedIdentity = resource && std::any_of( m_assets.textures.begin(), m_assets.textures.end(),
+                    [&]( const auto &texture ) { return texture.get() == resource.get(); } );
+                bool pixelsReady = false;
+                u64 pixelHash = 14695981039346656037ull;
+                u32 pixelWidth = 0, pixelHeight = 0;
+                size_t coveredViews = 0, translucentPixels = 0, coveredPixels = 0;
+                std::string exportPath;
+#if WP_GRAPHICS_SYSTEM_CLAW
+                auto texture = dynamic_pointer_cast<render::ClawTexture>( resource );
+                String error;
+                const auto pixels = texture ? texture->getCpuBaseMip( error ) : nullptr;
+                if( pixels )
+                {
+                    pixelWidth = pixels->width; pixelHeight = pixels->height;
+                    pixelsReady = pixelWidth == species.impostor.width && pixelHeight == species.impostor.height &&
+                        pixels->bgra.size() == size_t( pixelWidth ) * pixelHeight * 4;
+                    for( const auto byte : pixels->bgra ) pixelHash = ( pixelHash ^ byte ) * 1099511628211ull;
+                    if( mapIndex == 1 && pixelsReady )
+                    {
+                        for( size_t p = 3; p < pixels->bgra.size(); p += 4 )
+                        {
+                            coveredPixels += pixels->bgra[p] >= 128;
+                            translucentPixels += pixels->bgra[p] < 128;
+                        }
+                        for( const auto &view : species.impostor.views )
+                        {
+                            const auto x0 = std::min( pixelWidth, u32( std::max( 0.f, view.uvMinimum.x ) * pixelWidth ) );
+                            const auto y0 = std::min( pixelHeight, u32( std::max( 0.f, view.uvMinimum.y ) * pixelHeight ) );
+                            const auto x1 = std::min( pixelWidth, u32( std::max( 0.f, view.uvMaximum.x ) * pixelWidth ) );
+                            const auto y1 = std::min( pixelHeight, u32( std::max( 0.f, view.uvMaximum.y ) * pixelHeight ) );
+                            bool covered = false;
+                            for( auto y = y0; y < y1 && !covered; ++y )
+                                for( auto x = x0; x < x1; ++x )
+                                    if( pixels->bgra[( size_t( y ) * pixelWidth + x ) * 4 + 3] >= 128 ) { covered = true; break; }
+                            coveredViews += covered;
+                        }
+                        const bool exportTree = species.kind == render::FoliageKind::Tree && !treeExported;
+                        const bool exportBush = species.kind == render::FoliageKind::Bush && !bushExported;
+                        if( m_foliageLODSmokeTest && ( exportTree || exportBush ) )
+                        {
+                            const std::filesystem::path capture( m_capturePath );
+                            const auto path = capture.parent_path() / ( capture.stem().string() +
+                                ( exportTree ? "-foliage-tree-sheet.tga" : "-foliage-bush-sheet.tga" ) );
+                            exportFoliageReviewSheet( *pixels, path );
+                            exportPath = path.string();
+                            treeExported = treeExported || exportTree;
+                            bushExported = bushExported || exportBush;
+                        }
+                    }
+                }
+#endif
+                const bool mapReady = retainedIdentity && pixelsReady &&
+                    ( mapIndex != 1 || ( coveredPixels > 0 && translucentPixels > 0 && coveredViews == species.impostor.views.size() ) );
+                mapsReady = mapsReady && mapReady;
+                output << "{\"resource\":" << advanced::jsonString( *name )
+                       << ",\"retainedRegisteredIdentity\":" << ( retainedIdentity ? "true" : "false" )
+                       << ",\"pixelsReady\":" << ( pixelsReady ? "true" : "false" )
+                       << ",\"pixelWidth\":" << pixelWidth << ",\"pixelHeight\":" << pixelHeight
+                       << ",\"pixelHash\":" << advanced::jsonString( std::to_string( pixelHash ) );
+                if( mapIndex == 1 ) output << ",\"coveredViews\":" << coveredViews << ",\"coveredPixels\":" << coveredPixels
+                                          << ",\"transparentPixels\":" << translucentPixels;
+                if( !exportPath.empty() ) output << ",\"atlasExport\":{\"path\":" << advanced::jsonString( exportPath )
+                    << ",\"width\":" << pixelWidth / 5 << ",\"height\":" << pixelHeight * 5
+                    << ",\"sourceWidth\":" << pixelWidth << ",\"sourceHeight\":" << pixelHeight
+                    << ",\"columns\":5,\"rows\":5,\"losslessRepack\":true}";
+                output << '}';
+            }
+            const bool atlasReady = species.farBillboard && species.impostor.views.size() == 25 &&
+                species.impostor.relightable && mapsReady;
+            realisedWoodyAtlases += woody && atlasReady;
+            valid = valid && ( !woody || atlasReady );
+            output << "],\"ready\":" << ( atlasReady ? "true" : "false" ) << "}}";
+        }
+        valid = valid && ( !m_assets.cityTerrainRoads || woodySpecies == 6 );
+        output << "],\"woodySpecies\":" << woodySpecies << ",\"realisedWoodyAtlases\":" << realisedWoodyAtlases
+               << ",\"valid\":" << ( valid ? "true" : "false" ) << '}';
+        return valid;
     }
 
     bool SampleVehicleAdvanced::advanceCityStreamingSmoke()
@@ -2390,6 +2782,7 @@ namespace workphone
             }
             updateRenderCamera();
             if( m_cityStreamingSmokeTest && !advanceCityStreamingSmoke() ) return;
+            if( m_foliageLODSmokeTest && !advanceFoliageLODReview() ) return;
             if ( m_effectsSmokeTest && m_effectsEnabled ) updateVehicleEffects();
             if( m_smokeTest && m_smokePhase > 0 )
             {
@@ -3230,6 +3623,7 @@ namespace workphone
                 evidence << ",\n  \"reflectionRadiance\": " << advanced::captureRadianceEvidence( reflectionView, radianceValid );
                 if( !radianceValid ) WP_LOG_ERROR( "VehicleAdvanced: HDR reflection readback did not confirm finite radiance above one." );
                 evidence << ",\n  \"foliageWorldEnabled\": " << ( m_foliageWorldEnabled ? "true" : "false" );
+                evidence << ",\n  \"forcedFoliageLOD\": " << m_forcedFoliageLOD;
                 bool foliageValid = !m_foliageWorldEnabled;
                 if( m_assets.foliageTerrain )
                 {
@@ -3244,6 +3638,8 @@ namespace workphone
                              << ", \"culledInstances\": " << foliage.culledInstances
                              << ", \"lodInstances\": [" << foliage.lodInstances[0] << ',' << foliage.lodInstances[1] << ',' << foliage.lodInstances[2] << ']'
                              << ", \"actualDraws\": " << foliage.actualDraws
+                             << ", \"submittedInstances\": " << foliage.submittedInstances
+                             << ", \"submittedTriangles\": " << foliage.submittedTriangles
                              << ", \"geometryBytes\": " << foliage.geometryBytes
                              << ", \"uploadBytes\": " << foliage.uploadBytes
                              << ", \"error\": " << advanced::jsonString( foliage.error ) << "}";
@@ -3296,6 +3692,8 @@ namespace workphone
                         if( !rootsValid ) WP_LOG_ERROR( "Terrain city: foliage root height does not match terrain or park support." );
                     }
                 }
+                foliageValid = writeFoliageSpeciesEvidence( evidence ) && foliageValid;
+                foliageValid = writeFoliageLODReview( evidence ) && foliageValid;
 #if WP_GRAPHICS_SYSTEM_CLAW
                 // Consume the completed render-task snapshot: querying the C system
                 // directly from the application task would race frame publication.
@@ -4080,7 +4478,7 @@ namespace workphone
             if( m_assets.vehicleLOD ) m_assets.vehicleLOD->setForcedLOD( m_forcedVehicleLOD );
             for( auto &group : m_assets.treeLODs ) group->setForcedLOD( m_forcedLOD );
             String error;
-            if( m_assets.foliageTerrain && !m_assets.foliageTerrain->setFoliageForcedLod( m_forcedLOD, error ) )
+            if( m_assets.foliageTerrain && !m_assets.foliageTerrain->setFoliageForcedLod( m_forcedFoliageLOD, error ) )
                 throw std::runtime_error( error.c_str() );
             m_raceScene->initializePresentation();
             // A rebuild can consume more wall time than the upload allowance.
@@ -4180,7 +4578,7 @@ namespace workphone
 #endif
                 if(m_assets.vehicleLOD)m_assets.vehicleLOD->setForcedLOD(m_forcedVehicleLOD);
                 for(auto &group:m_assets.treeLODs)group->setForcedLOD(m_forcedLOD);
-                if(m_assets.foliageTerrain && !m_assets.foliageTerrain->setFoliageForcedLod(m_forcedLOD,error))throw std::runtime_error(error.c_str());
+                if(m_assets.foliageTerrain && !m_assets.foliageTerrain->setFoliageForcedLod(m_forcedFoliageLOD,error))throw std::runtime_error(error.c_str());
                 m_raceScene->initializePresentation();
             };
             const auto retainedSource=[&](SmartPtr<scene::TerrainSystem> expectedTerrain,const String &expectedBinding) {
@@ -5352,7 +5750,7 @@ namespace workphone
         if( m_assets.foliageTerrain )
         {
             String error;
-            if( !m_assets.foliageTerrain->setFoliageForcedLod( m_forcedLOD, error ) )
+            if( !m_assets.foliageTerrain->setFoliageForcedLod( m_forcedFoliageLOD, error ) )
                 throw std::runtime_error( error );
         }
         m_assets.vehicleLOD->setForcedLOD( m_forcedVehicleLOD );
@@ -5927,6 +6325,8 @@ int main( int argc, char **argv )
                    "  --evidence PATH.json          Write machine-readable review results\n"
                    "  --replay PATH.csv             Apply 120 Hz tick,throttle,brake,steering inputs\n"
                    "  --foliage-world               Use paged instanced broadleaf vegetation\n"
+                   "  --foliage-lod auto|0|1|2       Override paged foliage independently of legacy tree/vehicle LOD\n"
+                   "  --foliage-lod-smoke-test       Capture settled LOD0/1/2/auto in one scene; requires a fixed capture\n"
                    "  --city                        Generate the existing open-city scene instead of a circuit\n"
                    "  --city-blocks 6|8|10           Blocks per side (requires --city; default 8)\n"
                    "  --city-route 0|1|2             Street race route (requires --city; default 0)\n"
@@ -5989,7 +6389,8 @@ int main( int argc, char **argv )
     u32 seed = 7;
     auto quality = procedural::VehicleAppearanceQuality::High;
     bool hud = true, orbit = false;
-    bool foliageWorld = false;
+    bool foliageWorld = false, foliageLODSmokeTest = false;
+    s32 forcedFoliageLOD = -2;  // Absent preserves legacy --force-lod; explicit auto overrides it.
     bool openCity = false, cityOptionsExplicit = false;
     bool cityNaturalRoads = false;
     bool roadAuthoringShowcase = false;
@@ -6140,6 +6541,15 @@ int main( int argc, char **argv )
                     throw std::runtime_error( "Forced LOD must be auto, 0, or 1." );
                 forcedLOD = value == "auto" ? -1 : value == "0" ? 0 : 1;
             }
+            else if( String( argv[i] ) == "--foliage-lod" && i + 1 < argc )
+            {
+                const std::string value = argv[++i];
+                if( value != "auto" && value != "0" && value != "1" && value != "2" )
+                    throw std::runtime_error( "Foliage LOD must be auto, 0, 1 or 2." );
+                forcedFoliageLOD = value == "auto" ? -1 : std::stoi( value );
+            }
+            else if( String( argv[i] ) == "--foliage-lod-smoke-test" )
+                foliageLODSmokeTest = true;
             else if( String( argv[i] ) == "--force-vehicle-lod" && i + 1 < argc )
             {
                 const std::string value = argv[++i];
@@ -6214,6 +6624,38 @@ int main( int argc, char **argv )
             }
             else
                 throw std::runtime_error( std::string( "Unknown option or missing value: " ) + argv[i] );
+        }
+        if( forcedFoliageLOD >= 0 && !( foliageWorld || cityTerrainRoads ) )
+            throw std::runtime_error( "--foliage-lod requires --foliage-world or --city-terrain-roads for a fixed foliage level." );
+        if( foliageLODSmokeTest )
+        {
+            if( !( foliageWorld || cityTerrainRoads ) || capturePath.empty() || orbit || captureView == "follow" ||
+                !replayPath.empty() || !sceneProfilePath.empty() || cityStreamingSmokeTest ||
+                isCityImposterView( captureView ) || isRoadTerrainEditView( captureView ) ||
+                terrainGameplay || roadAuthoringShowcase || smokeTest || trackSmokeTest || collisionSmokeTest ||
+                audioSmokeTest || effectsSmokeTest )
+                throw std::runtime_error( "--foliage-lod-smoke-test requires paged foliage and a fixed capture view, without replay, other probes or scene profiling." );
+#if !defined( _WIN32 ) || !WP_GRAPHICS_SYSTEM_CLAW
+            throw std::runtime_error( "--foliage-lod-smoke-test requires Windows and Claw graphics." );
+#endif
+            // Check every derived output before loading resources. Probe captures
+            // must never overwrite inputs, final evidence or existing screenshots.
+            const std::filesystem::path target( capturePath );
+            for( const auto *label : { "0", "1", "2", "auto" } )
+            {
+                const auto path = target.parent_path() / ( target.stem().string() + "-foliage-lod" + label + ".bmp" );
+                if( std::filesystem::exists( path ) || advanced::reviewPathsAlias( path.string(), evidencePath ) )
+                    throw std::runtime_error( "Choose fresh, distinct foliage stage capture and evidence paths." );
+                for( const auto &mesh : cityBuildingMeshes )
+                    if( advanced::reviewPathsAlias( path.string(), mesh.c_str() ) )
+                        throw std::runtime_error( "Foliage stage captures must differ from building mesh inputs." );
+            }
+            for( const auto *kind : { "tree", "bush" } )
+            {
+                const auto path = target.parent_path() / ( target.stem().string() + "-foliage-" + kind + "-sheet.tga" );
+                if( std::filesystem::exists( path ) || advanced::reviewPathsAlias( path.string(), evidencePath ) )
+                    throw std::runtime_error( "Choose fresh, distinct foliage atlas and evidence paths." );
+            }
         }
         if( terrainGameplay )
         {
@@ -6396,6 +6838,7 @@ int main( int argc, char **argv )
         app->setSceneAA( sceneSamples );
         app->setEvidenceOptions( evidencePath, replayPath, std::move( replayControls ) );
         app->setFoliageWorldEnabled( foliageWorld );
+        app->setFoliageLODOptions( forcedFoliageLOD, foliageLODSmokeTest );
         app->setCityOptions( openCity, cityBlocks, cityRoute, cityNaturalRoads );
         app->setRoadAuthoringShowcase( roadAuthoringShowcase );
         app->setCityTerrainRoads( cityTerrainRoads );
