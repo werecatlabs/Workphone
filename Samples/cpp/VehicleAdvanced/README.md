@@ -112,9 +112,11 @@ Auto, 64, 128 or 256 pixels per direction. Auto uses 64 pixels in Preview and
 128 otherwise. Press **Regenerate** after changing either setting. A 256-pixel
 city can need a higher **City Source Memory MiB** budget.
 
-**City Building Density** controls how many eligible lots contain buildings
-(0–100%). Its default 100% keeps the full layout. Lower values retain more
-central buildings and landscape the vacant lots. Press **Regenerate** to apply.
+**City Building Density** ranges from 0 to 200. Its default 150 packs new
+cities with more buildings; 100 keeps the previous layout. Lower values retain more central buildings and landscape
+vacant lots. Values above 100 split suitable street-facing parcels into two
+building lots. Press **Regenerate** to apply. Denser scenes may need a higher
+**City Source Memory MiB** budget.
 
 With `--view verge`, the sample looks across an open road end from pavement
 level. Use `-Views verge` in the capture harness with `-CityTerrainRoads`.
@@ -200,7 +202,7 @@ Radius` (300 m), and `City Stream Retain Radius` (420 m). A larger retain radius
 reduces reloads near the load boundary. Radii must be finite, with load greater
 than zero and retain at least as large as load.
 
-`City Source Memory MiB` (768 by default, range 128–4096) is a saved minimum for
+`City Source Memory MiB` (1024 by default, range 128–4096) is a saved minimum for
 the shared CPU source ledger. City generation raises the existing limit only
 when needed. The ledger charges source bytes as resources are allocated, and
 GPU resources use their own budget. Constant occlusion, roughness and metallic

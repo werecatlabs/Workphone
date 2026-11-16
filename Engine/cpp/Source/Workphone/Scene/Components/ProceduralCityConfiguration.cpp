@@ -304,8 +304,8 @@ namespace workphone::scene
         properties.setProperty( "City Building Density", m_buildingDensity );
         auto &density = properties.getPropertyObject( "City Building Density" );
         density.setAttribute( "min", "0" );
-        density.setAttribute( "max", "100" );
-        density.setAttribute( "description", "Percent of buildable lots occupied. Lower values keep more central buildings and landscape the other parcels; 100 keeps the full layout." );
+        density.setAttribute( "max", "200" );
+        density.setAttribute( "description", "100 keeps the existing city. Lower values landscape vacant lots; higher values split suitable street-facing parcels for extra buildings." );
         for( size_t i = 0; i < cityFoliageDistanceProperties.size(); ++i )
         {
             const auto name = cityFoliageDistanceProperties[i];
@@ -414,8 +414,8 @@ namespace workphone::scene
         s32 buildingDensity = m_buildingDensity;
         if( properties.getPropertyValue( "City Building Density", buildingDensity ) )
         {
-            if( buildingDensity >= 0 && buildingDensity <= 100 ) m_buildingDensity = buildingDensity;
-            else if( error.empty() ) error = "City Building Density must be between 0 and 100 percent.";
+            if( buildingDensity >= 0 && buildingDensity <= 200 ) m_buildingDensity = buildingDensity;
+            else if( error.empty() ) error = "City Building Density must be between 0 and 200.";
         }
         auto distances = m_foliageLODDistances;
         bool changedDistances = false;

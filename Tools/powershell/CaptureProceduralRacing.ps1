@@ -26,7 +26,7 @@ param(
     [ValidateRange(30, 7200)][int]$TimeoutSeconds = 600,
     [ValidateRange(0, 100)][int]$CityStreetDetail = 100,
     [ValidateSet('on', 'off')][string]$CityStreaming = 'off',
-    [ValidateRange(128, 4096)][int]$CitySourceMemoryMiB = 768,
+    [ValidateRange(128, 4096)][int]$CitySourceMemoryMiB = 1024,
     [switch]$CityStreamingSmokeTest,
     [ValidateSet('district', 'masonry', 'civic', 'modern', 'terrace', 'parisian', 'warehouse', 'mediterranean', 'artdeco', 'timber')][string]$CityBuildingStyle,
     [hashtable]$CityBuildingMeshes = @{}

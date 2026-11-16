@@ -273,7 +273,7 @@ namespace workphone
         Vector3<real_Num> m_citySmokeSavedLinearVelocity{}, m_citySmokeSavedAngularVelocity{};
         bool m_citySmokeSavedKinematic = false, m_citySmokeSavedNativeKinematic = false;
         bool m_citySmokeSavedSleeping = false;
-        s32 m_citySourceMemoryMiB = 768;
+        s32 m_citySourceMemoryMiB = 1024;
         s32 m_cityBuildingStyle = -1;
         std::array<String, 5> m_cityBuildingMeshes;
         f32 m_cityExtent = 0, m_citySpacing = 0;

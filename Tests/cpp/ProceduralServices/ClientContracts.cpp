@@ -21,6 +21,7 @@
 #include <chrono>
 #include <fstream>
 #include <iterator>
+#include <set>
 #include <Workphone/Scene/Components/ProceduralRoad.hpp>
 #include <Workphone/Scene/Components/ProceduralSky.hpp>
 #include <Workphone/Scene/Components/ProceduralSurfaceTexture.hpp>
@@ -318,8 +319,8 @@ void checkClientContracts( SmartPtr<IFactoryManager> factories )
     auto city = workphone::make_ptr<scene::ProceduralCityScene>();
     auto cityOptions = city->getProperties();
     s32 buildingDensity = -1;
-    require( cityOptions->getPropertyValue( "City Building Density", buildingDensity ) && buildingDensity == 100,
-             "City building density must preserve the full existing layout by default" );
+    require( cityOptions->getPropertyValue( "City Building Density", buildingDensity ) && buildingDensity == 150,
+             "New city scenes should pack suitable parcels by default" );
     size_t sparse = 0, dense = 0, central = 0, peripheral = 0;
     for( u64 id = 1; id <= 1000; ++id )
     {
@@ -346,6 +347,28 @@ void checkClientContracts( SmartPtr<IFactoryManager> factories )
              sparseCity.roads.edges.size() == fullCity.roads.edges.size() &&
              sparseCity.lots.size() == fullCity.lots.size(),
              "City density must change building occupancy without changing roads or parcels" );
+    auto packedCity = fullCity;
+    scene::race::applyCityBuildingDensity( packedCity, 42, 200 );
+    const auto packedBuildings = std::count_if( packedCity.lots.begin(), packedCity.lots.end(),
+        []( const auto &lot ) { return !lot.park; } );
+    require( packedBuildings > originalBuildings &&
+             packedCity.roads.edges.size() == fullCity.roads.edges.size(),
+             "Density above 100 must add buildings without rebuilding roads" );
+    std::set<u64> packedIds;
+    for( const auto &lot : packedCity.lots )
+    {
+        require( packedIds.insert( lot.id ).second, "Packed city lots need distinct stable identities" );
+        if( lot.park ) continue;
+        const auto parent = std::find_if( fullCity.lots.begin(), fullCity.lots.end(),
+            [&]( const auto &original ) {
+                return !original.park &&
+                    lot.parcelX - lot.parcelWidth * .5f >= original.parcelX - original.parcelWidth * .5f - .001f &&
+                    lot.parcelX + lot.parcelWidth * .5f <= original.parcelX + original.parcelWidth * .5f + .001f &&
+                    lot.parcelZ - lot.parcelDepth * .5f >= original.parcelZ - original.parcelDepth * .5f - .001f &&
+                    lot.parcelZ + lot.parcelDepth * .5f <= original.parcelZ + original.parcelDepth * .5f + .001f;
+            } );
+        require( parent != fullCity.lots.end(), "Packed building escaped its original supported parcel" );
+    }
     for( size_t i = 0; i < sparseCity.lots.size(); ++i )
         if( !fullCity.lots[i].park && sparseCity.lots[i].park )
             require( sparseCity.lots[i].x == sparseCity.lots[i].parcelX &&
@@ -357,7 +380,7 @@ void checkClientContracts( SmartPtr<IFactoryManager> factories )
     require( cityOptions->getPropertyValue( "City Streaming", cityStreamingEnabled ) && cityStreamingEnabled &&
                  cityOptions->getPropertyValue( "City Stream Load Radius", streamLoad ) && streamLoad == 300.f &&
                  cityOptions->getPropertyValue( "City Stream Retain Radius", streamRetain ) && streamRetain == 420.f &&
-                 cityOptions->getPropertyValue( "City Source Memory MiB", cityMemory ) && cityMemory == 768,
+                 cityOptions->getPropertyValue( "City Source Memory MiB", cityMemory ) && cityMemory == 1024,
              "City streaming defaults did not reach the editor properties" );
     s32 foliageResolution = -1, buildingResolution = -1;
     require( cityOptions->getPropertyValue( "City Foliage Impostor Resolution", foliageResolution ) && foliageResolution == 0 &&
@@ -373,7 +396,7 @@ void checkClientContracts( SmartPtr<IFactoryManager> factories )
     cityOptions->setProperty( "City Grass LOD1 Distance", 42.f );
     cityOptions->setProperty( "City Foliage Impostor Resolution", s32( 3 ) );
     cityOptions->setProperty( "City Building Impostor Resolution", s32( 1 ) );
-    cityOptions->setProperty( "City Building Density", s32( 55 ) );
+    cityOptions->setProperty( "City Building Density", s32( 160 ) );
     city->setProperties( cityOptions );
     auto restoredCity = workphone::make_ptr<scene::ProceduralCityScene>();
     restoredCity->setProperties( city->getProperties() );
@@ -392,12 +415,12 @@ void checkClientContracts( SmartPtr<IFactoryManager> factories )
     require( savedOptions->getPropertyValue( "City Foliage Impostor Resolution", foliageResolution ) && foliageResolution == 3 &&
              savedOptions->getPropertyValue( "City Building Impostor Resolution", buildingResolution ) && buildingResolution == 1,
              "City imposter resolutions did not survive the component property round-trip" );
-    require( savedOptions->getPropertyValue( "City Building Density", buildingDensity ) && buildingDensity == 55,
+    require( savedOptions->getPropertyValue( "City Building Density", buildingDensity ) && buildingDensity == 160,
              "City building density did not survive the component property round-trip" );
-    savedOptions->setProperty( "City Building Density", s32( 101 ) );
+    savedOptions->setProperty( "City Building Density", s32( 201 ) );
     restoredCity->setProperties( savedOptions );
     savedOptions = restoredCity->getProperties();
-    require( savedOptions->getPropertyValue( "City Building Density", buildingDensity ) && buildingDensity == 55,
+    require( savedOptions->getPropertyValue( "City Building Density", buildingDensity ) && buildingDensity == 160,
              "Invalid building density must preserve the previous setting" );
     savedOptions->setProperty( "City Building Impostor Resolution", s32( 4 ) );
     restoredCity->setProperties( savedOptions );

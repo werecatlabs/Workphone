@@ -2,13 +2,18 @@
 
 ## Editable city building density — 16 November 2026
 
-**City Building Density** on the city scene components sets the percentage of
-eligible lots occupied by buildings, from 0 to 100. The default 100 preserves
-the existing city. Lower values use a seeded, stable lot ranking that retains
-more central buildings and converts vacant lots to landscaped park parcels.
-The same selected lots feed foundations, buildings, street detail, terrain
-parks and foliage after **Regenerate**. Road geometry and fitted terrain stay
-fixed. Invalid values retain the last valid setting.
+**City Building Density** on the city scene components ranges from 0 to 200.
+The default 150 packs new cities with additional buildings; 100 preserves the
+previous layout. Lower values retain more central
+buildings and convert vacant lots to landscaped parcels. Higher values split
+suitable street-facing parcels along their frontage into two smaller building
+lots with a service gap; 200 requests every eligible split. Child footprints
+remain inside the original supported parcel, and roads and fitted terrain stay
+fixed. The same selected lots feed foundations, buildings, street detail and
+foliage after **Regenerate**. Invalid values retain the last valid setting.
+In a fresh seed-42 high-quality terrain city, density 150 increased native
+building triangles from 227,668 to 340,892 (49.7%). The [validation report](../artifacts/procedural/city-density-packed-20261116/validation.md)
+records two passing captures and the 1024 MiB shared source-memory floor.
 
 ## Editable impostor resolution — 16 November 2026
 

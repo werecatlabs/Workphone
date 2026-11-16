@@ -6389,7 +6389,7 @@ int main( int argc, char **argv )
                    "  --city-street-detail 0..100     Roadside detail density (requires --city-terrain-roads, default 100)\n"
                    "  --city-streaming on|off        Stream building mesh tiers; keep skyline imposters resident\n"
                    "  --city-streaming-smoke-test   Verify native city unload and reload before capture\n"
-                   "  --city-source-memory-mib N     Shared source-memory minimum for city generation (128..4096, default 768)\n"
+                   "  --city-source-memory-mib N     Shared source-memory minimum for city generation (128..4096, default 1024)\n"
                    "  --city-building-style STYLE    Built-in architecture: district, masonry, civic, modern,\n"
                    "                                 terrace, parisian, warehouse, mediterranean, artdeco, timber\n"
                    "  --city-building-mesh ROLE PATH  Replace a wall, window, entrance, corner or roof module (repeatable)\n"
@@ -6448,7 +6448,7 @@ int main( int argc, char **argv )
     bool roadAuthoringShowcase = false;
     bool cityTerrainRoads = false;
     bool cityStreaming = true, cityStreamingSmokeTest = false;
-    s32 citySourceMemoryMiB = 768;
+    s32 citySourceMemoryMiB = 1024;
     float cityTerrainRelief = 1.f;
     bool cityTerrainReliefExplicit = false;
     s32 cityBlocks = 8, cityRoute = 0;
