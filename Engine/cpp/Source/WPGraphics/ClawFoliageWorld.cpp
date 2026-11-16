@@ -997,8 +997,12 @@ namespace workphone::render
         Array<Array<f32>> thresholds;
         for( const auto &species : p.active->species )
         {
-            thresholds.emplace_back( species->screenHeightThresholds.begin(),
-                                     species->screenHeightThresholds.end() );
+            if( species->lodDistances[0] > 0 )
+                thresholds.push_back( { 1.f / species->lodDistances[0],
+                                        1.f / species->lodDistances[1], 0.f } );
+            else
+                thresholds.emplace_back( species->screenHeightThresholds.begin(),
+                                         species->screenHeightThresholds.end() );
         }
         using Bin = std::pair<u32, u32>;
         std::map<Bin, Array<wp_foliage_instance_dx11>> bins;
@@ -1064,8 +1068,10 @@ namespace workphone::render
                 const bool previousValid = previous != history.end() && previous->id == instance.id;
                 const auto screen = baseRadius * maxScale * view.projectionScale * view.lodBias /
                                     ( view.orthographic ? 1.0f : std::max( .001f, distance ) );
+                const auto metric = species.lodDistances[0] > 0
+                    ? view.lodBias / std::max( .001f, distance ) : screen;
                 auto lod = scene::LODSystem::selectLOD(
-                    screen, thresholds[instance.species],
+                    metric, thresholds[instance.species],
                     previousValid ? previous->lod : -1,
                     view.forcedLod, species.hysteresis, false );
                 if( nextHistory.entries.size() >= maximumVisible )
@@ -1144,8 +1150,8 @@ namespace workphone::render
                     {
                         const auto threshold = thresholds[instance.species][size_t( boundary )];
                         const auto width = threshold * std::max( .08f, species.hysteresis );
-                        if( width <= 0 || screen < threshold - width || screen > threshold + width ) continue;
-                        const auto t = std::clamp( ( threshold + width - screen ) / ( 2 * width ), 0.f, 1.f );
+                        if( width <= 0 || metric < threshold - width || metric > threshold + width ) continue;
+                        const auto t = std::clamp( ( threshold + width - metric ) / ( 2 * width ), 0.f, 1.f );
                         blendNear = boundary;
                         blendFarWeight = t * t * ( 3 - 2 * t );
                         break;

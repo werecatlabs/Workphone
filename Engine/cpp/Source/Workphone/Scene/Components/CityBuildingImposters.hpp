@@ -30,7 +30,8 @@
             }
 
             template <class Patch>
-            std::optional<Baked> bake( const Patch &patch, VehicleAppearanceQuality quality )
+            std::optional<Baked> bake( const Patch &patch, VehicleAppearanceQuality quality,
+                                       u32 requestedResolution )
             {
                 // Median linear reflectance of the shipped scans. Plaster and
                 // concrete include the tint used on the corresponding LOD1 mesh.
@@ -94,7 +95,8 @@
                 for( auto &triangle : triangles )
                     for( auto &point : triangle.positions ) point -= centre;
 
-                const u32 resolution = quality == VehicleAppearanceQuality::Preview ? 64u : 128u;
+                const u32 resolution = requestedResolution ? requestedResolution :
+                    ( quality == VehicleAppearanceQuality::Preview ? 64u : 128u );
                 MeshImposterSpriteSheetOptions options;
                 options.tileWidth = options.tileHeight = resolution;
                 // A strip keeps every view's mip filtering and alpha coverage
@@ -169,7 +171,7 @@
             SmartPtr<scene::MeshRenderer> build( SceneAssets &assets, const Patch &patch,
                                                 SmartPtr<IGameActor> root, VehicleAppearanceQuality quality )
             {
-                const auto baked = bake( patch, quality );
+                const auto baked = bake( patch, quality, assets.cityBuildingImpostorResolution );
                 return baked ? publish( assets, *baked, root ) : nullptr;
             }
         }

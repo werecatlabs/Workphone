@@ -499,6 +499,22 @@ namespace claw_foliage_world_contracts
         view.forcedLod=1;require(renderAt(firstBoundary)[1]==1&&
             world.diagnostics().lodInstances[0]==0&&world.diagnostics().lodInstances[2]==0,
             "forced reviews must submit one foliage geometry level");
+        auto metrePlant=std::make_shared<FoliageSpecies>(*plant);
+        metrePlant->lodDistances={6,18};
+        auto metreData=std::make_shared<FoliageWorldData>(*data);
+        metreData->revision=95;metreData->species={metrePlant};
+        require(world.setSource(metreData,{},error),error.c_str());
+        view.key=941;view.forcedLod=-1;view.position.z=3;
+        prepare(world,renderer,view,95);
+        require(renderAt(3)[0]==1,"distance override must retain detailed geometry nearby");
+        const auto metreNear=renderAt(6);
+        require(metreNear[0]==1&&metreNear[1]==1,
+            "metre LOD0 distance must blend detailed and reduced geometry");
+        require(renderAt(10)[1]==1,"metre override must select reduced geometry between cutoffs");
+        const auto metreFar=renderAt(18);
+        require(metreFar[1]==1&&metreFar[2]==1,
+            "metre LOD1 distance must blend reduced geometry and far LOD");
+        require(renderAt(30)[2]==1,"metre override must select far geometry beyond its cutoff");
         setup(native);
     }
     inline void sourceImpostorReopen(ClawRendererDX11 &renderer,wp_renderer_dx11 *native)

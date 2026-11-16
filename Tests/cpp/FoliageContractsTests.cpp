@@ -66,6 +66,17 @@ namespace
         require(!render::validateFoliageSpecies(invalid,error),"Invalid LOD geometry rejected");
         invalid=*world->species[0]; invalid.wind.bendEnd=invalid.wind.bendStart;
         require(!render::validateFoliageSpecies(invalid,error),"Degenerate wind interval rejected");
+        invalid=*world->species[0]; invalid.lodDistances={12,40};
+        require(render::validateFoliageSpecies(invalid,error),error.c_str());
+        String speciesJson; render::FoliageSpecies distanceRestored;
+        require(render::serializeFoliageSpecies(invalid,speciesJson,error) &&
+                render::deserializeFoliageSpecies(speciesJson,distanceRestored,error) &&
+                distanceRestored.lodDistances==invalid.lodDistances,
+                "Explicit foliage LOD distances must survive serialization");
+        invalid.lodDistances={40,12};
+        require(!render::validateFoliageSpecies(invalid,error),"Reversed foliage LOD distances rejected");
+        invalid.lodDistances={12,std::numeric_limits<float>::infinity()};
+        require(!render::validateFoliageSpecies(invalid,error),"Nonfinite foliage LOD distance rejected");
         std::puts("Foliage data/identity/validation contracts: PASS");
     }
     void publicationContracts()

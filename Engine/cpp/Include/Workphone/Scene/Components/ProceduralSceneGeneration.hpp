@@ -110,6 +110,11 @@ namespace workphone::scene::race
         String cityRaceRouteError;
         u64 cityAppliedSourceRevision = 0;
         int cityStreetDetail = 100;
+        // LOD0->1 and LOD1->2 distances for trees, shrubs and grass (metres).
+        std::array<f32, 6> cityFoliageLODDistances = { 65, 260, 20, 100, 8, 35 };
+        // Zero follows the appearance-quality default; otherwise pixels per view.
+        u32 cityFoliageImpostorResolution = 0;
+        u32 cityBuildingImpostorResolution = 0;
         u32 cityStreetDetailCount = 0;
         int cityBuildingStyle = 0;
         std::array<String, 5> cityBuildingMeshes;

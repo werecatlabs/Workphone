@@ -91,6 +91,9 @@ namespace workphone::render
         Array<FoliageMaterial> materials;
         // Fraction of viewport height; select the first qualifying level.
         std::array<f32, 3> screenHeightThresholds = { .12f, .035f, 0 };
+        // Optional LOD0->1 and LOD1->2 distances in metres. Zero keeps the
+        // legacy projected-size selection for existing assets.
+        std::array<f32, 2> lodDistances = { 0, 0 };
         std::array<f32, 3> densityFractions = { 1, 1, 1 };
         f32 maximumDistance = 500, shadowDistance = 150, hysteresis = .15f;
         u32 shadowLodBias = 1;

@@ -325,10 +325,20 @@ void checkClientContracts( SmartPtr<IFactoryManager> factories )
                  cityOptions->getPropertyValue( "City Stream Retain Radius", streamRetain ) && streamRetain == 420.f &&
                  cityOptions->getPropertyValue( "City Source Memory MiB", cityMemory ) && cityMemory == 768,
              "City streaming defaults did not reach the editor properties" );
+    s32 foliageResolution = -1, buildingResolution = -1;
+    require( cityOptions->getPropertyValue( "City Foliage Impostor Resolution", foliageResolution ) && foliageResolution == 0 &&
+             cityOptions->getPropertyValue( "City Building Impostor Resolution", buildingResolution ) && buildingResolution == 0,
+             "City imposter resolutions must default to the appearance-quality preset" );
     cityOptions->setProperty( "City Streaming", false );
     cityOptions->setProperty( "City Stream Load Radius", 210.f );
     cityOptions->setProperty( "City Stream Retain Radius", 360.f );
     cityOptions->setProperty( "City Source Memory MiB", s32( 640 ) );
+    cityOptions->setProperty( "City Tree LOD0 Distance", 74.f );
+    cityOptions->setProperty( "City Tree LOD1 Distance", 310.f );
+    cityOptions->setProperty( "City Shrub LOD0 Distance", 24.f );
+    cityOptions->setProperty( "City Grass LOD1 Distance", 42.f );
+    cityOptions->setProperty( "City Foliage Impostor Resolution", s32( 3 ) );
+    cityOptions->setProperty( "City Building Impostor Resolution", s32( 1 ) );
     city->setProperties( cityOptions );
     auto restoredCity = workphone::make_ptr<scene::ProceduralCityScene>();
     restoredCity->setProperties( city->getProperties() );
@@ -338,6 +348,25 @@ void checkClientContracts( SmartPtr<IFactoryManager> factories )
                  savedOptions->getPropertyValue( "City Stream Retain Radius", streamRetain ) && streamRetain == 360.f &&
                  savedOptions->getPropertyValue( "City Source Memory MiB", cityMemory ) && cityMemory == 640,
              "City streaming settings did not round-trip" );
+    f32 treeNear=0,treeFar=0,shrubNear=0,grassFar=0;
+    require( savedOptions->getPropertyValue( "City Tree LOD0 Distance", treeNear ) && treeNear==74.f &&
+             savedOptions->getPropertyValue( "City Tree LOD1 Distance", treeFar ) && treeFar==310.f &&
+             savedOptions->getPropertyValue( "City Shrub LOD0 Distance", shrubNear ) && shrubNear==24.f &&
+             savedOptions->getPropertyValue( "City Grass LOD1 Distance", grassFar ) && grassFar==42.f,
+             "City foliage distances did not survive the component property round-trip" );
+    require( savedOptions->getPropertyValue( "City Foliage Impostor Resolution", foliageResolution ) && foliageResolution == 3 &&
+             savedOptions->getPropertyValue( "City Building Impostor Resolution", buildingResolution ) && buildingResolution == 1,
+             "City imposter resolutions did not survive the component property round-trip" );
+    savedOptions->setProperty( "City Building Impostor Resolution", s32( 4 ) );
+    restoredCity->setProperties( savedOptions );
+    savedOptions = restoredCity->getProperties();
+    require( savedOptions->getPropertyValue( "City Building Impostor Resolution", buildingResolution ) && buildingResolution == 1,
+             "Invalid building imposter resolution must preserve the previous setting" );
+    savedOptions->setProperty( "City Tree LOD1 Distance", 10.f );
+    restoredCity->setProperties( savedOptions );
+    savedOptions = restoredCity->getProperties();
+    require( savedOptions->getPropertyValue( "City Tree LOD1 Distance", treeFar ) && treeFar==310.f,
+             "Invalid foliage distance must preserve the previous settings" );
     savedOptions->setProperty( "City Stream Retain Radius", 150.f );
     savedOptions->setProperty( "City Source Memory MiB", s32( 8192 ) );
     restoredCity->setProperties( savedOptions );

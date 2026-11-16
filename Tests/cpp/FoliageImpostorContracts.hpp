@@ -48,6 +48,11 @@ inline void runFoliageImpostorContracts()
     require( maximumRed >= 90 && maximumRed <= 116, "Nonwhite tint matches the native sRGB material multiplication convention." );
     require( neutral < covered, "Source normal map contributes to the relightable normal atlas." );
     for( const auto &mip : baked.albedo ) require( mip.width % 2 == 0 && mip.width >= 2, "Mip chains stop before neighbouring captures merge." );
+    auto highOptions = options; highOptions.tileSize = 256;
+    FoliageImpostorBake highResolution;
+    require( bakeFoliageImpostor( species, resolver, highOptions, highResolution, error ) &&
+             highResolution.metadata.width == 512 && highResolution.metadata.height == 256,
+             "The exposed 256 px foliage resolution must produce full-size tiles." );
     auto retained = baked.albedo[0].bgra; std::atomic<bool> cancelled{ true };
     require( !bakeFoliageImpostor( species, resolver, options, baked, error, &cancelled ) && baked.albedo[0].bgra == retained, "Cancelled bake retains prior output." );
     options.maximumRasterSamples = 1;

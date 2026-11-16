@@ -78,6 +78,9 @@ namespace workphone::scene::race
         cityRaceRouteError( other.cityRaceRouteError ),
         cityAppliedSourceRevision( other.cityAppliedSourceRevision ),
         cityStreetDetail( other.cityStreetDetail ),
+        cityFoliageLODDistances( other.cityFoliageLODDistances ),
+        cityFoliageImpostorResolution( other.cityFoliageImpostorResolution ),
+        cityBuildingImpostorResolution( other.cityBuildingImpostorResolution ),
         cityStreetDetailCount( other.cityStreetDetailCount ),
         cityBuildingStyle( other.cityBuildingStyle ),
         cityBuildingMeshes( other.cityBuildingMeshes ),
@@ -151,6 +154,9 @@ namespace workphone::scene::race
         swap( cityRaceRouteError, other.cityRaceRouteError );
         swap( cityAppliedSourceRevision, other.cityAppliedSourceRevision );
         swap( cityStreetDetail, other.cityStreetDetail );
+        swap( cityFoliageLODDistances, other.cityFoliageLODDistances );
+        swap( cityFoliageImpostorResolution, other.cityFoliageImpostorResolution );
+        swap( cityBuildingImpostorResolution, other.cityBuildingImpostorResolution );
         swap( cityStreetDetailCount, other.cityStreetDetailCount );
         swap( cityBuildingStyle, other.cityBuildingStyle );
         swap( cityBuildingMeshes, other.cityBuildingMeshes );

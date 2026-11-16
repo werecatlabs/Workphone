@@ -1,5 +1,35 @@
 # WPProcedural implementation status
 
+## Editable impostor resolution — 16 November 2026
+
+The city scene components now expose **City Foliage Impostor Resolution** and
+**City Building Impostor Resolution** in the Inspector. Each offers Auto, 64,
+128 and 256 pixels per captured direction. Auto preserves the existing quality
+defaults: 64 in Preview, 128 otherwise. The settings persist with the component
+and apply when the city is regenerated; the foliage and building bakers receive
+the chosen tile size. Foliage has 25 directions per woody species, while a
+building patch has 49 directions. Larger tiles increase atlas storage and bake
+work; 256-pixel city scenes may need a higher **City Source Memory MiB** value.
+
+## Editable foliage LOD distances — 16 November 2026
+
+`ProceduralCityScene` and the city mode of `ProceduralRaceScene` expose six
+Inspector values in metres: Tree, Shrub and Grass LOD0/LOD1 Distance. LOD0 is
+the centre of the detailed-to-reduced blend; LOD1 is the centre of the
+reduced-to-far blend. Defaults are 65/260 m for trees, 20/100 m for shrubs and
+8/35 m for grass. The values persist as component properties and reach the
+generated species after **Regenerate**. Invalid or reversed pairs retain the
+last valid values. The active camera's LOD bias scales the effective distances;
+the displayed values apply at bias 1.
+
+`FoliageSpecies` also supports optional per-species `lodDistances` in its JSON.
+Older species without that field retain projected-size selection. Distance
+overrides use the same hysteresis and complementary transition masks as the
+existing LOD path. The focused procedural service, foliage data and native
+renderer suites pass. Foliage memory remains charged to the shared SourceCpu,
+WorkingCpu and GPU streaming pools, with a 262,144 visible-instance cap per
+view; there is no separate adjustable foliage-wide pool.
+
 ## Moving-camera foliage LOD transitions — 16 November 2026
 
 Automatic foliage LOD now overlaps adjacent geometry tiers around each screen-size

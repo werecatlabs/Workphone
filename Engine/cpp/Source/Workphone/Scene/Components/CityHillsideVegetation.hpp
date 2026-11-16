@@ -240,6 +240,9 @@
                     species->castShadows = shrub;
                     if( !shrub ) species->densityFractions = { 1, .83f, .55f };
                     if( shrub ) cityFoliageLOD::configure( assets, *species, leafSource, quality );
+                    else if( assets.openCity )
+                        species->lodDistances = { assets.cityFoliageLODDistances[4],
+                                                  assets.cityFoliageLODDistances[5] };
                     for( const auto &lod : species->lods ) assets.triangles += lod.indices.size() / 3;
                     world.species.push_back( species );
                 }

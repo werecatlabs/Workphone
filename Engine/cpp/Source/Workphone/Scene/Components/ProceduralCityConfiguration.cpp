@@ -22,6 +22,13 @@ namespace workphone::scene
             "City Wall Mesh", "City Window Mesh", "City Entrance Mesh", "City Corner Mesh",
             "City Roof Mesh"
         };
+        constexpr std::array cityFoliageDistanceProperties{
+            "City Tree LOD0 Distance", "City Tree LOD1 Distance",
+            "City Shrub LOD0 Distance", "City Shrub LOD1 Distance",
+            "City Grass LOD0 Distance", "City Grass LOD1 Distance"
+        };
+        constexpr std::array<u32, 4> cityImpostorResolutions{ 0, 64, 128, 256 };
+        constexpr char cityImpostorResolutionLabels[] = "Auto;64 px;128 px;256 px;";
 
         bool inCurrentScene( SmartPtr<IGameActor> actor, const IGameScene *scene )
         {
@@ -159,6 +166,9 @@ namespace workphone::scene
         assets.cityBlocks = m_blocks;
         assets.cityRoute = m_route;
         assets.cityStreetDetail = m_streetDetail;
+        assets.cityFoliageLODDistances = m_foliageLODDistances;
+        assets.cityFoliageImpostorResolution = cityImpostorResolutions[size_t( m_foliageImpostorResolution )];
+        assets.cityBuildingImpostorResolution = cityImpostorResolutions[size_t( m_buildingImpostorResolution )];
         assets.cityTerrainRelief = m_terrainRelief;
         assets.cityBuildingStyle = m_buildingStyle;
         assets.cityBuildingMeshes = m_buildingMeshes;
@@ -290,6 +300,28 @@ namespace workphone::scene
         properties.getPropertyObject( "City Terrain Relief" ).setAttribute( "description",
             "Initial terrain hills (0 to 2). Edit existing ground with the Terrain tools." );
         properties.setProperty( "City Street Detail", m_streetDetail );
+        for( size_t i = 0; i < cityFoliageDistanceProperties.size(); ++i )
+        {
+            const auto name = cityFoliageDistanceProperties[i];
+            properties.setProperty( name, m_foliageLODDistances[i] );
+            auto &property = properties.getPropertyObject( name );
+            property.setAttribute( "min", "1" );
+            property.setAttribute( "max", "2000" );
+            property.setAttribute( "description", i % 2 == 0 ?
+                "Metres from the active camera where detailed foliage starts blending to reduced geometry." :
+                "Metres from the active camera where reduced geometry starts blending to the far LOD. Must exceed LOD0 distance." );
+        }
+        const auto resolutionProperty = [&]( const char *name, s32 value, const char *description ) {
+            properties.setProperty( name, value );
+            auto &property = properties.getPropertyObject( name );
+            property.setTypeName( Properties::enumTypeStr );
+            property.setAttribute( Properties::enumTypeStr, cityImpostorResolutionLabels );
+            property.setAttribute( "description", description );
+        };
+        resolutionProperty( "City Foliage Impostor Resolution", m_foliageImpostorResolution,
+            "Pixels per directional foliage sprite. Auto uses 64 px in Preview or 128 px otherwise. Higher sizes require more shared CPU and GPU memory." );
+        resolutionProperty( "City Building Impostor Resolution", m_buildingImpostorResolution,
+            "Pixels per directional building sprite. Auto uses 64 px in Preview or 128 px otherwise. 256 px may require a larger City Source Memory MiB budget." );
         properties.setProperty( "City Building Style", m_buildingStyle );
         auto &buildingStyle = properties.getPropertyObject( "City Building Style" );
         buildingStyle.setTypeName( Properties::enumTypeStr );
@@ -373,6 +405,28 @@ namespace workphone::scene
         {
             m_streetDetail = std::clamp( streetDetail, 0, 100 );
         }
+        auto distances = m_foliageLODDistances;
+        bool changedDistances = false;
+        for( size_t i = 0; i < cityFoliageDistanceProperties.size(); ++i )
+            changedDistances |= properties.getPropertyValue( cityFoliageDistanceProperties[i], distances[i] );
+        if( changedDistances )
+        {
+            bool valid = true;
+            for( size_t i = 0; i < distances.size(); i += 2 )
+                valid &= std::isfinite( distances[i] ) && std::isfinite( distances[i + 1] ) &&
+                         distances[i] >= 1 && distances[i + 1] > distances[i] &&
+                         distances[i + 1] <= 2000;
+            if( valid ) m_foliageLODDistances = distances;
+            else if( error.empty() ) error = "City foliage LOD distances must be finite metres between 1 and 2000, with LOD1 farther than LOD0.";
+        }
+        const auto readResolution = [&]( const char *name, s32 &current ) {
+            s32 selected = current;
+            if( !properties.getPropertyValue( name, selected ) ) return;
+            if( selected >= 0 && selected < s32( cityImpostorResolutions.size() ) ) current = selected;
+            else if( error.empty() ) error = String( name ) + " must be Auto, 64, 128 or 256 px.";
+        };
+        readResolution( "City Foliage Impostor Resolution", m_foliageImpostorResolution );
+        readResolution( "City Building Impostor Resolution", m_buildingImpostorResolution );
         s32 buildingStyle = m_buildingStyle;
         if( properties.getPropertyValue( "City Building Style", buildingStyle ) )
         {

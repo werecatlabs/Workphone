@@ -390,6 +390,7 @@ namespace workphone::render
             add( o.get(), "thresholds",
                  floats( { s.screenHeightThresholds[0], s.screenHeightThresholds[1],
                            s.screenHeightThresholds[2] } ) );
+            add( o.get(), "lodDistances", floats( { s.lodDistances[0], s.lodDistances[1] } ) );
             add( o.get(), "density",
                  floats( { s.densityFractions[0], s.densityFractions[1], s.densityFractions[2] } ) );
             number( o.get(), "maximumDistance", s.maximumDistance );
@@ -471,6 +472,11 @@ namespace workphone::render
             auto thresholds = components( field( o, "thresholds" ), 3 ),
                  density = components( field( o, "density" ), 3 );
             std::copy_n( thresholds.begin(), 3, s.screenHeightThresholds.begin() );
+            if( auto distances = field( o, "lodDistances" ) )
+            {
+                auto values = components( distances, 2 );
+                std::copy_n( values.begin(), 2, s.lodDistances.begin() );
+            }
             std::copy_n( density.begin(), 3, s.densityFractions.begin() );
             s.maximumDistance = scalar( o, "maximumDistance" );
             s.shadowDistance = scalar( o, "shadowDistance" );
@@ -646,6 +652,9 @@ namespace workphone::render
         if( !range( s.screenHeightThresholds[0], .000001, 10 ) ||
             !range( s.screenHeightThresholds[1], 0, s.screenHeightThresholds[0] ) ||
             s.screenHeightThresholds[2] != 0 || !range( s.hysteresis, 0, .49 ) ||
+            !( ( s.lodDistances[0] == 0 && s.lodDistances[1] == 0 ) ||
+               ( range( s.lodDistances[0], .01, s.maximumDistance ) &&
+                 range( s.lodDistances[1], s.lodDistances[0] + .01, s.maximumDistance ) ) ) ||
             !range( s.maximumDistance, .01, 100000 ) ||
             !range( s.shadowDistance, 0, s.maximumDistance ) || s.shadowLodBias > 2 )
         {

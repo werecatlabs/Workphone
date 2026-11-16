@@ -49,6 +49,14 @@ static void spriteSheetContracts()
     require( sheet.views.size() == 25 && sheet.columns == 5 && sheet.rows == 5 &&
              sheet.width == 160 && sheet.height == 200 && sheet.rgba == again.rgba,
              "Directional sprite sheet must deterministically pack all azimuth/elevation frames" );
+    auto highOptions = options;
+    highOptions.tileWidth = highOptions.tileHeight = 256;
+    highOptions.columns = 25;
+    highOptions.supersampling = 1;
+    const auto highSheet = bakeMeshImposterSpriteSheet( triangles, lo, hi, highOptions );
+    require( highSheet.tileWidth == 256 && highSheet.width == 6400 && highSheet.height == 256 &&
+             highSheet.views.size() == 25,
+             "The exposed 256 px building resolution must produce full-size tiles." );
 
     const auto pixel = [&]( size_t frame, u32 x, u32 y ) {
         const auto &view = sheet.views[frame];

@@ -100,6 +100,18 @@ The capture harness exposes `-FoliageLOD` and `-FoliageLODSmokeTest`. These cont
 cover the paged population; merged ornamental planting meshes retain their
 existing scene/streaming lifetimes.
 
+The city scene component exposes Tree, Shrub and Grass LOD0/LOD1 Distance in
+metres in the Inspector. LOD0 marks the detailed-to-reduced transition and LOD1
+marks the reduced-to-far transition. Edit the values and press **Regenerate**;
+the defaults are 65/260 m, 20/100 m and 8/35 m respectively. Camera LOD bias
+scales the effective distances. Foliage assets can also specify an optional
+`lodDistances` pair; older assets retain projected-size selection.
+
+City foliage and building impostor resolution are separate Inspector options:
+Auto, 64, 128 or 256 pixels per direction. Auto uses 64 pixels in Preview and
+128 otherwise. Press **Regenerate** after changing either setting. A 256-pixel
+city can need a higher **City Source Memory MiB** budget.
+
 With `--view verge`, the sample looks across an open road end from pavement
 level. Use `-Views verge` in the capture harness with `-CityTerrainRoads`.
 The evidence records the selected endpoint camera and counts uploaded planting

@@ -31,7 +31,9 @@
                 if( species.kind != render::FoliageKind::Tree && species.kind != render::FoliageKind::Bush )
                     return;
                 render::FoliageImpostorBakeOptions options;
-                options.tileSize = quality == VehicleAppearanceQuality::Preview ? 64u : 128u;
+                options.tileSize = assets.cityFoliageImpostorResolution ?
+                    assets.cityFoliageImpostorResolution :
+                    ( quality == VehicleAppearanceQuality::Preview ? 64u : 128u );
                 options.gutter = 4;
                 options.resourcePrefix = species.id + "/lod2";
                 options.directions.clear();
@@ -94,6 +96,12 @@
                     // Keep the actual 3-D crown until it occupies under ~2% of
                     // viewport height. Both near and middle geometry stay available.
                     species.screenHeightThresholds = { .12f, .02f, 0.f };
+                    if( assets.openCity )
+                    {
+                        const size_t offset = species.kind == render::FoliageKind::Tree ? 0 : 2;
+                        species.lodDistances = { assets.cityFoliageLODDistances[offset],
+                                                 assets.cityFoliageLODDistances[offset + 1] };
+                    }
                 }
                 catch( ... )
                 {
