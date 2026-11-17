@@ -20,7 +20,7 @@ namespace workphone
         }
 
         SmartPtr<scene::IGameActor> createSliderVerticalWithoutDirector( const String &label,
-                                                                     bool addToScene )
+                                                                         bool addToScene )
         {
             return scene::UiUtil::createSliderVertical( label, nullptr, "", addToScene );
         }
@@ -38,53 +38,55 @@ namespace workphone
             .value( "RIGHT", HorizontalAlignment::RIGHT )
             .value( "CUSTOM", HorizontalAlignment::CUSTOM );*/
 
-        module(
-            L )[class_<UiUtil>( "UiUtil" )
-                    .scope[def( "getHorizontalAlignmentString", &UiUtilHelper::getHorizontalAlignmentString ),
-                           def( "getHorizontalAlignment", &UiUtilHelper::getHorizontalAlignment ),
-                           def( "getHorizontalAlignmentTypesString",
-                                &UiUtil::getHorizontalAlignmentTypesString ),
-                           def( "getVerticalAlignmentString", &UiUtilHelper::getVerticalAlignmentString ),
-                           def( "getVerticalAlignment", &UiUtilHelper::getVerticalAlignment ),
-                           def( "getVerticalAlignmentTypesString",
-                                &UiUtil::getVerticalAlignmentTypesString ),
-                           def( "createText", &UiUtil::createText ),
-                           def( "createButton", &UiUtil::createButton ),
-                           def( "createButtonEx", &UiUtil::createButtonEx ),
-                           def( "setRect", &UiUtil::setRect ), 
-                           def( "setAlignment", &UiUtilHelper::setAlignment ),
-                           def( "loadHierarchy", &UiUtil::loadHierarchy ),
-                           def( "createDropdown", &UiUtil::createDropdown ),
-                           def( "createDropdownWithOptions", &UiUtilHelper::createDropdownWithOptions ),
-                           def( "createImage", &UiUtil::createImage ),
-                           def( "createInputField", &UiUtil::createInputField ),
-                           def( "createToggle", &UiUtil::createToggle ),
-                           def( "createLayout", &UiUtil::createLayout ),
-                           def( "createHorizontalLayout", &UiUtil::createHorizontalLayout ),
-                           def( "createVerticalLayout", &UiUtil::createVerticalLayout ),
-                           def( "createGridLayout", &UiUtil::createGridLayout ),
-                           def( "createTableLayout", &UiUtil::createTableLayout ),
-                           def( "createTableCell", &UiUtil::createTableCell ),
-                           def( "createTabView", &UiUtil::createTabView ),
-                           def( "createTabPage", &UiUtil::createTabPage ),
-                           def( "createTabItem", &UiUtil::createTabItem ),
-                           def( "createToggleGroup", &UiUtil::createToggleGroup ),
-                           def( "createToolTip", &UiUtil::createToolTip ),
-                           def( "createThumbnail", &UiUtil::createThumbnail ),
-                           def( "createScrollView", &UiUtil::createScrollView ),
-                           def( "createPanel", &UiUtil::createPanel ),
-                           def( "createSlider", &UiUtil::createSlider ),
-                           def( "createSlider", &createSliderWithoutDirector ),
-                           def( "createSliderVertical", &UiUtil::createSliderVertical ),
-                           def( "createSliderVertical", &createSliderVerticalWithoutDirector ),
-                           def( "createScrollbar", &UiUtil::createScrollbar ),
-                           def( "createScrollbarVertical", &UiUtil::createScrollbarVertical ),
-                           def( "createScrollview", &UiUtil::createScrollview )]];
+        module( L )
+            [class_<UiUtil>( "UiUtil" )
+                 .scope
+                     [def( "getHorizontalAlignmentString", &UiUtilHelper::getHorizontalAlignmentString ),
+                      def( "getHorizontalAlignment", &UiUtilHelper::getHorizontalAlignment ),
+                      def( "getHorizontalAlignmentTypesString",
+                           &UiUtil::getHorizontalAlignmentTypesString ),
+                      def( "getVerticalAlignmentString", &UiUtilHelper::getVerticalAlignmentString ),
+                      def( "getVerticalAlignment", &UiUtilHelper::getVerticalAlignment ),
+                      def( "getVerticalAlignmentTypesString", &UiUtil::getVerticalAlignmentTypesString ),
+                      def( "createText", &UiUtil::createText ),
+                      def( "createButton", &UiUtil::createButton ),
+                      def( "createButtonEx", &UiUtil::createButtonEx ),
+                      def( "setRect", &UiUtil::setRect ),
+                      def( "setAlignment", &UiUtilHelper::setAlignment ),
+                      def( "loadHierarchy", &UiUtil::loadHierarchy ),
+                      def( "createDropdown", &UiUtil::createDropdown ),
+                      def( "createDropdownWithOptions", &UiUtilHelper::createDropdownWithOptions ),
+                      def( "createImage", &UiUtil::createImage ),
+                      def( "createInputField", &UiUtil::createInputField ),
+                      def( "createToggle", &UiUtil::createToggle ),
+                      def( "createLayout", &UiUtil::createLayout ),
+                      def( "createHorizontalLayout", &UiUtil::createHorizontalLayout ),
+                      def( "createVerticalLayout", &UiUtil::createVerticalLayout ),
+                      def( "createGridLayout", &UiUtil::createGridLayout ),
+                      def( "createTableLayout", &UiUtil::createTableLayout ),
+                      def( "createTableCell", &UiUtil::createTableCell ),
+                      def( "createTabView", &UiUtil::createTabView ),
+                      def( "createTabPage", &UiUtil::createTabPage ),
+                      def( "createTabItem", &UiUtil::createTabItem ),
+                      def( "createToggleGroup", &UiUtil::createToggleGroup ),
+                      def( "createToolTip", &UiUtil::createToolTip ),
+                      def( "createThumbnail", &UiUtil::createThumbnail ),
+                      def( "createScrollView", &UiUtil::createScrollView ),
+                      def( "createPanel", &UiUtil::createPanel ),
+                      def( "createSlider", &UiUtil::createSlider ),
+                      def( "createSlider", &createSliderWithoutDirector ),
+                      def( "createSliderVertical", &UiUtil::createSliderVertical ),
+                      def( "createSliderVertical", &createSliderVerticalWithoutDirector ),
+                      def( "createScrollbar", &UiUtil::createScrollbar ),
+                      def( "createScrollbarVertical", &UiUtil::createScrollbarVertical ),
+                      def( "createScrollview", &UiUtil::createScrollview )]];
 
         object uiUtil = globals( L )["UiUtil"];
         uiUtil["directionNames"] = UiUtilHelper::stringTable( L, UiUtil::directionNames );
-        uiUtil["verticalAlignmentTypes"] = UiUtilHelper::stringTable( L, UiUtil::verticalAlignmentTypes );
-        uiUtil["horizontalAlignmentTypes"] = UiUtilHelper::stringTable( L, UiUtil::horizontalAlignmentTypes );
+        uiUtil["verticalAlignmentTypes"] =
+            UiUtilHelper::stringTable( L, UiUtil::verticalAlignmentTypes );
+        uiUtil["horizontalAlignmentTypes"] =
+            UiUtilHelper::stringTable( L, UiUtil::horizontalAlignmentTypes );
         uiUtil["directionStr"] = UiUtil::directionStr;
         uiUtil["handleStr"] = UiUtil::handleStr;
         uiUtil["backgroundStr"] = UiUtil::backgroundStr;
@@ -228,29 +230,28 @@ namespace workphone
                         .def( "setInitialOptionCapacity", &Dropdown::setInitialOptionCapacity )
                         .scope[def( "typeInfo", Dropdown::typeInfo )]];
 
-        module( L )[class_<LayoutContainer, Component, SmartPtr<LayoutContainer>>(
-                        "UILayoutContainerComponent" )
-                        .def( "getSpacing", &LayoutContainer::getSpacing )
-                        .def( "setSpacing", &LayoutContainer::setSpacing )
-                        .def( "getPadding", &LayoutContainer::getPadding )
-                        .def( "setPadding", &LayoutContainer::setPadding )
-                        .def( "getChildHorizontalAlignment", &UIComponentHelper::getChildHorizontalAlignment )
-                        .def( "setChildHorizontalAlignment", &UIComponentHelper::setChildHorizontalAlignment )
-                        .def( "getChildVerticalAlignment", &UIComponentHelper::getChildVerticalAlignment )
-                        .def( "setChildVerticalAlignment", &UIComponentHelper::setChildVerticalAlignment )
-                        .def( "getOffset", &LayoutContainer::getOffset )
-                        .def( "setOffset", &LayoutContainer::setOffset )
-                        .def( "getUseChildHorizontalAlignment",
-                              &LayoutContainer::getUseChildHorizontalAlignment )
-                        .def( "setUseChildHorizontalAlignment",
-                              &LayoutContainer::setUseChildHorizontalAlignment )
-                        .def( "getUseChildVerticalAlignment",
-                              &LayoutContainer::getUseChildVerticalAlignment )
-                        .def( "setUseChildVerticalAlignment",
-                              &LayoutContainer::setUseChildVerticalAlignment )
-                        .def( "getUseChildStartOffset", &LayoutContainer::getUseChildStartOffset )
-                        .def( "setUseChildStartOffset", &LayoutContainer::setUseChildStartOffset )
-                        .scope[def( "typeInfo", LayoutContainer::typeInfo )]];
+        module( L )
+            [class_<LayoutContainer, Component, SmartPtr<LayoutContainer>>(
+                 "UILayoutContainerComponent" )
+                 .def( "getSpacing", &LayoutContainer::getSpacing )
+                 .def( "setSpacing", &LayoutContainer::setSpacing )
+                 .def( "getPadding", &LayoutContainer::getPadding )
+                 .def( "setPadding", &LayoutContainer::setPadding )
+                 .def( "getChildHorizontalAlignment", &UIComponentHelper::getChildHorizontalAlignment )
+                 .def( "setChildHorizontalAlignment", &UIComponentHelper::setChildHorizontalAlignment )
+                 .def( "getChildVerticalAlignment", &UIComponentHelper::getChildVerticalAlignment )
+                 .def( "setChildVerticalAlignment", &UIComponentHelper::setChildVerticalAlignment )
+                 .def( "getOffset", &LayoutContainer::getOffset )
+                 .def( "setOffset", &LayoutContainer::setOffset )
+                 .def( "getUseChildHorizontalAlignment",
+                       &LayoutContainer::getUseChildHorizontalAlignment )
+                 .def( "setUseChildHorizontalAlignment",
+                       &LayoutContainer::setUseChildHorizontalAlignment )
+                 .def( "getUseChildVerticalAlignment", &LayoutContainer::getUseChildVerticalAlignment )
+                 .def( "setUseChildVerticalAlignment", &LayoutContainer::setUseChildVerticalAlignment )
+                 .def( "getUseChildStartOffset", &LayoutContainer::getUseChildStartOffset )
+                 .def( "setUseChildStartOffset", &LayoutContainer::setUseChildStartOffset )
+                 .scope[def( "typeInfo", LayoutContainer::typeInfo )]];
 
         module( L )[class_<HorizontalLayout, LayoutContainer, SmartPtr<HorizontalLayout>>(
                         "UIHorizontalLayoutComponent" )
@@ -271,61 +272,60 @@ namespace workphone
                         .def( "setModifyChildSize", &GridLayout::setModifyChildSize )
                         .scope[def( "typeInfo", GridLayout::typeInfo )]];
 
-        module(
-            L )[class_<TableLayout, LayoutContainer, SmartPtr<TableLayout>>( "TableLayout" )
-                    .def( "getNumRows", &TableLayout::getNumRows )
-                    .def( "setNumRows", &TableLayout::setNumRows )
-                    .def( "getNumColumns", &TableLayout::getNumColumns )
-                    .def( "setNumColumns", &TableLayout::setNumColumns )
-                    .def( "getCellWidth", &TableLayout::getCellWidth )
-                    .def( "setCellWidth", &TableLayout::setCellWidth )
-                    .def( "getCellHeight", &TableLayout::getCellHeight )
-                    .def( "setCellHeight", &TableLayout::setCellHeight )
-                    .def( "getResizeContent", &TableLayout::getResizeContent )
-                    .def( "setResizeContent", &TableLayout::setResizeContent )
-                    .def( "getCellNamePrefix", &TableLayout::getCellNamePrefix )
-                    .def( "setCellNamePrefix", &TableLayout::setCellNamePrefix )
-                    .def( "getCellNameSeparator", &TableLayout::getCellNameSeparator )
-                    .def( "setCellNameSeparator", &TableLayout::setCellNameSeparator )
-                    .scope[def( "typeInfo", TableLayout::typeInfo )]];
+        module( L )[class_<TableLayout, LayoutContainer, SmartPtr<TableLayout>>( "TableLayout" )
+                        .def( "getNumRows", &TableLayout::getNumRows )
+                        .def( "setNumRows", &TableLayout::setNumRows )
+                        .def( "getNumColumns", &TableLayout::getNumColumns )
+                        .def( "setNumColumns", &TableLayout::setNumColumns )
+                        .def( "getCellWidth", &TableLayout::getCellWidth )
+                        .def( "setCellWidth", &TableLayout::setCellWidth )
+                        .def( "getCellHeight", &TableLayout::getCellHeight )
+                        .def( "setCellHeight", &TableLayout::setCellHeight )
+                        .def( "getResizeContent", &TableLayout::getResizeContent )
+                        .def( "setResizeContent", &TableLayout::setResizeContent )
+                        .def( "getCellNamePrefix", &TableLayout::getCellNamePrefix )
+                        .def( "setCellNamePrefix", &TableLayout::setCellNamePrefix )
+                        .def( "getCellNameSeparator", &TableLayout::getCellNameSeparator )
+                        .def( "setCellNameSeparator", &TableLayout::setCellNameSeparator )
+                        .scope[def( "typeInfo", TableLayout::typeInfo )]];
 
-        module( L )[class_<LayoutTransform, Component, SmartPtr<LayoutTransform>>(
-                        "LayoutTransform" )
-                        .def( "getMin", &LayoutTransform::getMin )
-                        .def( "getAbsoluteMin", &LayoutTransform::getAbsoluteMin )
-                        .def( "getMax", &LayoutTransform::getMax )
-                        .def( "getAbsoluteMax", &LayoutTransform::getAbsoluteMax )
-                        .def( "getPosition", &LayoutTransform::getPosition )
-                        .def( "setPosition", &LayoutTransform::setPosition )
-                        .def( "getSize", &LayoutTransform::getSize )
-                        .def( "setSize", &LayoutTransform::setSize )
-                        .def( "getAnchor", &LayoutTransform::getAnchor )
-                        .def( "setAnchor", &LayoutTransform::setAnchor )
-                        .def( "getAnchorMin", &LayoutTransform::getAnchorMin )
-                        .def( "setAnchorMin", &LayoutTransform::setAnchorMin )
-                        .def( "getAnchorMax", &LayoutTransform::getAnchorMax )
-                        .def( "setAnchorMax", &LayoutTransform::setAnchorMax )
-                        .def( "updateAnchorFromAlignment", &LayoutTransform::updateAnchorFromAlignment )
-                        .def( "getZOrder", &LayoutTransform::getZOrder )
-                        .def( "setZOrder", &LayoutTransform::setZOrder )
-                        .def( "getAutoCalculateOrder", &LayoutTransform::getAutoCalculateOrder )
-                        .def( "setAutoCalculateOrder", &LayoutTransform::setAutoCalculateOrder )
-                        .def( "setHorizontalAlignment", &UIComponentHelper::setLayoutHorizontalAlignment )
-                        .def( "getHorizontalAlignment", &UIComponentHelper::getLayoutHorizontalAlignment )
-                        .def( "setVerticalAlignment", &UIComponentHelper::setLayoutVerticalAlignment )
-                        .def( "getVerticalAlignment", &UIComponentHelper::getLayoutVerticalAlignment )
-                        .def( "getAbsolutePosition", &LayoutTransform::getAbsolutePosition )
-                        .def( "setAbsolutePosition", &LayoutTransform::setAbsolutePosition )
-                        .def( "getAbsoluteSize", &LayoutTransform::getAbsoluteSize )
-                        .def( "setAbsoluteSize", &LayoutTransform::setAbsoluteSize )
-                        .def( "getRelativePosition", &LayoutTransform::getRelativePosition )
-                        .def( "getRelativeSize", &LayoutTransform::getRelativeSize )
-                        .def( "getLayoutPtr", &LayoutTransform::getLayoutPtr )
-                        .def( "getLayout", &LayoutTransform::getLayout )
-                        .def( "setLayout", &LayoutTransform::setLayout )
-                        .def( "getUIComponent", &LayoutTransform::getUIComponent )
-                        .def( "setUIComponent", &LayoutTransform::setUIComponent )
-                        .scope[def( "typeInfo", LayoutTransform::typeInfo )]];
+        module(
+            L )[class_<LayoutTransform, Component, SmartPtr<LayoutTransform>>( "LayoutTransform" )
+                    .def( "getMin", &LayoutTransform::getMin )
+                    .def( "getAbsoluteMin", &LayoutTransform::getAbsoluteMin )
+                    .def( "getMax", &LayoutTransform::getMax )
+                    .def( "getAbsoluteMax", &LayoutTransform::getAbsoluteMax )
+                    .def( "getPosition", &LayoutTransform::getPosition )
+                    .def( "setPosition", &LayoutTransform::setPosition )
+                    .def( "getSize", &LayoutTransform::getSize )
+                    .def( "setSize", &LayoutTransform::setSize )
+                    .def( "getAnchor", &LayoutTransform::getAnchor )
+                    .def( "setAnchor", &LayoutTransform::setAnchor )
+                    .def( "getAnchorMin", &LayoutTransform::getAnchorMin )
+                    .def( "setAnchorMin", &LayoutTransform::setAnchorMin )
+                    .def( "getAnchorMax", &LayoutTransform::getAnchorMax )
+                    .def( "setAnchorMax", &LayoutTransform::setAnchorMax )
+                    .def( "updateAnchorFromAlignment", &LayoutTransform::updateAnchorFromAlignment )
+                    .def( "getZOrder", &LayoutTransform::getZOrder )
+                    .def( "setZOrder", &LayoutTransform::setZOrder )
+                    .def( "getAutoCalculateOrder", &LayoutTransform::getAutoCalculateOrder )
+                    .def( "setAutoCalculateOrder", &LayoutTransform::setAutoCalculateOrder )
+                    .def( "setHorizontalAlignment", &UIComponentHelper::setLayoutHorizontalAlignment )
+                    .def( "getHorizontalAlignment", &UIComponentHelper::getLayoutHorizontalAlignment )
+                    .def( "setVerticalAlignment", &UIComponentHelper::setLayoutVerticalAlignment )
+                    .def( "getVerticalAlignment", &UIComponentHelper::getLayoutVerticalAlignment )
+                    .def( "getAbsolutePosition", &LayoutTransform::getAbsolutePosition )
+                    .def( "setAbsolutePosition", &LayoutTransform::setAbsolutePosition )
+                    .def( "getAbsoluteSize", &LayoutTransform::getAbsoluteSize )
+                    .def( "setAbsoluteSize", &LayoutTransform::setAbsoluteSize )
+                    .def( "getRelativePosition", &LayoutTransform::getRelativePosition )
+                    .def( "getRelativeSize", &LayoutTransform::getRelativeSize )
+                    .def( "getLayoutPtr", &LayoutTransform::getLayoutPtr )
+                    .def( "getLayout", &LayoutTransform::getLayout )
+                    .def( "setLayout", &LayoutTransform::setLayout )
+                    .def( "getUIComponent", &LayoutTransform::getUIComponent )
+                    .def( "setUIComponent", &LayoutTransform::setUIComponent )
+                    .scope[def( "typeInfo", LayoutTransform::typeInfo )]];
 
         module( L )[class_<scene::Image, UIComponent, SmartPtr<scene::Image>>( "Image" )
                         .def( "getImage", &scene::Image::getImage )

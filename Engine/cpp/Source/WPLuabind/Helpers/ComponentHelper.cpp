@@ -5,8 +5,8 @@ namespace workphone
 {
     Parameter ComponentHelper::handleEvent( scene::IComponent *component, lua_Integer eventType,
                                             lua_Integer eventValue, const Array<Parameter> &arguments,
-                                            SmartPtr<ISharedObject> sender, SmartPtr<ISharedObject> object,
-                                            SmartPtr<IEvent> event )
+                                            SmartPtr<ISharedObject> sender,
+                                            SmartPtr<ISharedObject> object, SmartPtr<IEvent> event )
     {
         return component->handleEvent( static_cast<EventType>( eventType ), eventValue, arguments,
                                        sender, object, event );

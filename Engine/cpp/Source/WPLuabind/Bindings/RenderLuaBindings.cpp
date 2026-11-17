@@ -1124,13 +1124,15 @@ namespace workphone
                 Vector3<real_Num> hit;
                 const auto source = terrain->getTerrainSnapshot();
                 const bool picked = action == "pickHeightfield"
-                    ? render::intersectTerrainHeightfieldForAuthoring(
-                          *source, placement, Ray3F( origin, direction ), hit )
-                    : render::intersectTerrain( *source, placement, Ray3F( origin, direction ), hit );
+                                        ? render::intersectTerrainHeightfieldForAuthoring(
+                                              *source, placement, Ray3F( origin, direction ), hit )
+                                        : render::intersectTerrain( *source, placement,
+                                                                    Ray3F( origin, direction ), hit );
                 if( !picked )
                 {
-                    return action == "pickHeightfield" ? "Brush ray does not hit the authored heightfield."
-                                                       : "Brush ray does not hit solid terrain.";
+                    return action == "pickHeightfield"
+                               ? "Brush ray does not hit the authored heightfield."
+                               : "Brush ray does not hit solid terrain.";
                 }
                 auto local = placement.getOrientation().inverse() * ( hit - placement.getPosition() );
                 const auto scale = placement.getScale();

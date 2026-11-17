@@ -17,8 +17,8 @@ namespace workphone
         static void setAlignment( SmartPtr<scene::IGameActor> actor, lua_Integer horizontal,
                                   lua_Integer vertical );
         static SmartPtr<scene::IGameActor> createDropdownWithOptions( const String &label,
-                                                                       luabind::object options,
-                                                                       bool addToScene );
+                                                                      luabind::object options,
+                                                                      bool addToScene );
         static luabind::object stringTable( lua_State *L, const Array<String> &strings );
     };
 }  // namespace workphone
