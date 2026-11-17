@@ -262,11 +262,13 @@ namespace workphone
         };
         CitySmokePhase m_citySmokePhase = CitySmokePhase::Startup;
         u64 m_citySmokeStartupIdentity = 0;
+        scene::race::CityStreamingStats m_citySmokeInitialResidency;
+        bool m_citySmokeInitialResidencyRecorded = false;
         std::atomic<CitySmokeObserver> m_citySmokeRequested{ CitySmokeObserver::Automatic };
         std::atomic<CitySmokeObserver> m_citySmokeApplied{ CitySmokeObserver::Automatic };
         std::chrono::steady_clock::time_point m_citySmokeDeadline;
         Vector3F m_citySmokeCamera{}, m_citySmokeVehicle{}, m_citySmokeAway{};
-        CitySmokeSnapshot m_citySmokeNear, m_citySmokeEvicted, m_citySmokeReturned, m_citySmokeFinal, m_citySmokeLast;
+        CitySmokeSnapshot m_citySmokeFirstCameraLoad, m_citySmokeNear, m_citySmokeEvicted, m_citySmokeReturned, m_citySmokeFinal, m_citySmokeLast;
         CitySmokeSnapshot m_citySmokeCameraNear, m_citySmokeCameraEvicted, m_citySmokeCameraReturned;
         Quaternion<real_Num> m_citySmokeCameraOrientation;
         f32 m_citySmokeMaximumVehicleDisplacement = 0;

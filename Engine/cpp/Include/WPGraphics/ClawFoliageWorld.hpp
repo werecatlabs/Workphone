@@ -57,12 +57,15 @@ namespace workphone::render
         u64 speciesSplits = 0, lodSplits = 0, sectionSplits = 0, capacitySplits = 0, policySplits = 0;
         u64 submittedTriangles = 0;
         u64 geometryBytes = 0, uploadBytes = 0;
+        // Number of native species meshes resident at each level.
+        std::array<u32, 3> residentLodMeshes{};
     };
 
     /** Render-owner sparse foliage world. Pages own residency, not draw boundaries.
      * All visible cells are grouped by shared species/LOD/section. Each view retains
      * independent hard-switch+hysteresis history; grass keeps a stable density subset.
-     * Source replacement publishes only complete demanded pages and device assets.
+     * Source replacement publishes complete demanded pages with only the lowest
+     * native species tier. Rendered views request higher tiers for later preparation.
      */
     class WPGraphics_API ClawFoliageWorld final
     {

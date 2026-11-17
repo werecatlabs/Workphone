@@ -4,6 +4,7 @@
 #include <Workphone/Scene/Components/Collision.hpp>
 #include <Workphone/Scene/Components/LODGroup.hpp>
 #include <Workphone/Scene/Components/Mesh.hpp>
+#include <Workphone/Scene/Components/MeshImposter.hpp>
 #include <Workphone/Scene/Components/MeshRenderer.hpp>
 #include <Workphone/Scene/Components/Rigidbody.hpp>
 #include <Workphone/Scene/Systems/LODSystem.hpp>
@@ -256,8 +257,8 @@ namespace workphone::scene::race
             std::shared_ptr<const CachedPatch> cache;
             s32 fallbackLevel = 0, originalForcedLOD = -1;
             f32 radius = 0;
-            Phase phase = Phase::Resident;
-            bool requested = false, countedResident = true;
+            Phase phase = Phase::Absent;
+            bool requested = false, countedResident = false;
             Clock::time_point retryAfter{};
             Clock::time_point installDeadline{};
         };
@@ -280,7 +281,11 @@ namespace workphone::scene::race
         {
             patch.lod->setForcedLOD( patch.fallbackLevel );
             for( auto &renderer : patch.fallback ) renderer->setLODVisible( true );
-            for( auto &detail : patch.details ) detail.renderer->setLODVisible( false );
+            for( auto &detail : patch.details )
+            {
+                detail.renderer->setLODVisible( false );
+                detail.renderer->setEnabled( false );
+            }
         }
 
         void retire( Patch &patch )
@@ -358,6 +363,7 @@ namespace workphone::scene::race
                 patch.details[i].resource->setMesh( decoded.meshes[i] );
             for( auto &detail : patch.details )
             {
+                detail.renderer->setEnabled( true );
                 detail.renderer->setLODVisible( false );
                 detail.renderer->updateMesh();
                 auto object = detail.renderer->getGraphicsObject();
@@ -384,7 +390,7 @@ namespace workphone::scene::race
             patch.phase = Phase::Resident;
             patch.countedResident = true;
             ++totals.installedPatches;
-            // A streamed install restores a mesh that belonged to the initial generated scene.
+            // A streamed install restores a mesh cached before initial scene publication.
             ++totals.reloadedPatches;
             totals.meshPayloadReloads += patch.details.size();
             totals.nativeMeshLoads += patch.details.size();
@@ -438,6 +444,13 @@ namespace workphone::scene::race
                 if( !lod || !lod->isLODEnabled() || lod->getForcedLOD() >= 0 ) continue;
                 const auto levels = lod->getLevels();
                 if( levels.size() < 2 || levels.back().renderers.empty() ) continue;
+                const bool imposterBacked = std::any_of( levels.back().renderers.begin(),
+                    levels.back().renderers.end(), []( const auto &item ) {
+                        const auto renderer = dynamic_pointer_cast<MeshRenderer>( item );
+                        const auto child = renderer ? renderer->getActor() : nullptr;
+                        return child && child->getComponent<MeshImposter>();
+                    } );
+                if( !imposterBacked ) continue;
                 Impl::Patch patch;
                 patch.actor = actor;
                 patch.lod = lod;
@@ -484,6 +497,8 @@ namespace workphone::scene::race
                     }
                 }
                 if( eligible && !patch.details.empty() ) candidate->patches.push_back( std::move( patch ) );
+                else if( imposterBacked )
+                    throw std::runtime_error( "Cannot stream every detail level of a city imposter patch." );
             }
             if( candidate->patches.empty() )
             {
@@ -522,6 +537,20 @@ namespace workphone::scene::race
             limits.maximumReadyBytes = m_options.maximumPatchBytes;
             candidate->producer = WorldStreamingScheduler::shared()->createProducer( limits, error );
             if( !candidate->producer ) return false;
+            for( auto &patch : candidate->patches )
+            {
+                // No detail tier may have a native graphics object at cold start.
+                // Reject a late publication instead of reporting false residency.
+                for( const auto &detail : patch.details )
+                    if( detail.renderer->getGraphicsObject() )
+                        throw std::runtime_error( "City detail loaded before imposter-only startup." );
+                candidate->selectFallback( patch );
+                for( auto &detail : patch.details )
+                {
+                    detail.resource->setMesh( nullptr );
+                    ++candidate->totals.meshPayloadEvictions;
+                }
+            }
             candidate->totals.initialized = true;
             candidate->totals.totalPatches = static_cast<u32>( candidate->patches.size() );
             m_impl = std::move( candidate );

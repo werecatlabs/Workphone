@@ -2386,7 +2386,20 @@ namespace workphone
         {
         case CitySmokePhase::Startup:
         {
-            if( !detailReady || !m_cameraActor || !m_vehicleActor ) return false;
+            const auto &initial = m_citySmokeInitialResidency;
+            if( !m_citySmokeInitialResidencyRecorded || !initial.initialized || !initial.totalPatches ||
+                initial.fallbackMeshes != initial.totalPatches ||
+                native.imposterMeshes != initial.totalPatches ||
+                native.readyImposterMeshes != native.imposterMeshes ||
+                initial.residentPatches || initial.residentMeshes ||
+                initial.residentSourceBytes || initial.pendingPatches || initial.retiringPatches ||
+                initial.installedPatches || initial.nativeMeshLoads )
+            {
+                failCityStreamingSmoke( "City startup did not retain imposters alone before camera streaming" );
+                return false;
+            }
+            if( !detailReady || !m_citySmokeLast.cameraViewMatches || !m_cameraActor || !m_vehicleActor ) return false;
+            m_citySmokeFirstCameraLoad = m_citySmokeLast;
             const auto camera = m_cameraActor->getWorldTransform().getPosition();
             const auto vehicle = m_vehicleActor->getWorldTransform().getPosition();
             m_citySmokeCamera = { float( camera.x ), float( camera.y ), float( camera.z ) };
@@ -2413,8 +2426,8 @@ namespace workphone
             }
             m_cityBuildingStartupDeadline = 0;
             m_citySmokeStartupIdentity = native.componentIdentity;
-            // Generated patches start resident and can occupy the retain-only
-            // radius. Measure both near samples after entering from cold.
+            // Detail reached residency only after active-camera demand. Measure
+            // the explicit observer path after cold eviction as well.
             transition( CitySmokePhase::ColdAway, CitySmokeObserver::Away );
             break;
         }
@@ -2559,7 +2572,12 @@ namespace workphone
         };
         output << "{\"passed\":" << ( m_citySmokePhase == CitySmokePhase::Passed ? "true" : "false" )
                << ",\"coldStartPrepared\":" << ( m_citySmokeNear.recorded ? "true" : "false" )
-               << ",\"observers\":{\"nearCamera\":";
+               << ",\"initialResidency\":{\"recorded\":" << ( m_citySmokeInitialResidencyRecorded ? "true" : "false" )
+               << ",\"streaming\":";
+        writeCityStreamingStats( output, m_citySmokeInitialResidency, m_assets );
+        output << "},\"firstCameraLoad\":";
+        stage( m_citySmokeFirstCameraLoad );
+        output << ",\"observers\":{\"nearCamera\":";
         position( m_citySmokeCamera );
         output << ",\"nearVehicle\":"; position( m_citySmokeVehicle );
         output << ",\"away\":"; position( m_citySmokeAway );
@@ -5419,6 +5437,15 @@ namespace workphone
         if( !m_raceScene->regenerate() )
             throw std::runtime_error( m_raceScene->getGenerationError() );
         m_assets = m_raceScene->getAssets();
+        m_citySmokeInitialResidency = {};
+        m_citySmokeInitialResidencyRecorded = false;
+        if( m_cityStreamingSmokeTest && m_assets.cityStreaming )
+        {
+            // Capture the completed generation before any render update can
+            // request higher-detail patches from the active camera.
+            m_citySmokeInitialResidency = m_assets.cityStreaming->stats();
+            m_citySmokeInitialResidencyRecorded = true;
+        }
         const auto generatedUnderVehicle = [&]( SmartPtr<scene::IGameActor> actor ) {
             while( actor && actor != m_vehicleActor &&
                    !actor->getFlag( scene::IGameActor::ActorFlagInScene ) )

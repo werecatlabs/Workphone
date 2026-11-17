@@ -305,6 +305,24 @@ try {
                     $buildings.meshes -gt 0 -and ($buildings.readyMeshes + [int]$buildings.streamedOutMeshes) -eq $buildings.meshes
                 $run.passed = $run.passed -and $run.evidence.cityImposters.ready -eq $true
             }
+            if ($CityStreamingSmokeTest) {
+                $smoke = $run.evidence.cityStreamingSmoke
+                $initial = $smoke.initialResidency
+                $cold = $initial.streaming
+                $first = $smoke.firstCameraLoad
+                $run.passed = $run.passed -and $null -ne $smoke -and $smoke.passed -eq $true -and
+                    $initial.recorded -eq $true -and $cold.initialized -eq $true -and
+                    $cold.patches -gt 0 -and $cold.fallbackMeshes -eq $cold.patches -and
+                    $cold.residentPatches -eq 0 -and $cold.residentMeshes -eq 0 -and
+                    $cold.residentSourceBytes -eq 0 -and $cold.pendingPatches -eq 0 -and
+                    $cold.installedPatches -eq 0 -and $cold.nativeMeshLoads -eq 0 -and
+                    $null -ne $first -and $first.cameraViewMatches -eq $true -and
+                    $first.streaming.residentPatches -gt 0 -and $first.streaming.residentMeshes -gt 0 -and
+                    $first.readyMeshes -gt $first.readyImposters -and
+                    $first.readyImposters -eq $first.imposterMeshes -and
+                    $first.imposterMeshes -eq $cold.patches -and
+                    $smoke.cameraOnly.passed -eq $true
+            }
             if ($view -in $imposterViews) {
                 $imposters = $run.evidence.cityImposters
                 $sheet = $imposters.atlasExport

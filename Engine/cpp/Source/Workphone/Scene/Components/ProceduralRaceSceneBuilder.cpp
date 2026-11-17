@@ -688,7 +688,8 @@ namespace workphone::scene::race
         SmartPtr<scene::IGameActor> publishMesh( SceneAssets &assets, const String &name,
                                                  SmartPtr<IMesh> generated, size_t triangles,
                                                  SmartPtr<render::IMaterial> m,
-                                                 SmartPtr<scene::IGameActor> parent = nullptr )
+                                                 SmartPtr<scene::IGameActor> parent = nullptr,
+                                                 bool deferNative = false )
         {
             if( !generated )
             {
@@ -730,20 +731,30 @@ namespace workphone::scene::race
                 parent->addChild( actor );
             }
             actor->addComponent<scene::Mesh>()->setMeshResource( resource );
-            actor->addComponent<scene::MeshRenderer>();
+            if( deferNative )
+            {
+                // addComponent<T>() loads immediately. Disable the renderer
+                // before that load so no detailed native mesh enters the scene.
+                auto renderer = app->getFactoryManagerPtr()->make_ptr<scene::MeshRenderer>();
+                actor->addComponentInstance( renderer );
+                renderer->setEnabled( false );
+                renderer->load( nullptr );
+            }
+            else actor->addComponent<scene::MeshRenderer>();
             actor->addComponent<scene::Material>()->setMaterial( m );
             return actor;
         }
 
         SmartPtr<scene::IGameActor> mesh( SceneAssets &assets, const String &name, const Geometry &g,
                                           SmartPtr<render::IMaterial> m,
-                                          SmartPtr<scene::IGameActor> parent = nullptr )
+                                          SmartPtr<scene::IGameActor> parent = nullptr,
+                                          bool deferNative = false )
         {
             if( g.indices.empty() ) return nullptr;
             // DX11's material rasterizer uses counterclockwise front faces, so keep the
             // generated winding that matches the supplied lighting normals.
             return publishMesh( assets, name, MeshUtil::createMesh( g.positions, g.normals, g.tangents, g.uv, g.indices ),
-                                g.indices.size() / 3, m, parent );
+                                g.indices.size() / 3, m, parent, deferNative );
         }
 
         Vector3F vector( const VehiclePhysicsVector3 &p )
@@ -5374,11 +5385,15 @@ namespace workphone::scene::race
                 assets.actors.push_back( root );
                 root->setName( "City LOD patch" );
                 root->setPosition( { key.first * 128.f + 64, 0, key.second * 128.f + 64 } );
+                SmartPtr<scene::MeshRenderer> imposter;
+                if( assets.cityStreamingEnabled && !patch.customDetailOutsideFarMesh )
+                    imposter = cityBuildingImposters::build( assets, patch, root, quality );
+                const bool deferDetailNative = imposter && assets.cityStreamingEnabled && !assets.cityRoadShowcase;
                 auto nearRenderers = makeSourceBudgetSnapshot<SmartPtr<scene::Renderer>>();
                 auto farRenderers = makeSourceBudgetSnapshot<SmartPtr<scene::Renderer>>();
                 const auto add = [&]( const String &name, Geometry &geometry,
                                       SmartPtr<render::IMaterial> surface, auto &renderers, bool shadows = true ) {
-                    if( auto actor = mesh( assets, name, geometry, surface, root ) )
+                    if( auto actor = mesh( assets, name, geometry, surface, root, deferDetailNative ) )
                     {
                         auto renderer = actor->getComponent<scene::MeshRenderer>();
                         if( !shadows ) renderer->setCastShadows( scene::Renderer::CastShadows::Off );
@@ -5439,9 +5454,6 @@ namespace workphone::scene::race
                     add( "LOD0 city timber details", patch.timber, timberMaterial, nearRenderers );
                     add( "LOD0 city terracotta roofs", patch.tiles, tileMaterial, nearRenderers );
                 }
-                SmartPtr<scene::MeshRenderer> imposter;
-                if( assets.cityStreamingEnabled && !patch.customDetailOutsideFarMesh )
-                    imposter = cityBuildingImposters::build( assets, patch, root, quality );
                 for( int family = 0; family < 3; ++family )
                 {
                     add( "LOD1 city massing", patch.farWalls[family], facades[family], farRenderers );

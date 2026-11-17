@@ -213,7 +213,7 @@ namespace workphone::render
             std::array<std::shared_ptr<Geometry>, 3> meshes;
             Array<Material> materials;
             Material impostor;
-            bool materialsReady = false;
+            bool sourceMaterialsReady = false, impostorMaterialReady = false;
         };
 
         struct Assets
@@ -425,6 +425,7 @@ namespace workphone::render
         TextureResolver resolver;
         PublicationGate publicationGate;
         std::map<FoliageCellKey, std::shared_ptr<const FoliagePageData>> pages, staged;
+        Array<std::array<bool, 2>> detailDemand;
 
         struct Bounds
         {
@@ -511,6 +512,7 @@ namespace workphone::render
         m_impl->candidate.reset();
         m_impl->refreshMaterials = true;
         m_impl->staged.clear();
+        m_impl->detailDemand.assign( m_impl->requested->species.size(), { false, false } );
         m_impl->diagnostics.currentGenerationReady = false;
         m_impl->error.clear();
         return true;
@@ -555,6 +557,7 @@ namespace workphone::render
         m_impl->candidate.reset();
         m_impl->refreshMaterials = true;
         m_impl->staged.clear();
+        m_impl->detailDemand.assign( m_impl->requested->species.size(), { false, false } );
         m_impl->diagnostics.currentGenerationReady = false;
         m_impl->error.clear();
         return true;
@@ -735,7 +738,8 @@ namespace workphone::render
                     {
                         species.materials.clear();
                         species.impostor = {};
-                        species.materialsReady = false;
+                        species.sourceMaterialsReady = false;
+                        species.impostorMaterialReady = false;
                     }
                 }
             }
@@ -760,53 +764,58 @@ namespace workphone::render
             p.uploadFrame = frame;
             p.frameUploads = 0;
         }
+        // A new world publishes its lowest tier first. Rendering a camera view
+        // records any missing detail, which the next preparation uploads.
+        const bool published = p.active && p.activeEpoch == p.requestedEpoch;
         bool assetsReady = true;
         for( size_t i = 0; i < p.requested->species.size(); ++i )
         {
             auto &gpu = p.candidate->species[i];
             const auto &species = *p.requested->species[i];
-            if( !gpu.materialsReady )
-            {
+            const auto sourceMaterials = [&]() -> bool {
+                if( gpu.sourceMaterialsReady ) return true;
                 gpu.materials.resize( species.materials.size() );
                 for( size_t j = 0; j < species.materials.size(); ++j )
-                {
                     if( !material( gpu.materials[j], species.materials[j], *p.candidate, native,
-                                   error ) )
-                    {
-                        return fail();
-                    }
-                }
-                if( species.farBillboard )
-                {
-                    FoliageMaterial atlas;
-                    atlas.albedo = species.impostor.albedo;
-                    atlas.normal = species.impostor.normal;
-                    atlas.orm = species.impostor.orm;
-                    atlas.metalness = atlas.orm.empty() ? 0.0f : 1.0f;
-                    if( !material( gpu.impostor, atlas, *p.candidate, native, error ) )
-                    {
-                        return fail();
-                    }
-                }
-                gpu.materialsReady = true;
-            }
-            for( size_t lod = 0; lod < 3; ++lod )
+                                   error ) ) return false;
+                gpu.sourceMaterialsReady = true;
+                return true;
+            };
+            if( species.farBillboard && !gpu.impostorMaterialReady )
             {
-                if( !gpu.meshes[lod] )
+                FoliageMaterial atlas;
+                atlas.albedo = species.impostor.albedo;
+                atlas.normal = species.impostor.normal;
+                atlas.orm = species.impostor.orm;
+                atlas.metalness = atlas.orm.empty() ? 0.0f : 1.0f;
+                if( !material( gpu.impostor, atlas, *p.candidate, native, error ) ) return fail();
+                gpu.impostorMaterialReady = true;
+            }
+            if( !species.farBillboard && !sourceMaterials() ) return fail();
+            if( !gpu.meshes[2] )
+            {
+                if( p.frameUploads >= 4 )
                 {
-                    if( p.frameUploads >= 4 )
-                    {
-                        assetsReady = false;
+                    assetsReady = false;
+                    continue;
+                }
+                gpu.meshes[2] = geometry( native,
+                    species.farBillboard ? billboard( species ) : species.lods[2], error );
+                if( !gpu.meshes[2] ) return fail();
+                p.candidate->bytes += gpu.meshes[2]->bytes;
+                ++p.frameUploads;
+            }
+            if( published && ( p.detailDemand[i][0] || p.detailDemand[i][1] ) )
+            {
+                if( !sourceMaterials() ) return fail();
+                // The middle tier is a useful fallback for near colour and
+                // woody shadows while the most detailed tier is still pending.
+                for( size_t lod : { size_t( 1 ), size_t( 0 ) } )
+                {
+                    if( !p.detailDemand[i][lod] || gpu.meshes[lod] || p.frameUploads >= 4 )
                         continue;
-                    }
-                    gpu.meshes[lod] = geometry(
-                        native,
-                        lod == 2 && species.farBillboard ? billboard( species ) : species.lods[lod],
-                        error );
-                    if( !gpu.meshes[lod] )
-                    {
-                        return fail();
-                    }
+                    gpu.meshes[lod] = geometry( native, species.lods[lod], error );
+                    if( !gpu.meshes[lod] ) return fail();
                     p.candidate->bytes += gpu.meshes[lod]->bytes;
                     ++p.frameUploads;
                 }
@@ -907,6 +916,10 @@ namespace workphone::render
                 p.diagnostics.residentInstances += entry.second->instances.size();
             }
             p.diagnostics.geometryBytes = p.assets->bytes;
+            p.diagnostics.residentLodMeshes = {};
+            for( const auto &species : p.assets->species )
+                for( size_t lod = 0; lod < species.meshes.size(); ++lod )
+                    p.diagnostics.residentLodMeshes[lod] += species.meshes[lod] ? 1u : 0u;
         }
         p.error.clear();
         return true;
@@ -1088,6 +1101,21 @@ namespace workphone::render
                     // Keep bounded woody shadows on the reduced geometry LOD.
                     if( species.farBillboard ) lod = std::min<s32>( lod, 1 );
                 }
+                const auto &resident = p.assets->species[instance.species].meshes;
+                const auto resolveLevel = [&]( s32 requested ) -> s32 {
+                    if( resident[size_t( requested )] ) return requested;
+                    if( requested < 2 && p.activeEpoch == p.requestedEpoch &&
+                        instance.species < p.detailDemand.size() )
+                        p.detailDemand[instance.species][size_t( requested )] = true;
+                    // A billboard is intentionally omitted from shadow maps: its
+                    // camera-facing depth cannot represent the tree from the light.
+                    const auto last = view.shadow && species.farBillboard ? 1 : 2;
+                    for( s32 level = requested + 1; level <= last; ++level )
+                        if( resident[size_t( level )] ) return level;
+                    for( s32 level = requested - 1; level >= 0; --level )
+                        if( resident[size_t( level )] ) return level;
+                    return -1;
+                };
                 const auto hash = foliageStableHash( instance.id ^ instance.seed );
                 const auto fraction = double( hash >> 11 ) * ( 1.0 / 9007199254740992.0 );
                 Vector3F worldBend{};
@@ -1106,8 +1134,9 @@ namespace workphone::render
                                               6.283185307 );
                 // A signed coverage value selects complementary, seeded cutout
                 // masks. Forced LODs and shadows remain single-geometry reviews.
-                const auto emit = [&]( s32 level, f32 opacity, bool entering ) -> bool {
-                    if( opacity <= 0 || fraction >= species.densityFractions[size_t( level )] ) return true;
+                const auto emit = [&]( s32 level, f32 density, f32 opacity,
+                                       bool entering ) -> bool {
+                    if( opacity <= 0 || fraction >= density ) return true;
                     auto transform = world;
                     wp_foliage_instance_dx11 output{};
                     output.uv_rect = { 0, 0, 1, 1 };
@@ -1159,10 +1188,33 @@ namespace workphone::render
                 const auto beforeCount = stats.lodInstances;
                 if( blendNear >= 0 )
                 {
-                    if( !emit( blendNear, 1 - blendFarWeight, false ) ||
-                        !emit( blendNear + 1, blendFarWeight, true ) ) return false;
+                    const auto nearLevel = resolveLevel( blendNear );
+                    const auto farLevel = resolveLevel( blendNear + 1 );
+                    const auto nearDensity = species.densityFractions[size_t( blendNear )];
+                    const auto farDensity = species.densityFractions[size_t( blendNear + 1 )];
+                    if( nearLevel == farLevel )
+                    {
+                        if( nearLevel >= 0 && !emit( nearLevel,
+                                std::max( nearDensity, farDensity ), 1, false ) ) return false;
+                    }
+                    else if( nearLevel < 0 )
+                    {
+                        if( farLevel >= 0 && !emit( farLevel, farDensity, 1, false ) )
+                            return false;
+                    }
+                    else if( farLevel < 0 )
+                    {
+                        if( !emit( nearLevel, nearDensity, 1, false ) ) return false;
+                    }
+                    else if( !emit( nearLevel, nearDensity, 1 - blendFarWeight, false ) ||
+                             !emit( farLevel, farDensity, blendFarWeight, true ) ) return false;
                 }
-                else if( !emit( lod, 1, false ) ) return false;
+                else
+                {
+                    const auto residentLevel = resolveLevel( lod );
+                    if( residentLevel >= 0 && !emit( residentLevel,
+                            species.densityFractions[size_t( lod )], 1, false ) ) return false;
+                }
                 if( stats.lodInstances == beforeCount ) ++stats.culledInstances;
             }
         }

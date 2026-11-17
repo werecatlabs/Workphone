@@ -29,13 +29,30 @@ namespace claw_foliage_world_contracts
         mesh.indices={0,1,2,0,2,3};mesh.sections={{0,3,0},{3,3,1}};
         s->lods={mesh,mesh,mesh};return s;
     }
-    inline void prepare(ClawFoliageWorld &world,ClawRendererDX11 &renderer,const ClawFoliageView &view,u64 revision)
+    inline void prepare(ClawFoliageWorld &world,ClawRendererDX11 &renderer,const ClawFoliageView &view,u64 revision,bool warmDetail=true)
     {
         const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(10);String error;
         do
         {
             require(world.prepare(renderer,{view},0,error),error.c_str());
-            if(world.diagnostics().sourceRevision==revision&&world.diagnostics().currentGenerationReady)return;
+            if(world.diagnostics().sourceRevision==revision&&world.diagnostics().currentGenerationReady)
+            {
+                if(warmDetail&&world.diagnostics().residentInstances)
+                {
+                    // Older contracts exercise settled geometry. Their warm-up
+                    // renders request both detail tiers through the real LOD path.
+                    for(s32 lod=0;lod<2;++lod)
+                    {
+                        auto warmView=view;
+                        warmView.key^=(u64(1)<<62)|u64(lod+1);
+                        warmView.forcedLod=lod;
+                        warmView.shadow=false;
+                        require(world.render(renderer,warmView,error),error.c_str());
+                    }
+                    require(world.prepare(renderer,{view},0,error),error.c_str());
+                }
+                return;
+            }
             std::this_thread::yield();
         }while(std::chrono::steady_clock::now()<deadline);
         require(false,"foliage pages must complete within bounded worker wait");
@@ -128,7 +145,22 @@ namespace claw_foliage_world_contracts
         FoliageInstance item;item.id=31;data->instances={item};ClawFoliageWorld world;
         require(world.setSource(data,[texture](const String &,String &e)->SmartPtr<ITexture>{e.clear();return texture;},error),error.c_str());
         ClawFoliageView view;view.key=301;view.orthographic=true;view.cull=false;view.forcedLod=2;
-        view.direction=-left;prepare(world,renderer,view,31);
+        view.direction=-left;prepare(world,renderer,view,31,false);
+        auto residency=world.diagnostics().residentLodMeshes;
+        require(residency[0]==0&&residency[1]==0&&residency[2]==1,
+            "new foliage worlds must publish only native billboard geometry");
+        auto nearView=view;nearView.key=304;nearView.forcedLod=0;
+        require(world.render(renderer,nearView,error)&&world.diagnostics().lodInstances[2]==1,
+            "near foliage must use the resident card until detail is uploaded");
+        auto pendingShadow=view;pendingShadow.key=305;pendingShadow.shadow=true;
+        require(world.render(renderer,pendingShadow,error)&&world.diagnostics().actualDraws==0,
+            "billboard-only foliage must omit inaccurate first-frame shadows");
+        require(world.prepare(renderer,{nearView,pendingShadow},0,error),error.c_str());
+        residency=world.diagnostics().residentLodMeshes;
+        require(residency[0]==1&&residency[1]==1&&residency[2]==1,
+            "active views must promote foliage detail after billboard publication");
+        require(world.render(renderer,nearView,error)&&world.diagnostics().lodInstances[0]==1,
+            "near foliage must draw detailed native geometry after promotion");
         const auto draw=[&](const ClawFoliageView &camera,bool red)
         {
             wp_renderer_dx11_clear(native,WORKPHONE_CLEAR_FLAG_ALL);require(world.render(renderer,camera,error),error.c_str());
@@ -152,6 +184,28 @@ namespace claw_foliage_world_contracts
         auto invalid=view;invalid.direction={0,0,0};const auto before=statistics(native);
         require(!world.render(renderer,invalid,error)&&statistics(native).draws==before.draws,
             "invalid orthographic camera must reject before any native draw");
+        setup(native);
+    }
+    inline void coldFallbackDensity(ClawRendererDX11 &renderer,wp_renderer_dx11 *native)
+    {
+        setup(native);
+        auto grass=species();grass->kind=FoliageKind::Grass;
+        grass->densityFractions={1,.5f,.25f};
+        auto data=std::make_shared<FoliageWorldData>();data->revision=312;data->species={grass};
+        for(u32 i=0;i<16;++i)
+        {
+            FoliageInstance plant;plant.id=312+i;plant.position.x=f32(i)*.002f;
+            data->instances.push_back(plant);
+        }
+        String error;ClawFoliageWorld world;
+        require(world.setSource(data,{},error),error.c_str());
+        ClawFoliageView view;view.key=312;view.forcedLod=0;view.cull=false;
+        prepare(world,renderer,view,312,false);
+        require(world.render(renderer,view,error)&&world.diagnostics().lodInstances[2]==16,
+            "temporary low-tier geometry must retain the requested near population");
+        require(world.prepare(renderer,{view},0,error),error.c_str());
+        require(world.render(renderer,view,error)&&world.diagnostics().lodInstances[0]==16,
+            "near grass must retain its population when native detail arrives");
         setup(native);
     }
     inline void atlasNormalLighting(wp_renderer_dx11 *native)
@@ -682,7 +736,7 @@ namespace claw_foliage_world_contracts
         {
             auto target=make_ptr<ClawRenderTarget>();target->setSize({128,128});renderer.setRenderTarget(target);
             renderer.setCamera(nullptr);renderer.setViewport(nullptr);renderer.disableShadows();
-            auto native=wp_renderer_get_dx11(renderer.getNativeRenderer());impostorPlacement();wind(native);atlas(native);atlasNormalLighting(native);worldAtlasHistory(renderer,native);cpuTexture(native);deformationBounds(renderer,native);tiltedCardBounds(renderer,native);movingCameraTransitions(renderer,native);sourceImpostorReopen(renderer,native);extentPaging(renderer,native);
+            auto native=wp_renderer_get_dx11(renderer.getNativeRenderer());impostorPlacement();wind(native);atlas(native);atlasNormalLighting(native);worldAtlasHistory(renderer,native);coldFallbackDensity(renderer,native);cpuTexture(native);deformationBounds(renderer,native);tiltedCardBounds(renderer,native);movingCameraTransitions(renderer,native);sourceImpostorReopen(renderer,native);extentPaging(renderer,native);
             grassFade( renderer, native );
             auto data=std::make_shared<FoliageWorldData>();data->pageSize=1;data->revision=1;auto sourceSpecies=species();data->species={sourceSpecies};
             for(u32 n=0;n<5000;++n){FoliageInstance i;i.id=n+1;i.seed=n;i.position={f32(n%100)*.016f-.8f,f32(n/100)*.016f-.4f,0};data->instances.push_back(i);}
