@@ -1975,11 +1975,10 @@ namespace workphone
         {
             return runtime;
         }
-        const auto path = app->getProjectPath() +
-                          "/.workphone/generated/ScriptReflection.settings";
+        const auto path = app->getProjectPath() + "/.workphone/generated/ScriptReflection.settings";
         auto files = app->getFileSystem();
         const auto source = files && isPackageFileSystem( *files ) ? files->readAllText( path )
-                                                                  : Path::readAllText( path );
+                                                                   : Path::readAllText( path );
         auto generated = make_ptr<Properties>();
         if( !source.empty() )
         {

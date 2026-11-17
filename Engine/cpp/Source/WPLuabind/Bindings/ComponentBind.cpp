@@ -828,7 +828,8 @@ namespace workphone
                     .def( "setRollwiseDamping", &VehicleController::setRollwiseDamping )
                     .scope[def( "typeInfo", VehicleController::typeInfo )]];
 
-        module( L )[class_<FourWheelVehicle, VehicleController, SmartPtr<FourWheelVehicle>>( "FourWheelVehicle" )
+        module( L )[class_<FourWheelVehicle, VehicleController, SmartPtr<FourWheelVehicle>>(
+                        "FourWheelVehicle" )
                         .def( "getThrottle", &FourWheelVehicle::getThrottle )
                         .def( "setThrottle", &FourWheelVehicle::setThrottle )
                         .def( "getBrake", &FourWheelVehicle::getBrake )
@@ -848,32 +849,33 @@ namespace workphone
                         .def( "setEngineThrottle", &HelicopterController::setEngineThrottle )
                         .def( "getMaximumLift", &HelicopterController::getMaximumLift )
                         .def( "setMaximumLift", &HelicopterController::setMaximumLift )
-                        .enum_( "PhysicsSolution" )[
-                            value( "Arcade", HelicopterController::PhysicsSolution::Arcade ),
-                            value( "Advanced", HelicopterController::PhysicsSolution::Advanced ),
-                            value( "Extreme", HelicopterController::PhysicsSolution::Extreme ),
-                            value( "DCS", HelicopterController::PhysicsSolution::DCS )]
+                        .enum_( "PhysicsSolution" )
+                            [value( "Arcade", HelicopterController::PhysicsSolution::Arcade ),
+                             value( "Advanced", HelicopterController::PhysicsSolution::Advanced ),
+                             value( "Extreme", HelicopterController::PhysicsSolution::Extreme ),
+                             value( "DCS", HelicopterController::PhysicsSolution::DCS )]
                         .scope[def( "typeInfo", HelicopterController::typeInfo )]];
 
-        module( L )[class_<ProceduralScene, Component, SmartPtr<ProceduralScene>>( "ProceduralScene" )
-                        .def( "regenerate", &ProceduralScene::regenerate )
-                        .def( "clearGeneratedScene", &ProceduralScene::clearGeneratedScene )
-                        .def( "isGenerated", &ProceduralScene::isGenerated )
-                        .def( "getGenerationError", &ProceduralScene::getGenerationError )
-                        .def( "getSeed", &ProceduralScene::getSeed )
-                        .def( "setSeed", &ProceduralScene::setSeed )
-                        .def( "getQuality", &ProceduralScene::getQuality )
-                        .def( "setQuality", &ProceduralScene::setQuality )
-                        .def( "setFoliageWorldEnabled", &ProceduralScene::setFoliageWorldEnabled )
-                        .def( "getFoliageWorldEnabled", &ProceduralScene::getFoliageWorldEnabled )
-                        .def( "setMaterialExportDirectory", &ProceduralScene::setMaterialExportDirectory )
-                        .def( "getMaterialExportDirectory", &ProceduralScene::getMaterialExportDirectory )
-                        .def( "getCircuitSampleCount", &ProceduralScene::getCircuitSampleCount )
-                        .def( "getCircuitLength", &ProceduralScene::getCircuitLength )
-                        .def( "nearestCircuitSample", &ProceduralScene::nearestCircuitSample )
-                        .def( "getCircuitPosition", &ProceduralScene::getCircuitPosition )
-                        .def( "getCircuitRight", &ProceduralScene::getCircuitRight )
-                        .scope[def( "typeInfo", ProceduralScene::typeInfo )]];
+        module(
+            L )[class_<ProceduralScene, Component, SmartPtr<ProceduralScene>>( "ProceduralScene" )
+                    .def( "regenerate", &ProceduralScene::regenerate )
+                    .def( "clearGeneratedScene", &ProceduralScene::clearGeneratedScene )
+                    .def( "isGenerated", &ProceduralScene::isGenerated )
+                    .def( "getGenerationError", &ProceduralScene::getGenerationError )
+                    .def( "getSeed", &ProceduralScene::getSeed )
+                    .def( "setSeed", &ProceduralScene::setSeed )
+                    .def( "getQuality", &ProceduralScene::getQuality )
+                    .def( "setQuality", &ProceduralScene::setQuality )
+                    .def( "setFoliageWorldEnabled", &ProceduralScene::setFoliageWorldEnabled )
+                    .def( "getFoliageWorldEnabled", &ProceduralScene::getFoliageWorldEnabled )
+                    .def( "setMaterialExportDirectory", &ProceduralScene::setMaterialExportDirectory )
+                    .def( "getMaterialExportDirectory", &ProceduralScene::getMaterialExportDirectory )
+                    .def( "getCircuitSampleCount", &ProceduralScene::getCircuitSampleCount )
+                    .def( "getCircuitLength", &ProceduralScene::getCircuitLength )
+                    .def( "nearestCircuitSample", &ProceduralScene::nearestCircuitSample )
+                    .def( "getCircuitPosition", &ProceduralScene::getCircuitPosition )
+                    .def( "getCircuitRight", &ProceduralScene::getCircuitRight )
+                    .scope[def( "typeInfo", ProceduralScene::typeInfo )]];
 
         module( L )[class_<ProceduralCircuitScene, ProceduralScene, SmartPtr<ProceduralCircuitScene>>(
                         "ProceduralCircuitScene" )

@@ -47,8 +47,8 @@ namespace workphone
     }
 
     SmartPtr<scene::IGameActor> UiUtilHelper::createDropdownWithOptions( const String &label,
-                                                                          luabind::object options,
-                                                                          bool addToScene )
+                                                                         luabind::object options,
+                                                                         bool addToScene )
     {
         if( luabind::type( options ) != LUA_TTABLE )
         {

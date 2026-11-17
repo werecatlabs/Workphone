@@ -108,11 +108,11 @@ namespace workphone::render
         for( const auto &line : lines )
         {
             const auto colour = line.colour;
-            renderer.drawLine( line.start, line.end,
+            renderer.drawLine(
+                line.start, line.end,
                 ColourF( ( ( colour >> 24 ) & 0xffu ) * byteToFloat,
                          ( ( colour >> 16 ) & 0xffu ) * byteToFloat,
-                         ( ( colour >> 8 ) & 0xffu ) * byteToFloat,
-                         ( colour & 0xffu ) * byteToFloat ) );
+                         ( ( colour >> 8 ) & 0xffu ) * byteToFloat, ( colour & 0xffu ) * byteToFloat ) );
         }
     }
 

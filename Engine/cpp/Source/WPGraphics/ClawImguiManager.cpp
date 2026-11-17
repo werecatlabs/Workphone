@@ -636,10 +636,15 @@ namespace workphone
 
             const ImTextureID fontTexId = std::exchange( m_preparedFontTexId, nullptr );
             const std::unique_ptr<void, decltype( &wp_renderer_dx11_destroy_texture_native )> fontPin(
-                std::exchange( m_preparedFontTexture, nullptr ), wp_renderer_dx11_destroy_texture_native );
+                std::exchange( m_preparedFontTexture, nullptr ),
+                wp_renderer_dx11_destroy_texture_native );
+
             struct TexturePins
             {
-                ~TexturePins() { ui::releaseImGuiDx11FrameTextures(); }
+                ~TexturePins()
+                {
+                    ui::releaseImGuiDx11FrameTextures();
+                }
             } texturePins;
 
             if( drawData->CmdListsCount <= 0 || drawData->CmdListsCount > 0x10000 )
@@ -776,8 +781,8 @@ namespace workphone
 
                 const ImDrawIdx *idxBuf = drawList->IdxBuffer.Data;
 #if defined WP_PLATFORM_WIN32
-                wp_ui_draw_list_dx11 nativeList{ converted.data(), idxBuf, vertexCount,
-                                                 indexCount, sizeof( ImDrawIdx ), 0 };
+                wp_ui_draw_list_dx11 nativeList{ converted.data(),    idxBuf, vertexCount, indexCount,
+                                                 sizeof( ImDrawIdx ), 0 };
 #endif
 
                 for( int i = 0; i < drawList->CmdBuffer.Size; ++i )
@@ -849,7 +854,8 @@ namespace workphone
                         const auto indexOffset = cmd->IdxOffset;
                         if( indexOffset >= indexCount || cmd->ElemCount > indexCount - indexOffset ||
                             cmd->VtxOffset >= vertexCount ||
-                            cmd->ElemCount > static_cast<unsigned int>( std::numeric_limits<wp_s32>::max() ) )
+                            cmd->ElemCount >
+                                static_cast<unsigned int>( std::numeric_limits<wp_s32>::max() ) )
                         {
                             continue;
                         }

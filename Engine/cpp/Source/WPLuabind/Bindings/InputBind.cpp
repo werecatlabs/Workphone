@@ -11,9 +11,14 @@ namespace workphone
 {
     f32 getRawJoystickAxis( const IJoystick *joystick, lua_Integer axis )
     {
-        if( !joystick || axis < 0 || axis >= IJoystick::MAX_AXES ) return 0.0f;
+        if( !joystick || axis < 0 || axis >= IJoystick::MAX_AXES )
+        {
+            return 0.0f;
+        }
         if( auto concrete = dynamic_cast<const Joystick *>( joystick ) )
+        {
             return concrete->getRawAxis( static_cast<s32>( axis ) );
+        }
         return joystick->getAxis( static_cast<s32>( axis ) );
     }
 
@@ -191,10 +196,12 @@ namespace workphone
                                           value( "S", static_cast<u32>( KeyCodes::KEY_KEY_S ) ),
                                           value( "W", static_cast<u32>( KeyCodes::KEY_KEY_W ) )]];
 
-        module( L )[class_<JoystickVector>( "JoystickVector" )
-                        .def( "size", &JoystickVector::size )
-                        .def( "empty", &JoystickVector::empty )
-                        .def( "at", +[]( const JoystickVector &values, size_t index ) -> SmartPtr<IJoystick> {
+        module(
+            L )[class_<JoystickVector>( "JoystickVector" )
+                    .def( "size", &JoystickVector::size )
+                    .def( "empty", &JoystickVector::empty )
+                    .def(
+                        "at", +[]( const JoystickVector &values, size_t index ) -> SmartPtr<IJoystick> {
                             return values.at( index );
                         } )];
 

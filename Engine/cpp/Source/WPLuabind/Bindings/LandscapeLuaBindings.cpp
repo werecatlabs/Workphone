@@ -19,19 +19,25 @@ namespace workphone
         {
             const auto number = [&]( const char *key, double fallback ) {
                 luabind::object value = options[key];
-                const auto result = luabind::type( value ) == LUA_TNIL ? fallback :
-                                     luabind::object_cast<double>( value );
+                const auto result = luabind::type( value ) == LUA_TNIL
+                                        ? fallback
+                                        : luabind::object_cast<double>( value );
                 if( !std::isfinite( result ) || std::abs( result ) > std::numeric_limits<f32>::max() )
+                {
                     throw std::runtime_error( "Landscape values must be finite." );
+                }
                 return result;
             };
             const auto boolean = [&]( const char *key, bool fallback ) {
                 luabind::object value = options[key];
-                return luabind::type( value ) == LUA_TNIL ? fallback :
-                       luabind::object_cast<bool>( value );
+                return luabind::type( value ) == LUA_TNIL ? fallback
+                                                          : luabind::object_cast<bool>( value );
             };
             const auto source = terrain ? terrain->getTerrainSnapshot() : nullptr;
-            if( !source ) return "Select a terrain first.";
+            if( !source )
+            {
+                return "Select a terrain first.";
+            }
             auto app = core::IApplicationManager::instancePtr();
             const auto commands = app ? app->getCommandManager() : nullptr;
             String error;
@@ -59,18 +65,25 @@ namespace workphone
                 options["oceanSeaLevel"] = settings.seaLevel;
                 options["oceanMargin"] = 512.f;
                 if( auto actor = terrain->getActor() )
+                {
                     for( auto child : actor->getChildren() )
+                    {
                         if( auto ocean = child->getComponent<scene::ProceduralOcean>() )
+                        {
                             if( ocean->isLandscapeOwned() )
                             {
                                 options["oceanEnabled"] = child->isEnabled();
                                 options["oceanSeaLevel"] = child->getLocalPosition().y;
                                 f32 width = 0;
                                 ocean->getProperties()->getPropertyValue( "Width", width );
-                                options["oceanMargin"] = std::max( 0.f,
+                                options["oceanMargin"] = std::max(
+                                    0.f,
                                     ( width - ( source->dimensions.x - 1 ) * source->spacing.x ) * .5f );
                                 break;
                             }
+                        }
+                    }
+                }
                 return {};
             }
             if( action == "landscapeMaterial" )
@@ -106,9 +119,12 @@ namespace workphone
                 settings.seaLevel = f32( number( "seaLevel", settings.seaLevel ) );
                 const auto seed = number( "seed", settings.seed );
                 if( seed < 0 || seed > std::numeric_limits<u32>::max() || std::floor( seed ) != seed )
+                {
                     return "Landscape seed must be an unsigned integer.";
+                }
                 settings.seed = u32( seed );
-                settings.candidateSpacing = f32( number( "candidateSpacing", settings.candidateSpacing ) );
+                settings.candidateSpacing =
+                    f32( number( "candidateSpacing", settings.candidateSpacing ) );
                 settings.palmDensity = f32( number( "palmDensity", settings.palmDensity ) );
                 settings.bushDensity = f32( number( "bushDensity", settings.bushDensity ) );
                 settings.grassDensity = f32( number( "grassDensity", settings.grassDensity ) );
@@ -117,7 +133,8 @@ namespace workphone
             }
             if( action == "landscapeOcean" )
             {
-                scene::configureLandscapeOcean( terrain, boolean( "enabled", true ),
+                scene::configureLandscapeOcean(
+                    terrain, boolean( "enabled", true ),
                     f32( number( "seaLevel", source->autoMaterial.seaLevel ) ),
                     f32( number( "margin", 512 ) ), error );
                 return error;
@@ -129,4 +146,4 @@ namespace workphone
             return String( "Landscape: " ) + exception.what();
         }
     }
-}
+}  // namespace workphone

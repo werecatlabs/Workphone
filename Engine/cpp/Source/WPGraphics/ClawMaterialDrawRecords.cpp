@@ -298,7 +298,8 @@ namespace workphone::render
         return wp_graphics_draw_sort_valid( static_cast<wp_u32>( strategy ), bucketSize ) != 0;
     }
 
-    void sortDrawKeys( ClawDrawSortKey *keys, size_t count, ClawDrawSortStrategy strategy, double bucketSize )
+    void sortDrawKeys( ClawDrawSortKey *keys, size_t count, ClawDrawSortStrategy strategy,
+                       double bucketSize )
     {
         wp_graphics_draw_sort_keys( keys, count, static_cast<wp_u32>( strategy ), bucketSize );
     }

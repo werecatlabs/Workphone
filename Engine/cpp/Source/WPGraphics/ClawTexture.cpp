@@ -193,8 +193,8 @@ namespace
             totalBytes += bytes;
             workphone::u32 nextWidth = 0, nextHeight = 0;
             const bool last = settings.filter == TextureMipFilter::None ||
-                              !wp_graphics_texture_next_mip_extent(
-                                  width, height, settings.atlasColumns, &nextWidth, &nextHeight );
+                              !wp_graphics_texture_next_mip_extent( width, height, settings.atlasColumns,
+                                                                    &nextWidth, &nextHeight );
             if( last != ( index + 1 == levels.size() ) )
             {
                 error = "Cooked texture must contain its exact complete or atlas-limited mip chain";
@@ -254,9 +254,9 @@ namespace
                 levels[0].bgra.data(), levels[0].width, levels[0].height, settings );
             return uploadMipLevels( renderer, generated, policy, budgetDenied, true, atlasColumns );
         }
-        const size_t first = wp_graphics_texture_first_mip(
-            levels[0].width, levels[0].height, static_cast<wp_u32>( levels.size() ), policy.quality,
-            policy.maximum );
+        const size_t first = wp_graphics_texture_first_mip( levels[0].width, levels[0].height,
+                                                            static_cast<wp_u32>( levels.size() ),
+                                                            policy.quality, policy.maximum );
         const auto last = preserveSingleMip ? first + 1 : levels.size();
         workphone::u64 bytes = 0;
         for( size_t i = first; i < last; ++i )
@@ -291,9 +291,9 @@ namespace
                      const TextureUploadPolicy &policy, bool *budgetDenied = nullptr )
     {
         const auto image = workphone::dds::inspect( bytes );
-        const size_t first = wp_graphics_texture_first_mip(
-            image.mips[0].width, image.mips[0].height, static_cast<wp_u32>( image.mips.size() ),
-            policy.quality, policy.maximum );
+        const size_t first = wp_graphics_texture_first_mip( image.mips[0].width, image.mips[0].height,
+                                                            static_cast<wp_u32>( image.mips.size() ),
+                                                            policy.quality, policy.maximum );
         workphone::u64 residentBytes = 0;
         for( size_t i = first; i < image.mips.size(); ++i )
         {

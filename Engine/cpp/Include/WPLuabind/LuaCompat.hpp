@@ -10,9 +10,9 @@ extern "C" {
 #include <limits>
 
 #ifdef WP_LUA_BACKEND_LUAJIT
-inline constexpr unsigned wpLuaBackendAbi = 0x4a210501u; // LuaJIT 2.1 / Lua 5.1 API
+inline constexpr unsigned wpLuaBackendAbi = 0x4a210501u;  // LuaJIT 2.1 / Lua 5.1 API
 #else
-inline constexpr unsigned wpLuaBackendAbi = 0x4c000505u; // Bundled Lua 5.5
+inline constexpr unsigned wpLuaBackendAbi = 0x4c000505u;  // Bundled Lua 5.5
 #endif
 
 // Use distinct names: the bundled Luabind supplies and then undefines several
@@ -25,6 +25,7 @@ inline void wpLuaPushGlobalTable( lua_State *state )
     lua_pushglobaltable( state );
 #endif
 }
+
 inline void wpLuaGetUserValue( lua_State *state, int index )
 {
 #if LUA_VERSION_NUM < 502
@@ -33,10 +34,12 @@ inline void wpLuaGetUserValue( lua_State *state, int index )
     lua_getuservalue( state, index );
 #endif
 }
+
 inline int wpLuaAbsIndex( lua_State *state, int index )
 {
     return index > 0 || index <= LUA_REGISTRYINDEX ? index : lua_gettop( state ) + index + 1;
 }
+
 inline void wpLuaRequire( lua_State *state, const char *name, lua_CFunction open )
 {
 #if LUA_VERSION_NUM < 502
@@ -59,7 +62,7 @@ inline void wpLuaRequire( lua_State *state, const char *name, lua_CFunction open
 #endif
 }
 #ifdef _MSC_VER
-#pragma float_control(precise, on, push)
+#    pragma float_control( precise, on, push )
 #endif
 inline lua_Integer wpLuaToIntegerExact( lua_State *state, int index, int *success )
 {
@@ -76,6 +79,6 @@ inline lua_Integer wpLuaToIntegerExact( lua_State *state, int index, int *succes
 #endif
 }
 #ifdef _MSC_VER
-#pragma float_control(pop)
+#    pragma float_control( pop )
 #endif
 #endif

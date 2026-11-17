@@ -103,9 +103,9 @@ namespace workphone
                 return result;
             }
 
-            template<class Stage, class... Args>
-            wp_s32 invokeSceneStage( std::exception_ptr &failure, wp_s32 error,
-                                     const Stage &stage, Args... args ) noexcept
+            template <class Stage, class... Args>
+            wp_s32 invokeSceneStage( std::exception_ptr &failure, wp_s32 error, const Stage &stage,
+                                     Args... args ) noexcept
             {
                 try
                 {
@@ -1106,12 +1106,15 @@ namespace workphone
                 const auto previousAllocations = workspace ? workspace->getStorageAllocationCount() : 0;
                 auto publication =
                     workspace ? std::move( workspace ) : std::make_unique<ClawMaterialDrawRecords>();
+
                 struct Capture
                 {
                     ClawMaterialDrawRecords &records;
                     std::exception_ptr failure;
                 } capture{ *publication, {} };
-                const auto status = wp_graphics_scene_batch_visit( scene, &batch,
+
+                const auto status = wp_graphics_scene_batch_visit(
+                    scene, &batch,
                     []( wp_graphics_object *object, void *data ) -> wp_s32 {
                         auto &capture = *static_cast<Capture *>( data );
                         try
@@ -1125,7 +1128,8 @@ namespace workphone
                             capture.failure = std::current_exception();
                             return 0;
                         }
-                    }, &capture );
+                    },
+                    &capture );
                 if( capture.failure )
                 {
                     std::rethrow_exception( capture.failure );
@@ -1179,10 +1183,9 @@ namespace workphone
             history.materials.clear();
 
             if( !camera || jobs->camera != camera ||
-                wp_graphics_cull_result_validate(
-                    jobs->batch.main, m_scene,
-                    wp_graphics_cull_result_get_scene_generation( jobs->batch.main ) ) !=
-                    WP_GRAPHICS_CULL_OK )
+                wp_graphics_cull_result_validate( jobs->batch.main, m_scene,
+                                                  wp_graphics_cull_result_get_scene_generation(
+                                                      jobs->batch.main ) ) != WP_GRAPHICS_CULL_OK )
             {
                 return;
             }
@@ -1255,14 +1258,15 @@ namespace workphone
                     }
                 }
 
-                if( nativeMeshes !=
-                    static_cast<size_t>( wp_graphics_cull_result_get_candidate_count( jobs->batch.main ) ) )
+                if( nativeMeshes != static_cast<size_t>( wp_graphics_cull_result_get_candidate_count(
+                                        jobs->batch.main ) ) )
                 {
                     return;
                 }
 
                 wp_mat4f view, projection, matrix;
-                if( !wp_graphics_cull_result_get_camera_matrices( jobs->batch.main, &view, &projection ) )
+                if( !wp_graphics_cull_result_get_camera_matrices( jobs->batch.main, &view,
+                                                                  &projection ) )
                 {
                     return;
                 }
@@ -1348,7 +1352,7 @@ namespace workphone
             const auto cullStart = profile ? Clock::now() : Clock::time_point{};
             auto status = m_cachedCullJobs
                               ? wp_graphics_scene_batch_reuse( m_scene, nullptr,
-                                    &m_cachedCullJobs->batch, &jobs->batch )
+                                                               &m_cachedCullJobs->batch, &jobs->batch )
                               : WP_GRAPHICS_CULL_ERROR_STALE;
             if( status == WP_GRAPHICS_CULL_OK )
             {
@@ -1362,8 +1366,8 @@ namespace workphone
             else
             {
                 m_cachedCullJobs.reset();
-                status = wp_graphics_scene_batch_prepare( m_scene, nullptr,
-                    profile ? cullProfileClock : nullptr, nullptr, &jobs->batch );
+                status = wp_graphics_scene_batch_prepare(
+                    m_scene, nullptr, profile ? cullProfileClock : nullptr, nullptr, &jobs->batch );
                 if( status == WP_GRAPHICS_CULL_OK )
                 {
                     // Retain the baseline before material sorting or occlusion can
@@ -1373,7 +1377,7 @@ namespace workphone
                         auto cached = std::make_shared<NativeRenderJobs>();
                         cached->camera = camera;
                         if( wp_graphics_scene_batch_reuse( m_scene, nullptr, &jobs->batch,
-                                &cached->batch ) == WP_GRAPHICS_CULL_OK )
+                                                           &cached->batch ) == WP_GRAPHICS_CULL_OK )
                         {
                             m_cachedCullJobs = std::move( cached );
                         }
@@ -1743,8 +1747,9 @@ namespace workphone
 
                     ClawFoliageView colourFoliageView, shadowFoliageView;
                     const auto beginShadow = [&] {
-                        return shadows && dx11Renderer->beginShadowMap(
-                            pipeline ? pipeline->getCsmSettings().m_shadowMapSize : 2048 );
+                        return shadows &&
+                               dx11Renderer->beginShadowMap(
+                                   pipeline ? pipeline->getCsmSettings().m_shadowMapSize : 2048 );
                     };
                     const auto prepareExtensions = [&]( wp_s32 shadowActive ) {
                         // Both views consume the same published terrain and foliage revisions.
@@ -1782,17 +1787,18 @@ namespace workphone
                                 // paging range admissible. Retry after source changes
                                 // when the previous source rejected the new scale.
                                 attached.world->setPlacement(
-                                    Matrix4F( placement.getTransformationMatrix().ptr() ), foliageError );
+                                    Matrix4F( placement.getTransformationMatrix().ptr() ),
+                                    foliageError );
                                 if( attached.world->source().get() != snapshot.get() )
                                 {
                                     if( !observeFoliage(
 #if WP_FOLIAGE_SOURCE_RESOURCES
-                                            cooked
-                                                ? attached.world->setSource( cooked->source,
-                                                                             cooked->resolver, foliageError )
-                                                :
+                                            cooked ? attached.world->setSource(
+                                                         cooked->source, cooked->resolver, foliageError )
+                                                   :
 #endif
-                                                attached.world->setSource( snapshot, {}, foliageError ) ) )
+                                                   attached.world->setSource( snapshot, {},
+                                                                              foliageError ) ) )
                                     {
                                         continue;
                                     }
@@ -1814,7 +1820,8 @@ namespace workphone
                                 {
                                     continue;
                                 }
-                                attached.world->setVisibilityMask( terrain->isVisible() ? ~u32( 0 ) : 0 );
+                                attached.world->setVisibilityMask( terrain->isVisible() ? ~u32( 0 )
+                                                                                        : 0 );
                                 foliageOwners[attached.world.get()] = terrain;
                                 foliageWorlds.push_back( attached.world );
                             }
@@ -1902,7 +1909,8 @@ namespace workphone
                         {
                             for( const auto &batch : *foliage )
                             {
-                                if( batch->castsShadows() && ( batch->visibilityMask() & visibilityMask ) )
+                                if( batch->castsShadows() &&
+                                    ( batch->visibilityMask() & visibilityMask ) )
                                 {
                                     batch->render( *dx11Renderer );
                                 }
@@ -2043,13 +2051,14 @@ namespace workphone
 
                             auto owner = particles->getOwner();
                             Matrix4F world =
-                                owner
-                                    ? Matrix4F( owner->getWorldTransform().getTransformationMatrix().ptr() )
-                                    : Matrix4F::identity();
+                                owner ? Matrix4F(
+                                            owner->getWorldTransform().getTransformationMatrix().ptr() )
+                                      : Matrix4F::identity();
                             if( auto clawOwner = dynamic_pointer_cast<ClawSceneNode>( owner ) )
                             {
                                 wp_mat4f nativeWorld{};
-                                wp_scenenode_get_world_matrix( clawOwner->getNativeNode(), &nativeWorld );
+                                wp_scenenode_get_world_matrix( clawOwner->getNativeNode(),
+                                                               &nativeWorld );
                                 world = Matrix4F( nativeWorld.m[0] );
                             }
 
@@ -2081,13 +2090,14 @@ namespace workphone
                     wp_mat4f identity;
                     wp_mat4f_identity( &identity );
                     const auto submitMesh = [&]( wp_graphics_object *object,
-                        const wp_graphics_scene_draw_item *item ) -> wp_s32 {
+                                                 const wp_graphics_scene_draw_item *item ) -> wp_s32 {
                         const bool shadow = item->pass == WP_GRAPHICS_CULL_PASS_SHADOW;
-                        const auto mesh = static_cast<ClawMesh *>(
-                            wp_graphics_object_get_submit_data( object ) );
+                        const auto mesh =
+                            static_cast<ClawMesh *>( wp_graphics_object_get_submit_data( object ) );
                         if( !mesh )
                         {
-                            return shadow ? WP_GRAPHICS_SCENE_DRAW_HANDLED : WP_GRAPHICS_SCENE_DRAW_DEFAULT;
+                            return shadow ? WP_GRAPHICS_SCENE_DRAW_HANDLED
+                                          : WP_GRAPHICS_SCENE_DRAW_DEFAULT;
                         }
                         const auto binding = jobs->materials->find( mesh );
                         const auto *view = item->view;
@@ -2096,9 +2106,11 @@ namespace workphone
                         {
                             view = projection = &identity;
                         }
-                        return binding && dx11Renderer->renderMeshRecords( mesh,
-                            Matrix4F( item->world->m[0] ), *jobs->materials, *binding, view, projection )
-                            ? WP_GRAPHICS_SCENE_DRAW_HANDLED : WP_GRAPHICS_SCENE_DRAW_ABORT;
+                        return binding && dx11Renderer->renderMeshRecords(
+                                              mesh, Matrix4F( item->world->m[0] ), *jobs->materials,
+                                              *binding, view, projection )
+                                   ? WP_GRAPHICS_SCENE_DRAW_HANDLED
+                                   : WP_GRAPHICS_SCENE_DRAW_ABORT;
                     };
 
                     struct SceneDrawContext
@@ -2111,9 +2123,14 @@ namespace workphone
                         decltype( submitMesh ) &submit;
                         ClawRendererDX11 &renderer;
                         std::exception_ptr failure;
-                    } drawContext{ beginShadow, prepareExtensions, renderShadowExtensions,
-                                   renderBeforeColourMeshes, renderAfterColourMeshes, submitMesh,
-                                   *dx11Renderer, {} };
+                    } drawContext{ beginShadow,
+                                   prepareExtensions,
+                                   renderShadowExtensions,
+                                   renderBeforeColourMeshes,
+                                   renderAfterColourMeshes,
+                                   submitMesh,
+                                   *dx11Renderer,
+                                   {} };
 
                     wp_graphics_scene_draw_ops ops{};
                     ops.main_visibility_mask = visibilityMask;
@@ -2146,13 +2163,13 @@ namespace workphone
                         return invokeSceneStage( ctx.failure, 0, ctx.afterColour );
                     };
                     ops.submit = []( wp_graphics_object *object, wp_renderer *,
-                        const wp_graphics_scene_draw_item *item, void *data ) -> wp_s32 {
+                                     const wp_graphics_scene_draw_item *item, void *data ) -> wp_s32 {
                         auto &ctx = *static_cast<SceneDrawContext *>( data );
                         return invokeSceneStage( ctx.failure, WP_GRAPHICS_SCENE_DRAW_ABORT, ctx.submit,
                                                  object, item );
                     };
                     const auto result = wp_graphics_scene_draw_batch( m_scene, nativeRenderer,
-                        &jobs->batch, &ops, &drawContext );
+                                                                      &jobs->batch, &ops, &drawContext );
                     if( drawContext.failure )
                     {
                         std::rethrow_exception( drawContext.failure );
@@ -2164,8 +2181,8 @@ namespace workphone
                 }
                 else
                 {
-                    if( wp_graphics_scene_draw_batch( m_scene, nativeRenderer, &jobs->batch,
-                                                      nullptr, nullptr ) != WP_GRAPHICS_CULL_OK )
+                    if( wp_graphics_scene_draw_batch( m_scene, nativeRenderer, &jobs->batch, nullptr,
+                                                      nullptr ) != WP_GRAPHICS_CULL_OK )
                     {
                         throw std::runtime_error( "Stale software draw snapshot." );
                     }

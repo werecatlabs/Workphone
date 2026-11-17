@@ -168,21 +168,21 @@ namespace workphone
     {
         using namespace luabind;
 
-        module(
-            L )[class_<StringVector>( "StringVector" )
-                    .def( constructor<>() )
-                    .def( "push_back", static_cast<void ( StringVector::* )( const String & )>(
-                                           &StringVector::push_back ) )
-                    .def( "pop_back", &StringVector::pop_back )
-                    .def( "clear", &StringVector::clear )
-                    .def( "reserve", &StringVector::reserve )
-                    .def( "size", &StringVector::size )
-                    .def( "empty", &StringVector::empty )
-                    // The Workphone String converter handles values. A reference
-                    // return is interpreted as an unregistered Lua class.
-                    .def( "at", +[]( const StringVector &values, size_t index ) -> String {
-                        return values.at( index );
-                    } )];
+        module( L )[class_<StringVector>( "StringVector" )
+                        .def( constructor<>() )
+                        .def( "push_back", static_cast<void ( StringVector::* )( const String & )>(
+                                               &StringVector::push_back ) )
+                        .def( "pop_back", &StringVector::pop_back )
+                        .def( "clear", &StringVector::clear )
+                        .def( "reserve", &StringVector::reserve )
+                        .def( "size", &StringVector::size )
+                        .def( "empty", &StringVector::empty )
+                        // The Workphone String converter handles values. A reference
+                        // return is interpreted as an unregistered Lua class.
+                        .def(
+                            "at", +[]( const StringVector &values, size_t index ) -> String {
+                                return values.at( index );
+                            } )];
 
         module( L )[class_<Parameters>( "Parameters" )
                         .def( constructor<>() )

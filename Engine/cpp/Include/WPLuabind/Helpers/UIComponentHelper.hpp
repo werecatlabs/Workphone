@@ -21,15 +21,15 @@ namespace workphone
         static void addPanelFlag( scene::Layout *layout, lua_Integer flag );
         static void removePanelFlag( scene::Layout *layout, lua_Integer flag );
         static lua_Integer getChildHorizontalAlignment( const scene::LayoutContainer *layout );
-        static void setChildHorizontalAlignment( scene::LayoutContainer *layout,
-                                                 lua_Integer alignment );
+        static void setChildHorizontalAlignment( scene::LayoutContainer *layout, lua_Integer alignment );
         static lua_Integer getChildVerticalAlignment( const scene::LayoutContainer *layout );
         static void setChildVerticalAlignment( scene::LayoutContainer *layout, lua_Integer alignment );
         static lua_Integer getLayoutHorizontalAlignment( const scene::LayoutTransform *transform );
         static void setLayoutHorizontalAlignment( scene::LayoutTransform *transform,
                                                   lua_Integer alignment );
         static lua_Integer getLayoutVerticalAlignment( const scene::LayoutTransform *transform );
-        static void setLayoutVerticalAlignment( scene::LayoutTransform *transform, lua_Integer alignment );
+        static void setLayoutVerticalAlignment( scene::LayoutTransform *transform,
+                                                lua_Integer alignment );
         static lua_Integer getScrollBarDirection( const scene::ScrollBar *scrollBar );
         static void setScrollBarDirection( scene::ScrollBar *scrollBar, lua_Integer direction );
         static lua_Integer getComponentSliderDirection( const scene::Slider *slider );

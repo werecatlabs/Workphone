@@ -43,36 +43,48 @@ namespace workphone::render
     }
 
     bool ClawRendererDX11::applyCameraEffects( const IGraphicsCamera::PostProcessSettings &settings,
-                                                const Array<IGraphicsCamera::CompositeLayer> &layers )
+                                               const Array<IGraphicsCamera::CompositeLayer> &layers )
     {
         const auto finiteRange = []( f32 value, f32 minimum, f32 maximum, f32 fallback ) {
             return std::isfinite( value ) ? std::clamp( value, minimum, maximum ) : fallback;
         };
-        const wp_dx11_camera_effects effects{
-            settings.enabled, settings.fxaa, settings.bloom,
-            finiteRange( settings.exposure, -32.f, 32.f, 0.f ),
-            finiteRange( settings.gamma, 0.01f, 16.f, 2.2f ),
-            finiteRange( settings.contrast, 0.f, 16.f, 1.f ),
-            finiteRange( settings.saturation, 0.f, 16.f, 1.f ),
-            finiteRange( settings.bloomIntensity, 0.f, 64.f, 0.f ),
-            finiteRange( settings.bloomThreshold, 0.f, 64.f, 1.f ),
-            finiteRange( settings.vignette, 0.f, 1.f, 0.f )
-        };
+        const wp_dx11_camera_effects effects{ settings.enabled,
+                                              settings.fxaa,
+                                              settings.bloom,
+                                              finiteRange( settings.exposure, -32.f, 32.f, 0.f ),
+                                              finiteRange( settings.gamma, 0.01f, 16.f, 2.2f ),
+                                              finiteRange( settings.contrast, 0.f, 16.f, 1.f ),
+                                              finiteRange( settings.saturation, 0.f, 16.f, 1.f ),
+                                              finiteRange( settings.bloomIntensity, 0.f, 64.f, 0.f ),
+                                              finiteRange( settings.bloomThreshold, 0.f, 64.f, 1.f ),
+                                              finiteRange( settings.vignette, 0.f, 1.f, 0.f ) };
         std::array<wp_dx11_camera_layer, 4> nativeLayers{};
         wp_u32 count = 0;
         for( const auto &layer : layers )
         {
             const auto opacity = finiteRange( layer.opacity, 0.f, 1.f, 0.f );
-            if( !layer.enabled || !layer.texture || opacity == 0.f ) continue;
+            if( !layer.enabled || !layer.texture || opacity == 0.f )
+            {
+                continue;
+            }
             void *view = nullptr;
             layer.texture->getTextureFinal( &view );
-            if( !view ) continue;
+            if( !view )
+            {
+                continue;
+            }
             nativeLayers[count++] = { view, opacity, static_cast<wp_s32>( layer.blendMode ) };
-            if( count == nativeLayers.size() ) break;
+            if( count == nativeLayers.size() )
+            {
+                break;
+            }
         }
-        if( !settings.enabled && count == 0 ) return true;
-        return wp_renderer_dx11_apply_camera_effects( wp_renderer_get_dx11( m_renderer ),
-                                                      &effects, nativeLayers.data(), count ) != 0;
+        if( !settings.enabled && count == 0 )
+        {
+            return true;
+        }
+        return wp_renderer_dx11_apply_camera_effects( wp_renderer_get_dx11( m_renderer ), &effects,
+                                                      nativeLayers.data(), count ) != 0;
     }
 
     WP_CLASS_REGISTER_DERIVED( workphone::render, ClawRendererDX11, IRenderer3 );
@@ -233,8 +245,8 @@ namespace workphone::render
                     settings->getRendererMode(), settings->getShaderModel(),
                     settings->getValidationLayers(), settings->getAllowRendererFallback() );
             }
-            wp_renderer_dx11_set_d3d12_execution(
-                m_executeD3D12 || ( settings && settings->getRendererApi() == "DX12" ) );
+            wp_renderer_dx11_set_d3d12_execution( m_executeD3D12 ||
+                                                  ( settings && settings->getRendererApi() == "DX12" ) );
             wp_renderer_dx11_set_present_mode( nullptr, settings ? settings->getPresentMode() : 0 );
         }
         else
@@ -379,8 +391,7 @@ namespace workphone::render
                 window->getWindowHandle( &handle );
                 if( m_frameGraphicsSettings )
                 {
-                    wp_renderer_dx11_set_present_mode(
-                        dx11, m_frameGraphicsSettings->getPresentMode() );
+                    wp_renderer_dx11_set_present_mode( dx11, m_frameGraphicsSettings->getPresentMode() );
                 }
                 const auto result = wp_renderer_dx11_try_present(
                     dx11, handle, graphics && graphics->getVSync() ? 1 : 0 );
@@ -708,9 +719,10 @@ namespace workphone::render
             {
                 std::shared_ptr<const GraphicsSettings> outsideFrameSettings;
                 const auto *settings = getDrawGraphicsSettings( outsideFrameSettings );
-                const auto policy = settings ? settings->getTextureUploadPolicy() : TextureUploadPolicy{};
-                texture = nativeTexture->getNativeTextureView( wp_renderer_get_dx11( m_renderer ),
-                                                              policy );
+                const auto policy =
+                    settings ? settings->getTextureUploadPolicy() : TextureUploadPolicy{};
+                texture =
+                    nativeTexture->getNativeTextureView( wp_renderer_get_dx11( m_renderer ), policy );
             }
             else if( particleTexture )
             {
@@ -1222,8 +1234,7 @@ namespace workphone::render
         std::shared_ptr<const GraphicsSettings> outsideFrameSettings;
         const auto *settings = getDrawGraphicsSettings( outsideFrameSettings );
         const auto texturePolicy = settings ? settings->getTextureUploadPolicy() : TextureUploadPolicy{};
-        const auto textureFiltering =
-            settings ? settings->getTextureFilteringOverride() : std::nullopt;
+        const auto textureFiltering = settings ? settings->getTextureFilteringOverride() : std::nullopt;
         const auto anisotropy = settings ? settings->getAnisotropyOverride() : std::nullopt;
         const auto lighting = settings ? settings->getLightingMode() : std::nullopt;
         const bool lightingDisabled = settings && settings->getLightingDisabled();
@@ -1235,6 +1246,7 @@ namespace workphone::render
             const MaterialProgramDX11::Publication *publication = nullptr;
             bool attempted = false;
         } activation;
+
         static constexpr size_t sectionTextureCount = 8;  // Base, six material maps, reflection probe.
         // Legacy providers may return temporary owners. Hold them until C has
         // finished submitting this section and has retired its custom bindings.
@@ -1391,8 +1403,9 @@ namespace workphone::render
                 section.blend_mode = WORKPHONE_BLEND_MODE_ALPHA;
             }
 
-            section.depth_write = m_shadowPass || !material ||
-                                  ( state ? state->getFlag( depthWriteFlag ) : material->getDepthWrite() );
+            section.depth_write =
+                m_shadowPass || !material ||
+                ( state ? state->getFlag( depthWriteFlag ) : material->getDepthWrite() );
             // The editor's comparison list differs from the C renderer enum.
             constexpr wp_depth_func depthFunctions[] = {
                 WORKPHONE_DEPTH_FUNC_NEVER, WORKPHONE_DEPTH_FUNC_LESS,   WORKPHONE_DEPTH_FUNC_LEQUAL,
@@ -1402,15 +1415,15 @@ namespace workphone::render
             const auto depthTest =
                 material ? ( state ? state->depthTest : material->getDepthTest() ) : 2u;
             section.depth_test = 1;
-            section.depth_func = m_shadowPass ? WORKPHONE_DEPTH_FUNC_LESS
-                                              : depthFunctions[std::min( depthTest, 6u )];
+            section.depth_func =
+                m_shadowPass ? WORKPHONE_DEPTH_FUNC_LESS : depthFunctions[std::min( depthTest, 6u )];
             section.fill_mode = !m_shadowPass && state && state->getFlag( showWireframeFlag )
                                     ? WORKPHONE_FILL_MODE_WIREFRAME
                                     : WORKPHONE_FILL_MODE_SOLID;
-            section.cull_mode = ( state && state->getFlag( doubleSidedFlag ) ) ? WORKPHONE_CULL_MODE_NONE
-                                : material ? ClawUtil::toCCullMode( state ? state->cullMode
-                                                                         : material->getCullMode() )
-                                           : WORKPHONE_CULL_MODE_BACK;
+            section.cull_mode =
+                ( state && state->getFlag( doubleSidedFlag ) ) ? WORKPHONE_CULL_MODE_NONE
+                : material ? ClawUtil::toCCullMode( state ? state->cullMode : material->getCullMode() )
+                           : WORKPHONE_CULL_MODE_BACK;
 
             // Activation occurs inside the native draw, after its built-in state
             // setup. Shadow ownership remains with the existing depth/cutout pass.
@@ -1421,8 +1434,7 @@ namespace workphone::render
             }
 
             activation.publication = runtime;
-            section.bind =
-                runtime ? +[]( wp_renderer_dx11 *r, wp_s32 instanced, void *user ) -> wp_s32 {
+            section.bind = runtime ? +[]( wp_renderer_dx11 *r, wp_s32 instanced, void *user ) -> wp_s32 {
                 auto &active = *static_cast<Activation *>( user );
                 active.attempted = true;
                 try
@@ -1452,7 +1464,7 @@ namespace workphone::render
         wp_mat4f view, projection;
         resolveDrawMatrices( snapshotView, snapshotProjection, view, projection );
         const wp_gpu_allocation_callbacks budget{ nullptr, asset_budget::reserveGpu,
-                                                   asset_budget::retainGpu, asset_budget::releaseGpu };
+                                                  asset_budget::retainGpu, asset_budget::releaseGpu };
         wp_mesh_batch_dx11 batch{};
         batch.mesh = nativeMesh;
         batch.world = &world;
@@ -1498,8 +1510,8 @@ namespace workphone::render
 
         wp_mesh_batch_result_dx11 result;
         wp_renderer_dx11_submit_mesh_batch( dx11, &batch, &result );
-        m_primitiveCount += static_cast<u32>( std::min<u64>(
-            std::numeric_limits<u32>::max() - m_primitiveCount, result.triangles ) );
+        m_primitiveCount += static_cast<u32>(
+            std::min<u64>( std::numeric_limits<u32>::max() - m_primitiveCount, result.triangles ) );
         if( callbacks.error )
         {
             std::rethrow_exception( callbacks.error );
@@ -1685,12 +1697,14 @@ namespace workphone::render
         auto *dx11 = wp_renderer_get_dx11( m_renderer );
         const auto material = sky->getMaterial();
         bool requestDisplayFallback = false;
-        if( material && !ownedTextures.empty() && dx11 && !wp_renderer_dx11_is_radiance_scene_active( dx11 ) )
+        if( material && !ownedTextures.empty() && dx11 &&
+            !wp_renderer_dx11_is_radiance_scene_active( dx11 ) )
         {
             constexpr char suffix[] = "/sky-display-fallback";
             constexpr size_t suffixLength = sizeof( suffix ) - 1;
             const auto name = material->getName();
-            requestDisplayFallback = name.size() >= suffixLength &&
+            requestDisplayFallback =
+                name.size() >= suffixLength &&
                 name.compare( name.size() - suffixLength, suffixLength, suffix ) == 0;
         }
         Array<SmartPtr<ITexture>> materialFaces;
@@ -1759,10 +1773,13 @@ namespace workphone::render
         {
             for( size_t face = 0; face < displayViews.size(); ++face )
             {
-                if( cubicTextures[face] ) cubicTextures[face]->getTextureFinal( &displayViews[face] );
+                if( cubicTextures[face] )
+                {
+                    cubicTextures[face]->getTextureFinal( &displayViews[face] );
+                }
             }
             useDisplayFallback = std::all_of( displayViews.begin(), displayViews.end(),
-                                             []( const auto *view ) { return view != nullptr; } );
+                                              []( const auto *view ) { return view != nullptr; } );
         }
 
         const auto farClip = std::max( camera->getFarClipDistance(), 10.0f );
@@ -1810,8 +1827,14 @@ namespace workphone::render
         for( u32 face = 0; face < 6; ++face )
         {
             void *nativeTexture = nullptr;
-            if( useDisplayFallback ) nativeTexture = displayViews[face];
-            else if( face < textures.size() && textures[face] ) textures[face]->getTextureFinal( &nativeTexture );
+            if( useDisplayFallback )
+            {
+                nativeTexture = displayViews[face];
+            }
+            else if( face < textures.size() && textures[face] )
+            {
+                textures[face]->getTextureFinal( &nativeTexture );
+            }
             if( !nativeTexture )
             {
                 continue;
@@ -1845,8 +1868,8 @@ namespace workphone::render
     }
 
     void ClawRendererDX11::resolveDrawMatrices( const wp_mat4f *snapshotView,
-                                               const wp_mat4f *snapshotProjection,
-                                               wp_mat4f &nativeView, wp_mat4f &nativeProjection )
+                                                const wp_mat4f *snapshotProjection, wp_mat4f &nativeView,
+                                                wp_mat4f &nativeProjection )
     {
         if( !m_shadowPass && snapshotView && snapshotProjection )
         {

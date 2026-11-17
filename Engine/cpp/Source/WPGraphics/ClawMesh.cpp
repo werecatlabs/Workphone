@@ -1185,7 +1185,10 @@ namespace workphone
             auto renderObject = m_renderObject;
             auto scene = renderObject ? wp_graphics_object_get_creator( renderObject ) : nullptr;
             bindNativeRenderObject( nullptr );
-            if( scene ) wp_graphics_scene_destroy_object( scene, renderObject );
+            if( scene )
+            {
+                wp_graphics_scene_destroy_object( scene, renderObject );
+            }
             if( m_runtimeMaterials )
             {
                 m_subMaterials.clear();

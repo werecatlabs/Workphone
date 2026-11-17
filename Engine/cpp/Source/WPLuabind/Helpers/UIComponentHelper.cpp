@@ -41,8 +41,8 @@ namespace workphone
         inputField->setInputType( static_cast<ui::IUITextEntry::InputType>( inputType ) );
     }
 
-    void UIComponentHelper::setInputFieldTypeWithHint( scene::InputField *inputField, lua_Integer inputType,
-                                     const String &textHint )
+    void UIComponentHelper::setInputFieldTypeWithHint( scene::InputField *inputField,
+                                                       lua_Integer inputType, const String &textHint )
     {
         inputField->setInputType( static_cast<ui::IUITextEntry::InputType>( inputType ), textHint );
     }
@@ -77,7 +77,8 @@ namespace workphone
         return static_cast<lua_Integer>( layout->getChildHorizontalAlignment() );
     }
 
-    void UIComponentHelper::setChildHorizontalAlignment( scene::LayoutContainer *layout, lua_Integer alignment )
+    void UIComponentHelper::setChildHorizontalAlignment( scene::LayoutContainer *layout,
+                                                         lua_Integer alignment )
     {
         layout->setChildHorizontalAlignment( static_cast<HorizontalAlignment>( alignment ) );
     }
@@ -87,17 +88,20 @@ namespace workphone
         return static_cast<lua_Integer>( layout->getChildVerticalAlignment() );
     }
 
-    void UIComponentHelper::setChildVerticalAlignment( scene::LayoutContainer *layout, lua_Integer alignment )
+    void UIComponentHelper::setChildVerticalAlignment( scene::LayoutContainer *layout,
+                                                       lua_Integer alignment )
     {
         layout->setChildVerticalAlignment( static_cast<VerticalAlignment>( alignment ) );
     }
 
-    lua_Integer UIComponentHelper::getLayoutHorizontalAlignment( const scene::LayoutTransform *transform )
+    lua_Integer UIComponentHelper::getLayoutHorizontalAlignment(
+        const scene::LayoutTransform *transform )
     {
         return static_cast<lua_Integer>( transform->getHorizontalAlignment() );
     }
 
-    void UIComponentHelper::setLayoutHorizontalAlignment( scene::LayoutTransform *transform, lua_Integer alignment )
+    void UIComponentHelper::setLayoutHorizontalAlignment( scene::LayoutTransform *transform,
+                                                          lua_Integer alignment )
     {
         transform->setHorizontalAlignment( static_cast<HorizontalAlignment>( alignment ) );
     }
@@ -107,7 +111,8 @@ namespace workphone
         return static_cast<lua_Integer>( transform->getVerticalAlignment() );
     }
 
-    void UIComponentHelper::setLayoutVerticalAlignment( scene::LayoutTransform *transform, lua_Integer alignment )
+    void UIComponentHelper::setLayoutVerticalAlignment( scene::LayoutTransform *transform,
+                                                        lua_Integer alignment )
     {
         transform->setVerticalAlignment( static_cast<VerticalAlignment>( alignment ) );
     }

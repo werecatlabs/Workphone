@@ -218,9 +218,10 @@ namespace workphone::render
             {
                 auto &mip = out.mips[i];
                 u32 nextWidth = 0, nextHeight = 0;
-                const bool last = out.settings.filter == TextureMipFilter::None ||
-                                  !wp_graphics_texture_next_mip_extent( mip.width, mip.height,
-                                      out.settings.atlasColumns, &nextWidth, &nextHeight );
+                const bool last =
+                    out.settings.filter == TextureMipFilter::None ||
+                    !wp_graphics_texture_next_mip_extent(
+                        mip.width, mip.height, out.settings.atlasColumns, &nextWidth, &nextHeight );
                 require( last == ( i + 1 == out.count ), "Incomplete or excessive streamed mip chain" );
                 if( !last )
                 {
@@ -542,7 +543,7 @@ namespace workphone::render
                 const bool last =
                     out.settings.filter == TextureMipFilter::None ||
                     !wp_graphics_texture_next_mip_extent( width, height, out.settings.atlasColumns,
-                                                         &nextWidth, &nextHeight );
+                                                          &nextWidth, &nextHeight );
                 require( last == ( i + 1 == out.count ),
                          "Cold mip chain is incomplete or has extra levels" );
                 if( i + 1 < out.count && !out.format )
