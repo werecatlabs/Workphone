@@ -118,6 +118,14 @@ vacant lots. Values above 100 split suitable street-facing parcels into two
 building lots. Press **Regenerate** to apply. Denser scenes may need a higher
 **City Source Memory MiB** budget.
 
+**City Street Prop Density** ranges from 0 to 200 and defaults to 150. It
+controls optional benches, planters, bins, pedestrian lamps, cycle racks and
+utility cabinets without changing the road layout. The terrain road generator
+checks sidewalk support, crossing clearance and spacing before admitting each
+fixture. Zero removes optional furniture; 100 requests the earlier spacing and
+count. Press **Regenerate** after changing it. The sample and capture harness
+accept `--city-street-prop-density` and `-CityStreetPropDensity` respectively.
+
 With `--view verge`, the sample looks across an open road end from pavement
 level. Use `-Views verge` in the capture harness with `-CityTerrainRoads`.
 The evidence records the selected endpoint camera and counts uploaded planting

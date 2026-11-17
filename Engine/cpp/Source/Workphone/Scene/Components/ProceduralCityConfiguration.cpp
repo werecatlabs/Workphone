@@ -166,6 +166,7 @@ namespace workphone::scene
         assets.cityBlocks = m_blocks;
         assets.cityRoute = m_route;
         assets.cityStreetDetail = m_streetDetail;
+        assets.cityStreetPropDensity = m_streetPropDensity;
         assets.cityBuildingDensity = m_buildingDensity;
         assets.cityFoliageLODDistances = m_foliageLODDistances;
         assets.cityFoliageImpostorResolution = cityImpostorResolutions[size_t( m_foliageImpostorResolution )];
@@ -301,6 +302,11 @@ namespace workphone::scene
         properties.getPropertyObject( "City Terrain Relief" ).setAttribute( "description",
             "Initial terrain hills (0 to 2). Edit existing ground with the Terrain tools." );
         properties.setProperty( "City Street Detail", m_streetDetail );
+        properties.setProperty( "City Street Prop Density", m_streetPropDensity );
+        auto &propDensity = properties.getPropertyObject( "City Street Prop Density" );
+        propDensity.setAttribute( "min", "0" );
+        propDensity.setAttribute( "max", "200" );
+        propDensity.setAttribute( "description", "0 removes optional street furniture; 100 keeps the previous spacing and count; 200 doubles the target count where the pavement has safe space." );
         properties.setProperty( "City Building Density", m_buildingDensity );
         auto &density = properties.getPropertyObject( "City Building Density" );
         density.setAttribute( "min", "0" );
@@ -410,6 +416,12 @@ namespace workphone::scene
         if( properties.getPropertyValue( "City Street Detail", streetDetail ) )
         {
             m_streetDetail = std::clamp( streetDetail, 0, 100 );
+        }
+        s32 streetPropDensity = m_streetPropDensity;
+        if( properties.getPropertyValue( "City Street Prop Density", streetPropDensity ) )
+        {
+            if( streetPropDensity >= 0 && streetPropDensity <= 200 ) m_streetPropDensity = streetPropDensity;
+            else if( error.empty() ) error = "City Street Prop Density must be between 0 and 200.";
         }
         s32 buildingDensity = m_buildingDensity;
         if( properties.getPropertyValue( "City Building Density", buildingDensity ) )

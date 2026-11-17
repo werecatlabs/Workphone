@@ -1,5 +1,28 @@
 # WPProcedural implementation status
 
+## Street prop density and variety — 17 November 2026
+
+**City Street Prop Density** is a saved 0–200 city component property, default
+150. It scales optional furniture on the flat city and the candidate spacing
+and placement cap on terrain roads. Terrain sidewalks now also receive cycle
+racks and utility cabinets, assembled from built-in geometry and materials.
+The pavement support, slope, crossing, lamp and fixture separation checks
+continue to reject unsuitable sites. The sample accepts
+`--city-street-prop-density`; the capture harness accepts
+`-CityStreetPropDensity`. Zero removes these optional props.
+
+Debug engine and sample builds passed, as did `WPProcedural.services`. Matched
+seed-42 six-block terrain-city frontage captures kept 42 roads and 116 building
+lots: density 0 admitted 0 fixtures, while density 200 admitted 80. Both passed
+native structural validation. An eight-block high-quality run at density 200
+admitted 176 fixtures and passed two views. The [zero-density capture](../artifacts/procedural/city-street-props-zero-20261117/frontage.bmp),
+[matched dense capture](../artifacts/procedural/city-street-props-matched-dense-20261117/frontage.bmp)
+and [high-quality boulevard capture](../artifacts/procedural/city-street-props-dense-20261117/boulevard.bmp)
+are retained for visual review. Furniture is kept clear of crossings, so a
+particular close-up camera may show open pavement even when the wider city has
+many admitted fixtures. These software-renderer captures are not a hardware or
+interactive Editor visual acceptance pass.
+
 ## Editable city building density — 16 November 2026
 
 **City Building Density** on the city scene components ranges from 0 to 200.

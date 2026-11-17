@@ -321,6 +321,9 @@ void checkClientContracts( SmartPtr<IFactoryManager> factories )
     s32 buildingDensity = -1;
     require( cityOptions->getPropertyValue( "City Building Density", buildingDensity ) && buildingDensity == 150,
              "New city scenes should pack suitable parcels by default" );
+    s32 streetPropDensity = -1;
+    require( cityOptions->getPropertyValue( "City Street Prop Density", streetPropDensity ) && streetPropDensity == 150,
+             "New city scenes should have the populated street prop preset" );
     size_t sparse = 0, dense = 0, central = 0, peripheral = 0;
     for( u64 id = 1; id <= 1000; ++id )
     {
@@ -397,6 +400,7 @@ void checkClientContracts( SmartPtr<IFactoryManager> factories )
     cityOptions->setProperty( "City Foliage Impostor Resolution", s32( 3 ) );
     cityOptions->setProperty( "City Building Impostor Resolution", s32( 1 ) );
     cityOptions->setProperty( "City Building Density", s32( 160 ) );
+    cityOptions->setProperty( "City Street Prop Density", s32( 65 ) );
     city->setProperties( cityOptions );
     auto restoredCity = workphone::make_ptr<scene::ProceduralCityScene>();
     restoredCity->setProperties( city->getProperties() );
@@ -417,6 +421,13 @@ void checkClientContracts( SmartPtr<IFactoryManager> factories )
              "City imposter resolutions did not survive the component property round-trip" );
     require( savedOptions->getPropertyValue( "City Building Density", buildingDensity ) && buildingDensity == 160,
              "City building density did not survive the component property round-trip" );
+    require( savedOptions->getPropertyValue( "City Street Prop Density", streetPropDensity ) && streetPropDensity == 65,
+             "City street prop density did not survive the component property round-trip" );
+    savedOptions->setProperty( "City Street Prop Density", s32( 201 ) );
+    restoredCity->setProperties( savedOptions );
+    savedOptions = restoredCity->getProperties();
+    require( savedOptions->getPropertyValue( "City Street Prop Density", streetPropDensity ) && streetPropDensity == 65,
+             "Invalid street prop density must preserve the previous setting" );
     savedOptions->setProperty( "City Building Density", s32( 201 ) );
     restoredCity->setProperties( savedOptions );
     savedOptions = restoredCity->getProperties();

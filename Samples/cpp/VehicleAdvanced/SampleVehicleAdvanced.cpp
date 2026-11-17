@@ -3439,7 +3439,8 @@ namespace workphone
                         evidence << '}';
                     }
                     const auto expectedDetail = m_cityStreetDetail >= 0 ? m_cityStreetDetail : 100;
-                    const bool expectStreetDetail = m_cityStreetDetail == 100 && m_seed == 42 &&
+                    const auto expectedPropDensity = m_cityStreetPropDensity >= 0 ? m_cityStreetPropDensity : 150;
+                    const bool expectStreetDetail = m_cityStreetDetail == 100 && expectedPropDensity > 0 && m_seed == 42 &&
                         m_cityBlocks == 6 && m_cityRoute == 0 && m_quality == procedural::VehicleAppearanceQuality::High;
                     size_t streetDetailActors = 0;
                     bool streetDetailRenderersReady = true;
@@ -3452,7 +3453,8 @@ namespace workphone
                         streetDetailRenderersReady = streetDetailRenderersReady && renderer && renderer->getGraphicsObject();
                     }
                     const bool streetDetailValid = m_assets.cityStreetDetail == expectedDetail &&
-                        (expectedDetail != 0 || m_assets.cityStreetDetailCount == 0) &&
+                        m_assets.cityStreetPropDensity == expectedPropDensity &&
+                        ((expectedDetail != 0 && expectedPropDensity != 0) || m_assets.cityStreetDetailCount == 0) &&
                         (!expectStreetDetail || m_assets.cityStreetDetailCount > 0) &&
                         ((m_assets.cityStreetDetailCount > 0) == (streetDetailActors > 0)) && streetDetailRenderersReady;
                     cityValid = cityValid && streetDetailValid;
@@ -3496,7 +3498,7 @@ namespace workphone
                         <<",\"lots\":"<<layout.lots.size()<<",\"buildingLots\":"<<layout.lots.size()-parks<<",\"parkLots\":"<<parks
                         <<",\"buildingCollisionActors\":"<<check.buildingBodies<<",\"expectedBuildingCollisionActors\":"<<check.expectedBuildingBodies
                         <<",\"buildingSupportChecks\":"<<m_assets.cityBuildingSupportChecks<<",\"culledParcels\":"<<m_assets.cityCulledParcels
-                        <<",\"cityStreetDetail\":"<<m_assets.cityStreetDetail<<",\"cityStreetDetailCount\":"<<m_assets.cityStreetDetailCount
+                        <<",\"cityStreetDetail\":"<<m_assets.cityStreetDetail<<",\"cityStreetPropDensity\":"<<m_assets.cityStreetPropDensity<<",\"cityStreetDetailCount\":"<<m_assets.cityStreetDetailCount
                         <<",\"streetDetailActors\":"<<streetDetailActors<<",\"streetDetailRenderersReady\":"<<(streetDetailRenderersReady?"true":"false")
                         <<",\"streetDetailPlacementsRequired\":"<<(expectStreetDetail?"true":"false")<<",\"streetDetailValid\":"<<(streetDetailValid?"true":"false")
                         <<",\"buildingSupportValid\":"<<(check.support?"true":"false")<<",\"structuralValidation\":"<<(cityValid?"true":"false")<<"}";
@@ -5382,6 +5384,8 @@ namespace workphone
             properties->setProperty( "City Source Memory MiB", m_citySourceMemoryMiB );
             if( m_cityStreetDetail >= 0 )
                 properties->setProperty( "City Street Detail", m_cityStreetDetail );
+            if( m_cityStreetPropDensity >= 0 )
+                properties->setProperty( "City Street Prop Density", m_cityStreetPropDensity );
             if( m_cityBuildingStyle >= 0 )
                 properties->setProperty( "City Building Style", m_cityBuildingStyle );
             for( size_t role = 0; role < cityBuildingMeshProperties.size(); ++role )
@@ -6387,6 +6391,7 @@ int main( int argc, char **argv )
                    "  --city-terrain-roads            Editable generated city roads fitted to terrain (implies --city)\n"
                    "  --city-terrain-relief 0..2      Initial city terrain relief multiplier (default 1; retained terrain is preserved)\n"
                    "  --city-street-detail 0..100     Roadside detail density (requires --city-terrain-roads, default 100)\n"
+                   "  --city-street-prop-density 0..200  Optional street furniture density (default 150)\n"
                    "  --city-streaming on|off        Stream building mesh tiers; keep skyline imposters resident\n"
                    "  --city-streaming-smoke-test   Verify native city unload and reload before capture\n"
                    "  --city-source-memory-mib N     Shared source-memory minimum for city generation (128..4096, default 1024)\n"
@@ -6453,6 +6458,7 @@ int main( int argc, char **argv )
     bool cityTerrainReliefExplicit = false;
     s32 cityBlocks = 8, cityRoute = 0;
     s32 cityStreetDetail = -1;
+    s32 cityStreetPropDensity = -1;
     s32 cityBuildingStyle = -1;
     std::array<String, 5> cityBuildingMeshes;
     bool cityBuildingMeshOverride = false;
@@ -6544,6 +6550,14 @@ int main( int argc, char **argv )
                 const auto parsed = std::from_chars( value.data(), end, cityStreetDetail );
                 if( parsed.ec != std::errc{} || parsed.ptr != end || cityStreetDetail < 0 || cityStreetDetail > 100 )
                     throw std::runtime_error( "City street detail must be an integer from 0 to 100." );
+            }
+            else if( String( argv[i] ) == "--city-street-prop-density" && i + 1 < argc )
+            {
+                const std::string_view value = argv[++i];
+                const auto end = value.data() + value.size();
+                const auto parsed = std::from_chars( value.data(), end, cityStreetPropDensity );
+                if( parsed.ec != std::errc{} || parsed.ptr != end || cityStreetPropDensity < 0 || cityStreetPropDensity > 200 )
+                    throw std::runtime_error( "City street prop density must be an integer from 0 to 200." );
             }
             else if( String( argv[i] ) == "--city-building-style" && i + 1 < argc )
             {
@@ -6912,6 +6926,7 @@ int main( int argc, char **argv )
         app->setCityTerrainRoads( cityTerrainRoads );
         app->setCityTerrainRelief( cityTerrainRelief );
         app->setCityStreetDetail( cityStreetDetail );
+        app->setCityStreetPropDensity( cityStreetPropDensity );
         app->setCityStreaming( cityStreaming );
         app->setCityStreamingSmokeTest( cityStreamingSmokeTest );
         app->setCitySourceMemoryMiB( citySourceMemoryMiB );

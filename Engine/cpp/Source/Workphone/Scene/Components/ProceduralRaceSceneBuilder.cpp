@@ -78,6 +78,7 @@ namespace workphone::scene::race
         cityRaceRouteError( other.cityRaceRouteError ),
         cityAppliedSourceRevision( other.cityAppliedSourceRevision ),
         cityStreetDetail( other.cityStreetDetail ),
+        cityStreetPropDensity( other.cityStreetPropDensity ),
         cityBuildingDensity( other.cityBuildingDensity ),
         cityFoliageLODDistances( other.cityFoliageLODDistances ),
         cityFoliageImpostorResolution( other.cityFoliageImpostorResolution ),
@@ -155,6 +156,7 @@ namespace workphone::scene::race
         swap( cityRaceRouteError, other.cityRaceRouteError );
         swap( cityAppliedSourceRevision, other.cityAppliedSourceRevision );
         swap( cityStreetDetail, other.cityStreetDetail );
+        swap( cityStreetPropDensity, other.cityStreetPropDensity );
         swap( cityBuildingDensity, other.cityBuildingDensity );
         swap( cityFoliageLODDistances, other.cityFoliageLODDistances );
         swap( cityFoliageImpostorResolution, other.cityFoliageImpostorResolution );
@@ -1894,7 +1896,10 @@ namespace workphone::scene::race
             };
             std::sort( parkLots.begin(), parkLots.end(), nearest );
             std::sort( frontages.begin(), frontages.end(), nearest );
-            const size_t benchCount = std::min<size_t>( parkLots.size(), preview ? 8 : 16 );
+            const auto propLimit = [&]( size_t base ) {
+                return ( base * size_t( std::clamp( assets.cityStreetPropDensity, 0, 200 ) ) + 99 ) / 100;
+            };
+            const size_t benchCount = std::min( parkLots.size(), propLimit( preview ? 8u : 16u ) );
             for( size_t i = 0; i < benchCount; ++i )
             {
                 const auto &lot = *parkLots[i];
@@ -1930,7 +1935,7 @@ namespace workphone::scene::race
             }
             const size_t planterCount = city.naturalRoads || assets.cityTerrainRoads
                                             ? 0
-                                            : std::min<size_t>( frontages.size(), preview ? 8 : 16 );
+                                            : std::min( frontages.size(), propLimit( preview ? 8u : 16u ) );
             for( size_t i = 0; i < planterCount; ++i )
             {
                 const auto &lot = *frontages[i];
@@ -1978,7 +1983,7 @@ namespace workphone::scene::race
             }
             const size_t binCount = city.naturalRoads || assets.cityTerrainRoads
                                         ? 0
-                                        : std::min<size_t>( frontages.size(), preview ? 4 : 8 );
+                                        : std::min( frontages.size(), propLimit( preview ? 4u : 8u ) );
             for( size_t i = 0; i < binCount; ++i )
             {
                 const auto &lot = *frontages[( i * 3 + 1 ) % frontages.size()];
@@ -2072,7 +2077,7 @@ namespace workphone::scene::race
 
         struct CityStreetFixture
         {
-            enum Kind { Bench, Planter, Bin, Lamp };
+            enum Kind { Bench, Planter, Bin, Lamp, CycleRack, UtilityCabinet };
             Vector3F position, along, outward;
             Kind kind;
             float halfLength, halfDepth;
@@ -2153,13 +2158,14 @@ namespace workphone::scene::race
         {
             assets.cityStreetDetailCount = 0;
             const int detail = std::clamp( assets.cityStreetDetail, 0, 100 );
-            if( detail == 0 || walks.indices.empty() )
+            const int density = std::clamp( assets.cityStreetPropDensity, 0, 200 );
+            if( detail == 0 || density == 0 || walks.indices.empty() )
             {
                 return;
             }
             constexpr size_t maxCandidates = 4096;
-            constexpr float halfLengths[] = { 1.05f, .89f, .28f, .25f };
-            constexpr float halfDepths[] = { .30f, .30f, .28f, .25f };
+            constexpr float halfLengths[] = { 1.05f, .89f, .28f, .25f, .88f, .43f };
+            constexpr float halfDepths[] = { .30f, .30f, .28f, .25f, .31f, .29f };
             constexpr float maxRadius = 1.2f;
             const auto &bake = assets.roadAuthoring->getBake();
             const auto &source = assets.roadAuthoring->getSource();
@@ -2224,7 +2230,7 @@ namespace workphone::scene::race
                     {
                         const float t = std::clamp( ( next - a.distance ) / ( b.distance - a.distance ),
                                                     0.f, 1.f );
-                        next += 25.f;
+                        next += 2500.f / float( density );
                         ++station;
                         const auto centre = a.position + ( b.position - a.position ) * t;
                         for( const bool left : { true, false } )
@@ -2244,7 +2250,7 @@ namespace workphone::scene::race
                                 outward = -outward;
                             }
                             const auto kind = static_cast<CityStreetFixture::Kind>(
-                                ( road + station * 3 + ( left ? 0 : 2 ) ) % 4 );
+                                ( road + station * 3 + ( left ? 0 : 2 ) ) % 6 );
                             addCandidate( edge, along, outward, kind );
                         }
                     }
@@ -2308,7 +2314,7 @@ namespace workphone::scene::race
             } );
 
             const size_t cap = quality == VehicleAppearanceQuality::Preview ? 40 : 88;
-            const size_t limit = ( cap * detail + 99 ) / 100;
+            const size_t limit = ( cap * size_t( detail ) * size_t( density ) + 9999 ) / 10000;
             SourceBudgetVector<CityStreetFixture> admitted;
             admitted.reserve( limit );
             for( auto &site : candidates )
@@ -2331,7 +2337,7 @@ namespace workphone::scene::race
                 }
             }
 
-            Geometry metal, timber, stone, planting, lenses;
+            Geometry metal, timber, stone, planting, lenses, enamel;
             for( const auto &site : admitted )
             {
                 const auto point = [&]( float u, float y, float v ) {
@@ -2420,6 +2426,24 @@ namespace workphone::scene::race
                     box( metal, 0, 3.67f, -.55f, .28f, .10f, .50f );
                     box( lenses, 0, 3.61f, -.55f, .24f, .035f, .42f );
                     break;
+                case CityStreetFixture::CycleRack:
+                    for( float u : { -.58f, 0.f, .58f } )
+                    {
+                        metal.beam( point( u, .02f, -.22f ), point( u, .73f, -.22f ), .025f );
+                        metal.beam( point( u, .73f, -.22f ), point( u, .73f, .22f ), .025f );
+                        metal.beam( point( u, .73f, .22f ), point( u, .02f, .22f ), .025f );
+                        box( stone, u, .025f, -.22f, .16f, .05f, .14f );
+                        box( stone, u, .025f, .22f, .16f, .05f, .14f );
+                    }
+                    break;
+                case CityStreetFixture::UtilityCabinet:
+                    box( stone, 0, .035f, 0, .74f, .07f, .55f );
+                    box( enamel, 0, .60f, 0, .66f, 1.10f, .43f );
+                    box( metal, 0, 1.17f, 0, .70f, .06f, .47f );
+                    for( int vent = 0; vent < 5; ++vent )
+                        box( metal, -.10f + vent * .05f, .88f, -.224f, .022f, .15f, .012f );
+                    box( metal, .235f, .57f, -.225f, .025f, .10f, .018f );
+                    break;
                 }
             }
 
@@ -2436,6 +2460,7 @@ namespace workphone::scene::race
             publish( "stone planters and plinths", stone, { .67f, .63f, .53f, 1 }, .88f );
             publish( "ornamental grasses", planting, { .31f, .43f, .16f, 1 }, .93f );
             publish( "pedestrian lamp lenses", lenses, { .86f, .83f, .72f, 1 }, .38f );
+            publish( "utility enamel", enamel, { .27f, .37f, .34f, 1 }, .62f, .35f );
             assets.cityStreetDetailCount = static_cast<u32>( admitted.size() );
             installed.swap( admitted );
         }

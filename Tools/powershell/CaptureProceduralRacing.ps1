@@ -25,6 +25,7 @@ param(
     [switch]$ExportMaterials,
     [ValidateRange(30, 7200)][int]$TimeoutSeconds = 600,
     [ValidateRange(0, 100)][int]$CityStreetDetail = 100,
+    [ValidateRange(0, 200)][int]$CityStreetPropDensity = 150,
     [ValidateSet('on', 'off')][string]$CityStreaming = 'off',
     [ValidateRange(128, 4096)][int]$CitySourceMemoryMiB = 1024,
     [switch]$CityStreamingSmokeTest,
@@ -33,6 +34,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $streetDetailExplicit = $PSBoundParameters.ContainsKey('CityStreetDetail')
+$streetPropDensityExplicit = $PSBoundParameters.ContainsKey('CityStreetPropDensity')
 if ($RoadAuthoringShowcase) { $Scene = 'city' }
 if ($CityTerrainRoads) { $Scene = 'city' }
 if ($FoliageLOD -ne 'auto' -and !($FoliageWorld -or $CityTerrainRoads)) { throw '-FoliageLOD requires -FoliageWorld or -CityTerrainRoads.' }
@@ -45,6 +47,7 @@ if ($imposterViews.Count -and ($Scene -ne 'city' -or $RoadAuthoringShowcase -or 
     throw 'Imposter views require a generated city, CityStreaming on and no streaming smoke test.'
 }
 if ($streetDetailExplicit -and !$CityTerrainRoads) { throw '-CityStreetDetail requires -CityTerrainRoads.' }
+if ($streetPropDensityExplicit -and !$CityTerrainRoads) { throw '-CityStreetPropDensity requires -CityTerrainRoads for capture validation.' }
 if ($Views -contains 'frontage' -and !$CityTerrainRoads) { throw '-Views frontage requires -CityTerrainRoads.' }
 if ($Views -contains 'utilities' -and !$CityTerrainRoads) { throw '-Views utilities requires -CityTerrainRoads.' }
 if ($Views -contains 'park' -and !$CityTerrainRoads) { throw '-Views park requires -CityTerrainRoads.' }
@@ -146,6 +149,7 @@ $manifest = [ordered]@{
     cityTerrainRoads = [bool]$CityTerrainRoads
     cityTerrainRelief = $(if ($CityTerrainRoads) { $CityTerrainRelief } else { $null })
     cityStreetDetail = $(if ($streetDetailExplicit) { $CityStreetDetail } else { $null })
+    cityStreetPropDensity = $(if ($streetPropDensityExplicit) { $CityStreetPropDensity } else { $null })
     cityStreaming = $(if ($Scene -eq 'city') { $CityStreaming } else { $null })
     citySourceMemoryMiB = $(if ($Scene -eq 'city') { $CitySourceMemoryMiB } else { $null })
     cityStreamingSmokeTest = [bool]$CityStreamingSmokeTest
@@ -177,6 +181,7 @@ try {
         if ($RoadAuthoringShowcase) { $arguments += '--road-authoring-showcase' }
         if ($CityTerrainRoads) { $arguments += @('--city-terrain-roads', '--city-terrain-relief', $CityTerrainRelief.ToString([Globalization.CultureInfo]::InvariantCulture)) }
         if ($streetDetailExplicit) { $arguments += @('--city-street-detail', "$CityStreetDetail") }
+        if ($streetPropDensityExplicit) { $arguments += @('--city-street-prop-density', "$CityStreetPropDensity") }
         if ($CityBuildingStyle) { $arguments += @('--city-building-style', $CityBuildingStyle.ToLowerInvariant()) }
         foreach ($role in $buildingMeshRoles) {
             if ($buildingMeshPaths.Contains($role)) {
@@ -310,6 +315,10 @@ try {
                 $street = $run.evidence.terrainCity
                 $run.passed = $run.passed -and $null -ne $street -and $street.streetDetailValid -eq $true -and
                     $null -ne $street.cityStreetDetailCount -and $street.cityStreetDetail -eq $CityStreetDetail
+            }
+            if ($streetPropDensityExplicit) {
+                $street = $run.evidence.terrainCity
+                $run.passed = $run.passed -and $null -ne $street -and $street.cityStreetPropDensity -eq $CityStreetPropDensity
             }
             if ($view -eq 'utilities') {
                 $utility = $run.evidence.cityUtilitiesCamera
