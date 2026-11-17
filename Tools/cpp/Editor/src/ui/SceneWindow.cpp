@@ -37,11 +37,13 @@ namespace workphone::editor
 
         constexpr FoliageMenuEntry foliageMenuEntries[] = {
             { SceneWindow::MenuId::ADD_FOLIAGE_OAK, AddActorCmd::ActorType::FoliageOak, "Oak Tree" },
-            { SceneWindow::MenuId::ADD_FOLIAGE_BIRCH, AddActorCmd::ActorType::FoliageBirch, "Birch Tree" },
+            { SceneWindow::MenuId::ADD_FOLIAGE_BIRCH, AddActorCmd::ActorType::FoliageBirch,
+              "Birch Tree" },
             { SceneWindow::MenuId::ADD_FOLIAGE_PINE, AddActorCmd::ActorType::FoliagePine, "Pine Tree" },
             { SceneWindow::MenuId::ADD_FOLIAGE_PALM, AddActorCmd::ActorType::FoliagePalm, "Palm Tree" },
             { SceneWindow::MenuId::ADD_FOLIAGE_BUSH, AddActorCmd::ActorType::FoliageBush, "Bush" },
-            { SceneWindow::MenuId::ADD_FOLIAGE_GRASS, AddActorCmd::ActorType::FoliageGrass, "Grass Clump" },
+            { SceneWindow::MenuId::ADD_FOLIAGE_GRASS, AddActorCmd::ActorType::FoliageGrass,
+              "Grass Clump" },
             { SceneWindow::MenuId::ADD_FOLIAGE_TALL_GRASS, AddActorCmd::ActorType::FoliageTallGrass,
               "Tall Grass" }
         };
@@ -404,12 +406,12 @@ namespace workphone::editor
     {
         try
         {
-            const auto hasResources =
-                m_applicationEventListener || m_window || m_sceneWindow || m_inputTextButton ||
-                m_inputText || m_promptListener || m_searchEntry || m_tree || m_treeListener ||
-                m_applicationMenu || m_applicationAddMenu || m_applicationParticleMenu ||
-                m_menuListener || m_selectedObject || m_selectedEntity || m_buildJob ||
-                getParentWindow() || !m_dataArray.empty();
+            const auto hasResources = m_applicationEventListener || m_window || m_sceneWindow ||
+                                      m_inputTextButton || m_inputText || m_promptListener ||
+                                      m_searchEntry || m_tree || m_treeListener || m_applicationMenu ||
+                                      m_applicationAddMenu || m_applicationParticleMenu ||
+                                      m_menuListener || m_selectedObject || m_selectedEntity ||
+                                      m_buildJob || getParentWindow() || !m_dataArray.empty();
 
             if( getLoadingState() != LoadingState::Unloaded || hasResources )
             {
@@ -1843,8 +1845,8 @@ namespace workphone::editor
                 dropJob->setDestination( dynamic_pointer_cast<ui::IUIElement>( object ) );
                 if( arguments.size() >= 4 )
                 {
-                    dropJob->setDropRay( Ray3<real_Num>( arguments[2].getVector3(),
-                                                        arguments[3].getVector3() ) );
+                    dropJob->setDropRay(
+                        Ray3<real_Num>( arguments[2].getVector3(), arguments[3].getVector3() ) );
                 }
 
                 // ImGuiDropJob already dispatches this event on the application task. Keep the
@@ -1903,11 +1905,9 @@ namespace workphone::editor
         if( element && element->isDerived<ui::IUITreeNode>() )
         {
             auto treeNode = workphone::static_pointer_cast<ui::IUITreeNode>( element );
-            auto treeData =
-                dynamic_pointer_cast<ProjectTreeData>( treeNode->getNodeUserData() );
-            auto actor = treeData
-                             ? dynamic_pointer_cast<scene::IGameActor>( treeData->getObjectData() )
-                             : nullptr;
+            auto treeData = dynamic_pointer_cast<ProjectTreeData>( treeNode->getNodeUserData() );
+            auto actor = treeData ? dynamic_pointer_cast<scene::IGameActor>( treeData->getObjectData() )
+                                  : nullptr;
             auto handle = actor ? actor->getHandle() : nullptr;
             auto uuid = handle ? handle->getUUIDAsString() : String();
             if( !StringUtil::isNullOrEmpty( uuid ) )

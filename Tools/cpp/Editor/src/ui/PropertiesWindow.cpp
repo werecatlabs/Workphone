@@ -23,10 +23,16 @@ namespace workphone::editor
         SmartPtr<ISharedObject> propertyTarget( SmartPtr<ISharedObject> object )
         {
             auto file = dynamic_pointer_cast<FileSelection>( object );
-            if( !file ) return object;
+            if( !file )
+            {
+                return object;
+            }
             auto app = core::IApplicationManager::instancePtr();
             auto resources = app ? app->getResourceDatabase() : nullptr;
-            if( !resources ) return nullptr;
+            if( !resources )
+            {
+                return nullptr;
+            }
             const auto path = file->getFilePath();
             const auto extension = StringUtil::make_lower( Path::getFileExtension( path ) );
             if( extension == ".mat" )
@@ -36,32 +42,53 @@ namespace workphone::editor
                 return materials ? materials->loadFromFile( path ) : nullptr;
             }
             if( ApplicationUtil::isSupportedMesh( path ) )
-                return resources->loadDirectorFromResourcePath( path, scene::MeshResourceDirector::typeInfo() );
+            {
+                return resources->loadDirectorFromResourcePath(
+                    path, scene::MeshResourceDirector::typeInfo() );
+            }
             if( ApplicationUtil::isSupportedTexture( path ) )
-                return resources->loadDirectorFromResourcePath( path, scene::TextureResourceDirector::typeInfo() );
+            {
+                return resources->loadDirectorFromResourcePath(
+                    path, scene::TextureResourceDirector::typeInfo() );
+            }
             if( ApplicationUtil::isSupportedSound( path ) )
-                return resources->loadDirectorFromResourcePath( path, scene::SoundResourceDirector::typeInfo() );
+            {
+                return resources->loadDirectorFromResourcePath(
+                    path, scene::SoundResourceDirector::typeInfo() );
+            }
             return resources->loadResource( path );
         }
 
         SmartPtr<scene::RenderTexture> findRenderTexture( const String &uuid, bool matchActor )
         {
-            if( uuid.empty() ) return nullptr;
+            if( uuid.empty() )
+            {
+                return nullptr;
+            }
             auto app = core::IApplicationManager::instancePtr();
             auto manager = app ? app->getGameManagerPtr() : nullptr;
             auto currentScene = manager ? manager->getCurrentScene() : nullptr;
-            if( !currentScene ) return nullptr;
+            if( !currentScene )
+            {
+                return nullptr;
+            }
 
             SmartPtr<scene::RenderTexture> match;
             for( const auto &texture : currentScene->getComponents<scene::RenderTexture>() )
             {
                 auto actor = texture->getActor();
-                if( !actor ) continue;
+                if( !actor )
+                {
+                    continue;
+                }
                 auto handle = matchActor ? actor->getHandle() : texture->getHandle();
                 if( handle && handle->getUUIDAsString() == uuid )
                 {
                     // The picker can distinguish multiple targets on one actor.
-                    if( match && match != texture ) return nullptr;
+                    if( match && match != texture )
+                    {
+                        return nullptr;
+                    }
                     match = texture;
                 }
             }
@@ -71,11 +98,17 @@ namespace workphone::editor
         SmartPtr<Properties> inspectorComponentProperties( const SmartPtr<scene::IComponent> &component )
         {
             auto properties = component->getProperties();
-            if( !properties || !component->isDerived<scene::Camera>() ) return properties;
+            if( !properties || !component->isDerived<scene::Camera>() )
+            {
+                return properties;
+            }
 
             auto actor = component->getActor();
             auto scene = actor ? actor->getScene() : nullptr;
-            if( !scene ) return properties;
+            if( !scene )
+            {
+                return properties;
+            }
 
             auto displayedProperties = properties->getPropertiesAsArray();
             const auto isAssignedRenderTexture = []( const Property &property ) {
@@ -84,30 +117,37 @@ namespace workphone::editor
             };
             if( std::none_of( displayedProperties.begin(), displayedProperties.end(),
                               isAssignedRenderTexture ) )
+            {
                 return properties;
+            }
 
             const auto textures = scene->getComponents<workphone::scene::RenderTexture>();
             for( const auto &property : displayedProperties )
             {
-                if( !isAssignedRenderTexture( property ) ) continue;
+                if( !isAssignedRenderTexture( property ) )
+                {
+                    continue;
+                }
                 const auto uuid = property.getValue();
-                const auto match = std::find_if( textures.begin(), textures.end(), [&]( const auto &texture ) {
-                    auto handle = texture->getHandle();
-                    return handle && handle->getUUIDAsString() == uuid;
-                } );
+                const auto match =
+                    std::find_if( textures.begin(), textures.end(), [&]( const auto &texture ) {
+                        auto handle = texture->getHandle();
+                        return handle && handle->getUUIDAsString() == uuid;
+                    } );
                 if( match != textures.end() )
                 {
                     if( auto target = ( *match )->getActor() )
                     {
                         auto label = target->getName();
                         properties->getPropertyObject( property.getName() )
-                            .setAttribute( "referenceLabel", label.empty() ? String( "Untitled" ) : label );
+                            .setAttribute( "referenceLabel",
+                                           label.empty() ? String( "Untitled" ) : label );
                     }
                 }
             }
             return properties;
         }
-    }
+    }  // namespace
 
     WP_CLASS_REGISTER_DERIVED( workphone, PropertiesWindow, EditorWindow );
     WP_CLASS_REGISTER_DERIVED( workphone, PropertiesWindow::PropertiesDropTarget, ui::IUIDropTarget );
@@ -153,7 +193,8 @@ namespace workphone::editor
             m_propertyGrid->addObjectListener( propertiesListener );
             setEventListener( propertiesListener );
 #if WP_EDITOR_TEXTURE_PROFILE
-            m_textureProfile = std::make_unique<TextureProfileInspector>( ui, parentWindow, propertiesListener );
+            m_textureProfile =
+                std::make_unique<TextureProfileInspector>( ui, parentWindow, propertiesListener );
 #endif
 
             auto dropTarget = workphone::make_ptr<PropertiesDropTarget>();
@@ -273,7 +314,10 @@ namespace workphone::editor
         }
         updateCubemapPreview( object );
 #if WP_EDITOR_TEXTURE_PROFILE
-        if( updateTextureProfile( object ) ) return;
+        if( updateTextureProfile( object ) )
+        {
+            return;
+        }
 #endif
 
         // Import jobs publish status on their retained director, not on this UI
@@ -284,7 +328,8 @@ namespace workphone::editor
             auto displayed = m_propertyGrid->getProperties();
             if( displayed && displayed->hasProperty( scene::ResourceDirector::importStatusStr ) )
             {
-                auto director = dynamic_pointer_cast<scene::ResourceDirector>( propertyTarget( object ) );
+                auto director =
+                    dynamic_pointer_cast<scene::ResourceDirector>( propertyTarget( object ) );
                 if( director && displayed->getProperty( scene::ResourceDirector::resourcePathStr ) ==
                                     director->getResourcePath() )
                 {
@@ -405,7 +450,10 @@ namespace workphone::editor
     {
         updateCubemapPreview( object );
 #if WP_EDITOR_TEXTURE_PROFILE
-        if( TextureProfileInspector::isTextureDescriptor( object ) ) return;
+        if( TextureProfileInspector::isTextureDescriptor( object ) )
+        {
+            return;
+        }
 #endif
         auto applicationManager = core::IApplicationManager::instance();
         WP_ASSERT( applicationManager );
@@ -680,7 +728,10 @@ namespace workphone::editor
     void PropertiesWindow::updateSelectionMT( SmartPtr<ISharedObject> object )
     {
 #if WP_EDITOR_TEXTURE_PROFILE
-        if( TextureProfileInspector::isTextureDescriptor( object ) ) return;
+        if( TextureProfileInspector::isTextureDescriptor( object ) )
+        {
+            return;
+        }
 #endif
         if( auto propertyGrid = getPropertyGrid() )
         {
@@ -1113,34 +1164,64 @@ namespace workphone::editor
                                                 SmartPtr<ISharedObject> object, const String &name,
                                                 const String &value, bool isButton )
     {
-        if( !object ) return 0;
+        if( !object )
+        {
+            return 0;
+        }
 
         // Events identify the owning group in the displayed snapshot. Resolve
         // its path before loading a fresh director or another selected object.
         auto root = m_propertyGrid ? m_propertyGrid->getProperties() : nullptr;
-        if( !root ) root = properties;
-        if( !root ) root = object->getProperties();
-        if( !properties ) properties = root;
+        if( !root )
+        {
+            root = properties;
+        }
+        if( !root )
+        {
+            root = object->getProperties();
+        }
+        if( !properties )
+        {
+            properties = root;
+        }
         PropertyGroupPath path;
         if( !findPropertyGroupPath( root, properties, path ) || !properties->hasProperty( name ) )
+        {
             return 0;
+        }
 
         auto target = propertyTarget( object );
-        if( !target ) return 0;
-        auto fileResource = dynamic_pointer_cast<FileSelection>( object ) ?
-                                dynamic_pointer_cast<IResource>( target ) : nullptr;
+        if( !target )
+        {
+            return 0;
+        }
+        auto fileResource = dynamic_pointer_cast<FileSelection>( object )
+                                ? dynamic_pointer_cast<IResource>( target )
+                                : nullptr;
 
         auto targetRoot = target->getProperties();
         auto group = resolvePropertyGroup( targetRoot, path );
-        if( !group || !group->hasProperty( name ) ) return 0;
+        if( !group || !group->hasProperty( name ) )
+        {
+            return 0;
+        }
         const auto &descriptor = group->getPropertyObject( name );
-        if( descriptor.isReadOnly() ) return 0;
+        if( descriptor.isReadOnly() )
+        {
+            return 0;
+        }
         const auto reference = descriptor.getAttribute( Properties::resourceTypeStr );
         const auto renderTextureReference = reference == "RenderTexture";
-        if( renderTextureReference && ( isButton || ( !value.empty() && !findRenderTexture( value, false ) ) ) )
+        if( renderTextureReference &&
+            ( isButton || ( !value.empty() && !findRenderTexture( value, false ) ) ) )
+        {
             return 0;
+        }
         const auto resourceType = AssetReferenceChange::referenceType( reference );
-        if( isButton && resourceType != 0 ) return resourceType;
+        if( isButton && resourceType != 0 )
+        {
+            return resourceType;
+        }
 
         // Never replace a target with the displayed group's snapshot: another
         // selected object can have different sibling settings. Preserve types,
@@ -1148,29 +1229,53 @@ namespace workphone::editor
         auto replacement = clonePropertyTree( targetRoot );
         auto edited = resolvePropertyGroup( replacement, path );
         auto &property = edited->getPropertyObject( name );
-        if( isButton ) property.setValueAsButton( true );
+        if( isButton )
+        {
+            property.setValueAsButton( true );
+        }
         else
         {
             property.setValue( value );
             if( name == scene::Camera::s_isActiveStr && target->isDerived<scene::Camera>() )
+            {
                 property.setAttribute( "manualActivation", "true" );
-            if( name == scene::FourWheelVehicle::handlingPresetStr && target->isDerived<scene::FourWheelVehicle>() )
+            }
+            if( name == scene::FourWheelVehicle::handlingPresetStr &&
+                target->isDerived<scene::FourWheelVehicle>() )
+            {
                 property.setAttribute( "applyHandlingPreset", "true" );
+            }
         }
         target->setProperties( replacement );
         if( renderTextureReference )
         {
             if( auto component = dynamic_pointer_cast<scene::IComponent>( target ) )
-                if( auto actor = component->getActor() ) actor->setDirty( true );
+            {
+                if( auto actor = component->getActor() )
+                {
+                    actor->setDirty( true );
+                }
+            }
         }
         // A director's Save action is dispatched by setProperties itself.
-        const bool dispatchedSave = isButton && path.empty() && name == scene::ResourceDirector::saveStr &&
+        const bool dispatchedSave = isButton && path.empty() &&
+                                    name == scene::ResourceDirector::saveStr &&
                                     dynamic_pointer_cast<scene::ResourceDirector>( target );
-        if( fileResource && !dispatchedSave ) fileResource->save();
+        if( fileResource && !dispatchedSave )
+        {
+            fileResource->save();
+        }
 
         if( auto editor = EditorManager::getSingletonPtr() )
+        {
             if( auto project = editor->getProject() )
-                if( target == project->getGraphicsSettingsDirector() ) project->setDirty( true );
+            {
+                if( target == project->getGraphicsSettingsDirector() )
+                {
+                    project->setDirty( true );
+                }
+            }
+        }
         return resourceType;
     }
 
@@ -1180,15 +1285,22 @@ namespace workphone::editor
     {
         if( auto owner = getOwner() )
         {
-            if( arguments.size() < 3 ) return {};
+            if( arguments.size() < 3 )
+            {
+                return {};
+            }
             auto name = arguments[0].str;
             auto value = arguments[1].str;
             auto properties = workphone::dynamic_pointer_cast<Properties>( arguments[2].object );
-            if( !properties ) return {};
+            if( !properties )
+            {
+                return {};
+            }
 
 #if WP_EDITOR_TEXTURE_PROFILE
             if( owner->m_textureProfile && owner->m_textureProfile->ownsEvent( sender ) &&
-                ( eventValue == IEvent::handlePropertyButtonClick || eventValue == IEvent::handlePropertyChanged ) )
+                ( eventValue == IEvent::handlePropertyButtonClick ||
+                  eventValue == IEvent::handlePropertyChanged ) )
             {
                 auto selection = owner->getSelected();
                 if( !selection )
@@ -1196,11 +1308,17 @@ namespace workphone::editor
                     auto app = core::IApplicationManager::instancePtr();
                     auto manager = app ? app->getSelectionManagerPtr() : nullptr;
                     auto objects = manager ? manager->getSelection() : Array<SmartPtr<ISharedObject>>();
-                    if( !objects.empty() ) selection = objects.front();
+                    if( !objects.empty() )
+                    {
+                        selection = objects.front();
+                    }
                 }
                 owner->updateTextureProfile( selection );
                 if( owner->m_textureProfile->handle( sender, properties, name, value,
-                        eventValue == IEvent::handlePropertyButtonClick ) ) return {};
+                                                     eventValue == IEvent::handlePropertyButtonClick ) )
+                {
+                    return {};
+                }
             }
 #endif
             if( eventValue == IEvent::handlePropertyButtonClick )
@@ -1220,7 +1338,10 @@ namespace workphone::editor
     bool PropertiesWindow::updateTextureProfile( SmartPtr<ISharedObject> object )
     {
         const bool selected = m_textureProfile && m_textureProfile->update( object );
-        if( m_propertyGrid ) m_propertyGrid->setVisible( !selected, false );
+        if( m_propertyGrid )
+        {
+            m_propertyGrid->setVisible( !selected, false );
+        }
         return selected;
     }
 #endif
@@ -1292,44 +1413,71 @@ namespace workphone::editor
 
             if( eventValue == IEvent::handleDrop )
             {
-                if( arguments.size() < 4 ) return {};
+                if( arguments.size() < 4 )
+                {
+                    return {};
+                }
                 auto properties = dynamic_pointer_cast<Properties>( arguments[3].object );
-                if( !properties ) return {};
+                if( !properties )
+                {
+                    return {};
+                }
                 auto dragData = workphone::make_ptr<Properties>();
                 auto dataStr = arguments[0].getStr();
                 auto name = arguments[1].getStr();
                 DataUtil::parse( dataStr, dragData.get() );
 
-                if( !properties->hasProperty( name ) ) return {};
+                if( !properties->hasProperty( name ) )
+                {
+                    return {};
+                }
                 const auto &property = properties->getPropertyObject( name );
-                if( property.isReadOnly() ) return {};
+                if( property.isReadOnly() )
+                {
+                    return {};
+                }
                 const auto reference = property.getAttribute( Properties::resourceTypeStr );
                 if( reference == "RenderTexture" )
                 {
                     auto texture = findRenderTexture( dragData->getProperty( "actorUUID" ), true );
                     if( texture && texture->getHandle() )
-                        owner->propertyChange( properties, name, texture->getHandle()->getUUIDAsString(), false );
+                    {
+                        owner->propertyChange( properties, name, texture->getHandle()->getUUIDAsString(),
+                                               false );
+                    }
                     return {};
                 }
 
                 auto filePath = dragData->getProperty( "filePath" );
-                if( AssetReferenceChange::referenceType( reference ) == scene::LightingDirector::typeInfo() )
+                if( AssetReferenceChange::referenceType( reference ) ==
+                    scene::LightingDirector::typeInfo() )
                 {
                     auto files = applicationManager->getFileSystem();
                     auto catalog = resourceDatabase ? dynamic_pointer_cast<AssetDatabaseManager>(
-                                                          resourceDatabase->getDatabaseManager() ) : nullptr;
+                                                          resourceDatabase->getDatabaseManager() )
+                                                    : nullptr;
                     if( catalog && files && !filePath.empty() )
                     {
                         String error;
-                        const auto uuid = registerLightingPresetFile( *catalog, *files, filePath, error );
-                        if( !uuid.empty() ) owner->propertyChange( properties, name, uuid, false );
-                        if( !error.empty() ) WP_LOG_ERROR( "Cannot register lighting resource: " + error );
+                        const auto uuid =
+                            registerLightingPresetFile( *catalog, *files, filePath, error );
+                        if( !uuid.empty() )
+                        {
+                            owner->propertyChange( properties, name, uuid, false );
+                        }
+                        if( !error.empty() )
+                        {
+                            WP_LOG_ERROR( "Cannot register lighting resource: " + error );
+                        }
                     }
                     return {};
                 }
                 if( !StringUtil::isNullOrEmpty( filePath ) )
                 {
-                    if( !resourceDatabase ) return {};
+                    if( !resourceDatabase )
+                    {
+                        return {};
+                    }
                     auto resource = resourceDatabase->loadResource( filePath );
                     if( !resource )
                     {
@@ -1347,7 +1495,10 @@ namespace workphone::editor
                 else
                 {
                     auto uuid = dragData->getProperty( "actorUUID" );
-                    if( !uuid.empty() ) owner->propertyChange( properties, name, uuid, false );
+                    if( !uuid.empty() )
+                    {
+                        owner->propertyChange( properties, name, uuid, false );
+                    }
                 }
             }
         }

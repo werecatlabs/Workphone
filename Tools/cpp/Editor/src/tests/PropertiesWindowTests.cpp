@@ -35,12 +35,17 @@ namespace
 {
     SmartPtr<Properties> copyInspectorData( SmartPtr<Properties> source )
     {
-        if( !source ) return nullptr;
+        if( !source )
+        {
+            return nullptr;
+        }
         auto copy = make_ptr<Properties>();
         String error;
-        if( !PropertiesBinarySerializer::deserialize(
-                PropertiesBinarySerializer::serialize( *source ), *copy, &error ) )
+        if( !PropertiesBinarySerializer::deserialize( PropertiesBinarySerializer::serialize( *source ),
+                                                      *copy, &error ) )
+        {
             throw std::runtime_error( error.c_str() );
+        }
         return copy;
     }
 
@@ -84,7 +89,9 @@ namespace
     class InspectorObject : public ISharedObject
     {
     public:
-        explicit InspectorObject( SmartPtr<Properties> initial ) : data( std::move( initial ) ) {}
+        explicit InspectorObject( SmartPtr<Properties> initial ) : data( std::move( initial ) )
+        {
+        }
 
         SmartPtr<Properties> getProperties() const override
         {
@@ -92,16 +99,20 @@ namespace
             // must not pass merely because the grid shares live target data.
             return copyInspectorData( data );
         }
+
         void setProperties( SmartPtr<Properties> properties ) override
         {
             ++sets;
             data = copyInspectorData( properties );
             for( auto group : data->getChildrenByName( "group" ) )
-                if( auto details = group->getChild( "details" ); details && details->isButtonPressed( "Apply" ) )
+            {
+                if( auto details = group->getChild( "details" );
+                    details && details->isButtonPressed( "Apply" ) )
                 {
                     ++actions;
                     actionValue = details->getPropertyAsInt( "value" );
                 }
+            }
         }
 
         SmartPtr<Properties> data;
@@ -122,6 +133,7 @@ namespace
             lastSender = sender;
             return {};
         }
+
         u32 events = 0;
         hash_type lastEvent = 0;
         Array<Parameter> lastArguments;
@@ -143,12 +155,14 @@ namespace
             lastApplied = copyInspectorData( properties );
             MeshResourceDirector::setProperties( properties );
         }
+
         void save() override
         {
             ++saves;
             savedEnabled = getStreamingOptions().enabled;
             lastSaved = getProperties();
         }
+
         void import() override
         {
             ++imports;
@@ -170,6 +184,7 @@ namespace
             BOOST_CHECK_EQUAL( type, scene::MeshResourceDirector::typeInfo() );
             return director;
         }
+
         SmartPtr<InspectorMeshDirector> director;
         u32 loads = 0;
     };
@@ -204,6 +219,7 @@ namespace
             grid = make_ptr<ui::ImGuiPropertyGrid>();
             window->setPropertyGrid( grid );
         }
+
         ~InspectorFixture()
         {
             application->lastArguments.clear();
@@ -225,7 +241,7 @@ namespace
             application = nullptr;
         }
     };
-}
+}  // namespace
 
 BOOST_AUTO_TEST_CASE( editor_property_nested_mesh_import_settings_test )
 {
@@ -300,16 +316,19 @@ BOOST_AUTO_TEST_CASE( editor_property_import_status_refresh_test )
                        director->getImportStatus() );
     BOOST_CHECK( displayed->getPropertyObject( scene::ResourceDirector::importStatusStr ).isReadOnly() );
 
-    const auto longFailure = String( "Import failed: persistent group has 32 actors; limit is 20. " ) +
-                             String( 512, 'x' );
+    const auto longFailure =
+        String( "Import failed: persistent group has 32 actors; limit is 20. " ) + String( 512, 'x' );
     director->setImportStatus( request, longFailure );
     fixture.window->update();
     BOOST_CHECK_EQUAL( displayed->getProperty( scene::ResourceDirector::importStatusStr ),
                        director->getImportStatus() );
     BOOST_CHECK_EQUAL( displayed->getPropertyObject( scene::ResourceDirector::importStatusStr )
-                           .getAttribute( "valueTooltip" ), "true" );
+                           .getAttribute( "valueTooltip" ),
+                       "true" );
     BOOST_CHECK_LT( displayed->getPropertyObject( scene::ResourceDirector::importStatusStr )
-                        .getAttribute( "description" ).size(), 256u );
+                        .getAttribute( "description" )
+                        .size(),
+                    256u );
     BOOST_CHECK( fixture.grid->getProperties() == displayed );
     BOOST_CHECK( displayed->getChild( "streamingOptions" ) == streaming );
     BOOST_CHECK_CLOSE( streaming->getPropertyAsFloat( "loadRadius" ), 12345.0f, 0.001f );
@@ -438,8 +457,8 @@ BOOST_AUTO_TEST_CASE( editor_property_nested_buttons_and_resource_metadata_test 
     arguments[2].setStr( "old-nested-reference" );
     arguments[3].setObject( dropOwner );
     arguments[4].setObject( dropDisplay->getChildrenByName( "group" )[1] );
-    drop->handleEvent( EventType::UI, IEvent::handleDrop, arguments,
-                       fixture.grid, fixture.grid, nullptr );
+    drop->handleEvent( EventType::UI, IEvent::handleDrop, arguments, fixture.grid, fixture.grid,
+                       nullptr );
     BOOST_CHECK_EQUAL( dropObject->sets, 1u );
     BOOST_CHECK_EQUAL( detailGroup( dropObject->data )->getProperty( "asset" ), actorUUID );
     BOOST_CHECK_EQUAL( dropObject->data->getProperty( "asset" ), "root-reference" );
@@ -449,8 +468,8 @@ BOOST_AUTO_TEST_CASE( editor_property_nested_buttons_and_resource_metadata_test 
     BOOST_CHECK( !detailGroup( dropObject->data )->hasProperty( "actorUUID" ) );
     BOOST_CHECK( !detailGroup( dropObject->data )->hasProperty( "drag-only" ) );
     arguments[0].setStr( String() );
-    drop->handleEvent( EventType::UI, IEvent::handleDrop, arguments,
-                       fixture.grid, fixture.grid, nullptr );
+    drop->handleEvent( EventType::UI, IEvent::handleDrop, arguments, fixture.grid, fixture.grid,
+                       nullptr );
     BOOST_CHECK_EQUAL( dropObject->sets, 1u );
     BOOST_CHECK_EQUAL( detailGroup( dropObject->data )->getProperty( "asset" ), actorUUID );
 }
@@ -481,15 +500,18 @@ BOOST_AUTO_TEST_CASE( editor_property_scene_lighting_drop_test )
     namespace fs = std::filesystem;
     InspectorFixture fixture;
     const auto directory = fs::temp_directory_path() / StringUtil::getUUID().c_str();
+
     struct ProjectFiles
     {
         fs::path directory;
+
         ~ProjectFiles()
         {
             std::error_code ignored;
             fs::remove_all( directory, ignored );
         }
     } projectFiles{ directory };
+
     fs::create_directories( directory / "Assets" );
 
     auto app = fixture.application;
@@ -509,11 +531,13 @@ BOOST_AUTO_TEST_CASE( editor_property_scene_lighting_drop_test )
     BOOST_REQUIRE( catalog );
     catalog->loadFromFile( ( directory / database->getFilePath().c_str() ).generic_u8string().c_str() );
     app->setResourceDatabase( database );
+
     struct CatalogScope
     {
         SmartPtr<InspectorApplication> application;
         SmartPtr<AssetDatabaseManager> catalog;
         SmartPtr<SQLitePlugin> sqlite;
+
         ~CatalogScope()
         {
             application->setResourceDatabase( nullptr );
@@ -521,6 +545,7 @@ BOOST_AUTO_TEST_CASE( editor_property_scene_lighting_drop_test )
             sqlite->unload( nullptr );
         }
     } catalogScope{ app, catalog, sqlite };
+
     BOOST_REQUIRE( catalog->getDatabase() && catalog->getDatabase()->isLoaded() );
 
     const auto writePreset = [&]( const char *path, const char *objectType, float red ) {
@@ -540,7 +565,8 @@ BOOST_AUTO_TEST_CASE( editor_property_scene_lighting_drop_test )
     app->setRunning( true );
     database->importFolder( String( ( directory / "Assets" ).generic_u8string().c_str() ), false );
     app->setRunning( false );
-    auto imported = dynamic_pointer_cast<scene::ResourceDirector>( catalog->getResourceEntryFromPath( legacy ) );
+    auto imported =
+        dynamic_pointer_cast<scene::ResourceDirector>( catalog->getResourceEntryFromPath( legacy ) );
     BOOST_REQUIRE( imported );
     BOOST_CHECK( !catalog->getResourceEntryFromPath( wrongType ) );
     writePreset( preset, "workphone::scene::LightingDirector", 0.75f );
@@ -560,8 +586,8 @@ BOOST_AUTO_TEST_CASE( editor_property_scene_lighting_drop_test )
         arguments[1].setStr( ApplicationUtil::lightingStr );
         arguments[2].setStr( displayed->getProperty( ApplicationUtil::lightingStr ) );
         arguments[3].setObject( displayed );
-        drop->handleEvent( EventType::UI, IEvent::handleDrop, arguments,
-                           fixture.grid, fixture.grid, nullptr );
+        drop->handleEvent( EventType::UI, IEvent::handleDrop, arguments, fixture.grid, fixture.grid,
+                           nullptr );
     };
 
     dropFile( legacy );

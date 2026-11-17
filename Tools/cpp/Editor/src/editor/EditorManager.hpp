@@ -11,6 +11,7 @@ namespace workphone
     namespace editor
     {
         class PrefabEditSession;
+
         /**
          * @brief Central coordinator for editor state, project management, and editing tools.
          *

@@ -25,9 +25,9 @@ namespace
 {
     struct SceneAssetDropDirectory
     {
-        std::filesystem::path path = std::filesystem::temp_directory_path() /
-                                     std::string( ( "workphone-scene-drop-" +
-                                                    StringUtil::getUUID() ).c_str() );
+        std::filesystem::path path =
+            std::filesystem::temp_directory_path() /
+            std::string( ( "workphone-scene-drop-" + StringUtil::getUUID() ).c_str() );
 
         ~SceneAssetDropDirectory()
         {
@@ -66,8 +66,7 @@ namespace
         }
     };
 
-    void checkDropPosition( SmartPtr<scene::IGameActor> actor,
-                            const Vector3<real_Num> &expected )
+    void checkDropPosition( SmartPtr<scene::IGameActor> actor, const Vector3<real_Num> &expected )
     {
         const auto actual = actor->getPosition();
         BOOST_CHECK_SMALL( actual.x - expected.x, static_cast<real_Num>( 0.0001 ) );
@@ -189,10 +188,8 @@ BOOST_AUTO_TEST_CASE( scene_render_asset_drop_test )
                              nullptr );
         flushJobs();
     };
-    auto dropAndCheck = [&]( const String &payload, const String &name,
-                             const Vector3<real_Num> &origin,
-                             const Vector3<real_Num> &direction,
-                             const Vector3<real_Num> &expected ) {
+    auto dropAndCheck = [&]( const String &payload, const String &name, const Vector3<real_Num> &origin,
+                             const Vector3<real_Num> &direction, const Vector3<real_Num> &expected ) {
         selection->clearSelection();
         selection->addSelectedObject( selectedParent );
         const auto before = scene->getActors().size();
@@ -278,7 +275,8 @@ BOOST_AUTO_TEST_CASE( scene_render_asset_drop_test )
                                 Vector3<real_Num>( 2, 0, 0 ), Vector3<real_Num>( 12, 3, 4 ) );
     BOOST_REQUIRE_EQUAL( first->getChildren().size(), 1u );
     BOOST_REQUIRE_EQUAL( second->getChildren().size(), 1u );
-    std::set<String> actorIds = { originalRootId, originalChildId,
+    std::set<String> actorIds = { originalRootId,
+                                  originalChildId,
                                   first->getHandle()->getUUIDAsString(),
                                   first->getChildren().front()->getHandle()->getUUIDAsString(),
                                   second->getHandle()->getUUIDAsString(),
@@ -293,13 +291,12 @@ BOOST_AUTO_TEST_CASE( scene_render_asset_drop_test )
     deliver( payloadFor( "Assets", "folder" ), origin, down );
     deliver( "", origin, down );
     deliver( prefabPayload, origin, Vector3<real_Num>::zero() );
-    deliver( prefabPayload,
-              Vector3<real_Num>( std::numeric_limits<real_Num>::quiet_NaN(), 5, 0 ), down );
+    deliver( prefabPayload, Vector3<real_Num>( std::numeric_limits<real_Num>::quiet_NaN(), 5, 0 ),
+             down );
     // Viewport drops without a cursor ray must never instantiate assets at an arbitrary origin.
     Array<Parameter> missingRay;
     missingRay.emplace_back( prefabPayload );
-    target->handleEvent( EventType::UI, IEvent::handleDrop, missingRay, sourceNode, viewport,
-                         nullptr );
+    target->handleEvent( EventType::UI, IEvent::handleDrop, missingRay, sourceNode, viewport, nullptr );
     flushJobs();
     BOOST_CHECK_EQUAL( scene->getActors().size(), beforeInvalid );
     BOOST_CHECK( !commands->getPreviousCommand() );

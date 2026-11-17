@@ -29,9 +29,8 @@ namespace workphone::editor
             auto root = StringUtil::make_lower( StringUtil::cleanupPath( folder ) );
             auto candidate = StringUtil::make_lower( StringUtil::cleanupPath( path ) );
             auto prefix = root + "/";
-            return candidate == root ||
-                   ( candidate.size() >= prefix.size() &&
-                     candidate.compare( 0, prefix.size(), prefix ) == 0 );
+            return candidate == root || ( candidate.size() >= prefix.size() &&
+                                          candidate.compare( 0, prefix.size(), prefix ) == 0 );
         }
     }  // namespace
 
@@ -201,8 +200,9 @@ namespace workphone::editor
                 Util::addMenuItem( m_applicationMenu, static_cast<s32>( MenuId::Duplicate ), "Duplicate",
                                    "Duplicate this asset" );
                 Util::addMenuSeparator( m_applicationMenu );
-                auto deleteItem = Util::addMenuItem(
-                    m_applicationMenu, static_cast<s32>( MenuId::Remove ), "Delete", "Delete this asset" );
+                auto deleteItem =
+                    Util::addMenuItem( m_applicationMenu, static_cast<s32>( MenuId::Remove ), "Delete",
+                                       "Delete this asset" );
                 auto deleteProperties = workphone::make_ptr<Properties>();
                 deleteProperties->setProperty( "requiresContextTarget", true );
                 deleteItem->setProperties( deleteProperties );
@@ -1495,8 +1495,7 @@ namespace workphone::editor
         m_thumbnailNode = nullptr;
         m_thumbnailPreview->setTexture( nullptr );
         auto treeData =
-            node ? workphone::dynamic_pointer_cast<ProjectTreeData>( node->getNodeUserData() )
-                 : nullptr;
+            node ? workphone::dynamic_pointer_cast<ProjectTreeData>( node->getNodeUserData() ) : nullptr;
         if( !treeData || treeData->getOwnerType() != fileExt )
         {
             return;
@@ -1589,8 +1588,8 @@ namespace workphone::editor
         return ICON_FA_FILE;
     }
 
-    void ProjectAssetsWindow::configureAssetNode( SmartPtr<ui::IUITreeNode> node,
-                                                  const String &path, bool isFolder )
+    void ProjectAssetsWindow::configureAssetNode( SmartPtr<ui::IUITreeNode> node, const String &path,
+                                                  bool isFolder )
     {
         const auto icon = getAssetIcon( path, isFolder );
         Util::setText( node, icon + "  " + Path::getFileName( path ) );
@@ -1949,8 +1948,8 @@ namespace workphone::editor
             if( eventValue == IEvent::handleValueChanged )
             {
                 ScopedLock lock( owner.get() );
-                auto filter = arguments.empty() ? owner->m_searchEntry->getText()
-                                                : arguments.back().getStr();
+                auto filter =
+                    arguments.empty() ? owner->m_searchEntry->getText() : arguments.back().getStr();
                 owner->applySearchFilter( filter );
             }
             return {};
@@ -1996,7 +1995,9 @@ namespace workphone::editor
             else if( auto manager = EditorManager::getSingletonPtr() )
             {
                 if( auto ui = manager->getUI() )
+                {
                     ui->updatePrefabEditingUI( "Select a .prefab or .fbprefab asset to edit." );
+                }
             }
             return {};
         }
@@ -2136,9 +2137,10 @@ namespace workphone::editor
         case MenuId::Remove:
         {
             auto tree = owner->getTree();
-            auto node = arguments.empty()
-                            ? nullptr
-                            : workphone::dynamic_pointer_cast<ui::IUITreeNode>( arguments.front().getObject() );
+            auto node =
+                arguments.empty()
+                    ? nullptr
+                    : workphone::dynamic_pointer_cast<ui::IUITreeNode>( arguments.front().getObject() );
             if( !tree || !node || !node->getParent() || node->getParent() == tree->getRoot() )
             {
                 break;
@@ -2447,8 +2449,8 @@ namespace workphone::editor
                                                   ch == '>' || ch == '|';
                                        } );
                     auto baseName = StringUtil::make_lower( name.substr( 0, name.find( '.' ) ) );
-                    auto reservedName = baseName == "con" || baseName == "prn" ||
-                                        baseName == "aux" || baseName == "nul" ||
+                    auto reservedName = baseName == "con" || baseName == "prn" || baseName == "aux" ||
+                                        baseName == "nul" ||
                                         ( baseName.size() == 4 &&
                                           ( baseName.compare( 0, 3, "com" ) == 0 ||
                                             baseName.compare( 0, 3, "lpt" ) == 0 ) &&

@@ -17,9 +17,15 @@ int main( int argc, char *argv[] )
 {
     // A Debug build remains usable as an Editor. CTest supplies explicit Boost
     // arguments; launching the executable normally opens the real native UI.
-    bool runtimeScene=false;for(int i=1;i<argc;++i)runtimeScene=runtimeScene||strncmp(argv[i],"--runtime-scene-",16)==0;
+    bool runtimeScene = false;
+    for( int i = 1; i < argc; ++i )
+    {
+        runtimeScene = runtimeScene || strncmp( argv[i], "--runtime-scene-", 16 ) == 0;
+    }
     if( argc == 1 || runtimeScene || ( argc > 1 && strcmp( argv[1], "--interactive" ) == 0 ) )
+    {
         return runInteractiveEditor( argc, argv );
+    }
     try
     {
         workphone::editor::tests::initialiseAllocationDiagnostics();
@@ -74,7 +80,8 @@ int main( int argc, char *argv[] )
 }
 #endif
 
-#    include "EditorPackage.hpp"
+#include "EditorPackage.hpp"
+
 namespace
 {
     // Validation is a bounded command-line operation, including arbitrary Lua
@@ -82,24 +89,64 @@ namespace
     class RuntimeSceneValidationWatchdog
     {
     public:
-        explicit RuntimeSceneValidationWatchdog(bool enabled)
+        explicit RuntimeSceneValidationWatchdog( bool enabled )
         {
-            if(!enabled)return;m_done=CreateEventW(nullptr,TRUE,FALSE,nullptr);
-            if(!m_done)throw std::runtime_error("Cannot create runtime scene validation watchdog");
-            try {m_worker=std::thread([done=m_done] {
-                if(WaitForSingleObject(done,30000)!=WAIT_OBJECT_0) {
-                    static constexpr char diagnostic[]="Runtime scene package startup exceeded 30 seconds\n";DWORD written=0;
-                    WriteFile(GetStdHandle(STD_ERROR_HANDLE),diagnostic,sizeof(diagnostic)-1,&written,nullptr);
-                    TerminateProcess(GetCurrentProcess(),EXIT_FAILURE);
-                }
-            });}catch(...){CloseHandle(m_done);m_done=nullptr;throw;}
+            if( !enabled )
+            {
+                return;
+            }
+            m_done = CreateEventW( nullptr, TRUE, FALSE, nullptr );
+            if( !m_done )
+            {
+                throw std::runtime_error( "Cannot create runtime scene validation watchdog" );
+            }
+            try
+            {
+                m_worker = std::thread( [done = m_done] {
+                    if( WaitForSingleObject( done, 30000 ) != WAIT_OBJECT_0 )
+                    {
+                        static constexpr char diagnostic[] =
+                            "Runtime scene package startup exceeded 30 seconds\n";
+                        DWORD written = 0;
+                        WriteFile( GetStdHandle( STD_ERROR_HANDLE ), diagnostic,
+                                   sizeof( diagnostic ) - 1, &written, nullptr );
+                        TerminateProcess( GetCurrentProcess(), EXIT_FAILURE );
+                    }
+                } );
+            }
+            catch( ... )
+            {
+                CloseHandle( m_done );
+                m_done = nullptr;
+                throw;
+            }
         }
-        ~RuntimeSceneValidationWatchdog(){stop();}
-        void stop(){if(m_done){SetEvent(m_done);if(m_worker.joinable())m_worker.join();CloseHandle(m_done);m_done=nullptr;}}
+
+        ~RuntimeSceneValidationWatchdog()
+        {
+            stop();
+        }
+
+        void stop()
+        {
+            if( m_done )
+            {
+                SetEvent( m_done );
+                if( m_worker.joinable() )
+                {
+                    m_worker.join();
+                }
+                CloseHandle( m_done );
+                m_done = nullptr;
+            }
+        }
+
     private:
-        HANDLE m_done=nullptr;std::thread m_worker;
+        HANDLE m_done = nullptr;
+        std::thread m_worker;
     };
-}
+}  // namespace
+
 static int runInteractiveEditor( int argc, char *argv[] )
 {
     try
@@ -108,7 +155,12 @@ static int runInteractiveEditor( int argc, char *argv[] )
         {
             if( strcmp( argv[i], "--help" ) == 0 || strcmp( argv[i], "-h" ) == 0 )
             {
-                printf( "Usage: Editor [--interactive] [--software|--dx11] [--workspace PATH] [--package-root PATH] [--package-smoke] [--validation-capture-directory PATH] [--runtime-scene-package PATH --runtime-scene-uuid UUID [--runtime-scene-target pc] [--runtime-scene-overlay PATH ...] [--runtime-scene-collisions reject|identical|prefer-earlier] [--runtime-scene-validate]]\n" );
+                printf(
+                    "Usage: Editor [--interactive] [--software|--dx11] [--workspace PATH] "
+                    "[--package-root PATH] [--package-smoke] [--validation-capture-directory PATH] "
+                    "[--runtime-scene-package PATH --runtime-scene-uuid UUID [--runtime-scene-target "
+                    "pc] [--runtime-scene-overlay PATH ...] [--runtime-scene-collisions "
+                    "reject|identical|prefer-earlier] [--runtime-scene-validate]]\n" );
                 return EXIT_SUCCESS;
             }
         }
@@ -145,14 +197,28 @@ static int runInteractiveEditor( int argc, char *argv[] )
         try
         {
             auto app = workphone::make_ptr<editor::PackagedEditorApplication>();
-            const bool runtimeSceneValidation=!package.runtimeScenePackage.empty()&&(package.runtimeSceneValidate||package.smoke);
-            if(!package.runtimeScenePackage.empty()){workphone::Array<workphone::String> directories;for(const auto &path:package.runtimeSceneOverlays)directories.push_back(path.u8string().c_str());directories.push_back(package.runtimeScenePackage.u8string().c_str());app->configureRuntimeScenePackages(directories,package.runtimeSceneUuid.c_str(),package.runtimeSceneTarget.c_str(),package.runtimeSceneCollisions.c_str());}
+            const bool runtimeSceneValidation = !package.runtimeScenePackage.empty() &&
+                                                ( package.runtimeSceneValidate || package.smoke );
+            if( !package.runtimeScenePackage.empty() )
+            {
+                workphone::Array<workphone::String> directories;
+                for( const auto &path : package.runtimeSceneOverlays )
+                {
+                    directories.push_back( path.u8string().c_str() );
+                }
+                directories.push_back( package.runtimeScenePackage.u8string().c_str() );
+                app->configureRuntimeScenePackages( directories, package.runtimeSceneUuid.c_str(),
+                                                    package.runtimeSceneTarget.c_str(),
+                                                    package.runtimeSceneCollisions.c_str() );
+            }
             app->validationCapture.configure( package.validationCaptureDirectory );
             if( !package.root.empty() )
             {
                 app->mediaDirectory = ( package.root / "Media" ).generic_string().c_str();
-                app->pluginConfiguration = ( package.workspace / "wp_plugins_package.cfg" ).generic_string().c_str();
-                app->catalogFile = ( package.workspace / "Cache/media-assets.db" ).generic_string().c_str();
+                app->pluginConfiguration =
+                    ( package.workspace / "wp_plugins_package.cfg" ).generic_string().c_str();
+                app->catalogFile =
+                    ( package.workspace / "Cache/media-assets.db" ).generic_string().c_str();
             }
             else
             {
@@ -169,39 +235,62 @@ static int runInteractiveEditor( int argc, char *argv[] )
             const auto maxThreads = 12;
             const auto numThreads = (s32)Thread::hardware_concurrency();
             const auto threads = Math<s32>::min( numThreads, maxThreads );
-            app->setActiveThreads( package.smoke||runtimeSceneValidation ? 0 : threads );
+            app->setActiveThreads( package.smoke || runtimeSceneValidation ? 0 : threads );
             //app->setActiveThreads( 0 );
 
             app->setCreateFrameStatistics( false );
-            app->setDebugMode( package.smoke||runtimeSceneValidation );
-            if( package.smoke&&!runtimeSceneValidation ) app->setRendererType( render::IGraphicsSystem::RenderApi::Software );
+            app->setDebugMode( package.smoke || runtimeSceneValidation );
+            if( package.smoke && !runtimeSceneValidation )
+            {
+                app->setRendererType( render::IGraphicsSystem::RenderApi::Software );
+            }
 
-#    if !WP_FINAL
+#if !WP_FINAL
             auto flags = app->getApplicationFlags();
             if( package.root.empty() )
+            {
                 app->setApplicationFlags( flags | core::IApplication::developerModeFlag );
-#    endif
+            }
+#endif
 
-            RuntimeSceneValidationWatchdog watchdog(runtimeSceneValidation);
+            RuntimeSceneValidationWatchdog watchdog( runtimeSceneValidation );
             app->load( nullptr );
             try
             {
-                if( !app->isLoaded() ) throw std::runtime_error( "Editor failed to load" );
-                if( package.smoke ) package.verifyStartup( app );
-                if(runtimeSceneValidation)
+                if( !app->isLoaded() )
                 {
-                    const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(30);
-                    while(!app->runtimeSceneComplete())
+                    throw std::runtime_error( "Editor failed to load" );
+                }
+                if( package.smoke )
+                {
+                    package.verifyStartup( app );
+                }
+                if( runtimeSceneValidation )
+                {
+                    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds( 30 );
+                    while( !app->runtimeSceneComplete() )
                     {
-                        if(std::chrono::steady_clock::now()>=deadline){app->cancelRuntimeSceneStartup("Runtime scene package startup exceeded 30 seconds");break;}
-                        app->iterate();Thread::sleep(.001);
+                        if( std::chrono::steady_clock::now() >= deadline )
+                        {
+                            app->cancelRuntimeSceneStartup(
+                                "Runtime scene package startup exceeded 30 seconds" );
+                            break;
+                        }
+                        app->iterate();
+                        Thread::sleep( .001 );
                     }
                     watchdog.stop();
                     std::cout << "RuntimeSceneBootstrap=" << app->runtimeSceneReport() << std::endl;
-                    if(!app->runtimeSceneSucceeded())throw std::runtime_error(app->runtimeSceneDiagnostic().c_str());
+                    if( !app->runtimeSceneSucceeded() )
+                    {
+                        throw std::runtime_error( app->runtimeSceneDiagnostic().c_str() );
+                    }
                     std::cout << "Runtime scene package loaded" << std::endl;
                 }
-                else if(!package.smoke)app->run();
+                else if( !package.smoke )
+                {
+                    app->run();
+                }
             }
             catch( ... )
             {
@@ -209,7 +298,10 @@ static int runInteractiveEditor( int argc, char *argv[] )
                 throw;
             }
             app->unload( nullptr );
-            if( package.smoke ) std::cout << "Editor package startup and teardown passed" << std::endl;
+            if( package.smoke )
+            {
+                std::cout << "Editor package startup and teardown passed" << std::endl;
+            }
         }
         catch( const std::exception &e )
         {

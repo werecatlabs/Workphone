@@ -21,7 +21,7 @@
 #include <Workphone/Graphics/Texture.hpp>
 #include <Workphone/Database/AssetDatabaseManager.hpp>
 #if WP_GRAPHICS_SYSTEM_CLAW && WP_BUILD_RENDERER_DX11
-#include <WPGraphics/ClawMaterial.hpp>
+#    include <WPGraphics/ClawMaterial.hpp>
 #endif
 
 #include <algorithm>
@@ -34,9 +34,9 @@
 #include <sstream>
 #include <cctype>
 #if defined( _WIN32 )
-#include <windows.h>
+#    include <windows.h>
 #else
-#include <unistd.h>
+#    include <unistd.h>
 #endif
 
 #if WP_EDITOR_TESTS
@@ -88,7 +88,10 @@ namespace
             Thread::setCurrentTask( previousTask );
         }
 
-        void iterate() { m_application.iterate(); }
+        void iterate()
+        {
+            m_application.iterate();
+        }
 
         ~EditorApplicationGuard()
         {
@@ -108,8 +111,12 @@ namespace
     std::string restartFixtureBytes( const std::filesystem::path &path )
     {
         std::ifstream stream( path, std::ios::binary );
-        if( !stream ) throw std::runtime_error( "Cannot read restart fixture: " + path.u8string() );
-        std::ostringstream bytes; bytes << stream.rdbuf();
+        if( !stream )
+        {
+            throw std::runtime_error( "Cannot read restart fixture: " + path.u8string() );
+        }
+        std::ostringstream bytes;
+        bytes << stream.rdbuf();
         return bytes.str();
     }
 
@@ -128,35 +135,45 @@ namespace
         namespace fs = std::filesystem;
         BOOST_REQUIRE( stage == "write" || stage == "read" );
         const auto directoryOption = std::getenv( "WP_EDITOR_SETTINGS_RESTART_DIRECTORY" );
-        BOOST_REQUIRE_MESSAGE( directoryOption && *directoryOption, "Restart fixture directory is required" );
+        BOOST_REQUIRE_MESSAGE( directoryOption && *directoryOption,
+                               "Restart fixture directory is required" );
         const auto root = fs::canonical( fs::u8path( directoryOption ) );
         auto configuration = make_ptr<Properties>();
-        DataUtil::parse( restartFixtureBytes( root / "restart-fixture.json" ).c_str(), configuration.get() );
-        BOOST_REQUIRE_EQUAL( configuration->getProperty( "fixture" ), "project-settings-process-restart-v1" );
-        const auto working = fs::canonical( fs::u8path( configuration->getProperty( "workingDirectory" ).c_str() ) );
+        DataUtil::parse( restartFixtureBytes( root / "restart-fixture.json" ).c_str(),
+                         configuration.get() );
+        BOOST_REQUIRE_EQUAL( configuration->getProperty( "fixture" ),
+                             "project-settings-process-restart-v1" );
+        const auto working =
+            fs::canonical( fs::u8path( configuration->getProperty( "workingDirectory" ).c_str() ) );
         BOOST_REQUIRE_EQUAL( fs::canonical( fs::current_path() ), working );
         BOOST_REQUIRE( working.filename().u8string().find( "SettingsRestart-" ) == 0 );
         const auto nonce = configuration->getProperty( "nonce" );
         BOOST_REQUIRE_EQUAL( nonce.size(), 32u );
-        BOOST_REQUIRE( std::all_of( nonce.begin(), nonce.end(), []( unsigned char c ) { return std::isxdigit( c ) != 0; } ) );
+        BOOST_REQUIRE( std::all_of( nonce.begin(), nonce.end(),
+                                    []( unsigned char c ) { return std::isxdigit( c ) != 0; } ) );
         const String company = "Restart company " + nonce;
         const auto projectFile = root / "Project/project.fbproject";
         const auto runtimeFile = root / "Project/ProjectRuntime.settings";
         const auto graphicsFile = root / "Project/GameGraphics.settings";
-#if defined( _WIN32 )
+#    if defined( _WIN32 )
         const auto processId = static_cast<s32>( GetCurrentProcessId() );
-#else
+#    else
         const auto processId = static_cast<s32>( getpid() );
-#endif
+#    endif
         auto evidence = make_ptr<Properties>();
-        evidence->setProperty( "stage", stage ); evidence->setProperty( "pid", processId );
-        evidence->setProperty( "nonce", nonce ); evidence->setProperty( "company", company );
-        evidence->setProperty( "masterVolume", s32( 37 ) ); evidence->setProperty( "frameRateLimit", s32( 73 ) );
-        evidence->setProperty( "shadowQuality", s32( 4 ) ); evidence->setProperty( "gravity", -7.5f );
+        evidence->setProperty( "stage", stage );
+        evidence->setProperty( "pid", processId );
+        evidence->setProperty( "nonce", nonce );
+        evidence->setProperty( "company", company );
+        evidence->setProperty( "masterVolume", s32( 37 ) );
+        evidence->setProperty( "frameRateLimit", s32( 73 ) );
+        evidence->setProperty( "shadowQuality", s32( 4 ) );
+        evidence->setProperty( "gravity", -7.5f );
         std::string savedProject, savedRuntime, savedGraphics;
         if( stage == "read" )
         {
-            savedProject = restartFixtureBytes( projectFile ); savedRuntime = restartFixtureBytes( runtimeFile );
+            savedProject = restartFixtureBytes( projectFile );
+            savedRuntime = restartFixtureBytes( runtimeFile );
             savedGraphics = restartFixtureBytes( graphicsFile );
             auto writer = make_ptr<Properties>();
             DataUtil::parse( restartFixtureBytes( root / "native-write.json" ).c_str(), writer.get() );
@@ -164,7 +181,11 @@ namespace
             BOOST_REQUIRE_EQUAL( writer->getProperty( "nonce" ), nonce );
             evidence->setProperty( "writerPid", writer->getPropertyAsInt( "pid" ) );
         }
-        else BOOST_REQUIRE_MESSAGE( !fs::exists( projectFile ), "Writer requires a fresh disposable project" );
+        else
+        {
+            BOOST_REQUIRE_MESSAGE( !fs::exists( projectFile ),
+                                   "Writer requires a fresh disposable project" );
+        }
 
         {
             EditorApplicationGuard app;
@@ -183,8 +204,12 @@ namespace
                 auto startup = application->getPlayerSettings();
                 BOOST_REQUIRE( startup );
                 BOOST_REQUIRE( application->getEditorSettings() );
-                BOOST_REQUIRE_EQUAL( fs::u8path( application->getEditorSettings()->getProperty( "Project Path" ).c_str() ), projectFile );
-                BOOST_REQUIRE_EQUAL( fs::u8path( application->getProjectPath().c_str() ), projectFile.parent_path() );
+                BOOST_REQUIRE_EQUAL(
+                    fs::u8path(
+                        application->getEditorSettings()->getProperty( "Project Path" ).c_str() ),
+                    projectFile );
+                BOOST_REQUIRE_EQUAL( fs::u8path( application->getProjectPath().c_str() ),
+                                     projectFile.parent_path() );
                 BOOST_REQUIRE_EQUAL( startup->getProperty( "project.company" ), company );
                 BOOST_REQUIRE_EQUAL( startup->getPropertyAsInt( "sound.masterVolume" ), 37 );
                 BOOST_REQUIRE_EQUAL( startup->getPropertyAsInt( "graphics.frameRateLimit" ), 73 );
@@ -197,23 +222,31 @@ namespace
                 const auto physicsScene = application->getPhysicsManager()->getPhysicsScene();
                 BOOST_REQUIRE( physicsScene );
                 BOOST_REQUIRE_CLOSE( physicsScene->getGravity().Y(), -7.5f, .001f );
-#if WP_BUILD_PHYSICS3
-                BOOST_REQUIRE_EQUAL( physicsScene->getProperties()->getProperty( "physics.disabledCollisionPairs" ), "Enemy,Player" );
-#endif
+#    if WP_BUILD_PHYSICS3
+                BOOST_REQUIRE_EQUAL(
+                    physicsScene->getProperties()->getProperty( "physics.disabledCollisionPairs" ),
+                    "Enemy,Player" );
+#    endif
                 evidence->setProperty( "startupAudioAndGravityMatchedBeforeUpdate", true );
                 const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds( 20 );
                 while( std::chrono::steady_clock::now() < deadline )
                 {
                     const auto current = editor->getProject();
-                    if( current && fs::u8path( current->getFilePath().c_str() ) == projectFile ) break;
+                    if( current && fs::u8path( current->getFilePath().c_str() ) == projectFile )
+                    {
+                        break;
+                    }
                     app.iterate();
                     std::this_thread::sleep_for( std::chrono::milliseconds( 10 ) );
                 }
                 BOOST_REQUIRE( editor->getProject() );
-                BOOST_REQUIRE_EQUAL( fs::u8path( editor->getProject()->getFilePath().c_str() ), projectFile );
-#if WP_BUILD_PHYSICS3
-                BOOST_REQUIRE_EQUAL( editor->getProject()->getProperties()->getProperty( "physics.disabledCollisionPairs" ), "Enemy,Player" );
-#endif
+                BOOST_REQUIRE_EQUAL( fs::u8path( editor->getProject()->getFilePath().c_str() ),
+                                     projectFile );
+#    if WP_BUILD_PHYSICS3
+                BOOST_REQUIRE_EQUAL( editor->getProject()->getProperties()->getProperty(
+                                         "physics.disabledCollisionPairs" ),
+                                     "Enemy,Player" );
+#    endif
                 evidence->setProperty( "rememberedProjectOpenedByStartupFSM", true );
             }
             else
@@ -223,30 +256,52 @@ namespace
                 auto settings = initial->getProperties();
                 settings->setProperty( "project.company", String( "Before Apply" ) );
                 settings->setProperty( "sound.masterVolume", s32( 80 ) );
-                initial->setProperties( settings ); initial->save();
+                initial->setProperties( settings );
+                initial->save();
                 editor->setProject( initial );
                 // Use the normal open boundary so shutdown remembers this private project.
                 editor->loadProject( initial->getFilePath() );
-                BOOST_REQUIRE_MESSAGE( application->getEditorSettings(), "Opening the first project must initialize editor preferences" );
-                BOOST_REQUIRE_EQUAL( fs::u8path( application->getEditorSettings()->getProperty( "Project Path" ).c_str() ), projectFile );
+                BOOST_REQUIRE_MESSAGE( application->getEditorSettings(),
+                                       "Opening the first project must initialize editor preferences" );
+                BOOST_REQUIRE_EQUAL(
+                    fs::u8path(
+                        application->getEditorSettings()->getProperty( "Project Path" ).c_str() ),
+                    projectFile );
             }
             const auto project = editor->getProject();
             BOOST_REQUIRE( project );
             auto window = make_ptr<ScriptWindow>();
-            struct WindowGuard { SmartPtr<ScriptWindow> window; ~WindowGuard() { window->unload( nullptr ); } } windowGuard{ window };
-            window->setClassName( "ProjectSettings" ); window->load( nullptr ); window->setWindowVisible( false );
+
+            struct WindowGuard
+            {
+                SmartPtr<ScriptWindow> window;
+
+                ~WindowGuard()
+                {
+                    window->unload( nullptr );
+                }
+            } windowGuard{ window };
+
+            window->setClassName( "ProjectSettings" );
+            window->load( nullptr );
+            window->setWindowVisible( false );
             BOOST_REQUIRE( window->getInvoker() );
             const auto checkLiveValues = [&]() {
-                BOOST_REQUIRE_EQUAL( project->getProperties()->getProperty( "project.company" ), company );
-                BOOST_REQUIRE_EQUAL( project->getProperties()->getPropertyAsInt( "graphics.shadowQuality" ), 4 );
+                BOOST_REQUIRE_EQUAL( project->getProperties()->getProperty( "project.company" ),
+                                     company );
+                BOOST_REQUIRE_EQUAL(
+                    project->getProperties()->getPropertyAsInt( "graphics.shadowQuality" ), 4 );
                 BOOST_REQUIRE( application->getSoundManager() );
                 BOOST_REQUIRE_CLOSE( application->getSoundManager()->getVolume(), .37f, .01f );
                 BOOST_REQUIRE( application->getPhysicsManager() );
                 BOOST_REQUIRE( application->getPhysicsManager()->getPhysicsScene() );
-                BOOST_REQUIRE_CLOSE( application->getPhysicsManager()->getPhysicsScene()->getGravity().Y(), -7.5f, .001f );
+                BOOST_REQUIRE_CLOSE(
+                    application->getPhysicsManager()->getPhysicsScene()->getGravity().Y(), -7.5f,
+                    .001f );
                 BOOST_REQUIRE( application->getTaskManager() );
                 BOOST_REQUIRE( application->getTaskManager()->getTask( TaskId::Render ) );
-                BOOST_REQUIRE_EQUAL( application->getTaskManager()->getTask( TaskId::Render )->getTargetFPS(), 73 );
+                BOOST_REQUIRE_EQUAL(
+                    application->getTaskManager()->getTask( TaskId::Render )->getTargetFPS(), 73 );
             };
             if( stage == "write" )
             {
@@ -266,7 +321,8 @@ namespace
                         assert(succeeded, self.statusMessage)
                     end
                     function ProjectSettings:restartFixtureApply()
-                        self.companyControl:setText(")" ) + company + R"(")
+                        self.companyControl:setText(")" ) +
+                                               company + R"(")
                         self.masterVolumeControl:setValue(37)
                         self.frameRateLimitControl:setValue(73)
                         self.shadowQualityControl:setSelectedOption(4)
@@ -307,7 +363,8 @@ namespace
                 scripts->loadScriptFromString( String( R"(
                     function ProjectSettings:restartFixtureObserve()
                         assert(#self.controlBindings == 132)
-                        assert(self.companyControl:getText() == ")" ) + company + R"(")
+                        assert(self.companyControl:getText() == ")" ) +
+                                               company + R"(")
                         assert(self.masterVolumeControl:getValue() == 37)
                         assert(self.frameRateLimitControl:getValue() == 73)
                         assert(self.shadowQualityControl:getSelectedOption() == 4)
@@ -327,8 +384,10 @@ namespace
             evidence->setProperty( "liveVolumeGravityAndFrameRateMatched", true );
         }
         auto remembered = make_ptr<Properties>();
-        DataUtil::parse( restartFixtureBytes( working / "LioncatEditor.settings" ).c_str(), remembered.get() );
-        BOOST_REQUIRE_EQUAL( fs::u8path( remembered->getProperty( "Project Path" ).c_str() ), projectFile );
+        DataUtil::parse( restartFixtureBytes( working / "LioncatEditor.settings" ).c_str(),
+                         remembered.get() );
+        BOOST_REQUIRE_EQUAL( fs::u8path( remembered->getProperty( "Project Path" ).c_str() ),
+                             projectFile );
         evidence->setProperty( "normalShutdownRememberedPrivateProject", true );
         if( stage == "read" )
         {
@@ -466,6 +525,7 @@ BOOST_AUTO_TEST_CASE( editor_project_settings_live_bridge_test )
     } guard{ editor, editor->getProject(),
              std::filesystem::temp_directory_path() /
                  std::string( ( "lioncat-project-settings-lua-" + StringUtil::getUUID() ).c_str() ) };
+
     auto project = make_ptr<Project>();
     project->create( guard.directory.u8string() );
     auto initial = project->getProperties();
@@ -480,11 +540,17 @@ BOOST_AUTO_TEST_CASE( editor_project_settings_live_bridge_test )
     // This uses the real Properties factory, event enum/hash, UI bindings and
     // ScriptWindow action bridge. The separate Lua suite checks every control.
     auto window = make_ptr<ScriptWindow>();
+
     struct WindowGuard
     {
         SmartPtr<ScriptWindow> window;
-        ~WindowGuard() { window->unload( nullptr ); }
+
+        ~WindowGuard()
+        {
+            window->unload( nullptr );
+        }
     } windowGuard{ window };
+
     window->setClassName( "ProjectSettings" );
     window->load( nullptr );
     window->setWindowVisible( false );
@@ -580,7 +646,8 @@ BOOST_AUTO_TEST_CASE( editor_project_settings_live_bridge_test )
 
     String serviceError;
     auto localServices = makeLocalProjectServiceProviders( guard.directory.u8string().c_str() );
-    BOOST_REQUIRE_MESSAGE( configureProjectServices( localServices, true, true, false, serviceError ), serviceError );
+    BOOST_REQUIRE_MESSAGE( configureProjectServices( localServices, true, true, false, serviceError ),
+                           serviceError );
     scripts->loadScriptFromString( R"(
         function ProjectSettings:projectSettingsServicesProbe()
             local binary = "a" .. string.char(0, 255) .. "b"
@@ -1038,10 +1105,10 @@ BOOST_AUTO_TEST_CASE( editor_material_control_events_test )
         picker->setColour( ColourF( colour.r, colour.g, colour.b, picker->getColour().a ) );
         for( auto listener : picker->getObjectListeners() )
         {
-            listener->handleEvent( EventType::UI, IEvent::handleValueChanged,
-                                   Array<Parameter>{ Parameter( colour.r ), Parameter( colour.g ),
-                                                     Parameter( colour.b ) },
-                                   picker, picker, nullptr );
+            listener->handleEvent(
+                EventType::UI, IEvent::handleValueChanged,
+                Array<Parameter>{ Parameter( colour.r ), Parameter( colour.g ), Parameter( colour.b ) },
+                picker, picker, nullptr );
         }
     };
     const auto checkColourRgb = []( const ColourF &actual, const ColourF &expected ) {
@@ -1220,157 +1287,204 @@ BOOST_AUTO_TEST_CASE( editor_material_shader_reload_actions_test )
     app.loadSingleThreaded();
     auto application = core::IApplicationManager::instance();
     auto material = workphone::dynamic_pointer_cast<render::IMaterial>(
-        application->getGraphicsSystem()->getMaterialManager()->create("EditorShaderReloadActions"));
-    BOOST_REQUIRE(material);
-    const auto requestFor = [](const String &action) {
-        auto request = make_ptr<Properties>(); request->setProperty("action",action); return request;
+        application->getGraphicsSystem()->getMaterialManager()->create( "EditorShaderReloadActions" ) );
+    BOOST_REQUIRE( material );
+    const auto requestFor = []( const String &action ) {
+        auto request = make_ptr<Properties>();
+        request->setProperty( "action", action );
+        return request;
     };
-    auto missingMaterial = requestFor("read");
-    processMaterialShaderReloadAction(nullptr,missingMaterial);
-    BOOST_CHECK(!missingMaterial->getPropertyAsBool("success"));
-    BOOST_CHECK(missingMaterial->getProperty("status").find("Select a material") != String::npos);
-    auto unavailable = requestFor("read");
+    auto missingMaterial = requestFor( "read" );
+    processMaterialShaderReloadAction( nullptr, missingMaterial );
+    BOOST_CHECK( !missingMaterial->getPropertyAsBool( "success" ) );
+    BOOST_CHECK( missingMaterial->getProperty( "status" ).find( "Select a material" ) != String::npos );
+    auto unavailable = requestFor( "read" );
     ScriptWindow bridge;
-    bridge.handleEvent(EventType::UI, StringUtil::getHash32("materialShaderReloadAction"),{},material,unavailable,nullptr);
-    BOOST_CHECK(!unavailable->getPropertyAsBool("success"));
-    BOOST_CHECK(!unavailable->getPropertyAsBool("available"));
-    BOOST_CHECK(!unavailable->getProperty("status").empty());
-    auto malformed = requestFor("configureFiles");
-    processMaterialShaderReloadAction(material,malformed);
-    BOOST_CHECK(!malformed->getPropertyAsBool("success"));
-    BOOST_CHECK(!malformed->getPropertyAsBool("queued"));
-    BOOST_CHECK(malformed->getProperty("status").find("pixel shader") != String::npos);
-    auto unknown = requestFor("pretendSuccess");
-    processMaterialShaderReloadAction(material,unknown);
-    BOOST_CHECK(!unknown->getPropertyAsBool("success"));
-    BOOST_CHECK(unknown->getProperty("status").find("Unknown") != String::npos);
-#if WP_GRAPHICS_SYSTEM_CLAW && WP_BUILD_RENDERER_DX11
-    auto reloadUnavailable = requestFor("reload");
-    processMaterialShaderReloadAction(material,reloadUnavailable);
-    BOOST_CHECK(!reloadUnavailable->getPropertyAsBool("success"));
-    BOOST_CHECK(!reloadUnavailable->getPropertyAsBool("queued"));
-    const auto missingPath = (std::filesystem::temp_directory_path() /
-        ("missing-editor-shader-"+std::string(StringUtil::getUUID().c_str())+".hlsl")).generic_string();
-    auto configure = requestFor("configureFiles");
-    configure->setProperty("pixelFile",String(missingPath.c_str()));
-    processMaterialShaderReloadAction(material,configure);
-    BOOST_REQUIRE_MESSAGE(configure->getPropertyAsBool("success"),configure->getProperty("status"));
-    BOOST_CHECK(configure->getPropertyAsBool("queued"));
-    BOOST_CHECK(configure->getPropertyAsBool("pending"));
-    BOOST_CHECK(!configure->getPropertyAsBool("runtimeSuccess"));
+    bridge.handleEvent( EventType::UI, StringUtil::getHash32( "materialShaderReloadAction" ), {},
+                        material, unavailable, nullptr );
+    BOOST_CHECK( !unavailable->getPropertyAsBool( "success" ) );
+    BOOST_CHECK( !unavailable->getPropertyAsBool( "available" ) );
+    BOOST_CHECK( !unavailable->getProperty( "status" ).empty() );
+    auto malformed = requestFor( "configureFiles" );
+    processMaterialShaderReloadAction( material, malformed );
+    BOOST_CHECK( !malformed->getPropertyAsBool( "success" ) );
+    BOOST_CHECK( !malformed->getPropertyAsBool( "queued" ) );
+    BOOST_CHECK( malformed->getProperty( "status" ).find( "pixel shader" ) != String::npos );
+    auto unknown = requestFor( "pretendSuccess" );
+    processMaterialShaderReloadAction( material, unknown );
+    BOOST_CHECK( !unknown->getPropertyAsBool( "success" ) );
+    BOOST_CHECK( unknown->getProperty( "status" ).find( "Unknown" ) != String::npos );
+#    if WP_GRAPHICS_SYSTEM_CLAW && WP_BUILD_RENDERER_DX11
+    auto reloadUnavailable = requestFor( "reload" );
+    processMaterialShaderReloadAction( material, reloadUnavailable );
+    BOOST_CHECK( !reloadUnavailable->getPropertyAsBool( "success" ) );
+    BOOST_CHECK( !reloadUnavailable->getPropertyAsBool( "queued" ) );
+    const auto missingPath =
+        ( std::filesystem::temp_directory_path() /
+          ( "missing-editor-shader-" + std::string( StringUtil::getUUID().c_str() ) + ".hlsl" ) )
+            .generic_string();
+    auto configure = requestFor( "configureFiles" );
+    configure->setProperty( "pixelFile", String( missingPath.c_str() ) );
+    processMaterialShaderReloadAction( material, configure );
+    BOOST_REQUIRE_MESSAGE( configure->getPropertyAsBool( "success" ),
+                           configure->getProperty( "status" ) );
+    BOOST_CHECK( configure->getPropertyAsBool( "queued" ) );
+    BOOST_CHECK( configure->getPropertyAsBool( "pending" ) );
+    BOOST_CHECK( !configure->getPropertyAsBool( "runtimeSuccess" ) );
     // Queueing must not compile on the UI thread. Owner update publishes the
     // file failure, and the user can still request another reload afterwards.
     const auto ownerUpdate = [&] {
         struct RestoreTask
         {
-            decltype(Thread::getCurrentTask()) previous = Thread::getCurrentTask();
-            ~RestoreTask() { Thread::setCurrentTask(previous); }
+            decltype( Thread::getCurrentTask() ) previous = Thread::getCurrentTask();
+            ~RestoreTask()
+            {
+                Thread::setCurrentTask( previous );
+            }
         } restoreTask;
-        Thread::setCurrentTask(TaskId::Render);
+        Thread::setCurrentTask( TaskId::Render );
         application->getGraphicsSystem()->update();
     };
     ownerUpdate();
-    auto failed = requestFor("read");
-    processMaterialShaderReloadAction(material,failed);
-    BOOST_REQUIRE_MESSAGE(failed->getPropertyAsBool("success"),failed->getProperty("status"));
-    BOOST_CHECK(failed->getPropertyAsBool("available"));
-    BOOST_CHECK(!failed->getPropertyAsBool("pending"));
-    BOOST_CHECK(!failed->getPropertyAsBool("runtimeSuccess"));
-    BOOST_CHECK(!failed->getProperty("diagnostic").empty() || !failed->getProperty("status").empty());
-    auto retry = requestFor("reload");
-    processMaterialShaderReloadAction(material,retry);
-    BOOST_CHECK(retry->getPropertyAsBool("success"));
-    BOOST_CHECK(retry->getPropertyAsBool("queued"));
+    auto failed = requestFor( "read" );
+    processMaterialShaderReloadAction( material, failed );
+    BOOST_REQUIRE_MESSAGE( failed->getPropertyAsBool( "success" ), failed->getProperty( "status" ) );
+    BOOST_CHECK( failed->getPropertyAsBool( "available" ) );
+    BOOST_CHECK( !failed->getPropertyAsBool( "pending" ) );
+    BOOST_CHECK( !failed->getPropertyAsBool( "runtimeSuccess" ) );
+    BOOST_CHECK( !failed->getProperty( "diagnostic" ).empty() ||
+                 !failed->getProperty( "status" ).empty() );
+    auto retry = requestFor( "reload" );
+    processMaterialShaderReloadAction( material, retry );
+    BOOST_CHECK( retry->getPropertyAsBool( "success" ) );
+    BOOST_CHECK( retry->getPropertyAsBool( "queued" ) );
     ownerUpdate();
+
     // Exercise the successful native action and the persisted authoring keys,
     // including a fresh material restored from serialized Properties.
     struct ShaderFiles
     {
-        std::filesystem::path vertex=std::filesystem::temp_directory_path()/
-            ("editor-shader-vertex-"+std::string(StringUtil::getUUID().c_str())+".hlsl");
-        std::filesystem::path pixel=std::filesystem::temp_directory_path()/
-            ("editor-shader-pixel-"+std::string(StringUtil::getUUID().c_str())+".hlsl");
+        std::filesystem::path vertex =
+            std::filesystem::temp_directory_path() /
+            ( "editor-shader-vertex-" + std::string( StringUtil::getUUID().c_str() ) + ".hlsl" );
+        std::filesystem::path pixel =
+            std::filesystem::temp_directory_path() /
+            ( "editor-shader-pixel-" + std::string( StringUtil::getUUID().c_str() ) + ".hlsl" );
+
         ~ShaderFiles()
         {
-            std::error_code ignored;std::filesystem::remove(vertex,ignored);std::filesystem::remove(pixel,ignored);
+            std::error_code ignored;
+            std::filesystem::remove( vertex, ignored );
+            std::filesystem::remove( pixel, ignored );
         }
     } files;
+
     {
-        std::ofstream vertex(files.vertex,std::ios::binary),pixel(files.pixel,std::ios::binary);
-        BOOST_REQUIRE(vertex && pixel);
-        vertex<<"cbuffer Transform:register(b0){row_major float4x4 Mvp;}"
-            "float4 main(float3 p:POSITION):SV_POSITION{return mul(Mvp,float4(p,1));}";
-        pixel<<"cbuffer Values:register(b4){float4 Tint;}float4 main():SV_TARGET{return Tint;}";
-        vertex.close();pixel.close();BOOST_REQUIRE(vertex && pixel);
+        std::ofstream vertex( files.vertex, std::ios::binary ), pixel( files.pixel, std::ios::binary );
+        BOOST_REQUIRE( vertex && pixel );
+        vertex << "cbuffer Transform:register(b0){row_major float4x4 Mvp;}"
+                  "float4 main(float3 p:POSITION):SV_POSITION{return mul(Mvp,float4(p,1));}";
+        pixel << "cbuffer Values:register(b4){float4 Tint;}float4 main():SV_TARGET{return Tint;}";
+        vertex.close();
+        pixel.close();
+        BOOST_REQUIRE( vertex && pixel );
     }
-    application->getGraphicsSystem()->loadObject(material,true);
-    const String vertexFile(files.vertex.u8string().c_str()),pixelFile(files.pixel.u8string().c_str());
-    auto valid=requestFor("configureFiles");valid->setProperty("vertexFile",vertexFile);valid->setProperty("pixelFile",pixelFile);
-    processMaterialShaderReloadAction(material,valid);
-    BOOST_REQUIRE_MESSAGE(valid->getPropertyAsBool("success"),valid->getProperty("status"));
-    BOOST_CHECK(valid->getPropertyAsBool("queued") && valid->getPropertyAsBool("pending"));
+    application->getGraphicsSystem()->loadObject( material, true );
+    const String vertexFile( files.vertex.u8string().c_str() ),
+        pixelFile( files.pixel.u8string().c_str() );
+    auto valid = requestFor( "configureFiles" );
+    valid->setProperty( "vertexFile", vertexFile );
+    valid->setProperty( "pixelFile", pixelFile );
+    processMaterialShaderReloadAction( material, valid );
+    BOOST_REQUIRE_MESSAGE( valid->getPropertyAsBool( "success" ), valid->getProperty( "status" ) );
+    BOOST_CHECK( valid->getPropertyAsBool( "queued" ) && valid->getPropertyAsBool( "pending" ) );
     ownerUpdate();
-    auto ready=requestFor("read");processMaterialShaderReloadAction(material,ready);
-    BOOST_REQUIRE_MESSAGE(ready->getPropertyAsBool("runtimeSuccess"),ready->getProperty("diagnostic"));
-    BOOST_CHECK(!ready->getPropertyAsBool("pending"));
-    auto nativeMaterial=dynamic_cast<render::ClawMaterial *>(material.get());
-    BOOST_REQUIRE(nativeMaterial);BOOST_CHECK(nativeMaterial->hasRuntimeProgram());
-    const Vector4F tint(.2f,.4f,.6f,.8f);
-    auto &configuredValues=nativeMaterial->getShaderParameters();
-    const auto tintHandle=configuredValues.FindParameter("Tint");
-    BOOST_REQUIRE(configuredValues.IsHandleValid(tintHandle,render::MaterialShaderParameterType::Vector4,sizeof(Vector4F)));
-    BOOST_REQUIRE(configuredValues.SetVector4(tintHandle,tint));
-    auto pause=requestFor("setWatching");pause->setProperty("watching",false);
-    processMaterialShaderReloadAction(material,pause);
-    BOOST_REQUIRE(pause->getPropertyAsBool("queued"));ownerUpdate();
-    const auto saved=material->getProperties();BOOST_REQUIRE(saved);
-    BOOST_CHECK_EQUAL(saved->getProperty("runtimeShaderVertexFile"),vertexFile);
-    BOOST_CHECK_EQUAL(saved->getProperty("runtimeShaderPixelFile"),pixelFile);
-    BOOST_CHECK(!saved->getPropertyAsBool("runtimeShaderWatching"));
-    BOOST_REQUIRE(saved->getChild("runtimeShaderSchema"));
-    BOOST_CHECK_EQUAL(saved->getPropertyAsFloat("ShaderParam.Tint.x"),tint.x);
-    BOOST_CHECK_EQUAL(saved->getPropertyAsFloat("ShaderParam.Tint.y"),tint.y);
-    BOOST_CHECK_EQUAL(saved->getPropertyAsFloat("ShaderParam.Tint.z"),tint.z);
-    BOOST_CHECK_EQUAL(saved->getPropertyAsFloat("ShaderParam.Tint.w"),tint.w);
-    auto parsed=make_ptr<Properties>();DataUtil::parse(DataUtil::toString(saved.get(),true),parsed.get());
-    auto restored=workphone::dynamic_pointer_cast<render::IMaterial>(
-        application->getGraphicsSystem()->getMaterialManager()->create("EditorShaderReloadRestored"));
-    BOOST_REQUIRE(restored);application->getGraphicsSystem()->loadObject(restored,true);
-    restored->setProperties(parsed);
-    auto restoring=requestFor("read");processMaterialShaderReloadAction(restored,restoring);
-    BOOST_CHECK(restoring->getPropertyAsBool("available") && restoring->getPropertyAsBool("pending"));
+    auto ready = requestFor( "read" );
+    processMaterialShaderReloadAction( material, ready );
+    BOOST_REQUIRE_MESSAGE( ready->getPropertyAsBool( "runtimeSuccess" ),
+                           ready->getProperty( "diagnostic" ) );
+    BOOST_CHECK( !ready->getPropertyAsBool( "pending" ) );
+    auto nativeMaterial = dynamic_cast<render::ClawMaterial *>( material.get() );
+    BOOST_REQUIRE( nativeMaterial );
+    BOOST_CHECK( nativeMaterial->hasRuntimeProgram() );
+    const Vector4F tint( .2f, .4f, .6f, .8f );
+    auto &configuredValues = nativeMaterial->getShaderParameters();
+    const auto tintHandle = configuredValues.FindParameter( "Tint" );
+    BOOST_REQUIRE( configuredValues.IsHandleValid(
+        tintHandle, render::MaterialShaderParameterType::Vector4, sizeof( Vector4F ) ) );
+    BOOST_REQUIRE( configuredValues.SetVector4( tintHandle, tint ) );
+    auto pause = requestFor( "setWatching" );
+    pause->setProperty( "watching", false );
+    processMaterialShaderReloadAction( material, pause );
+    BOOST_REQUIRE( pause->getPropertyAsBool( "queued" ) );
     ownerUpdate();
-    auto restoredStatus=requestFor("read");processMaterialShaderReloadAction(restored,restoredStatus);
-    BOOST_REQUIRE_MESSAGE(restoredStatus->getPropertyAsBool("runtimeSuccess"),restoredStatus->getProperty("diagnostic"));
-    BOOST_CHECK(!restoredStatus->getPropertyAsBool("pending") && !restoredStatus->getPropertyAsBool("watching"));
-    BOOST_CHECK_EQUAL(restoredStatus->getProperty("vertexFile"),vertexFile);
-    BOOST_CHECK_EQUAL(restoredStatus->getProperty("pixelFile"),pixelFile);
-    auto nativeRestored=dynamic_cast<render::ClawMaterial *>(restored.get());
-    BOOST_REQUIRE(nativeRestored);BOOST_CHECK(nativeRestored->hasRuntimeProgram());
-    BOOST_CHECK(nativeRestored->getShaderParameters().GetLayout()==nativeMaterial->getShaderParameters().GetLayout());
-    auto &restoredValues=nativeRestored->getShaderParameters();
-    const auto restoredTintHandle=restoredValues.FindParameter("Tint");
-    BOOST_REQUIRE(restoredValues.IsHandleValid(restoredTintHandle,render::MaterialShaderParameterType::Vector4,sizeof(Vector4F)));
-    const auto restoredTint=restoredValues.GetVector4f(restoredTintHandle);
-    BOOST_CHECK_EQUAL(restoredTint.x,tint.x);BOOST_CHECK_EQUAL(restoredTint.y,tint.y);
-    BOOST_CHECK_EQUAL(restoredTint.z,tint.z);BOOST_CHECK_EQUAL(restoredTint.w,tint.w);
-    auto edit=make_ptr<Properties>();edit->setProperty("ShaderParam.Tint.y",.9f);
-    restored->setProperties(edit);ownerUpdate();
-    const auto editedTint=restoredValues.GetVector4f(restoredValues.FindParameter("Tint"));
-    BOOST_CHECK_EQUAL(editedTint.x,tint.x);BOOST_CHECK_EQUAL(editedTint.y,.9f);
-    BOOST_CHECK_EQUAL(editedTint.z,tint.z);BOOST_CHECK_EQUAL(editedTint.w,tint.w);
+    const auto saved = material->getProperties();
+    BOOST_REQUIRE( saved );
+    BOOST_CHECK_EQUAL( saved->getProperty( "runtimeShaderVertexFile" ), vertexFile );
+    BOOST_CHECK_EQUAL( saved->getProperty( "runtimeShaderPixelFile" ), pixelFile );
+    BOOST_CHECK( !saved->getPropertyAsBool( "runtimeShaderWatching" ) );
+    BOOST_REQUIRE( saved->getChild( "runtimeShaderSchema" ) );
+    BOOST_CHECK_EQUAL( saved->getPropertyAsFloat( "ShaderParam.Tint.x" ), tint.x );
+    BOOST_CHECK_EQUAL( saved->getPropertyAsFloat( "ShaderParam.Tint.y" ), tint.y );
+    BOOST_CHECK_EQUAL( saved->getPropertyAsFloat( "ShaderParam.Tint.z" ), tint.z );
+    BOOST_CHECK_EQUAL( saved->getPropertyAsFloat( "ShaderParam.Tint.w" ), tint.w );
+    auto parsed = make_ptr<Properties>();
+    DataUtil::parse( DataUtil::toString( saved.get(), true ), parsed.get() );
+    auto restored = workphone::dynamic_pointer_cast<render::IMaterial>(
+        application->getGraphicsSystem()->getMaterialManager()->create( "EditorShaderReloadRestored" ) );
+    BOOST_REQUIRE( restored );
+    application->getGraphicsSystem()->loadObject( restored, true );
+    restored->setProperties( parsed );
+    auto restoring = requestFor( "read" );
+    processMaterialShaderReloadAction( restored, restoring );
+    BOOST_CHECK( restoring->getPropertyAsBool( "available" ) &&
+                 restoring->getPropertyAsBool( "pending" ) );
+    ownerUpdate();
+    auto restoredStatus = requestFor( "read" );
+    processMaterialShaderReloadAction( restored, restoredStatus );
+    BOOST_REQUIRE_MESSAGE( restoredStatus->getPropertyAsBool( "runtimeSuccess" ),
+                           restoredStatus->getProperty( "diagnostic" ) );
+    BOOST_CHECK( !restoredStatus->getPropertyAsBool( "pending" ) &&
+                 !restoredStatus->getPropertyAsBool( "watching" ) );
+    BOOST_CHECK_EQUAL( restoredStatus->getProperty( "vertexFile" ), vertexFile );
+    BOOST_CHECK_EQUAL( restoredStatus->getProperty( "pixelFile" ), pixelFile );
+    auto nativeRestored = dynamic_cast<render::ClawMaterial *>( restored.get() );
+    BOOST_REQUIRE( nativeRestored );
+    BOOST_CHECK( nativeRestored->hasRuntimeProgram() );
+    BOOST_CHECK( nativeRestored->getShaderParameters().GetLayout() ==
+                 nativeMaterial->getShaderParameters().GetLayout() );
+    auto &restoredValues = nativeRestored->getShaderParameters();
+    const auto restoredTintHandle = restoredValues.FindParameter( "Tint" );
+    BOOST_REQUIRE( restoredValues.IsHandleValid(
+        restoredTintHandle, render::MaterialShaderParameterType::Vector4, sizeof( Vector4F ) ) );
+    const auto restoredTint = restoredValues.GetVector4f( restoredTintHandle );
+    BOOST_CHECK_EQUAL( restoredTint.x, tint.x );
+    BOOST_CHECK_EQUAL( restoredTint.y, tint.y );
+    BOOST_CHECK_EQUAL( restoredTint.z, tint.z );
+    BOOST_CHECK_EQUAL( restoredTint.w, tint.w );
+    auto edit = make_ptr<Properties>();
+    edit->setProperty( "ShaderParam.Tint.y", .9f );
+    restored->setProperties( edit );
+    ownerUpdate();
+    const auto editedTint = restoredValues.GetVector4f( restoredValues.FindParameter( "Tint" ) );
+    BOOST_CHECK_EQUAL( editedTint.x, tint.x );
+    BOOST_CHECK_EQUAL( editedTint.y, .9f );
+    BOOST_CHECK_EQUAL( editedTint.z, tint.z );
+    BOOST_CHECK_EQUAL( editedTint.w, tint.w );
 
     // Use the actual inspector panels and the normal application update path.
     // No Refresh action or selection change may complete these status changes.
-    auto editorUI=EditorManager::getSingletonPtr()->getUI();
-    auto objectWindow=editorUI->getObjectWindow();auto actorWindow=editorUI->getActorWindow();
-    BOOST_REQUIRE(objectWindow);BOOST_REQUIRE(actorWindow);
-    objectWindow->getParentWindow()->setName("ShaderPollingObject");
-    actorWindow->getParentWindow()->setName("ShaderPollingActor");
+    auto editorUI = EditorManager::getSingletonPtr()->getUI();
+    auto objectWindow = editorUI->getObjectWindow();
+    auto actorWindow = editorUI->getActorWindow();
+    BOOST_REQUIRE( objectWindow );
+    BOOST_REQUIRE( actorWindow );
+    objectWindow->getParentWindow()->setName( "ShaderPollingObject" );
+    actorWindow->getParentWindow()->setName( "ShaderPollingActor" );
     // ImGui tab pages have a separate inventory from getChildren(). Observe
     // each real panel's actual widget through Lua; reading never refreshes it.
-    auto scripts=application->getScriptManager();
-    scripts->loadScriptFromString(R"(
+    auto scripts = application->getScriptManager();
+    scripts->loadScriptFromString( R"(
         local original = MaterialEditor.setShaderReloadMessage
         local panels = setmetatable({}, {__mode="k"})
         function MaterialEditor:setShaderReloadMessage(message)
@@ -1388,55 +1502,85 @@ BOOST_AUTO_TEST_CASE( editor_material_shader_reload_actions_test )
                 end
             end
         end
-    )");
-    auto selection=application->getSelectionManager();selection->clearSelection();selection->addSelectedObject(material);
-    objectWindow->setWindowVisible(true);objectWindow->updateSelection();
-    const auto checkStatus=[&](const String &parent,const String &fragment,bool expected) {
-        auto snapshot=make_ptr<Properties>();snapshot->setProperty("parentName",parent);
-        scripts->callFunction("readMaterialShaderPanelPolling",Parameters{Parameter(SmartPtr<ISharedObject>(snapshot))});
-        BOOST_REQUIRE_MESSAGE(snapshot->getPropertyAsBool("found"),"Material panel was not observed: "<<parent);
-        const auto text=snapshot->getProperty("text");
-        BOOST_CHECK_MESSAGE((text.find(fragment)!=String::npos)==expected,
-            "Panel "<<parent<<" expected "<<(expected?"":"no ")<<fragment<<"; displayed: "<<text);
+    )" );
+    auto selection = application->getSelectionManager();
+    selection->clearSelection();
+    selection->addSelectedObject( material );
+    objectWindow->setWindowVisible( true );
+    objectWindow->updateSelection();
+    const auto checkStatus = [&]( const String &parent, const String &fragment, bool expected ) {
+        auto snapshot = make_ptr<Properties>();
+        snapshot->setProperty( "parentName", parent );
+        scripts->callFunction( "readMaterialShaderPanelPolling",
+                               Parameters{ Parameter( SmartPtr<ISharedObject>( snapshot ) ) } );
+        BOOST_REQUIRE_MESSAGE( snapshot->getPropertyAsBool( "found" ),
+                               "Material panel was not observed: " << parent );
+        const auto text = snapshot->getProperty( "text" );
+        BOOST_CHECK_MESSAGE( ( text.find( fragment ) != String::npos ) == expected,
+                             "Panel " << parent << " expected " << ( expected ? "" : "no " ) << fragment
+                                      << "; displayed: " << text );
     };
-    const auto pollPanel=[&] {
-        for(int i=0;i<30;++i) app.updateApplication();
+    const auto pollPanel = [&] {
+        for( int i = 0; i < 30; ++i )
+        {
+            app.updateApplication();
+        }
         struct RestoreTask
         {
-            decltype(Thread::getCurrentTask()) previous=Thread::getCurrentTask();
-            ~RestoreTask() { Thread::setCurrentTask(previous); }
+            decltype( Thread::getCurrentTask() ) previous = Thread::getCurrentTask();
+            ~RestoreTask()
+            {
+                Thread::setCurrentTask( previous );
+            }
         } restoreTask;
-        Thread::setCurrentTask(application->getGraphicsSystem()->getStateTask());
+        Thread::setCurrentTask( application->getGraphicsSystem()->getStateTask() );
         application->getStateManager()->update();
     };
-    auto queued=requestFor("reload");processMaterialShaderReloadAction(material,queued);
-    BOOST_REQUIRE(queued->getPropertyAsBool("queued"));
-    objectWindow->setWindowVisible(false);pollPanel();
-    checkStatus("ShaderPollingObject","Shader reload pending",false);
-    objectWindow->setWindowVisible(true);pollPanel();
-    checkStatus("ShaderPollingObject","Shader reload pending",true);
-    ownerUpdate();pollPanel();
-    checkStatus("ShaderPollingObject","Shader generation ",true);
-    checkStatus("ShaderPollingObject","Shader reload pending",false);
+    auto queued = requestFor( "reload" );
+    processMaterialShaderReloadAction( material, queued );
+    BOOST_REQUIRE( queued->getPropertyAsBool( "queued" ) );
+    objectWindow->setWindowVisible( false );
+    pollPanel();
+    checkStatus( "ShaderPollingObject", "Shader reload pending", false );
+    objectWindow->setWindowVisible( true );
+    pollPanel();
+    checkStatus( "ShaderPollingObject", "Shader reload pending", true );
+    ownerUpdate();
+    pollPanel();
+    checkStatus( "ShaderPollingObject", "Shader generation ", true );
+    checkStatus( "ShaderPollingObject", "Shader reload pending", false );
 
-    auto actor=application->getGameManager()->createActor();
-    auto component=actor->addComponent<scene::Material>();component->setMaterial(material);
-    selection->clearSelection();selection->addSelectedObject(component);objectWindow->updateSelection();
-    BOOST_REQUIRE(actorWindow->isWindowVisible());
-    auto watch=requestFor("setWatching");watch->setProperty("watching",true);
-    processMaterialShaderReloadAction(material,watch);BOOST_REQUIRE(watch->getPropertyAsBool("queued"));ownerUpdate();
-    const auto replacePixel=[&](const char *text) {
-        std::ofstream output(files.pixel,std::ios::binary|std::ios::trunc);BOOST_REQUIRE(output);
-        output<<text;output.close();BOOST_REQUIRE(output);
-        std::this_thread::sleep_for(std::chrono::milliseconds(275));ownerUpdate();pollPanel();
+    auto actor = application->getGameManager()->createActor();
+    auto component = actor->addComponent<scene::Material>();
+    component->setMaterial( material );
+    selection->clearSelection();
+    selection->addSelectedObject( component );
+    objectWindow->updateSelection();
+    BOOST_REQUIRE( actorWindow->isWindowVisible() );
+    auto watch = requestFor( "setWatching" );
+    watch->setProperty( "watching", true );
+    processMaterialShaderReloadAction( material, watch );
+    BOOST_REQUIRE( watch->getPropertyAsBool( "queued" ) );
+    ownerUpdate();
+    const auto replacePixel = [&]( const char *text ) {
+        std::ofstream output( files.pixel, std::ios::binary | std::ios::trunc );
+        BOOST_REQUIRE( output );
+        output << text;
+        output.close();
+        BOOST_REQUIRE( output );
+        std::this_thread::sleep_for( std::chrono::milliseconds( 275 ) );
+        ownerUpdate();
+        pollPanel();
     };
-    replacePixel("This pixel shader does not compile");
-    checkStatus("ShaderPollingActor","Shader reload failed;",true);
-    replacePixel("cbuffer Values:register(b4){float4 Tint;}float4 main():SV_TARGET{return Tint;}");
-    checkStatus("ShaderPollingActor","Shader generation ",true);
-    checkStatus("ShaderPollingActor","Shader reload failed;",false);
-    selection->clearSelection();objectWindow->updateSelection();application->getGameManager()->destroyActor(actor);
-#endif
+    replacePixel( "This pixel shader does not compile" );
+    checkStatus( "ShaderPollingActor", "Shader reload failed;", true );
+    replacePixel( "cbuffer Values:register(b4){float4 Tint;}float4 main():SV_TARGET{return Tint;}" );
+    checkStatus( "ShaderPollingActor", "Shader generation ", true );
+    checkStatus( "ShaderPollingActor", "Shader reload failed;", false );
+    selection->clearSelection();
+    objectWindow->updateSelection();
+    application->getGameManager()->destroyActor( actor );
+#    endif
 }
 
 BOOST_AUTO_TEST_CASE( editor_material_shader_reload_controls_test )
@@ -1445,12 +1589,13 @@ BOOST_AUTO_TEST_CASE( editor_material_shader_reload_controls_test )
     app.loadSingleThreaded();
     auto application = core::IApplicationManager::instance();
     auto material = workphone::dynamic_pointer_cast<render::IMaterial>(
-        application->getGraphicsSystem()->getMaterialManager()->create("EditorShaderReloadControls"));
-    BOOST_REQUIRE(material);
-    application->getGraphicsSystem()->loadObject(material,true);
+        application->getGraphicsSystem()->getMaterialManager()->create( "EditorShaderReloadControls" ) );
+    BOOST_REQUIRE( material );
+    application->getGraphicsSystem()->loadObject( material, true );
     auto selection = application->getSelectionManager();
-    selection->clearSelection(); selection->addSelectedObject(material);
-    application->getScriptManager()->loadScriptFromString(R"(
+    selection->clearSelection();
+    selection->addSelectedObject( material );
+    application->getScriptManager()->loadScriptFromString( R"(
         class 'ShaderReloadControlsProbe' (MaterialEditor)
         function ShaderReloadControlsProbe:__init(window)
             MaterialEditor.__init(self, window)
@@ -1467,41 +1612,48 @@ BOOST_AUTO_TEST_CASE( editor_material_shader_reload_controls_test )
             self.probeWindow:addChild(self.shaderReloadStatusButton)
             self.window:setParent(self.probeWindow)
         end
-    )");
+    )" );
     auto window = make_ptr<ScriptWindow>();
     // Lua native type identifiers have an established FixedString32 bound.
-    window->setClassName("ShaderReloadControlsProbe");
-    window->load(nullptr); window->setWindowVisible(true); window->updateSelection();
-    BOOST_REQUIRE(window->getParent());
+    window->setClassName( "ShaderReloadControlsProbe" );
+    window->load( nullptr );
+    window->setWindowVisible( true );
+    window->updateSelection();
+    BOOST_REQUIRE( window->getParent() );
     const auto controls = window->getParent()->getChildren();
-    BOOST_REQUIRE_EQUAL(controls.size(),7u);
-    auto status = workphone::dynamic_pointer_cast<ui::IUIText>(controls[2]);
-    auto pixel = workphone::dynamic_pointer_cast<ui::IUITextEntry>(controls[4]);
-    BOOST_REQUIRE(status); BOOST_REQUIRE(pixel);
-    BOOST_CHECK(!controls[0]->isEnabled());
-    BOOST_CHECK(!controls[1]->isEnabled());
-    BOOST_CHECK(!status->getText().empty());
-    BOOST_CHECK(status->getText().find("requested") == String::npos);
-    pixel->setText("");
-    application->triggerEvent(EventType::UI,IEvent::handleSelection,{},controls[3],nullptr,nullptr,
-        false,Thread::Application_Flag);
-    BOOST_CHECK(status->getText().find("pixel shader") != String::npos);
-    BOOST_CHECK(status->getText().find("requested") == String::npos);
+    BOOST_REQUIRE_EQUAL( controls.size(), 7u );
+    auto status = workphone::dynamic_pointer_cast<ui::IUIText>( controls[2] );
+    auto pixel = workphone::dynamic_pointer_cast<ui::IUITextEntry>( controls[4] );
+    BOOST_REQUIRE( status );
+    BOOST_REQUIRE( pixel );
+    BOOST_CHECK( !controls[0]->isEnabled() );
+    BOOST_CHECK( !controls[1]->isEnabled() );
+    BOOST_CHECK( !status->getText().empty() );
+    BOOST_CHECK( status->getText().find( "requested" ) == String::npos );
+    pixel->setText( "" );
+    application->triggerEvent( EventType::UI, IEvent::handleSelection, {}, controls[3], nullptr, nullptr,
+                               false, Thread::Application_Flag );
+    BOOST_CHECK( status->getText().find( "pixel shader" ) != String::npos );
+    BOOST_CHECK( status->getText().find( "requested" ) == String::npos );
     // Editing the path alone is a draft; the Use Shader Files control is the
     // explicit queue boundary and must read current text without a change event.
-#if WP_GRAPHICS_SYSTEM_CLAW && WP_BUILD_RENDERER_DX11
-    const String missing((std::filesystem::temp_directory_path() /
-        ("missing-editor-ui-shader-"+std::string(StringUtil::getUUID().c_str())+".hlsl")).generic_string().c_str());
-    pixel->setText(missing);
-    application->triggerEvent(EventType::UI,IEvent::handleSelection,{},controls[3],nullptr,nullptr,
-        false,Thread::Application_Flag);
-    BOOST_CHECK(status->getText().find("pending") != String::npos);
-#endif
-    selection->clearSelection(); window->updateSelection();
-    BOOST_CHECK(status->getText().find("Select a material") != String::npos);
-    BOOST_CHECK(!controls[0]->isEnabled());
-    BOOST_CHECK(!controls[3]->isEnabled());
-    window->unload(nullptr);
+#    if WP_GRAPHICS_SYSTEM_CLAW && WP_BUILD_RENDERER_DX11
+    const String missing(
+        ( std::filesystem::temp_directory_path() /
+          ( "missing-editor-ui-shader-" + std::string( StringUtil::getUUID().c_str() ) + ".hlsl" ) )
+            .generic_string()
+            .c_str() );
+    pixel->setText( missing );
+    application->triggerEvent( EventType::UI, IEvent::handleSelection, {}, controls[3], nullptr, nullptr,
+                               false, Thread::Application_Flag );
+    BOOST_CHECK( status->getText().find( "pending" ) != String::npos );
+#    endif
+    selection->clearSelection();
+    window->updateSelection();
+    BOOST_CHECK( status->getText().find( "Select a material" ) != String::npos );
+    BOOST_CHECK( !controls[0]->isEnabled() );
+    BOOST_CHECK( !controls[3]->isEnabled() );
+    window->unload( nullptr );
 }
 
 #endif

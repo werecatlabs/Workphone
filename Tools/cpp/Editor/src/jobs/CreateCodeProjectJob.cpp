@@ -22,24 +22,24 @@ namespace workphone::editor
             auto workingDirectory = Path::getWorkingDirectory();
             auto mediaPath = String();
 
-#if WP_FINAL
+#    if WP_FINAL
             mediaPath += applicationManager->getMediaPath() + "/Engine";
-#else
-#    if defined WP_PLATFORM_APPLE
-            mediaPath = String( "../../../" );
 #    else
+#        if defined WP_PLATFORM_APPLE
+            mediaPath = String( "../../../" );
+#        else
             mediaPath = String( "../../../Engine/cpp/Include" );
+#        endif
 #    endif
-#endif
 
             auto absoluteMediaPath = Path::getAbsolutePath( workingDirectory, mediaPath );
 
-#if WP_FINAL
+#    if WP_FINAL
             auto proprietaryPath = Path::getAbsolutePath( workingDirectory, "../" );
-#else
+#    else
             auto proprietaryPath =
                 Path::getAbsolutePath( applicationManager->getMediaPath(), "../../../" );
-#endif
+#    endif
 
             proprietaryPath = StringUtil::cleanupPath( proprietaryPath );
 

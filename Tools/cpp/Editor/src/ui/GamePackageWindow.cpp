@@ -44,7 +44,7 @@ namespace workphone::editor
             const auto builds = fs::u8path( projectRoot.filename().u8string() + " Builds" );
             return availableDestination( projectRoot.parent_path() / builds );
         }
-    }
+    }  // namespace
 
     GamePackageWindow::~GamePackageWindow()
     {
@@ -188,21 +188,33 @@ namespace workphone::editor
         if( message.empty() )
         {
             if( busy && m_cancelling )
+            {
                 message = "Cancelling build...";
+            }
             else if( built )
+            {
                 message = "Build complete\n" + m_job->getOutputPath();
+            }
             else if( m_job )
             {
                 message = m_job->getDiagnostic();
                 if( message.empty() && busy )
+                {
                     message = "Waiting for a worker thread";
+                }
                 if( busy )
+                {
                     message += " (" + StringUtil::toString( m_job->getProgress() ) + "%)";
+                }
             }
             else if( canBuild )
+            {
                 message = "Choose a new output folder and click Build.";
+            }
             else
+            {
                 message = "Open a saved project to build a game.";
+            }
         }
         if( m_status->getText() != message )
         {
@@ -268,7 +280,9 @@ namespace workphone::editor
     {
         std::lock_guard<std::mutex> lock( m_mutex );
         if( !m_destination || !isWindowVisible() )
+        {
             return;
+        }
 
         refresh();
         m_message.clear();
@@ -296,8 +310,8 @@ namespace workphone::editor
             {
                 const auto folder = fs::u8path( m_job->getOutputPath().c_str() );
                 const auto target = action == Run ? folder / "WPRuntime.exe" : folder;
-                if( reinterpret_cast<INT_PTR>( ShellExecuteW( nullptr, L"open", target.c_str(),
-                                                              nullptr, folder.c_str(), SW_SHOWNORMAL ) ) <= 32 )
+                if( reinterpret_cast<INT_PTR>( ShellExecuteW( nullptr, L"open", target.c_str(), nullptr,
+                                                              folder.c_str(), SW_SHOWNORMAL ) ) <= 32 )
                 {
                     throw std::runtime_error( action == Run ? "Could not start WPRuntime.exe."
                                                             : "Could not open the output folder." );
@@ -313,9 +327,9 @@ namespace workphone::editor
     }
 
     Parameter GamePackageWindow::Listener::handleEvent( EventType, hash_type eventValue,
-                                                       const Array<Parameter> &,
-                                                       SmartPtr<ISharedObject> sender,
-                                                       SmartPtr<ISharedObject>, SmartPtr<IEvent> )
+                                                        const Array<Parameter> &,
+                                                        SmartPtr<ISharedObject> sender,
+                                                        SmartPtr<ISharedObject>, SmartPtr<IEvent> )
     {
         if( eventValue == IEvent::handleSelection )
         {
@@ -328,4 +342,4 @@ namespace workphone::editor
         }
         return {};
     }
-}
+}  // namespace workphone::editor

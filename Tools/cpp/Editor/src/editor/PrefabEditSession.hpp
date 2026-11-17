@@ -18,8 +18,9 @@ namespace workphone::editor
         SmartPtr<scene::IGameActor> root() const;
         SmartPtr<scene::IGameScene> authoringScene() const;
         SmartPtr<ISharedObject> authoringData() const;
+
     private:
         struct Data;
         std::unique_ptr<Data> m_data;
     };
-}
+}  // namespace workphone::editor

@@ -22,8 +22,19 @@ namespace workphone::editor
         WP_CLASS_REGISTER_DECL;
 
     private:
-        enum Action { None, Browse, Generate, Cancel };
-        enum class Provider : u32 { Meshy, Trellis2 };
+        enum Action
+        {
+            None,
+            Browse,
+            Generate,
+            Cancel
+        };
+        enum class Provider : u32
+        {
+            Meshy,
+            Trellis2
+        };
+
         struct ResultState
         {
             mesh_generation::Result result;
@@ -32,6 +43,7 @@ namespace workphone::editor
             std::mutex progressMutex;
             mesh_generation::Progress progress;
         };
+
         class Listener : public IEventListener
         {
         public:
@@ -68,4 +80,4 @@ namespace workphone::editor
         bool m_meshyTextured = true;
         bool m_discard = false;
     };
-}
+}  // namespace workphone::editor

@@ -66,7 +66,8 @@ namespace
         SmartPtr<ISharedObject> previous;
 
         explicit DropQueueTaskOwner( SmartPtr<ITask> applicationTask ) :
-            task( applicationTask ), previous( applicationTask->getOwner() )
+            task( applicationTask ),
+            previous( applicationTask->getOwner() )
         {
             task->setOwner( nullptr );
         }

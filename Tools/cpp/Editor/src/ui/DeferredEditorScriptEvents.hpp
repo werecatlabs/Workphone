@@ -11,24 +11,21 @@
 
 namespace workphone::editor
 {
-    inline bool isCurrentEditorScriptEventGeneration( std::uint64_t expected,
-                                                      std::uint64_t current )
+    inline bool isCurrentEditorScriptEventGeneration( std::uint64_t expected, std::uint64_t current )
     {
         return expected == current;
     }
 
-    inline bool shouldDeferEditorScriptCall( bool renderTask, bool debuggerEnabled,
-                                            bool debuggerPaused, bool debuggerControl,
-                                            bool renderThreadUnsafe )
+    inline bool shouldDeferEditorScriptCall( bool renderTask, bool debuggerEnabled, bool debuggerPaused,
+                                             bool debuggerControl, bool renderThreadUnsafe )
     {
         return ( renderTask && ( debuggerEnabled || renderThreadUnsafe ) ) ||
                ( debuggerEnabled && debuggerPaused && !debuggerControl );
     }
 
     template <class Invoker, class Member, class Parameters>
-    void invokeEditorScriptCall( Invoker &invoker, const Member &member,
-                                 const Parameters &parameters, bool hasParameters,
-                                 bool discardResults )
+    void invokeEditorScriptCall( Invoker &invoker, const Member &member, const Parameters &parameters,
+                                 bool hasParameters, bool discardResults )
     {
         if( discardResults )
         {
@@ -37,8 +34,14 @@ namespace workphone::editor
             Parameters results;
             invoker.callObjectMember( member, parameters, results );
         }
-        else if( hasParameters ) invoker.callObjectMember( member, parameters );
-        else invoker.callObjectMember( member );
+        else if( hasParameters )
+        {
+            invoker.callObjectMember( member, parameters );
+        }
+        else
+        {
+            invoker.callObjectMember( member );
+        }
     }
 
     // Only Editor callbacks use this queue. Runtime script calls retain their
@@ -47,11 +50,14 @@ namespace workphone::editor
     {
     public:
         explicit DeferredEditorScriptEvents( std::size_t capacity = 1024,
-                                              std::size_t debuggerCapacity = 64 ) :
-            m_capacity( capacity ), m_debuggerCapacity( debuggerCapacity ) {}
+                                             std::size_t debuggerCapacity = 64 ) :
+            m_capacity( capacity ),
+            m_debuggerCapacity( debuggerCapacity )
+        {
+        }
 
-        bool enqueue( std::function<void()> call, bool debuggerControl,
-                      std::uintptr_t owner = 0, std::string refreshKey = {} )
+        bool enqueue( std::function<void()> call, bool debuggerControl, std::uintptr_t owner = 0,
+                      std::string refreshKey = {} )
         {
             std::lock_guard<std::mutex> lock( m_mutex );
             if( !refreshKey.empty() && !m_pending.empty() )
@@ -67,8 +73,12 @@ namespace workphone::editor
             }
             auto &laneCount = debuggerControl ? m_debuggerCount : m_authoringCount;
             const auto laneCapacity = debuggerControl ? m_debuggerCapacity : m_capacity;
-            if( laneCount >= laneCapacity ) return false;
-            m_pending.push_back( { std::move( call ), debuggerControl, owner, std::move( refreshKey ) } );
+            if( laneCount >= laneCapacity )
+            {
+                return false;
+            }
+            m_pending.push_back(
+                { std::move( call ), debuggerControl, owner, std::move( refreshKey ) } );
             ++laneCount;
             return true;
         }
@@ -89,12 +99,18 @@ namespace workphone::editor
                         --laneCount;
                         ready.push_back( std::move( entry ) );
                     }
-                    else m_pending.push_back( std::move( entry ) );
+                    else
+                    {
+                        m_pending.push_back( std::move( entry ) );
+                    }
                 }
             }
             // Release the queue lock before Lua can stop. Its pause pump may
             // drain newly arrived debugger controls from this same queue.
-            for( auto &entry : ready ) entry.call();
+            for( auto &entry : ready )
+            {
+                entry.call();
+            }
         }
 
         void clear()
@@ -119,11 +135,12 @@ namespace workphone::editor
             std::uintptr_t owner;
             std::string refreshKey;
         };
+
         const std::size_t m_capacity;
         const std::size_t m_debuggerCapacity;
         std::size_t m_authoringCount = 0, m_debuggerCount = 0;
         mutable std::mutex m_mutex;
         std::deque<Entry> m_pending;
     };
-}
+}  // namespace workphone::editor
 #endif

@@ -128,8 +128,8 @@ namespace workphone::editor
                 auto resourceId = properties->getProperty( resourceUUIDStr );
                 auto iResourceId = StringUtil::parseUUID( resourceId );
 
-                auto prefabResource = resourceDatabase ? resourceDatabase->loadResource( iResourceId )
-                                                       : nullptr;
+                auto prefabResource =
+                    resourceDatabase ? resourceDatabase->loadResource( iResourceId ) : nullptr;
                 auto prefab = workphone::dynamic_pointer_cast<scene::IGamePrefab>( prefabResource );
                 if( prefab )
                 {

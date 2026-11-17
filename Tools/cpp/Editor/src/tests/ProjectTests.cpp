@@ -334,13 +334,17 @@ BOOST_AUTO_TEST_CASE( project_all_settings_file_roundtrip_test )
     restoredNested->setProperty( "enabled", true );
     BOOST_CHECK_EQUAL( restored.getLabel(), "Settings Roundtrip" );
     BOOST_CHECK_EQUAL( restored.getProperties()->getProperty( "project.name" ), "Settings Roundtrip" );
-    BOOST_CHECK_EQUAL( restored.getProperties()->getChild( "Custom Extension" )
-                           ->getChild( "Nested Settings" )->getProperty( "enabled" ), "false" );
+    BOOST_CHECK_EQUAL( restored.getProperties()
+                           ->getChild( "Custom Extension" )
+                           ->getChild( "Nested Settings" )
+                           ->getProperty( "enabled" ),
+                       "false" );
 }
 
 BOOST_AUTO_TEST_CASE( project_settings_actions_test )
 {
     ProjectTestDirectory temporary;
+
     struct EditorGuard
     {
         SmartPtr<EditorManager> previous = EditorManager::getSingleton();
@@ -361,6 +365,7 @@ BOOST_AUTO_TEST_CASE( project_settings_actions_test )
             core::IApplicationManager::setInstance( previousApp );
         }
     } guard;
+
     auto project = workphone::make_ptr<Project>();
     project->create( ( temporary.path / "Command project" ).u8string() );
     guard.editor->setProject( project );
@@ -384,8 +389,9 @@ BOOST_AUTO_TEST_CASE( project_settings_actions_test )
         {
             Property setting;
             BOOST_REQUIRE( read->getProperty( definition.name, setting ) );
-            const auto nativeType = definition.type == "int"     ? String( "s32" ) :
-                                    definition.type == "float" ? String( "f32" ) : definition.type;
+            const auto nativeType = definition.type == "int"     ? String( "s32" )
+                                    : definition.type == "float" ? String( "f32" )
+                                                                 : definition.type;
             BOOST_CHECK_EQUAL( setting.getTypeName(), nativeType );
             BOOST_CHECK( read->hasProperty( "capability." + definition.name ) );
         }
@@ -513,12 +519,11 @@ BOOST_AUTO_TEST_CASE( project_settings_actions_test )
     BOOST_CHECK( !sparseImport->hasProperty( "included.editor.theme" ) );
 
     const auto invalidPath = temporary.path / "Invalid settings.json";
-    for( const auto &document : {
-             "{ malformed",
-             "{\"projectSettingsVersion\":1,\"unknown.setting\":1}",
-             "{\"projectSettingsVersion\":1,\"graphics.renderScale\":99}",
-             "{\"projectSettingsVersion\":1,\"graphics.fullscreen\":\"yes\"}",
-             "{\"projectSettingsVersion\":2,\"project.name\":\"Unsupported version\"}" } )
+    for( const auto &document :
+         { "{ malformed", "{\"projectSettingsVersion\":1,\"unknown.setting\":1}",
+           "{\"projectSettingsVersion\":1,\"graphics.renderScale\":99}",
+           "{\"projectSettingsVersion\":1,\"graphics.fullscreen\":\"yes\"}",
+           "{\"projectSettingsVersion\":2,\"project.name\":\"Unsupported version\"}" } )
     {
         BOOST_TEST_CONTEXT( "Rejected import " << document )
         {

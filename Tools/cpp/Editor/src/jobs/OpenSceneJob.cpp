@@ -26,7 +26,9 @@ namespace workphone::editor
         {
             WP_LOG_ERROR( "Return from prefab editing before opening another scene." );
             if( auto ui = editorManager->getUI() )
+            {
                 ui->updatePrefabEditingUI( "Save & Return or Discard & Return before opening a scene." );
+            }
             return;
         }
 

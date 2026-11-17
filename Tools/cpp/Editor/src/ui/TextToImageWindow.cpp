@@ -18,7 +18,10 @@ namespace workphone::editor
 
     void TextToImageWindow::load( SmartPtr<ISharedObject> data )
     {
-        if( getParentWindow() ) return;
+        if( getParentWindow() )
+        {
+            return;
+        }
         EditorWindow::load( data );
         auto ui = core::IApplicationManager::instance()->getUI();
         auto window = ui->addElementByType<ui::IUIWindow>();
@@ -32,9 +35,10 @@ namespace workphone::editor
         m_listener->owner = this;
 
         auto hint = ui->addElementByType<ui::IUIText>();
-        hint->setText( "Generate with OpenAI. Set your API key in File > Settings > Editor > OpenAI.\n"
-                       "Prompts are sent to OpenAI and API usage is billed to your account.\n"
-                       "PNG images are saved in Assets/Generated without replacing existing files." );
+        hint->setText(
+            "Generate with OpenAI. Set your API key in File > Settings > Editor > OpenAI.\n"
+            "Prompts are sent to OpenAI and API usage is billed to your account.\n"
+            "PNG images are saved in Assets/Generated without replacing existing files." );
         window->addChild( hint );
 
         m_prompt = ui->addElementByType<ui::IUITextEntry>();
@@ -50,8 +54,8 @@ namespace workphone::editor
 
         m_size = ui->addElementByType<ui::IUIDropdown>();
         m_size->setLabel( "Image size" );
-        m_size->setOptions( { "Square (1024 x 1024)", "Landscape (1536 x 1024)",
-                              "Portrait (1024 x 1536)" } );
+        m_size->setOptions(
+            { "Square (1024 x 1024)", "Landscape (1536 x 1024)", "Portrait (1024 x 1536)" } );
         m_size->setSelectedOption( 0 );
         window->addChild( m_size );
         m_quality = ui->addElementByType<ui::IUIDropdown>();
@@ -91,12 +95,18 @@ namespace workphone::editor
         std::lock_guard<std::mutex> lock( m_mutex );
         // Join before the engine's DLLs and allocators can be torn down. The
         // worker never accesses this window, the project, or any UI element.
-        if( m_worker.joinable() ) m_worker.join();
+        if( m_worker.joinable() )
+        {
+            m_worker.join();
+        }
         m_result.reset();
         m_action = None;
         m_session.clear();
         m_previewSession.clear();
-        if( m_listener ) m_listener->owner = nullptr;
+        if( m_listener )
+        {
+            m_listener->owner = nullptr;
+        }
         if( auto window = getParentWindow() )
         {
             auto app = core::IApplicationManager::instancePtr();
@@ -104,7 +114,10 @@ namespace workphone::editor
             {
                 for( auto child : window->getChildren() )
                 {
-                    if( m_listener ) child->removeObjectListener( m_listener );
+                    if( m_listener )
+                    {
+                        child->removeObjectListener( m_listener );
+                    }
                     ui->removeElement( child );
                 }
                 ui->removeElement( window );
@@ -123,8 +136,9 @@ namespace workphone::editor
     {
         auto app = core::IApplicationManager::instancePtr();
         auto resources = app ? app->getResourceDatabase() : nullptr;
-        auto catalog = resources ? dynamic_pointer_cast<AssetDatabaseManager>( resources->getDatabaseManager() )
-                                 : nullptr;
+        auto catalog =
+            resources ? dynamic_pointer_cast<AssetDatabaseManager>( resources->getDatabaseManager() )
+                      : nullptr;
         return app && app->getProjectPath() == m_projectPath && catalog && !catalog->isReadOnly() &&
                catalog->getProjectRoot() == m_projectRoot && m_session.isCurrent( catalog );
     }
@@ -134,30 +148,41 @@ namespace workphone::editor
         // Button listeners only enqueue an action. Network work, saving and
         // texture publication are initiated here on the Application task.
         std::lock_guard<std::mutex> lock( m_mutex );
-        if( !m_prompt ) return;
+        if( !m_prompt )
+        {
+            return;
+        }
         auto app = core::IApplicationManager::instancePtr();
-        if( !app ) return;
+        if( !app )
+        {
+            return;
+        }
         const auto now = std::chrono::steady_clock::now();
         if( !m_previewProject.empty() &&
             ( app->getProjectPath() != m_previewProject || now >= m_nextPreviewCheck ) )
         {
             m_nextPreviewCheck = now + std::chrono::seconds( 1 );
             auto resources = app->getResourceDatabase();
-            auto catalog = resources ? dynamic_pointer_cast<AssetDatabaseManager>( resources->getDatabaseManager() )
-                                     : nullptr;
+            auto catalog =
+                resources ? dynamic_pointer_cast<AssetDatabaseManager>( resources->getDatabaseManager() )
+                          : nullptr;
             if( app->getProjectPath() != m_previewProject || !m_previewSession.isCurrent( catalog ) )
             {
                 m_preview->setTexture( nullptr );
                 m_preview->setVisible( false );
                 m_previewProject.clear();
                 m_previewSession.clear();
-                if( !m_result ) m_message.clear();
+                if( !m_result )
+                {
+                    m_message.clear();
+                }
             }
         }
         if( m_result && app->getProjectPath() != m_projectPath && !m_discard )
         {
             m_discard = true;
-            m_message = "Project changed. The pending image will be discarded; API usage may still be billed.";
+            m_message =
+                "Project changed. The pending image will be discarded; API usage may still be billed.";
         }
         const auto action = static_cast<Action>( m_action.exchange( None ) );
         try
@@ -165,10 +190,18 @@ namespace workphone::editor
             if( action == Cancel && m_result )
             {
                 m_discard = true;
-                m_message = "Pending image discarded. Waiting for OpenAI to finish; API usage may still be billed.";
+                m_message =
+                    "Pending image discarded. Waiting for OpenAI to finish; API usage may still be "
+                    "billed.";
             }
-            if( m_result && m_result->ready.load( std::memory_order_acquire ) ) finishGeneration();
-            if( action == Generate && !m_result ) startGeneration();
+            if( m_result && m_result->ready.load( std::memory_order_acquire ) )
+            {
+                finishGeneration();
+            }
+            if( action == Generate && !m_result )
+            {
+                startGeneration();
+            }
         }
         catch( const std::exception & )
         {
@@ -183,8 +216,9 @@ namespace workphone::editor
         auto editor = EditorManager::getSingletonPtr();
         auto project = editor ? editor->getProject() : nullptr;
         auto resources = app->getResourceDatabase();
-        auto catalog = resources ? dynamic_pointer_cast<AssetDatabaseManager>( resources->getDatabaseManager() )
-                                 : nullptr;
+        auto catalog =
+            resources ? dynamic_pointer_cast<AssetDatabaseManager>( resources->getDatabaseManager() )
+                      : nullptr;
         auto ai = app->getAiManager();
         String error;
         m_projectPath = app->getProjectPath();
@@ -213,7 +247,10 @@ namespace workphone::editor
         request.quality = qualities[std::min<u32>( m_quality->getSelectedOption(), 2 )];
         m_basename = image_assets::sanitizeBasename( m_name->getText().c_str() ).c_str();
         m_name->setText( m_basename );
-        if( m_worker.joinable() ) m_worker.join();
+        if( m_worker.joinable() )
+        {
+            m_worker.join();
+        }
         auto result = std::make_shared<ResultState>();
         std::thread worker( [ai, request, result]() {
             Thread::setCurrentTask( TaskId::None );
@@ -223,7 +260,8 @@ namespace workphone::editor
             }
             catch( ... )
             {
-                result->result.error = "Image generation failed. Check your network and API configuration.";
+                result->result.error =
+                    "Image generation failed. Check your network and API configuration.";
             }
             result->ready.store( true, std::memory_order_release );
         } );
@@ -235,7 +273,10 @@ namespace workphone::editor
 
     void TextToImageWindow::finishGeneration()
     {
-        if( m_worker.joinable() ) m_worker.join();
+        if( m_worker.joinable() )
+        {
+            m_worker.join();
+        }
         auto pending = std::move( m_result );
         if( m_discard || !sessionCurrent() )
         {
@@ -270,11 +311,16 @@ namespace workphone::editor
                 fileSystem->refreshPath( m_projectRoot + "/Assets", false );
                 fileSystem->refreshPath( m_projectRoot + "/Assets/Generated", false );
             }
-            if( auto resources = app->getResourceDatabase() ) resources->importFile( outputPath );
+            if( auto resources = app->getResourceDatabase() )
+            {
+                resources->importFile( outputPath );
+            }
         }
         catch( const std::exception & )
         {
-            m_message += "\nThe PNG was saved, but asset refresh failed. Refresh or import it from Project Assets.";
+            m_message +=
+                "\nThe PNG was saved, but asset refresh failed. Refresh or import it from Project "
+                "Assets.";
         }
         try
         {
@@ -282,13 +328,17 @@ namespace workphone::editor
             m_preview->setVisible( false );
             m_previewProject = m_projectPath;
             if( auto resources = app->getResourceDatabase() )
-                m_previewSession.capture( dynamic_pointer_cast<AssetDatabaseManager>( resources->getDatabaseManager() ) );
+            {
+                m_previewSession.capture(
+                    dynamic_pointer_cast<AssetDatabaseManager>( resources->getDatabaseManager() ) );
+            }
             m_nextPreviewCheck = std::chrono::steady_clock::now() + std::chrono::seconds( 1 );
             auto graphics = app->getGraphicsSystemPtr();
             auto textures = graphics ? graphics->getTextureManager() : nullptr;
             if( textures )
             {
-                if( auto texture = dynamic_pointer_cast<render::ITexture>( textures->loadFromFile( outputPath ) ) )
+                if( auto texture =
+                        dynamic_pointer_cast<render::ITexture>( textures->loadFromFile( outputPath ) ) )
                 {
                     m_preview->setTexture( texture );
                     const auto dimensions = texture->getSize();
@@ -320,15 +370,21 @@ namespace workphone::editor
         m_generate->setEnabled( !busy && hasProject );
         m_cancel->setEnabled( busy && !m_discard );
         auto message = m_message;
-        if( message.empty() ) message = hasProject ? "Describe an image and click Generate Image."
-                                                  : "Open a saved project to generate images.";
-        if( m_status->getText() != message ) m_status->setText( message );
+        if( message.empty() )
+        {
+            message = hasProject ? "Describe an image and click Generate Image."
+                                 : "Open a saved project to generate images.";
+        }
+        if( m_status->getText() != message )
+        {
+            m_status->setText( message );
+        }
     }
 
     Parameter TextToImageWindow::Listener::handleEvent( EventType, hash_type eventValue,
-                                                       const Array<Parameter> &,
-                                                       SmartPtr<ISharedObject> sender,
-                                                       SmartPtr<ISharedObject>, SmartPtr<IEvent> )
+                                                        const Array<Parameter> &,
+                                                        SmartPtr<ISharedObject> sender,
+                                                        SmartPtr<ISharedObject>, SmartPtr<IEvent> )
     {
         if( eventValue == IEvent::handleSelection )
         {
@@ -342,4 +398,4 @@ namespace workphone::editor
         }
         return {};
     }
-}
+}  // namespace workphone::editor

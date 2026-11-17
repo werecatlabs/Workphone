@@ -40,20 +40,31 @@ namespace workphone::editor
 
     void TerrainWindow::refreshViewportScriptState()
     {
-        if( Thread::getCurrentTask() != TaskId::Application ) return;
+        if( Thread::getCurrentTask() != TaskId::Application )
+        {
+            return;
+        }
         auto app = core::IApplicationManager::instancePtr();
-        if( !app || app->getQuit() ) return;
+        if( !app || app->getQuit() )
+        {
+            return;
+        }
         auto scripts = app ? app->getScriptManager() : nullptr;
-        if( scripts && scripts->isDebuggerPaused() ) return;
+        if( scripts && scripts->isDebuggerPaused() )
+        {
+            return;
+        }
         const auto generation = getViewportScriptGeneration();
         Parameters recipe, state;
         if( isLoaded() && isWindowVisible() )
+        {
             if( auto invoker = getInvoker() )
             {
                 // These getters used to run synchronously inside ImGui. Refresh
                 // the explicit preview snapshot outside the native render frame.
                 invoker->callObjectMember( "getViewportScriptState", {}, state );
             }
+        }
         double brushRadius = 0.0;
         if( state.size() == 3 || state.size() == 5 )
         {
@@ -62,18 +73,27 @@ namespace workphone::editor
         }
         const bool brushEnabled = ( state.size() == 3 || state.size() == 5 ) && state[0].getBool();
         const bool brushPickHeightfield = brushEnabled && state[2].getBool();
-        if( state.size() == 5 ) recipe = Parameters{ state[3], state[4] };
+        if( state.size() == 5 )
+        {
+            recipe = Parameters{ state[3], state[4] };
+        }
         bool cancelStroke = false;
         {
             std::lock_guard<std::mutex> lock( m_viewportScriptStateMutex );
-            if( generation != getViewportScriptGeneration() ) return;
+            if( generation != getViewportScriptGeneration() )
+            {
+                return;
+            }
             cancelStroke = m_viewportBrushEnabled && !brushEnabled;
             m_recipePreview = std::move( recipe );
             m_viewportBrushEnabled = brushEnabled;
             m_viewportBrushPickHeightfield = brushPickHeightfield;
             m_viewportBrushRadius = brushRadius;
         }
-        if( cancelStroke ) cancelViewportStroke();
+        if( cancelStroke )
+        {
+            cancelViewportStroke();
+        }
     }
 
     void TerrainWindow::load( SmartPtr<ISharedObject> data )
@@ -242,14 +262,18 @@ namespace workphone::editor
         }
         const auto &phaseArgument = arguments.front();
         const auto phase = phaseArgument.type == ParameterType::PARAM_TYPE_CHAR_PTR
-            ? String( phaseArgument.getCharPtr() ? phaseArgument.getCharPtr() : "" )
-            : phaseArgument.getStr();
+                               ? String( phaseArgument.getCharPtr() ? phaseArgument.getCharPtr() : "" )
+                               : phaseArgument.getStr();
         if( phase != "hover" )
         {
             if( auto editor = EditorManager::getSingletonPtr() )
+            {
                 if( auto ui = editor->getUI() )
+                {
                     ui->deferScriptCall( owner.get(), "handleViewportBrushEvent", arguments, true, true,
                                          generation );
+                }
+            }
         }
         // Return world-space ring samples to the viewport's existing draw list.
         // Authoring state and brush execution stay in the Lua terrain editor.
@@ -293,9 +317,10 @@ namespace workphone::editor
         auto actor = terrain->getActor();
         const auto placement = actor ? actor->getWorldTransform() : Transform3<real_Num>();
         Vector3<real_Num> hit;
-        const bool picked = snapshot && ( pickHeightfield
-            ? render::intersectTerrainHeightfieldForAuthoring( *snapshot, placement, ray, hit )
-            : render::intersectTerrain( *snapshot, placement, ray, hit ) );
+        const bool picked =
+            snapshot && ( pickHeightfield ? render::intersectTerrainHeightfieldForAuthoring(
+                                                *snapshot, placement, ray, hit )
+                                          : render::intersectTerrain( *snapshot, placement, ray, hit ) );
         if( !picked )
         {
             return Parameter( preview );
@@ -308,9 +333,10 @@ namespace workphone::editor
             auto world = matrix.transformAffine( Vector3<real_Num>(
                 local.x + radius * std::cos( angle ), 0, local.z + radius * std::sin( angle ) ) );
             f32 height = 0;
-            const bool sampled = pickHeightfield
-                ? render::sampleTerrainHeightForAuthoring( *snapshot, placement, world, height )
-                : render::sampleTerrainHeight( *snapshot, placement, world, height );
+            const bool sampled =
+                pickHeightfield
+                    ? render::sampleTerrainHeightForAuthoring( *snapshot, placement, world, height )
+                    : render::sampleTerrainHeight( *snapshot, placement, world, height );
             if( !sampled )
             {
                 world.y = std::numeric_limits<real_Num>::quiet_NaN();

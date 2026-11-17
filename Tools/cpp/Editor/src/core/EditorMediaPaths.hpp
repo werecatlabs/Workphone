@@ -7,8 +7,7 @@ namespace workphone::editor
 {
     // Editor media belongs to the installation, independently of the selected
     // project. Resolve it before handing it to project-relative filesystem APIs.
-    inline String mountEditorMedia( SmartPtr<IFileSystem> fileSystem,
-                                    const String &startupDirectory,
+    inline String mountEditorMedia( SmartPtr<IFileSystem> fileSystem, const String &startupDirectory,
                                     const String &configuredMediaPath )
     {
         const auto mediaRoot = Path::getAbsolutePath( startupDirectory, configuredMediaPath );
@@ -16,4 +15,4 @@ namespace workphone::editor
         fileSystem->addFolder( mediaRoot, false );
         return mediaRoot;
     }
-}
+}  // namespace workphone::editor

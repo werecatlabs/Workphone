@@ -46,9 +46,13 @@ namespace workphone::editor
             ( item == UIManager::WidgetId::NewProjectId || item == UIManager::WidgetId::OpenProjectId ||
               item == UIManager::WidgetId::NewSceneId || item == UIManager::WidgetId::OpenSceneId ) )
         {
-            WP_LOG_ERROR( "Save or discard the prefab and return before opening another scene or project." );
+            WP_LOG_ERROR(
+                "Save or discard the prefab and return before opening another scene or project." );
             if( auto ui = editorManager->getUI() )
-                ui->updatePrefabEditingUI( "Save & Return or Discard & Return before opening a scene or project." );
+            {
+                ui->updatePrefabEditingUI(
+                    "Save & Return or Discard & Return before opening a scene or project." );
+            }
             return;
         }
 

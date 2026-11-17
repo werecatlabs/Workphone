@@ -30,7 +30,10 @@ namespace workphone::editor
             {
                 WP_LOG_ERROR( "Return from prefab editing before entering Play." );
                 if( auto ui = editorManager->getUI() )
-                    ui->updatePrefabEditingUI( "Save & Return or Discard & Return before entering Play." );
+                {
+                    ui->updatePrefabEditingUI(
+                        "Save & Return or Discard & Return before entering Play." );
+                }
                 return;
             }
 
@@ -75,13 +78,16 @@ namespace workphone::editor
                     for( const auto &issue : validation.issues )
                     {
                         if( shown++ == 16 )
+                        {
                             break;
+                        }
                         auto actor = validation.actors[issue.viewIndex];
-                        WP_LOG_ERROR( String( "Cannot enter network play: " ) + actor->getName() +
-                            ": " + network::networkSceneIssueMessage( issue.code ) );
+                        WP_LOG_ERROR( String( "Cannot enter network play: " ) + actor->getName() + ": " +
+                                      network::networkSceneIssueMessage( issue.code ) );
                     }
                     WP_LOG_ERROR( String( "Network scene validation found " ) +
-                        StringUtil::toString( static_cast<u32>( validation.issues.size() ) ) + " errors." );
+                                  StringUtil::toString( static_cast<u32>( validation.issues.size() ) ) +
+                                  " errors." );
                     return;
                 }
             }

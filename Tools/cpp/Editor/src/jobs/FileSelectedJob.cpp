@@ -45,8 +45,10 @@ namespace workphone::editor
             if( editorManager->isEditingPrefab() )
             {
                 if( auto ui = editorManager->getUI() )
+                {
                     ui->updatePrefabEditingUI(
                         "Save & Return or Discard & Return before opening a scene." );
+                }
                 return;
             }
             auto applicationManager = core::IApplicationManager::instance();

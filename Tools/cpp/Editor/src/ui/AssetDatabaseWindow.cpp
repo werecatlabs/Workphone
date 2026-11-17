@@ -347,18 +347,25 @@ namespace workphone::editor
             Util::setText( node, row.source + " [" + row.kind + " / " + row.state + "]" );
             root->addChild( node );
         }
-        m_status->setText( "Project journal | " + StringUtil::toString( m_operations.rows.size() ) +
-                           " records | Select an interrupted record to retry recovery or review a conflict." );
+        m_status->setText(
+            "Project journal | " + StringUtil::toString( m_operations.rows.size() ) +
+            " records | Select an interrupted record to retry recovery or review a conflict." );
     }
 
     void AssetDatabaseWindow::removeRecoveryConfirmation()
     {
-        if( !m_confirmRecovery ) return;
+        if( !m_confirmRecovery )
+        {
+            return;
+        }
         auto button = m_confirmRecovery;
         m_confirmRecovery = nullptr;
         button->removeObjectListener( getEventListener() );
         auto app = core::IApplicationManager::instancePtr();
-        if( auto ui = app ? app->getUI() : nullptr ) ui->removeElement( button );
+        if( auto ui = app ? app->getUI() : nullptr )
+        {
+            ui->removeElement( button );
+        }
     }
 
     void AssetDatabaseWindow::clearRecoverySelection()
@@ -368,7 +375,10 @@ namespace workphone::editor
         m_recovery = {};
         for( auto button : { m_retryRecovery, m_reviewConflict } )
         {
-            if( button ) button->setVisible( false, false );
+            if( button )
+            {
+                button->setVisible( false, false );
+            }
         }
     }
 
@@ -377,11 +387,18 @@ namespace workphone::editor
         const auto &row = m_operations.rows[m_selectedOperation];
         String detail = "Operation: " + row.id + "\nState: " + row.state + "\nSource: " + row.source +
                         "\nDestination: " + row.destination + "\nRoot: " + row.root;
-        if( !m_recovery.retainedPath.empty() ) detail += "\nHolding file: " + m_recovery.retainedPath;
-        if( !m_recovery.error.empty() ) detail += "\n" + m_recovery.error;
+        if( !m_recovery.retainedPath.empty() )
+        {
+            detail += "\nHolding file: " + m_recovery.retainedPath;
+        }
+        if( !m_recovery.error.empty() )
+        {
+            detail += "\n" + m_recovery.error;
+        }
         if( confirmation )
         {
-            detail += "\nJournal bytes: " + m_recovery.payloadPath + "\nBlocking file: " + m_recovery.conflictPath +
+            detail += "\nJournal bytes: " + m_recovery.payloadPath +
+                      "\nBlocking file: " + m_recovery.conflictPath +
                       "\nThe blocking file will move to " + m_recovery.holdingPath +
                       " before restoring the journal bytes. Confirm to apply this plan.";
         }
@@ -586,22 +603,26 @@ namespace workphone::editor
                                           "UUIDs; save or reload affected documents as needed."
                                         : "Undo failed; existing content retained. " + result.error );
             }
-            else if( sender && ( sender == m_retryRecovery || sender == m_reviewConflict || sender == m_confirmRecovery ) )
+            else if( sender && ( sender == m_retryRecovery || sender == m_reviewConflict ||
+                                 sender == m_confirmRecovery ) )
             {
                 auto catalog = getAssetDatabaseManager();
                 auto node = m_tree->getSelectedTreeNode();
                 if( !m_showOperations || m_showMedia || !node || !node->getId() ||
-                    m_selectedOperation != node->getId() - 1 || m_selectedOperation >= m_operations.rows.size() ||
+                    m_selectedOperation != node->getId() - 1 ||
+                    m_selectedOperation >= m_operations.rows.size() ||
                     !m_operations.session.isCurrent( catalog ) || !m_recovery.canRetry )
                 {
                     clearRecoverySelection();
-                    m_details->setText( "Operation or project session changed. Select the record again." );
+                    m_details->setText(
+                        "Operation or project session changed. Select the record again." );
                     return {};
                 }
                 if( sender == m_reviewConflict )
                 {
                     removeRecoveryConfirmation();
-                    m_recovery = catalog->inspectFileOperationRecovery( m_operations.rows[m_selectedOperation].id );
+                    m_recovery = catalog->inspectFileOperationRecovery(
+                        m_operations.rows[m_selectedOperation].id );
                     m_retryRecovery->setVisible( m_recovery.canRetry, false );
                     m_reviewConflict->setVisible( m_recovery.canPreserve, false );
                     if( m_recovery.canPreserve )
@@ -615,11 +636,15 @@ namespace workphone::editor
                             m_confirmRecovery = ui->addElementByType<ui::IUIButton>();
                             if( m_confirmRecovery )
                             {
-                                m_confirmRecovery->setLabel( "Confirm preserve and recover##CatalogConfirmRecovery" );
+                                m_confirmRecovery->setLabel(
+                                    "Confirm preserve and recover##CatalogConfirmRecovery" );
                                 m_confirmRecovery->addObjectListener( getEventListener() );
                                 getParentWindow()->addChild( m_confirmRecovery );
                             }
-                            else m_recovery.error = "Cannot allocate the recovery confirmation control.";
+                            else
+                            {
+                                m_recovery.error = "Cannot allocate the recovery confirmation control.";
+                            }
                         }
                     }
                     showRecoverySelection( m_confirmRecovery != nullptr );
@@ -641,7 +666,10 @@ namespace workphone::editor
                 refresh();
                 String status = result.succeeded ? "Selected journal record recovered."
                                                  : "Recovery incomplete. " + result.error;
-                if( !current.retainedPath.empty() ) status += "\nHolding file: " + current.retainedPath;
+                if( !current.retainedPath.empty() )
+                {
+                    status += "\nHolding file: " + current.retainedPath;
+                }
                 m_details->setText( status );
             }
             else if( sender == m_previous )

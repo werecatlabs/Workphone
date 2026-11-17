@@ -17,97 +17,164 @@
 
 namespace workphone::editor
 {
-    WP_CLASS_REGISTER_DERIVED(workphone::editor,CityRoadWindow,EditorWindow);
-    WP_CLASS_REGISTER_DERIVED(workphone::editor,CityRoadWindow::Listener,IEventListener);
-    WP_CLASS_REGISTER_DERIVED(workphone::editor,CityRoadWindow::ViewportJob,Job);
-    WP_CLASS_REGISTER_DERIVED(workphone::editor,CityRoadEditCommand,Command);
+    WP_CLASS_REGISTER_DERIVED( workphone::editor, CityRoadWindow, EditorWindow );
+    WP_CLASS_REGISTER_DERIVED( workphone::editor, CityRoadWindow::Listener, IEventListener );
+    WP_CLASS_REGISTER_DERIVED( workphone::editor, CityRoadWindow::ViewportJob, Job );
+    WP_CLASS_REGISTER_DERIVED( workphone::editor, CityRoadEditCommand, Command );
+
     namespace
     {
         SourceBudgetText newId()
         {
-            const auto value=StringUtil::getUUID();SourceBudgetText id(value.data(),value.size());
-            std::transform(id.begin(),id.end(),id.begin(),[](unsigned char c){return char(std::tolower(c));});return id;
+            const auto value = StringUtil::getUUID();
+            SourceBudgetText id( value.data(), value.size() );
+            std::transform( id.begin(), id.end(), id.begin(),
+                            []( unsigned char c ) { return char( std::tolower( c ) ); } );
+            return id;
         }
+
         SmartPtr<scene::IGameScene> activeScene()
-        {auto app=core::IApplicationManager::instancePtr();auto manager=app?app->getGameManager():nullptr;return manager?manager->getCurrentScene():nullptr;}
-        String json(const procedural::CityRoadSplineSource &source,String &error)
-        {SourceBudgetText bytes;if(!procedural::serializeCityRoadSplineSource(source,bytes,error))return {};return String(bytes.data(),bytes.size());}
-        void syncApproachWidths(procedural::CityRoadSplineSource &source,const procedural::CityRoadSpline &road)
+        {
+            auto app = core::IApplicationManager::instancePtr();
+            auto manager = app ? app->getGameManager() : nullptr;
+            return manager ? manager->getCurrentScene() : nullptr;
+        }
+
+        String json( const procedural::CityRoadSplineSource &source, String &error )
+        {
+            SourceBudgetText bytes;
+            if( !procedural::serializeCityRoadSplineSource( source, bytes, error ) )
+            {
+                return {};
+            }
+            return String( bytes.data(), bytes.size() );
+        }
+
+        void syncApproachWidths( procedural::CityRoadSplineSource &source,
+                                 const procedural::CityRoadSpline &road )
         {
             // A road can connect two junctions. Publish all its approach profiles
             // together; source/bake validation still rejects invalid widths or overlap.
-            for(auto &junction:source.roundabouts)for(auto &port:junction.ports)
-                if(port.approachId==road.id)port.width=road.width;
+            for( auto &junction : source.roundabouts )
+            {
+                for( auto &port : junction.ports )
+                {
+                    if( port.approachId == road.id )
+                    {
+                        port.width = road.width;
+                    }
+                }
+            }
         }
+
         struct AttachedPort
         {
             Vector3F outward;
-            float gradeX,gradeZ;
+            float gradeX, gradeZ;
             bool atStart;
         };
-        std::optional<AttachedPort> attachedPort(const procedural::CityRoadSplineSource &source,
-                                                const procedural::CityRoadSpline &road,size_t knot)
+
+        std::optional<AttachedPort> attachedPort( const procedural::CityRoadSplineSource &source,
+                                                  const procedural::CityRoadSpline &road, size_t knot )
         {
-            if(road.closed || road.knots.size()<2 || (knot!=0 && knot+1!=road.knots.size()))return {};
-            for(const auto &junction:source.roundabouts)for(const auto &port:junction.ports)
+            if( road.closed || road.knots.size() < 2 || ( knot != 0 && knot + 1 != road.knots.size() ) )
             {
-                if(port.approachId!=road.id)continue;
-                const float length=std::hypot(port.outward.x,port.outward.z);
-                if(!std::isfinite(length) || length<=1e-5f)continue;
-                const Vector3F direction{port.outward.x/length,0,port.outward.z/length};
-                const auto mouth=junction.center+direction*(junction.outerRadius+port.length);
-                const auto delta=road.knots[knot].position-mouth;
-                // Identify an existing connection, never snap a nearby free endpoint.
-                // Drape control Y is authored intent, not its fitted terrain elevation.
-                if(delta.x*delta.x+delta.z*delta.z<=.001f*.001f)
-                    return AttachedPort{direction,junction.gradeX,junction.gradeZ,knot==0};
+                return {};
+            }
+            for( const auto &junction : source.roundabouts )
+            {
+                for( const auto &port : junction.ports )
+                {
+                    if( port.approachId != road.id )
+                    {
+                        continue;
+                    }
+                    const float length = std::hypot( port.outward.x, port.outward.z );
+                    if( !std::isfinite( length ) || length <= 1e-5f )
+                    {
+                        continue;
+                    }
+                    const Vector3F direction{ port.outward.x / length, 0, port.outward.z / length };
+                    const auto mouth =
+                        junction.center + direction * ( junction.outerRadius + port.length );
+                    const auto delta = road.knots[knot].position - mouth;
+                    // Identify an existing connection, never snap a nearby free endpoint.
+                    // Drape control Y is authored intent, not its fitted terrain elevation.
+                    if( delta.x * delta.x + delta.z * delta.z <= .001f * .001f )
+                    {
+                        return AttachedPort{ direction, junction.gradeX, junction.gradeZ, knot == 0 };
+                    }
+                }
             }
             return {};
         }
-        bool sameAuthoredState(const String &current,const SourceBudgetText &expected,String &error)
+
+        bool sameAuthoredState( const String &current, const SourceBudgetText &expected, String &error )
         {
-            procedural::CityRoadSplineSource a,b;
-            if(!procedural::deserializeCityRoadSplineSource(std::string_view(current.data(),current.size()),a,error) ||
-               !procedural::deserializeCityRoadSplineSource(std::string_view(expected.data(),expected.size()),b,error))return false;
-            a.revision=b.revision=0;a.terrainRevision=b.terrainRevision=0;SourceBudgetText left,right;
-            if(!procedural::serializeCityRoadSplineSource(a,left,error) || !procedural::serializeCityRoadSplineSource(b,right,error))return false;
-            if(left!=right){error="Road source changed outside this history step; undo/redo was rejected.";return false;}return true;
+            procedural::CityRoadSplineSource a, b;
+            if( !procedural::deserializeCityRoadSplineSource(
+                    std::string_view( current.data(), current.size() ), a, error ) ||
+                !procedural::deserializeCityRoadSplineSource(
+                    std::string_view( expected.data(), expected.size() ), b, error ) )
+            {
+                return false;
+            }
+            a.revision = b.revision = 0;
+            a.terrainRevision = b.terrainRevision = 0;
+            SourceBudgetText left, right;
+            if( !procedural::serializeCityRoadSplineSource( a, left, error ) ||
+                !procedural::serializeCityRoadSplineSource( b, right, error ) )
+            {
+                return false;
+            }
+            if( left != right )
+            {
+                error = "Road source changed outside this history step; undo/redo was rejected.";
+                return false;
+            }
+            return true;
         }
 
-        bool sameTerrain(const render::TerrainData &a,const render::TerrainData &b)
+        bool sameTerrain( const render::TerrainData &a, const render::TerrainData &b )
         {
-            return a.dimensions==b.dimensions && a.spacing==b.spacing && a.origin==b.origin &&
-                   a.heightScale==b.heightScale && a.heights==b.heights && a.layers==b.layers &&
-                   a.layerWeights==b.layerWeights && a.appearance==b.appearance &&
-                   a.autoMaterial==b.autoMaterial && a.surfaceMasks==b.surfaceMasks && a.holes==b.holes;
+            return a.dimensions == b.dimensions && a.spacing == b.spacing && a.origin == b.origin &&
+                   a.heightScale == b.heightScale && a.heights == b.heights && a.layers == b.layers &&
+                   a.layerWeights == b.layerWeights && a.appearance == b.appearance &&
+                   a.autoMaterial == b.autoMaterial && a.surfaceMasks == b.surfaceMasks &&
+                   a.holes == b.holes;
         }
 
-        u64 terrainHistoryBytes(const render::TerrainData &data)
+        u64 terrainHistoryBytes( const render::TerrainData &data )
         {
-            u64 bytes=sizeof(data)+data.heights.size()*sizeof(f32)+data.layerWeights.size()*sizeof(Vector4F)+
-                data.surfaceMasks.size()*sizeof(Vector2F)+data.holes.size()+data.appearance.detailNormal.size();
-            for(const auto &layer:data.layers)bytes+=layer.albedo.size()+layer.normal.size()+layer.orm.size();
+            u64 bytes = sizeof( data ) + data.heights.size() * sizeof( f32 ) +
+                        data.layerWeights.size() * sizeof( Vector4F ) +
+                        data.surfaceMasks.size() * sizeof( Vector2F ) + data.holes.size() +
+                        data.appearance.detailNormal.size();
+            for( const auto &layer : data.layers )
+            {
+                bytes += layer.albedo.size() + layer.normal.size() + layer.orm.size();
+            }
             return bytes;
         }
 
         using CubicControls = std::array<Vector3F, 4>;
 
-        CubicControls spanControls(const procedural::CityRoadSpline &road, size_t span)
+        CubicControls spanControls( const procedural::CityRoadSpline &road, size_t span )
         {
             const auto &start = road.knots[span];
-            const auto &end = road.knots[(span + 1) % road.knots.size()];
-            return {start.position, start.position + start.outHandle,
-                    end.position + end.inHandle, end.position};
+            const auto &end = road.knots[( span + 1 ) % road.knots.size()];
+            return { start.position, start.position + start.outHandle, end.position + end.inHandle,
+                     end.position };
         }
 
-        Vector3F evaluateSpan(const CubicControls &control, f32 t)
+        Vector3F evaluateSpan( const CubicControls &control, f32 t )
         {
             const f32 u = 1.f - t;
-            return control[0] * (u * u * u) + control[1] * (3.f * u * u * t) +
-                   control[2] * (3.f * u * t * t) + control[3] * (t * t * t);
+            return control[0] * ( u * u * u ) + control[1] * ( 3.f * u * u * t ) +
+                   control[2] * ( 3.f * u * t * t ) + control[3] * ( t * t * t );
         }
 
-        f32 horizontalDistanceSquared(const Vector3F &a, const Vector3F &b)
+        f32 horizontalDistanceSquared( const Vector3F &a, const Vector3F &b )
         {
             const f32 x = a.x - b.x, z = a.z - b.z;
             return x * x + z * z;
@@ -119,708 +186,1848 @@ namespace workphone::editor
             f32 parameter;
         };
 
-        std::optional<RoadSpanPick> pickRoadSpan(const procedural::CityRoadSplineSource &source,
-                                                const Vector3F &hit, const SourceBudgetText *roadId)
+        std::optional<RoadSpanPick> pickRoadSpan( const procedural::CityRoadSplineSource &source,
+                                                  const Vector3F &hit, const SourceBudgetText *roadId )
         {
             // Pick in the terrain plane. Refine the nearest sampled chord on the
             // actual cubic before checking the hit radius or splitting it.
             constexpr unsigned steps = 32;
             std::optional<RoadSpanPick> pick;
             f32 bestDistance = std::numeric_limits<f32>::infinity();
-            for (size_t r = 0; r < source.roads.size(); ++r)
+            for( size_t r = 0; r < source.roads.size(); ++r )
             {
                 const auto &road = source.roads[r];
-                if ((roadId && road.id != *roadId) || road.knots.size() < 2) continue;
-                const f32 radius = std::max(2.f, road.width * .5f);
-                const size_t spanCount = road.closed ? road.knots.size() : road.knots.size() - 1;
-                for (size_t span = 0; span < spanCount; ++span)
+                if( ( roadId && road.id != *roadId ) || road.knots.size() < 2 )
                 {
-                    const auto control = spanControls(road, span);
-                    const auto boundsX = std::minmax({control[0].x, control[1].x, control[2].x, control[3].x});
-                    const auto boundsZ = std::minmax({control[0].z, control[1].z, control[2].z, control[3].z});
-                    const f32 dx = std::max({0.f, boundsX.first - hit.x, hit.x - boundsX.second});
-                    const f32 dz = std::max({0.f, boundsZ.first - hit.z, hit.z - boundsZ.second});
-                    if (dx * dx + dz * dz > std::min(bestDistance, radius * radius)) continue;
+                    continue;
+                }
+                const f32 radius = std::max( 2.f, road.width * .5f );
+                const size_t spanCount = road.closed ? road.knots.size() : road.knots.size() - 1;
+                for( size_t span = 0; span < spanCount; ++span )
+                {
+                    const auto control = spanControls( road, span );
+                    const auto boundsX =
+                        std::minmax( { control[0].x, control[1].x, control[2].x, control[3].x } );
+                    const auto boundsZ =
+                        std::minmax( { control[0].z, control[1].z, control[2].z, control[3].z } );
+                    const f32 dx = std::max( { 0.f, boundsX.first - hit.x, hit.x - boundsX.second } );
+                    const f32 dz = std::max( { 0.f, boundsZ.first - hit.z, hit.z - boundsZ.second } );
+                    if( dx * dx + dz * dz > std::min( bestDistance, radius * radius ) )
+                    {
+                        continue;
+                    }
 
                     f32 closestChord = std::numeric_limits<f32>::infinity();
                     f32 parameter = 0;
                     unsigned interval = 0;
                     auto previous = control.front();
-                    for (unsigned i = 0; i < steps; ++i)
+                    for( unsigned i = 0; i < steps; ++i )
                     {
-                        const auto next = evaluateSpan(control, f32(i + 1) / steps);
+                        const auto next = evaluateSpan( control, f32( i + 1 ) / steps );
                         const auto chord = next - previous;
                         const f32 lengthSquared = chord.x * chord.x + chord.z * chord.z;
-                        const f32 projection = (hit.x - previous.x) * chord.x + (hit.z - previous.z) * chord.z;
-                        const f32 fraction = lengthSquared > 0 ? std::clamp(projection / lengthSquared, 0.f, 1.f) : 0.f;
-                        const f32 distance = horizontalDistanceSquared(hit, previous + chord * fraction);
-                        if (distance < closestChord)
+                        const f32 projection =
+                            ( hit.x - previous.x ) * chord.x + ( hit.z - previous.z ) * chord.z;
+                        const f32 fraction =
+                            lengthSquared > 0 ? std::clamp( projection / lengthSquared, 0.f, 1.f ) : 0.f;
+                        const f32 distance =
+                            horizontalDistanceSquared( hit, previous + chord * fraction );
+                        if( distance < closestChord )
                         {
                             closestChord = distance;
-                            parameter = (f32(i) + fraction) / steps;
+                            parameter = ( f32( i ) + fraction ) / steps;
                             interval = i;
                         }
                         previous = next;
                     }
-                    const auto distanceAt = [&](f32 t) { return horizontalDistanceSquared(hit, evaluateSpan(control, t)); };
+                    const auto distanceAt = [&]( f32 t ) {
+                        return horizontalDistanceSquared( hit, evaluateSpan( control, t ) );
+                    };
                     // Include one adjacent chord on each side of the coarse hit.
-                    f32 low = f32(interval > 0 ? interval - 1 : 0) / steps;
-                    f32 high = f32(std::min(interval + 2, steps)) / steps;
-                    for (unsigned i = 0; i < 18; ++i)
+                    f32 low = f32( interval > 0 ? interval - 1 : 0 ) / steps;
+                    f32 high = f32( std::min( interval + 2, steps ) ) / steps;
+                    for( unsigned i = 0; i < 18; ++i )
                     {
-                        const f32 left = low + (high - low) / 3.f;
-                        const f32 right = high - (high - low) / 3.f;
-                        if (distanceAt(left) <= distanceAt(right)) high = right;
-                        else low = left;
+                        const f32 left = low + ( high - low ) / 3.f;
+                        const f32 right = high - ( high - low ) / 3.f;
+                        if( distanceAt( left ) <= distanceAt( right ) )
+                        {
+                            high = right;
+                        }
+                        else
+                        {
+                            low = left;
+                        }
                     }
-                    const f32 refined = (low + high) * .5f;
-                    if (distanceAt(refined) < distanceAt(parameter)) parameter = refined;
-                    const f32 distance = distanceAt(parameter);
-                    if (distance <= radius * radius && distance < bestDistance)
+                    const f32 refined = ( low + high ) * .5f;
+                    if( distanceAt( refined ) < distanceAt( parameter ) )
+                    {
+                        parameter = refined;
+                    }
+                    const f32 distance = distanceAt( parameter );
+                    if( distance <= radius * radius && distance < bestDistance )
                     {
                         bestDistance = distance;
-                        pick = RoadSpanPick{r, span, parameter};
+                        pick = RoadSpanPick{ r, span, parameter };
                     }
                 }
             }
             return pick;
         }
-    }
-    CityRoadEditCommand::CityRoadEditCommand(){setPrimary(true);}
-    bool CityRoadEditCommand::configure(SmartPtr<scene::CityRoadAuthoring> target,const String &after,String &error,bool gradeTerrain)
+    }  // namespace
+
+    CityRoadEditCommand::CityRoadEditCommand()
     {
-        auto app=core::IApplicationManager::instancePtr();auto scene=activeScene();
-        if(!target || !scene || !target->getActor() || target->getActor()->getScene()!=scene)
-        {error="Road command target is not in the active scene.";return false;}
-        m_target=target;m_scene=scene;const auto before=target->getSourceJSON();m_before.assign(before.data(),before.size());m_after.assign(after.data(),after.size());
-        m_project=app->getProjectPath();m_gradeTerrain=gradeTerrain;error.clear();return true;
+        setPrimary( true );
     }
-    bool CityRoadEditCommand::apply(bool forward)
+
+    bool CityRoadEditCommand::configure( SmartPtr<scene::CityRoadAuthoring> target, const String &after,
+                                         String &error, bool gradeTerrain )
     {
-        if(Thread::getCurrentTask()!=TaskId::Application){m_error="Road publication requires the Application task.";return false;}
-        auto app=core::IApplicationManager::instancePtr();auto target=m_target.load().lock();auto scene=m_scene.load().lock();
-        if(!app || app->getProjectPath()!=m_project || !scene || activeScene()!=scene || !target ||
-           !target->getActor() || target->getActor()->getScene()!=scene)
-        {m_error="Road history belongs to a closed scene or project.";return false;}
+        auto app = core::IApplicationManager::instancePtr();
+        auto scene = activeScene();
+        if( !target || !scene || !target->getActor() || target->getActor()->getScene() != scene )
+        {
+            error = "Road command target is not in the active scene.";
+            return false;
+        }
+        m_target = target;
+        m_scene = scene;
+        const auto before = target->getSourceJSON();
+        m_before.assign( before.data(), before.size() );
+        m_after.assign( after.data(), after.size() );
+        m_project = app->getProjectPath();
+        m_gradeTerrain = gradeTerrain;
+        error.clear();
+        return true;
+    }
+
+    bool CityRoadEditCommand::apply( bool forward )
+    {
+        if( Thread::getCurrentTask() != TaskId::Application )
+        {
+            m_error = "Road publication requires the Application task.";
+            return false;
+        }
+        auto app = core::IApplicationManager::instancePtr();
+        auto target = m_target.load().lock();
+        auto scene = m_scene.load().lock();
+        if( !app || app->getProjectPath() != m_project || !scene || activeScene() != scene || !target ||
+            !target->getActor() || target->getActor()->getScene() != scene )
+        {
+            m_error = "Road history belongs to a closed scene or project.";
+            return false;
+        }
         // Each successful history step increments the source revision. Compare authored
         // state, then CAS the current token so A/B edits can undo and redo in sequence.
-        const auto revision=target->getSourceRevision();
-        const auto &expected=forward?m_before:m_after;
-        const auto &value=forward?m_after:m_before;
-        if(!sameAuthoredState(target->getSourceJSON(),expected,m_error)){WP_LOG_ERROR(m_error);return false;}
+        const auto revision = target->getSourceRevision();
+        const auto &expected = forward ? m_before : m_after;
+        const auto &value = forward ? m_after : m_before;
+        if( !sameAuthoredState( target->getSourceJSON(), expected, m_error ) )
+        {
+            WP_LOG_ERROR( m_error );
+            return false;
+        }
         try
         {
-            const bool first=!m_committed;
-            auto bound=target->getTerrain();
-            if((first && bound) || m_terrainAfter || m_hasGradingHistory)
+            const bool first = !m_committed;
+            auto bound = target->getTerrain();
+            if( ( first && bound ) || m_terrainAfter || m_hasGradingHistory )
             {
-                if(!bound){m_error="The terrain for this road history step is unavailable.";return false;}
-                auto active=bound->getTerrainSnapshot();
-                if(!active){m_error="The bound terrain has no active samples.";return false;}
-                const auto currentGrading=target->getTerrainGrading();
-                if(!first && currentGrading!=(forward?m_gradingBefore:m_gradingAfter))
-                {m_error="Road grading changed outside this history step.";return false;}
-                if(m_terrainAfter)
+                if( !bound )
                 {
-                    const auto &expectedTerrain=forward?m_terrainBefore:m_terrainAfter;
+                    m_error = "The terrain for this road history step is unavailable.";
+                    return false;
+                }
+                auto active = bound->getTerrainSnapshot();
+                if( !active )
+                {
+                    m_error = "The bound terrain has no active samples.";
+                    return false;
+                }
+                const auto currentGrading = target->getTerrainGrading();
+                if( !first && currentGrading != ( forward ? m_gradingBefore : m_gradingAfter ) )
+                {
+                    m_error = "Road grading changed outside this history step.";
+                    return false;
+                }
+                if( m_terrainAfter )
+                {
+                    const auto &expectedTerrain = forward ? m_terrainBefore : m_terrainAfter;
                     render::TerrainSnapshot integrated;
                     Transform3<real_Num> pose;
-                    u64 serial=0;
-                    bool detached=false;
-                    bound->getTerrainIntegrationState(integrated,pose,serial,detached);
-                    if(detached || integrated!=active || pose!=m_placement ||
-                       (active!=expectedTerrain && !sameTerrain(*active,*expectedTerrain)))
-                    {m_error="Terrain changed outside this road history step.";return false;}
-                }
-                StreamBudget budget;
-                if(first)
-                {
-                    budget=WorldStreamingScheduler::shared()->reserve(StreamMemoryClass::SourceCpu,
-                        2*terrainHistoryBytes(*active),m_error);
-                    if(!budget)return false;
-                }
-                SourceBudgetText accepted;
-                const auto restore=first?render::TerrainSnapshot{}:(forward?m_terrainAfter:m_terrainBefore);
-                const auto &replay=forward?m_gradingAfter:m_gradingBefore;
-                if(!target->applyTerrainRoadEdit(String(value.data(),value.size()),revision,active,restore,
-                                                 first && m_gradeTerrain,m_error,first?&accepted:nullptr,
-                                                 first?nullptr:&replay))return false;
-                if(first)
-                {
-                    m_after.swap(accepted);
-                    m_gradingBefore=currentGrading;
-                    m_gradingAfter=target->getTerrainGrading();
-                    m_hasGradingHistory=m_gradingBefore!=m_gradingAfter;
-                    auto published=target->getTerrainSnapshot();
-                    if(published!=active)
+                    u64 serial = 0;
+                    bool detached = false;
+                    bound->getTerrainIntegrationState( integrated, pose, serial, detached );
+                    if( detached || integrated != active || pose != m_placement ||
+                        ( active != expectedTerrain && !sameTerrain( *active, *expectedTerrain ) ) )
                     {
-                        m_terrainHistoryBudget=std::move(budget);
-                        m_terrainBefore=std::move(active);
-                        m_terrainAfter=std::move(published);
-                        m_placement=target->getTerrainPlacement();
+                        m_error = "Terrain changed outside this road history step.";
+                        return false;
                     }
                 }
-                if(m_terrainAfter && bound->getActor())bound->getActor()->setDirty(true);
+                StreamBudget budget;
+                if( first )
+                {
+                    budget = WorldStreamingScheduler::shared()->reserve(
+                        StreamMemoryClass::SourceCpu, 2 * terrainHistoryBytes( *active ), m_error );
+                    if( !budget )
+                    {
+                        return false;
+                    }
+                }
+                SourceBudgetText accepted;
+                const auto restore =
+                    first ? render::TerrainSnapshot{} : ( forward ? m_terrainAfter : m_terrainBefore );
+                const auto &replay = forward ? m_gradingAfter : m_gradingBefore;
+                if( !target->applyTerrainRoadEdit( String( value.data(), value.size() ), revision,
+                                                   active, restore, first && m_gradeTerrain, m_error,
+                                                   first ? &accepted : nullptr,
+                                                   first ? nullptr : &replay ) )
+                {
+                    return false;
+                }
+                if( first )
+                {
+                    m_after.swap( accepted );
+                    m_gradingBefore = currentGrading;
+                    m_gradingAfter = target->getTerrainGrading();
+                    m_hasGradingHistory = m_gradingBefore != m_gradingAfter;
+                    auto published = target->getTerrainSnapshot();
+                    if( published != active )
+                    {
+                        m_terrainHistoryBudget = std::move( budget );
+                        m_terrainBefore = std::move( active );
+                        m_terrainAfter = std::move( published );
+                        m_placement = target->getTerrainPlacement();
+                    }
+                }
+                if( m_terrainAfter && bound->getActor() )
+                {
+                    bound->getActor()->setDirty( true );
+                }
             }
-            else if(!target->setSourceJSON(String(value.data(),value.size()),revision,m_error))return false;
-            target->getActor()->setDirty(true);
-            m_committed=true;
+            else if( !target->setSourceJSON( String( value.data(), value.size() ), revision, m_error ) )
+            {
+                return false;
+            }
+            target->getActor()->setDirty( true );
+            m_committed = true;
             return true;
         }
-        catch(const std::exception &failure){m_error=failure.what();return false;}
+        catch( const std::exception &failure )
+        {
+            m_error = failure.what();
+            return false;
+        }
     }
-    void CityRoadEditCommand::execute(){if(!m_applied)m_applied=apply(true);setState(State::Finished);}
-    void CityRoadEditCommand::undo(){if(m_applied && apply(false))m_applied=false;}
-    void CityRoadEditCommand::redo(){execute();}
-    bool CityRoadEditCommand::dispatchHistory(SmartPtr<ICommandManager> manager,bool redo,String &error)
+
+    void CityRoadEditCommand::execute()
     {
-        if(Thread::getCurrentTask()!=TaskId::Application)
+        if( !m_applied )
+        {
+            m_applied = apply( true );
+        }
+        setState( State::Finished );
+    }
+
+    void CityRoadEditCommand::undo()
+    {
+        if( m_applied && apply( false ) )
+        {
+            m_applied = false;
+        }
+    }
+
+    void CityRoadEditCommand::redo()
+    {
+        execute();
+    }
+
+    bool CityRoadEditCommand::dispatchHistory( SmartPtr<ICommandManager> manager, bool redo,
+                                               String &error )
+    {
+        if( Thread::getCurrentTask() != TaskId::Application )
         {
             class HistoryJob : public Job
             {
             public:
-                SmartPtr<ICommandManager> manager;bool redo=false;
-                void execute() override{String error;CityRoadEditCommand::dispatchHistory(manager,redo,error);if(!error.empty())WP_LOG_ERROR(error);}
+                SmartPtr<ICommandManager> manager;
+                bool redo = false;
+
+                void execute() override
+                {
+                    String error;
+                    CityRoadEditCommand::dispatchHistory( manager, redo, error );
+                    if( !error.empty() )
+                    {
+                        WP_LOG_ERROR( error );
+                    }
+                }
             };
-            auto app=core::IApplicationManager::instancePtr();auto tasks=app?app->getTaskManager():nullptr;auto owner=tasks?tasks->getTask(TaskId::Application):nullptr;
-            if(!manager || !owner || !owner->isLoaded() || owner->getState()==ITask::State::Shutdown){error="Application history task is unavailable.";return false;}
-            auto job=make_ptr<HistoryJob>();job->manager=manager;job->redo=redo;job->setPrimary(true);owner->addJob(job);error.clear();return true;
+
+            auto app = core::IApplicationManager::instancePtr();
+            auto tasks = app ? app->getTaskManager() : nullptr;
+            auto owner = tasks ? tasks->getTask( TaskId::Application ) : nullptr;
+            if( !manager || !owner || !owner->isLoaded() || owner->getState() == ITask::State::Shutdown )
+            {
+                error = "Application history task is unavailable.";
+                return false;
+            }
+            auto job = make_ptr<HistoryJob>();
+            job->manager = manager;
+            job->redo = redo;
+            job->setPrimary( true );
+            owner->addJob( job );
+            error.clear();
+            return true;
         }
-        error.clear();if(!manager)return false;auto command=redo?manager->getNextCommand():manager->getPreviousCommand();if(!command)return false;
-        auto road=dynamic_pointer_cast<CityRoadEditCommand>(command);const bool before=road && road->applied();
-        if(redo)command->redo();else command->undo();
-        if(road && road->applied()==before)
+        error.clear();
+        if( !manager )
         {
-            error=road->error();auto restored=redo?manager->getPreviousCommand():manager->getNextCommand();
-            if(restored!=command){if(redo)manager->getNextCommand();else manager->getPreviousCommand();error+=" Command history changed during rejection.";}
-            if(error.empty())error="The road history step was rejected without changing the source.";return false;
+            return false;
+        }
+        auto command = redo ? manager->getNextCommand() : manager->getPreviousCommand();
+        if( !command )
+        {
+            return false;
+        }
+        auto road = dynamic_pointer_cast<CityRoadEditCommand>( command );
+        const bool before = road && road->applied();
+        if( redo )
+        {
+            command->redo();
+        }
+        else
+        {
+            command->undo();
+        }
+        if( road && road->applied() == before )
+        {
+            error = road->error();
+            auto restored = redo ? manager->getPreviousCommand() : manager->getNextCommand();
+            if( restored != command )
+            {
+                if( redo )
+                {
+                    manager->getNextCommand();
+                }
+                else
+                {
+                    manager->getPreviousCommand();
+                }
+                error += " Command history changed during rejection.";
+            }
+            if( error.empty() )
+            {
+                error = "The road history step was rejected without changing the source.";
+            }
+            return false;
         }
         return true;
     }
 
-    CityRoadWindow::CityRoadWindow()=default;
-    CityRoadWindow::~CityRoadWindow(){unload(nullptr);}
-    void CityRoadWindow::load(SmartPtr<ISharedObject>)
+    CityRoadWindow::CityRoadWindow() = default;
+
+    CityRoadWindow::~CityRoadWindow()
     {
-        setLoadingState(LoadingState::Loading);auto app=core::IApplicationManager::instancePtr();auto ui=app?app->getUI():nullptr;
-        if(!ui){setLoadingState(LoadingState::Unloaded);return;}
-        m_listener=make_ptr<Listener>();m_listener->setOwner(this);
-        auto window=ui->addElementByType<ui::IUIWindow>();window->setLabel("City Roads");window->setSize({440,520});setParentWindow(window);
-        const auto button=[&](const String &label,Widget id,bool same=false){auto b=ui->addElementByType<ui::IUIButton>();b->setLabel(label);b->setElementId(id);b->setSameLine(same);b->addObjectListener(m_listener);window->addChild(b);};
-        const auto text=[&](const String &label){auto t=ui->addElementByType<ui::IUIText>();t->setText(label);window->addChild(t);return t;};
-        text("Select terrain, then Bind. Source is saved with the scene.");button("Bind Selected Terrain",Bind);
-        button("Draw Road",Draw);button("Move Knot",Move,true);button("In Handle",InHandle,true);button("Out Handle",OutHandle,true);
-        button("Select Road",SelectRoad);button("Insert Knot",InsertKnot,true);
-        text("Draw Road: click adds knots, drag sets handles. Enter commits, Escape cancels.");
-        const auto input=[&](const String &label,Widget id,const String &value){auto p=ui->addElementByType<ui::IUILabelTextInputPair>();p->setLabel(label);p->setValue(value);p->setElementId(id);window->addChild(p);return p;};
-        m_width=input("Road width (m)",Width,"12");m_grade=input("Maximum grade (rise/run)",Grade,"0.08");
-        m_closed=ui->addElementByType<ui::IUILabelTogglePair>();m_closed->setLabel("Closed spline");m_closed->setValue(false);window->addChild(m_closed);
-        m_gradeTerrain=ui->addElementByType<ui::IUILabelTogglePair>();m_gradeTerrain->setLabel("Grade terrain under roads");m_gradeTerrain->setValue(true);window->addChild(m_gradeTerrain);
-        m_outerRadius=input("Roundabout outer radius (m)",OuterRadius,"14");m_islandRadius=input("Island radius (m)",IslandRadius,"8");
-        m_clockwise=ui->addElementByType<ui::IUILabelTogglePair>();m_clockwise->setLabel("Clockwise circulation");m_clockwise->setValue(true);window->addChild(m_clockwise);
-        button("Place Roundabout (4 approaches)",Roundabout);
-        button("Delete Selected Roundabout",RemoveRoundabout);
-        button("Apply Road Fields",ApplyFields);button("Commit Road",Finish,true);button("Cancel Draft",Cancel,true);
-        button("Delete Selected Road",RemoveRoad);button("Undo",Undo);button("Redo",Redo,true);button("Save Scene",Save,true);
-        m_status=text("Select a terrain or city road component to begin.");attachViewport();setLoadingState(LoadingState::Loaded);
-    }
-    void CityRoadWindow::attachViewport()
-    {
-        auto app=core::IApplicationManager::instancePtr();auto viewport=app?app->getSceneRenderWindow():nullptr;
-        auto previous=m_viewport.load().lock();if(previous==viewport)return;
-        cancelDraft();if(previous && m_listener)previous->removeObjectListener(m_listener);m_viewport=viewport;
-        if(viewport && m_listener)viewport->addObjectListener(m_listener);
-    }
-    void CityRoadWindow::unload(SmartPtr<ISharedObject> data)
-    {
-        {RecursiveMutex::ScopedLock lock(m_toolMutex);++m_toolEpoch;m_inputs.clear();m_dispatchPending=false;m_cachedEnabled=false;m_cachedPreview={};}
-        if(!m_listener && !getParentWindow())return;cancelDraft();m_enabled=false;
-        if(auto viewport=m_viewport.load().lock())if(m_listener)viewport->removeObjectListener(m_listener);
-        m_viewport=nullptr;if(m_listener)m_listener->setOwner(nullptr);m_listener=nullptr;
-        auto app=core::IApplicationManager::instancePtr();auto ui=app?app->getUI():nullptr;
-        if(auto window=getParentWindow()){if(ui){for(auto child:window->getChildren())ui->removeElement(child);ui->removeElement(window);}setParentWindow(nullptr);}
-        m_width=nullptr;m_grade=nullptr;m_closed=nullptr;m_gradeTerrain=nullptr;m_outerRadius=nullptr;m_islandRadius=nullptr;m_clockwise=nullptr;m_status=nullptr;m_authoring=nullptr;m_scene=nullptr;EditorWindow::unload(data);
-    }
-    void CityRoadWindow::setWindowVisible(bool visible)
-    {if(!visible){{RecursiveMutex::ScopedLock lock(m_toolMutex);++m_toolEpoch;m_cachedEnabled=false;m_cachedPreview={};}cancelDraft();m_enabled=false;}else attachViewport();EditorWindow::setWindowVisible(visible);}
-    void CityRoadWindow::status(const String &message){if(m_status)m_status->setText(message);}
-    SmartPtr<scene::CityRoadAuthoring> CityRoadWindow::current() const
-    {
-        auto scene=activeScene();auto target=m_authoring.load().lock();
-        return scene && scene==m_scene.load().lock() && target && target->getActor() && target->getActor()->getScene()==scene?target:nullptr;
-    }
-    void CityRoadWindow::updateSelection()
-    {
-        attachViewport();auto app=core::IApplicationManager::instancePtr();auto selection=app?app->getSelectionManager():nullptr;
-        if(!selection)return;
-        const auto selected=selection->getSelection();u64 signature=1469598103934665603ull;
-        for(const auto &object:selected){signature^=u64(reinterpret_cast<uintptr_t>(object.get()));signature*=1099511628211ull;}
-        signature^=u64(reinterpret_cast<uintptr_t>(activeScene().get()));
-        if(!m_hasSelectionSignature || signature!=m_selectionSignature)
-        {{RecursiveMutex::ScopedLock lock(m_toolMutex);++m_toolEpoch;m_cachedEnabled=false;m_cachedPreview={};}cancelDraft();m_selected=false;}
-        m_selectionSignature=signature;m_hasSelectionSignature=true;
-        for(auto object:selected)
-        {
-            auto target=dynamic_pointer_cast<scene::CityRoadAuthoring>(object);
-            if(!target)if(auto actor=dynamic_pointer_cast<scene::IGameActor>(object))target=actor->getComponent<scene::CityRoadAuthoring>();
-            if(target){m_authoring=target;m_scene=activeScene();status("City road source selected. Draw or edit knots in the scene.");return;}
-        }
-        if(!current()){m_authoring=nullptr;m_scene=nullptr;m_enabled=false;}
-    }
-    bool CityRoadWindow::bindSelection()
-    {
-        auto app=core::IApplicationManager::instancePtr();auto selection=app?app->getSelectionManager():nullptr;auto scene=activeScene();
-        SmartPtr<scene::TerrainSystem> terrain;
-        if(selection)for(auto object:selection->getSelection())
-        {terrain=dynamic_pointer_cast<scene::TerrainSystem>(object);if(!terrain)if(auto actor=dynamic_pointer_cast<scene::IGameActor>(object))terrain=actor->getComponent<scene::TerrainSystem>();if(terrain)break;}
-        if(!terrain || !scene){status("Select a terrain component or its actor first.");return false;}
-        auto target=current();if(!target)target=scene->getComponent<scene::CityRoadAuthoring>();
-        if(!target)
-        {
-            auto actor=app->getGameManager()->createActor();actor->setName("City Road Authoring");
-            actor->setPosition(Vector3F::zero());actor->setOrientation(QuaternionF::identity());actor->setScale(Vector3F::unit());
-            target=actor->addComponent<scene::CityRoadAuthoring>();scene->addActor(actor);scene->registerAllUpdates(actor);
-            if(auto editor=EditorManager::getSingletonPtr())if(auto ui=editor->getUI())ui->rebuildSceneTree();
-        }
-        String error;if(!target || !target->bindTerrain(terrain,error)){status(error);return false;}
-        m_authoring=target;m_scene=scene;m_enabled=true;status("Terrain bound. Draw Road starts one editable Bezier spline.");return true;
-    }
-    void CityRoadWindow::cancelDraft(){m_draft={};m_draftTerrain.reset();m_manualHandles.clear();m_drafting=m_dragging=m_portHandleDrag=false;}
-    bool CityRoadWindow::beginDraft()
-    {
-        auto target=current();if(!target){status("Bind a terrain or select a City Road Authoring component first.");return false;}
-        m_draft=target->getSource();m_draftRevision=target->getSourceRevision();
-        m_draftTerrain=target->getTerrainSnapshot();m_draftTerrainPlacement=target->getTerrainPlacement();
-        m_drafting=true;m_portHandleDrag=false;return true;
-    }
-    bool CityRoadWindow::beginDraw()
-    {
-        cancelDraft();if(!current() && !bindSelection())return false;if(!beginDraft())return false;auto target=current();
-        if(m_draft.id.empty())m_draft.id=newId();const auto terrain=target->getTerrainBindingUUID();m_draft.terrainResourceUuid.assign(terrain.data(),terrain.size());
-        procedural::CityRoadSpline road;road.id=newId();road.heightOffset=.025f;
-        if(!fields(road)){cancelDraft();return false;}m_draft.roads.push_back(std::move(road));
-        m_road=m_draft.roads.size()-1;m_mode=Mode::Draw;m_enabled=true;m_selected=false;status("Draw: click terrain for knots, drag for tangent handles. Enter commits; Escape cancels.");return true;
+        unload( nullptr );
     }
 
-    void CityRoadWindow::selectRoad(const procedural::CityRoadSpline &road)
+    void CityRoadWindow::load( SmartPtr<ISharedObject> )
+    {
+        setLoadingState( LoadingState::Loading );
+        auto app = core::IApplicationManager::instancePtr();
+        auto ui = app ? app->getUI() : nullptr;
+        if( !ui )
+        {
+            setLoadingState( LoadingState::Unloaded );
+            return;
+        }
+        m_listener = make_ptr<Listener>();
+        m_listener->setOwner( this );
+        auto window = ui->addElementByType<ui::IUIWindow>();
+        window->setLabel( "City Roads" );
+        window->setSize( { 440, 520 } );
+        setParentWindow( window );
+        const auto button = [&]( const String &label, Widget id, bool same = false ) {
+            auto b = ui->addElementByType<ui::IUIButton>();
+            b->setLabel( label );
+            b->setElementId( id );
+            b->setSameLine( same );
+            b->addObjectListener( m_listener );
+            window->addChild( b );
+        };
+        const auto text = [&]( const String &label ) {
+            auto t = ui->addElementByType<ui::IUIText>();
+            t->setText( label );
+            window->addChild( t );
+            return t;
+        };
+        text( "Select terrain, then Bind. Source is saved with the scene." );
+        button( "Bind Selected Terrain", Bind );
+        button( "Draw Road", Draw );
+        button( "Move Knot", Move, true );
+        button( "In Handle", InHandle, true );
+        button( "Out Handle", OutHandle, true );
+        button( "Select Road", SelectRoad );
+        button( "Insert Knot", InsertKnot, true );
+        text( "Draw Road: click adds knots, drag sets handles. Enter commits, Escape cancels." );
+        const auto input = [&]( const String &label, Widget id, const String &value ) {
+            auto p = ui->addElementByType<ui::IUILabelTextInputPair>();
+            p->setLabel( label );
+            p->setValue( value );
+            p->setElementId( id );
+            window->addChild( p );
+            return p;
+        };
+        m_width = input( "Road width (m)", Width, "12" );
+        m_grade = input( "Maximum grade (rise/run)", Grade, "0.08" );
+        m_closed = ui->addElementByType<ui::IUILabelTogglePair>();
+        m_closed->setLabel( "Closed spline" );
+        m_closed->setValue( false );
+        window->addChild( m_closed );
+        m_gradeTerrain = ui->addElementByType<ui::IUILabelTogglePair>();
+        m_gradeTerrain->setLabel( "Grade terrain under roads" );
+        m_gradeTerrain->setValue( true );
+        window->addChild( m_gradeTerrain );
+        m_outerRadius = input( "Roundabout outer radius (m)", OuterRadius, "14" );
+        m_islandRadius = input( "Island radius (m)", IslandRadius, "8" );
+        m_clockwise = ui->addElementByType<ui::IUILabelTogglePair>();
+        m_clockwise->setLabel( "Clockwise circulation" );
+        m_clockwise->setValue( true );
+        window->addChild( m_clockwise );
+        button( "Place Roundabout (4 approaches)", Roundabout );
+        button( "Delete Selected Roundabout", RemoveRoundabout );
+        button( "Apply Road Fields", ApplyFields );
+        button( "Commit Road", Finish, true );
+        button( "Cancel Draft", Cancel, true );
+        button( "Delete Selected Road", RemoveRoad );
+        button( "Undo", Undo );
+        button( "Redo", Redo, true );
+        button( "Save Scene", Save, true );
+        m_status = text( "Select a terrain or city road component to begin." );
+        attachViewport();
+        setLoadingState( LoadingState::Loaded );
+    }
+
+    void CityRoadWindow::attachViewport()
+    {
+        auto app = core::IApplicationManager::instancePtr();
+        auto viewport = app ? app->getSceneRenderWindow() : nullptr;
+        auto previous = m_viewport.load().lock();
+        if( previous == viewport )
+        {
+            return;
+        }
+        cancelDraft();
+        if( previous && m_listener )
+        {
+            previous->removeObjectListener( m_listener );
+        }
+        m_viewport = viewport;
+        if( viewport && m_listener )
+        {
+            viewport->addObjectListener( m_listener );
+        }
+    }
+
+    void CityRoadWindow::unload( SmartPtr<ISharedObject> data )
+    {
+        {
+            RecursiveMutex::ScopedLock lock( m_toolMutex );
+            ++m_toolEpoch;
+            m_inputs.clear();
+            m_dispatchPending = false;
+            m_cachedEnabled = false;
+            m_cachedPreview = {};
+        }
+        if( !m_listener && !getParentWindow() )
+        {
+            return;
+        }
+        cancelDraft();
+        m_enabled = false;
+        if( auto viewport = m_viewport.load().lock() )
+        {
+            if( m_listener )
+            {
+                viewport->removeObjectListener( m_listener );
+            }
+        }
+        m_viewport = nullptr;
+        if( m_listener )
+        {
+            m_listener->setOwner( nullptr );
+        }
+        m_listener = nullptr;
+        auto app = core::IApplicationManager::instancePtr();
+        auto ui = app ? app->getUI() : nullptr;
+        if( auto window = getParentWindow() )
+        {
+            if( ui )
+            {
+                for( auto child : window->getChildren() )
+                {
+                    ui->removeElement( child );
+                }
+                ui->removeElement( window );
+            }
+            setParentWindow( nullptr );
+        }
+        m_width = nullptr;
+        m_grade = nullptr;
+        m_closed = nullptr;
+        m_gradeTerrain = nullptr;
+        m_outerRadius = nullptr;
+        m_islandRadius = nullptr;
+        m_clockwise = nullptr;
+        m_status = nullptr;
+        m_authoring = nullptr;
+        m_scene = nullptr;
+        EditorWindow::unload( data );
+    }
+
+    void CityRoadWindow::setWindowVisible( bool visible )
+    {
+        if( !visible )
+        {
+            {
+                RecursiveMutex::ScopedLock lock( m_toolMutex );
+                ++m_toolEpoch;
+                m_cachedEnabled = false;
+                m_cachedPreview = {};
+            }
+            cancelDraft();
+            m_enabled = false;
+        }
+        else
+        {
+            attachViewport();
+        }
+        EditorWindow::setWindowVisible( visible );
+    }
+
+    void CityRoadWindow::status( const String &message )
+    {
+        if( m_status )
+        {
+            m_status->setText( message );
+        }
+    }
+
+    SmartPtr<scene::CityRoadAuthoring> CityRoadWindow::current() const
+    {
+        auto scene = activeScene();
+        auto target = m_authoring.load().lock();
+        return scene && scene == m_scene.load().lock() && target && target->getActor() &&
+                       target->getActor()->getScene() == scene
+                   ? target
+                   : nullptr;
+    }
+
+    void CityRoadWindow::updateSelection()
+    {
+        attachViewport();
+        auto app = core::IApplicationManager::instancePtr();
+        auto selection = app ? app->getSelectionManager() : nullptr;
+        if( !selection )
+        {
+            return;
+        }
+        const auto selected = selection->getSelection();
+        u64 signature = 1469598103934665603ull;
+        for( const auto &object : selected )
+        {
+            signature ^= u64( reinterpret_cast<uintptr_t>( object.get() ) );
+            signature *= 1099511628211ull;
+        }
+        signature ^= u64( reinterpret_cast<uintptr_t>( activeScene().get() ) );
+        if( !m_hasSelectionSignature || signature != m_selectionSignature )
+        {
+            {
+                RecursiveMutex::ScopedLock lock( m_toolMutex );
+                ++m_toolEpoch;
+                m_cachedEnabled = false;
+                m_cachedPreview = {};
+            }
+            cancelDraft();
+            m_selected = false;
+        }
+        m_selectionSignature = signature;
+        m_hasSelectionSignature = true;
+        for( auto object : selected )
+        {
+            auto target = dynamic_pointer_cast<scene::CityRoadAuthoring>( object );
+            if( !target )
+            {
+                if( auto actor = dynamic_pointer_cast<scene::IGameActor>( object ) )
+                {
+                    target = actor->getComponent<scene::CityRoadAuthoring>();
+                }
+            }
+            if( target )
+            {
+                m_authoring = target;
+                m_scene = activeScene();
+                status( "City road source selected. Draw or edit knots in the scene." );
+                return;
+            }
+        }
+        if( !current() )
+        {
+            m_authoring = nullptr;
+            m_scene = nullptr;
+            m_enabled = false;
+        }
+    }
+
+    bool CityRoadWindow::bindSelection()
+    {
+        auto app = core::IApplicationManager::instancePtr();
+        auto selection = app ? app->getSelectionManager() : nullptr;
+        auto scene = activeScene();
+        SmartPtr<scene::TerrainSystem> terrain;
+        if( selection )
+        {
+            for( auto object : selection->getSelection() )
+            {
+                terrain = dynamic_pointer_cast<scene::TerrainSystem>( object );
+                if( !terrain )
+                {
+                    if( auto actor = dynamic_pointer_cast<scene::IGameActor>( object ) )
+                    {
+                        terrain = actor->getComponent<scene::TerrainSystem>();
+                    }
+                }
+                if( terrain )
+                {
+                    break;
+                }
+            }
+        }
+        if( !terrain || !scene )
+        {
+            status( "Select a terrain component or its actor first." );
+            return false;
+        }
+        auto target = current();
+        if( !target )
+        {
+            target = scene->getComponent<scene::CityRoadAuthoring>();
+        }
+        if( !target )
+        {
+            auto actor = app->getGameManager()->createActor();
+            actor->setName( "City Road Authoring" );
+            actor->setPosition( Vector3F::zero() );
+            actor->setOrientation( QuaternionF::identity() );
+            actor->setScale( Vector3F::unit() );
+            target = actor->addComponent<scene::CityRoadAuthoring>();
+            scene->addActor( actor );
+            scene->registerAllUpdates( actor );
+            if( auto editor = EditorManager::getSingletonPtr() )
+            {
+                if( auto ui = editor->getUI() )
+                {
+                    ui->rebuildSceneTree();
+                }
+            }
+        }
+        String error;
+        if( !target || !target->bindTerrain( terrain, error ) )
+        {
+            status( error );
+            return false;
+        }
+        m_authoring = target;
+        m_scene = scene;
+        m_enabled = true;
+        status( "Terrain bound. Draw Road starts one editable Bezier spline." );
+        return true;
+    }
+
+    void CityRoadWindow::cancelDraft()
+    {
+        m_draft = {};
+        m_draftTerrain.reset();
+        m_manualHandles.clear();
+        m_drafting = m_dragging = m_portHandleDrag = false;
+    }
+
+    bool CityRoadWindow::beginDraft()
+    {
+        auto target = current();
+        if( !target )
+        {
+            status( "Bind a terrain or select a City Road Authoring component first." );
+            return false;
+        }
+        m_draft = target->getSource();
+        m_draftRevision = target->getSourceRevision();
+        m_draftTerrain = target->getTerrainSnapshot();
+        m_draftTerrainPlacement = target->getTerrainPlacement();
+        m_drafting = true;
+        m_portHandleDrag = false;
+        return true;
+    }
+
+    bool CityRoadWindow::beginDraw()
+    {
+        cancelDraft();
+        if( !current() && !bindSelection() )
+        {
+            return false;
+        }
+        if( !beginDraft() )
+        {
+            return false;
+        }
+        auto target = current();
+        if( m_draft.id.empty() )
+        {
+            m_draft.id = newId();
+        }
+        const auto terrain = target->getTerrainBindingUUID();
+        m_draft.terrainResourceUuid.assign( terrain.data(), terrain.size() );
+        procedural::CityRoadSpline road;
+        road.id = newId();
+        road.heightOffset = .025f;
+        if( !fields( road ) )
+        {
+            cancelDraft();
+            return false;
+        }
+        m_draft.roads.push_back( std::move( road ) );
+        m_road = m_draft.roads.size() - 1;
+        m_mode = Mode::Draw;
+        m_enabled = true;
+        m_selected = false;
+        status(
+            "Draw: click terrain for knots, drag for tangent handles. Enter commits; Escape cancels." );
+        return true;
+    }
+
+    void CityRoadWindow::selectRoad( const procedural::CityRoadSpline &road )
     {
         m_selectedRoadId = road.id;
         m_selectedKnotId.clear();
         m_selected = true;
-        m_width->setValue(StringUtil::toString(road.width));
-        m_grade->setValue(StringUtil::toString(road.maxGrade));
-        m_closed->setValue(road.closed);
+        m_width->setValue( StringUtil::toString( road.width ) );
+        m_grade->setValue( StringUtil::toString( road.maxGrade ) );
+        m_closed->setValue( road.closed );
     }
 
-    void CityRoadWindow::editRoadAt(const Vector3F &terrainHit)
+    void CityRoadWindow::editRoadAt( const Vector3F &terrainHit )
     {
         auto target = current();
-        if (!target) return;
-        const auto &source = target->getSource();
-        const bool inserting = m_mode == Mode::InsertKnot;
-        if (inserting && (!m_selected || std::none_of(source.roads.begin(), source.roads.end(),
-            [&](const auto &road) { return road.id == m_selectedRoadId; })))
+        if( !target )
         {
-            m_selected = false;
-            status("Use Select Road to choose the spline before inserting a knot.");
             return;
         }
-        const auto pick = pickRoadSpan(source, terrainHit, inserting ? &m_selectedRoadId : nullptr);
-        if (!pick)
+        const auto &source = target->getSource();
+        const bool inserting = m_mode == Mode::InsertKnot;
+        if( inserting && ( !m_selected || std::none_of( source.roads.begin(), source.roads.end(),
+                                                        [&]( const auto &road ) {
+                                                            return road.id == m_selectedRoadId;
+                                                        } ) ) )
         {
-            if (!inserting) m_selected = false;
-            status(inserting ? "Click along the selected road to insert a knot." : "No road near the terrain pick.");
+            m_selected = false;
+            status( "Use Select Road to choose the spline before inserting a knot." );
+            return;
+        }
+        const auto pick = pickRoadSpan( source, terrainHit, inserting ? &m_selectedRoadId : nullptr );
+        if( !pick )
+        {
+            if( !inserting )
+            {
+                m_selected = false;
+            }
+            status( inserting ? "Click along the selected road to insert a knot."
+                              : "No road near the terrain pick." );
             return;
         }
         const auto &road = source.roads[pick->road];
-        if (!inserting)
+        if( !inserting )
         {
-            selectRoad(road);
-            status("Road selected. Edit its fields, insert a knot, or move its existing controls.");
+            selectRoad( road );
+            status( "Road selected. Edit its fields, insert a knot, or move its existing controls." );
             return;
         }
-        if (road.knots.size() >= 256)
+        if( road.knots.size() >= 256 )
         {
-            status("A road supports at most 256 knots.");
+            status( "A road supports at most 256 knots." );
             return;
         }
 
         // De Casteljau yields the same cubic on two parameter intervals. The
         // existing endpoint IDs and their opposite handles remain unchanged.
-        const auto control = spanControls(road, pick->span);
-        const auto lerp = [t = pick->parameter](const Vector3F &a, const Vector3F &b) { return a + (b - a) * t; };
-        const auto a = lerp(control[0], control[1]);
-        const auto b = lerp(control[1], control[2]);
-        const auto c = lerp(control[2], control[3]);
-        const auto left = lerp(a, b), right = lerp(b, c);
-        const auto position = lerp(left, right);
+        const auto control = spanControls( road, pick->span );
+        const auto lerp = [t = pick->parameter]( const Vector3F &a, const Vector3F &b ) {
+            return a + ( b - a ) * t;
+        };
+        const auto a = lerp( control[0], control[1] );
+        const auto b = lerp( control[1], control[2] );
+        const auto c = lerp( control[2], control[3] );
+        const auto left = lerp( a, b ), right = lerp( b, c );
+        const auto position = lerp( left, right );
         constexpr f32 minimumSpacingSquared = .05f * .05f;
-        if ((position - control.front()).lengthSquared() < minimumSpacingSquared ||
-            (position - control.back()).lengthSquared() < minimumSpacingSquared)
+        if( ( position - control.front() ).lengthSquared() < minimumSpacingSquared ||
+            ( position - control.back() ).lengthSquared() < minimumSpacingSquared )
         {
-            status("Click farther from an existing knot to insert another.");
+            status( "Click farther from an existing knot to insert another." );
             return;
         }
 
         try
         {
-            if (!beginDraft()) return;
+            if( !beginDraft() )
+            {
+                return;
+            }
             auto &knots = m_draft.roads[pick->road].knots;
-            const size_t next = (pick->span + 1) % knots.size();
+            const size_t next = ( pick->span + 1 ) % knots.size();
             knots[pick->span].outHandle = a - control.front();
             knots[next].inHandle = c - control.back();
             // For the closing span, insert after the last knot and keep the
             // original first knot as the closed road's seam identity.
-            knots.insert(knots.begin() + pick->span + 1,
-                         procedural::CityRoadSplineKnot{newId(), position, left - position, right - position});
+            knots.insert(
+                knots.begin() + pick->span + 1,
+                procedural::CityRoadSplineKnot{ newId(), position, left - position, right - position } );
         }
-        catch (const std::bad_alloc &)
+        catch( const std::bad_alloc & )
         {
             cancelDraft();
-            status("Not enough source memory to insert a knot.");
+            status( "Not enough source memory to insert a knot." );
             return;
         }
-        if (!commitDraft()) cancelDraft();
+        if( !commitDraft() )
+        {
+            cancelDraft();
+        }
     }
-    Vector3F CityRoadWindow::controlPoint(Vector3F p,const procedural::CityRoadSpline &road) const
+
+    Vector3F CityRoadWindow::controlPoint( Vector3F p, const procedural::CityRoadSpline &road ) const
     {
-        auto target=current();if(!target)return p;p=target->localToWorld(p);
-        if(road.heightMode==procedural::CityRoadHeightMode::Drape)
-        {f32 height=0;const auto snapshot=target->getTerrainSnapshot();if(!snapshot || !render::sampleTerrainHeight(*snapshot,target->getTerrainPlacement(),p,height))p.y=std::numeric_limits<float>::quiet_NaN();else p.y=height+road.heightOffset;}
+        auto target = current();
+        if( !target )
+        {
+            return p;
+        }
+        p = target->localToWorld( p );
+        if( road.heightMode == procedural::CityRoadHeightMode::Drape )
+        {
+            f32 height = 0;
+            const auto snapshot = target->getTerrainSnapshot();
+            if( !snapshot ||
+                !render::sampleTerrainHeight( *snapshot, target->getTerrainPlacement(), p, height ) )
+            {
+                p.y = std::numeric_limits<float>::quiet_NaN();
+            }
+            else
+            {
+                p.y = height + road.heightOffset;
+            }
+        }
         return p;
     }
-    bool CityRoadWindow::fields(procedural::CityRoadSpline &road)
+
+    bool CityRoadWindow::fields( procedural::CityRoadSpline &road )
     {
-        try{size_t widthEnd=0,gradeEnd=0;const auto width=m_width->getValue(),grade=m_grade->getValue();
-            const float w=std::stof(width,&widthEnd),g=std::stof(grade,&gradeEnd);
-            if(widthEnd!=width.size() || gradeEnd!=grade.size() || !std::isfinite(w) || !std::isfinite(g) || w<.5f || w>60 || g<=0 || g>.35f)throw std::runtime_error("range");
-            road.width=w;road.maxGrade=g;road.closed=m_closed->getValue();return true;
-        }catch(const std::exception &){status("Width must be 0.5..60 m; grade must be greater than 0 and at most 0.35.");return false;}
+        try
+        {
+            size_t widthEnd = 0, gradeEnd = 0;
+            const auto width = m_width->getValue(), grade = m_grade->getValue();
+            const float w = std::stof( width, &widthEnd ), g = std::stof( grade, &gradeEnd );
+            if( widthEnd != width.size() || gradeEnd != grade.size() || !std::isfinite( w ) ||
+                !std::isfinite( g ) || w < .5f || w > 60 || g <= 0 || g > .35f )
+            {
+                throw std::runtime_error( "range" );
+            }
+            road.width = w;
+            road.maxGrade = g;
+            road.closed = m_closed->getValue();
+            return true;
+        }
+        catch( const std::exception & )
+        {
+            status( "Width must be 0.5..60 m; grade must be greater than 0 and at most 0.35." );
+            return false;
+        }
     }
+
     bool CityRoadWindow::commitDraft()
     {
-        auto target=current();if(!target || !m_drafting)return false;
-        if(target->getSourceRevision()!=m_draftRevision){status("Source changed during this edit. Cancel the draft and reload before committing.");return false;}
-        if(auto bound=target->getTerrain())
+        auto target = current();
+        if( !target || !m_drafting )
+        {
+            return false;
+        }
+        if( target->getSourceRevision() != m_draftRevision )
+        {
+            status( "Source changed during this edit. Cancel the draft and reload before committing." );
+            return false;
+        }
+        if( auto bound = target->getTerrain() )
         {
             render::TerrainSnapshot integrated;
             Transform3<real_Num> placement;
-            u64 serial=0;
-            bool detached=false;
-            bound->getTerrainIntegrationState(integrated,placement,serial,detached);
-            if(detached || integrated!=m_draftTerrain || placement!=m_draftTerrainPlacement ||
-               bound->getTerrainSnapshot()!=m_draftTerrain)
-            {status("Terrain changed during this edit. Cancel and start a new draft.");return false;}
+            u64 serial = 0;
+            bool detached = false;
+            bound->getTerrainIntegrationState( integrated, placement, serial, detached );
+            if( detached || integrated != m_draftTerrain || placement != m_draftTerrainPlacement ||
+                bound->getTerrainSnapshot() != m_draftTerrain )
+            {
+                status( "Terrain changed during this edit. Cancel and start a new draft." );
+                return false;
+            }
         }
-        String error;const auto after=json(m_draft,error);if(after.empty()){status(error);return false;}
-        String comparisonError;const SourceBudgetText intended(after.data(),after.size());
-        if(sameAuthoredState(target->getSourceJSON(),intended,comparisonError)){cancelDraft();status("Selection retained; no road fields changed.");return true;}
-        auto app=core::IApplicationManager::instancePtr();auto history=app?app->getCommandManager():nullptr;
-        if(!history){status("Command history is unavailable; draft retained.");return false;}
-        auto command=make_ptr<CityRoadEditCommand>();if(!command->configure(target,after,error,m_gradeTerrain->getValue())){status(error);return false;}
-        command->execute();if(!command->applied())
+        String error;
+        const auto after = json( m_draft, error );
+        if( after.empty() )
+        {
+            status( error );
+            return false;
+        }
+        String comparisonError;
+        const SourceBudgetText intended( after.data(), after.size() );
+        if( sameAuthoredState( target->getSourceJSON(), intended, comparisonError ) )
+        {
+            cancelDraft();
+            status( "Selection retained; no road fields changed." );
+            return true;
+        }
+        auto app = core::IApplicationManager::instancePtr();
+        auto history = app ? app->getCommandManager() : nullptr;
+        if( !history )
+        {
+            status( "Command history is unavailable; draft retained." );
+            return false;
+        }
+        auto command = make_ptr<CityRoadEditCommand>();
+        if( !command->configure( target, after, error, m_gradeTerrain->getValue() ) )
+        {
+            status( error );
+            return false;
+        }
+        command->execute();
+        if( !command->applied() )
         {
             String context;
-            if(m_road<m_draft.roads.size())
+            if( m_road < m_draft.roads.size() )
             {
-                const auto &road=m_draft.roads[m_road];
-                context="Road "+String(road.id.data(),road.id.size());
-                if(m_knot<road.knots.size() && (m_mode==Mode::Move || m_mode==Mode::InHandle || m_mode==Mode::OutHandle))
-                    context+="; knot "+StringUtil::toString(u32(m_knot+1));
-                context+=". ";
+                const auto &road = m_draft.roads[m_road];
+                context = "Road " + String( road.id.data(), road.id.size() );
+                if( m_knot < road.knots.size() &&
+                    ( m_mode == Mode::Move || m_mode == Mode::InHandle || m_mode == Mode::OutHandle ) )
+                {
+                    context += "; knot " + StringUtil::toString( u32( m_knot + 1 ) );
+                }
+                context += ". ";
             }
-            status(context+command->error()+" Draft retained; adjust the control or Cancel.");return false;
+            status( context + command->error() + " Draft retained; adjust the control or Cancel." );
+            return false;
         }
-        history->addCommand(command);
-        cancelDraft();status(command->gradedTerrain()?"Road and terrain committed together. Undo and Redo restore both.":"Road edit committed. Undo and Redo use scene command history.");return true;
+        history->addCommand( command );
+        cancelDraft();
+        status( command->gradedTerrain()
+                    ? "Road and terrain committed together. Undo and Redo restore both."
+                    : "Road edit committed. Undo and Redo use scene command history." );
+        return true;
     }
-    bool CityRoadWindow::addRoundabout(Vector3F center)
+
+    bool CityRoadWindow::addRoundabout( Vector3F center )
     {
-        if(!beginDraft())return false;center.y+=.025f;auto target=current();procedural::CityRoadRoundaboutSpec spec;spec.junctionId=newId();spec.center=center;
+        if( !beginDraft() )
+        {
+            return false;
+        }
+        center.y += .025f;
+        auto target = current();
+        procedural::CityRoadRoundaboutSpec spec;
+        spec.junctionId = newId();
+        spec.center = center;
         try
         {
-            size_t a=0,b=0;const auto outer=m_outerRadius->getValue(),inner=m_islandRadius->getValue();
-            spec.outerRadius=std::stof(outer,&a);spec.islandRadius=std::stof(inner,&b);
-            if(a!=outer.size() || b!=inner.size() || !std::isfinite(spec.outerRadius) || !std::isfinite(spec.islandRadius) || spec.outerRadius<6 || spec.outerRadius>128 || spec.islandRadius<1 || spec.outerRadius-spec.islandRadius<3 || spec.outerRadius-spec.islandRadius>7)throw std::runtime_error("range");
-        }
-        catch(const std::exception &){status("Roundabout requires outer radius 6..128 m and a circulating lane 3..7 m wide around an island of at least 1 m.");cancelDraft();return false;}
-        procedural::CityRoadSpline settings;if(!fields(settings)){cancelDraft();return false;}
-        if(settings.width<4 || settings.width>12 || settings.width>=spec.outerRadius){status("Roundabout approaches require road width 4..12 m, smaller than the outer radius.");cancelDraft();return false;}
-        spec.clockwise=m_clockwise->getValue();spec.maxGrade=settings.maxGrade;
-        const auto snapshot=target->getTerrainSnapshot();const auto placement=target->getTerrainPlacement();const float step=spec.outerRadius+18;
-        float xp=0,xm=0,zp=0,zm=0;
-        if(!snapshot || !render::sampleTerrainHeight(*snapshot,placement,center+Vector3F(step,0,0),xp) || !render::sampleTerrainHeight(*snapshot,placement,center-Vector3F(step,0,0),xm) ||
-           !render::sampleTerrainHeight(*snapshot,placement,center+Vector3F(0,0,step),zp) || !render::sampleTerrainHeight(*snapshot,placement,center-Vector3F(0,0,step),zm))
-        {status("Roundabout approaches leave the terrain or cross a hole. Choose a covered location.");cancelDraft();return false;}
-        spec.gradeX=(xp-xm)/(2*step);spec.gradeZ=(zp-zm)/(2*step);
-        const float slope=std::hypot(spec.gradeX,spec.gradeZ);
-        if(m_gradeTerrain->getValue() && slope>spec.maxGrade*.985f)
-        {const auto fraction=spec.maxGrade*.985f/slope;spec.gradeX*=fraction;spec.gradeZ*=fraction;}
-        for(const auto direction:{Vector3F(1,0,0),Vector3F(0,0,1),Vector3F(-1,0,0),Vector3F(0,0,-1)})
-        {
-            procedural::CityRoadSpline road;road.id=newId();road.width=settings.width;road.maxGrade=settings.maxGrade;road.heightMode=procedural::CityRoadHeightMode::Drape;road.heightOffset=.025f;
-            procedural::CityRoadRoundaboutPort port;port.approachId=road.id;port.outward=direction;port.width=road.width;port.length=18;spec.ports.push_back(port);
-            auto start=center+direction*(spec.outerRadius+port.length),end=start+direction*40.f;
-            start.y=center.y+spec.gradeX*(start.x-center.x)+spec.gradeZ*(start.z-center.z);
-            end.y=center.y+spec.gradeX*(end.x-center.x)+spec.gradeZ*(end.z-center.z);
-            start.y-=road.heightOffset;end.y-=road.heightOffset;
-            const auto tangent=(end-start)/3.f;
-            road.knots.push_back({newId(),start,{},tangent});road.knots.push_back({newId(),end,-tangent,{}});m_draft.roads.push_back(std::move(road));
-        }
-        m_draft.version=2;const auto binding=target->getTerrainBindingUUID();m_draft.terrainResourceUuid.assign(binding.data(),binding.size());
-        m_draft.roundabouts.push_back(std::move(spec));return commitDraft();
-    }
-    void CityRoadWindow::history(bool redo)
-    {
-        if(m_drafting && m_mode==Mode::Draw && !redo)
-        {if(m_road<m_draft.roads.size() && !m_draft.roads[m_road].knots.empty())m_draft.roads[m_road].knots.pop_back();m_dragging=false;status("Removed the last draft knot.");return;}
-        cancelDraft();auto app=core::IApplicationManager::instancePtr();auto manager=app?app->getCommandManager():nullptr;
-        String error;if(CityRoadEditCommand::dispatchHistory(manager,redo,error))status("History applied.");else if(!error.empty())status(error);
-    }
-    void CityRoadWindow::action(Widget id,bool invalidateInput)
-    {
-        if(Thread::getCurrentTask()!=TaskId::Application){status("Road controls require the Application task.");return;}
-        if(invalidateInput && (id==Draw || id==Move || id==InHandle || id==OutHandle || id==Roundabout || id==SelectRoad || id==InsertKnot || id==Cancel || id==Bind)){RecursiveMutex::ScopedLock lock(m_toolMutex);++m_toolEpoch;}
-        if(id==Bind){cancelDraft();bindSelection();return;}
-        if(id==Cancel){cancelDraft();m_enabled=false;status("Road tool cancelled.");return;}
-        if(id==Undo || id==Redo){history(id==Redo);return;}
-        if(id==Save){if(m_drafting){status("Commit or cancel the draft before saving.");return;}auto app=core::IApplicationManager::instancePtr();if(app && activeScene()){auto job=make_ptr<SaveSceneJob>();job->setPrimary(true);app->getJobQueue()->addJob(job);status("Scene save requested with canonical road source and terrain binding.");}return;}
-        if(id==Finish)
-        {
-            if(m_drafting && m_road<m_draft.roads.size() && fields(m_draft.roads[m_road]))
+            size_t a = 0, b = 0;
+            const auto outer = m_outerRadius->getValue(), inner = m_islandRadius->getValue();
+            spec.outerRadius = std::stof( outer, &a );
+            spec.islandRadius = std::stof( inner, &b );
+            if( a != outer.size() || b != inner.size() || !std::isfinite( spec.outerRadius ) ||
+                !std::isfinite( spec.islandRadius ) || spec.outerRadius < 6 || spec.outerRadius > 128 ||
+                spec.islandRadius < 1 || spec.outerRadius - spec.islandRadius < 3 ||
+                spec.outerRadius - spec.islandRadius > 7 )
             {
-                auto &road=m_draft.roads[m_road];
-                syncApproachWidths(m_draft,road);
-                if(m_mode==Mode::Draw && road.closed && road.knots.size()>=3)
-                    for(const size_t i:{size_t(0),road.knots.size()-1})if(!m_manualHandles.count(road.knots[i].id))
-                    {const auto tangent=(road.knots[(i+1)%road.knots.size()].position-road.knots[(i+road.knots.size()-1)%road.knots.size()].position)/6.f;road.knots[i].inHandle=-tangent;road.knots[i].outHandle=tangent;}
+                throw std::runtime_error( "range" );
+            }
+        }
+        catch( const std::exception & )
+        {
+            status(
+                "Roundabout requires outer radius 6..128 m and a circulating lane 3..7 m wide around an "
+                "island of at least 1 m." );
+            cancelDraft();
+            return false;
+        }
+        procedural::CityRoadSpline settings;
+        if( !fields( settings ) )
+        {
+            cancelDraft();
+            return false;
+        }
+        if( settings.width < 4 || settings.width > 12 || settings.width >= spec.outerRadius )
+        {
+            status( "Roundabout approaches require road width 4..12 m, smaller than the outer radius." );
+            cancelDraft();
+            return false;
+        }
+        spec.clockwise = m_clockwise->getValue();
+        spec.maxGrade = settings.maxGrade;
+        const auto snapshot = target->getTerrainSnapshot();
+        const auto placement = target->getTerrainPlacement();
+        const float step = spec.outerRadius + 18;
+        float xp = 0, xm = 0, zp = 0, zm = 0;
+        if( !snapshot ||
+            !render::sampleTerrainHeight( *snapshot, placement, center + Vector3F( step, 0, 0 ), xp ) ||
+            !render::sampleTerrainHeight( *snapshot, placement, center - Vector3F( step, 0, 0 ), xm ) ||
+            !render::sampleTerrainHeight( *snapshot, placement, center + Vector3F( 0, 0, step ), zp ) ||
+            !render::sampleTerrainHeight( *snapshot, placement, center - Vector3F( 0, 0, step ), zm ) )
+        {
+            status(
+                "Roundabout approaches leave the terrain or cross a hole. Choose a covered location." );
+            cancelDraft();
+            return false;
+        }
+        spec.gradeX = ( xp - xm ) / ( 2 * step );
+        spec.gradeZ = ( zp - zm ) / ( 2 * step );
+        const float slope = std::hypot( spec.gradeX, spec.gradeZ );
+        if( m_gradeTerrain->getValue() && slope > spec.maxGrade * .985f )
+        {
+            const auto fraction = spec.maxGrade * .985f / slope;
+            spec.gradeX *= fraction;
+            spec.gradeZ *= fraction;
+        }
+        for( const auto direction :
+             { Vector3F( 1, 0, 0 ), Vector3F( 0, 0, 1 ), Vector3F( -1, 0, 0 ), Vector3F( 0, 0, -1 ) } )
+        {
+            procedural::CityRoadSpline road;
+            road.id = newId();
+            road.width = settings.width;
+            road.maxGrade = settings.maxGrade;
+            road.heightMode = procedural::CityRoadHeightMode::Drape;
+            road.heightOffset = .025f;
+            procedural::CityRoadRoundaboutPort port;
+            port.approachId = road.id;
+            port.outward = direction;
+            port.width = road.width;
+            port.length = 18;
+            spec.ports.push_back( port );
+            auto start = center + direction * ( spec.outerRadius + port.length ),
+                 end = start + direction * 40.f;
+            start.y =
+                center.y + spec.gradeX * ( start.x - center.x ) + spec.gradeZ * ( start.z - center.z );
+            end.y = center.y + spec.gradeX * ( end.x - center.x ) + spec.gradeZ * ( end.z - center.z );
+            start.y -= road.heightOffset;
+            end.y -= road.heightOffset;
+            const auto tangent = ( end - start ) / 3.f;
+            road.knots.push_back( { newId(), start, {}, tangent } );
+            road.knots.push_back( { newId(), end, -tangent, {} } );
+            m_draft.roads.push_back( std::move( road ) );
+        }
+        m_draft.version = 2;
+        const auto binding = target->getTerrainBindingUUID();
+        m_draft.terrainResourceUuid.assign( binding.data(), binding.size() );
+        m_draft.roundabouts.push_back( std::move( spec ) );
+        return commitDraft();
+    }
+
+    void CityRoadWindow::history( bool redo )
+    {
+        if( m_drafting && m_mode == Mode::Draw && !redo )
+        {
+            if( m_road < m_draft.roads.size() && !m_draft.roads[m_road].knots.empty() )
+            {
+                m_draft.roads[m_road].knots.pop_back();
+            }
+            m_dragging = false;
+            status( "Removed the last draft knot." );
+            return;
+        }
+        cancelDraft();
+        auto app = core::IApplicationManager::instancePtr();
+        auto manager = app ? app->getCommandManager() : nullptr;
+        String error;
+        if( CityRoadEditCommand::dispatchHistory( manager, redo, error ) )
+        {
+            status( "History applied." );
+        }
+        else if( !error.empty() )
+        {
+            status( error );
+        }
+    }
+
+    void CityRoadWindow::action( Widget id, bool invalidateInput )
+    {
+        if( Thread::getCurrentTask() != TaskId::Application )
+        {
+            status( "Road controls require the Application task." );
+            return;
+        }
+        if( invalidateInput &&
+            ( id == Draw || id == Move || id == InHandle || id == OutHandle || id == Roundabout ||
+              id == SelectRoad || id == InsertKnot || id == Cancel || id == Bind ) )
+        {
+            RecursiveMutex::ScopedLock lock( m_toolMutex );
+            ++m_toolEpoch;
+        }
+        if( id == Bind )
+        {
+            cancelDraft();
+            bindSelection();
+            return;
+        }
+        if( id == Cancel )
+        {
+            cancelDraft();
+            m_enabled = false;
+            status( "Road tool cancelled." );
+            return;
+        }
+        if( id == Undo || id == Redo )
+        {
+            history( id == Redo );
+            return;
+        }
+        if( id == Save )
+        {
+            if( m_drafting )
+            {
+                status( "Commit or cancel the draft before saving." );
+                return;
+            }
+            auto app = core::IApplicationManager::instancePtr();
+            if( app && activeScene() )
+            {
+                auto job = make_ptr<SaveSceneJob>();
+                job->setPrimary( true );
+                app->getJobQueue()->addJob( job );
+                status( "Scene save requested with canonical road source and terrain binding." );
+            }
+            return;
+        }
+        if( id == Finish )
+        {
+            if( m_drafting && m_road < m_draft.roads.size() && fields( m_draft.roads[m_road] ) )
+            {
+                auto &road = m_draft.roads[m_road];
+                syncApproachWidths( m_draft, road );
+                if( m_mode == Mode::Draw && road.closed && road.knots.size() >= 3 )
+                {
+                    for( const size_t i : { size_t( 0 ), road.knots.size() - 1 } )
+                    {
+                        if( !m_manualHandles.count( road.knots[i].id ) )
+                        {
+                            const auto tangent =
+                                ( road.knots[( i + 1 ) % road.knots.size()].position -
+                                  road.knots[( i + road.knots.size() - 1 ) % road.knots.size()]
+                                      .position ) /
+                                6.f;
+                            road.knots[i].inHandle = -tangent;
+                            road.knots[i].outHandle = tangent;
+                        }
+                    }
+                }
                 commitDraft();
             }
             return;
         }
-        if(id==Draw)
+        if( id == Draw )
         {
-            beginDraw();return;
-        }
-        if(id==Move || id==InHandle || id==OutHandle)
-        {cancelDraft();m_mode=id==Move?Mode::Move:id==InHandle?Mode::InHandle:Mode::OutHandle;m_enabled=true;status("Drag a knot or handle on the terrain. Roundabout mouths stay fixed; their handles follow the port direction. Each completed drag is one undoable edit.");return;}
-        if(id==SelectRoad || id==InsertKnot)
-        {
-            cancelDraft();
-            if(!current()){status("Bind a terrain or select a City Road Authoring component first.");return;}
-            m_mode=id==SelectRoad?Mode::SelectRoad:Mode::InsertKnot;
-            m_enabled=true;
-            if(id==SelectRoad)status("Click along a road to select it.");
-            else if(m_selected)status("Click along the selected road to add one undoable knot.");
-            else status("Use Select Road to choose the spline before inserting a knot.");
+            beginDraw();
             return;
         }
-        if(id==Roundabout){cancelDraft();if(!current() && !bindSelection())return;m_mode=Mode::Roundabout;m_enabled=true;status("Click terrain to place a roundabout and four connected approaches. Terrain fit failures retain the current city.");return;}
-        if(id==RemoveRoundabout)
+        if( id == Move || id == InHandle || id == OutHandle )
         {
-            if(!m_selected || !beginDraft()){status("Select a roundabout approach with Select Road or Move Knot first.");return;}
-            const auto junction=std::find_if(m_draft.roundabouts.begin(),m_draft.roundabouts.end(),[&](const auto &item){return std::any_of(item.ports.begin(),item.ports.end(),[&](const auto &port){return port.approachId==m_selectedRoadId;});});
-            if(junction==m_draft.roundabouts.end()){cancelDraft();status("The selected road is not a roundabout approach.");return;}
-            SourceBudgetSet<SourceBudgetText> removed,retained;
-            for(const auto &port:junction->ports)removed.insert(port.approachId);
-            for(const auto &other:m_draft.roundabouts)if(&other!=&*junction)for(const auto &port:other.ports)retained.insert(port.approachId);
-            m_draft.roads.erase(std::remove_if(m_draft.roads.begin(),m_draft.roads.end(),[&](const auto &road){return removed.count(road.id) && !retained.count(road.id);}),m_draft.roads.end());
-            m_draft.roundabouts.erase(junction);if(commitDraft())m_selected=false;return;
+            cancelDraft();
+            m_mode = id == Move ? Mode::Move : id == InHandle ? Mode::InHandle : Mode::OutHandle;
+            m_enabled = true;
+            status(
+                "Drag a knot or handle on the terrain. Roundabout mouths stay fixed; their handles "
+                "follow the port direction. Each completed drag is one undoable edit." );
+            return;
         }
-        if(id==ApplyFields || id==RemoveRoad)
+        if( id == SelectRoad || id == InsertKnot )
         {
-            if(!m_selected || !beginDraft()){status("Choose a spline with Select Road or Move Knot first.");return;}
-            const auto found=std::find_if(m_draft.roads.begin(),m_draft.roads.end(),[&](const auto &road){return road.id==m_selectedRoadId;});
-            if(found==m_draft.roads.end()){cancelDraft();status("The selected road was removed or changed. Select it again.");return;}m_road=size_t(found-m_draft.roads.begin());
-            if(id==RemoveRoad)
+            cancelDraft();
+            if( !current() )
             {
-                for(const auto &junction:m_draft.roundabouts)for(const auto &port:junction.ports)if(port.approachId==m_selectedRoadId)
-                {cancelDraft();status("This road belongs to a roundabout. Delete Selected Roundabout removes its junction and approaches together.");return;}
-                m_draft.roads.erase(m_draft.roads.begin()+m_road);
+                status( "Bind a terrain or select a City Road Authoring component first." );
+                return;
+            }
+            m_mode = id == SelectRoad ? Mode::SelectRoad : Mode::InsertKnot;
+            m_enabled = true;
+            if( id == SelectRoad )
+            {
+                status( "Click along a road to select it." );
+            }
+            else if( m_selected )
+            {
+                status( "Click along the selected road to add one undoable knot." );
             }
             else
             {
-                auto &road=m_draft.roads[m_road];
-                if(!fields(road))return;
-                syncApproachWidths(m_draft,road);
+                status( "Use Select Road to choose the spline before inserting a knot." );
             }
-            if(commitDraft() && id==RemoveRoad)m_selected=false;
+            return;
+        }
+        if( id == Roundabout )
+        {
+            cancelDraft();
+            if( !current() && !bindSelection() )
+            {
+                return;
+            }
+            m_mode = Mode::Roundabout;
+            m_enabled = true;
+            status(
+                "Click terrain to place a roundabout and four connected approaches. Terrain fit "
+                "failures retain the current city." );
+            return;
+        }
+        if( id == RemoveRoundabout )
+        {
+            if( !m_selected || !beginDraft() )
+            {
+                status( "Select a roundabout approach with Select Road or Move Knot first." );
+                return;
+            }
+            const auto junction = std::find_if(
+                m_draft.roundabouts.begin(), m_draft.roundabouts.end(), [&]( const auto &item ) {
+                    return std::any_of( item.ports.begin(), item.ports.end(), [&]( const auto &port ) {
+                        return port.approachId == m_selectedRoadId;
+                    } );
+                } );
+            if( junction == m_draft.roundabouts.end() )
+            {
+                cancelDraft();
+                status( "The selected road is not a roundabout approach." );
+                return;
+            }
+            SourceBudgetSet<SourceBudgetText> removed, retained;
+            for( const auto &port : junction->ports )
+            {
+                removed.insert( port.approachId );
+            }
+            for( const auto &other : m_draft.roundabouts )
+            {
+                if( &other != &*junction )
+                {
+                    for( const auto &port : other.ports )
+                    {
+                        retained.insert( port.approachId );
+                    }
+                }
+            }
+            m_draft.roads.erase( std::remove_if( m_draft.roads.begin(), m_draft.roads.end(),
+                                                 [&]( const auto &road ) {
+                                                     return removed.count( road.id ) &&
+                                                            !retained.count( road.id );
+                                                 } ),
+                                 m_draft.roads.end() );
+            m_draft.roundabouts.erase( junction );
+            if( commitDraft() )
+            {
+                m_selected = false;
+            }
+            return;
+        }
+        if( id == ApplyFields || id == RemoveRoad )
+        {
+            if( !m_selected || !beginDraft() )
+            {
+                status( "Choose a spline with Select Road or Move Knot first." );
+                return;
+            }
+            const auto found =
+                std::find_if( m_draft.roads.begin(), m_draft.roads.end(),
+                              [&]( const auto &road ) { return road.id == m_selectedRoadId; } );
+            if( found == m_draft.roads.end() )
+            {
+                cancelDraft();
+                status( "The selected road was removed or changed. Select it again." );
+                return;
+            }
+            m_road = size_t( found - m_draft.roads.begin() );
+            if( id == RemoveRoad )
+            {
+                for( const auto &junction : m_draft.roundabouts )
+                {
+                    for( const auto &port : junction.ports )
+                    {
+                        if( port.approachId == m_selectedRoadId )
+                        {
+                            cancelDraft();
+                            status(
+                                "This road belongs to a roundabout. Delete Selected Roundabout removes "
+                                "its junction and approaches together." );
+                            return;
+                        }
+                    }
+                }
+                m_draft.roads.erase( m_draft.roads.begin() + m_road );
+            }
+            else
+            {
+                auto &road = m_draft.roads[m_road];
+                if( !fields( road ) )
+                {
+                    return;
+                }
+                syncApproachWidths( m_draft, road );
+            }
+            if( commitDraft() && id == RemoveRoad )
+            {
+                m_selected = false;
+            }
         }
     }
+
     Parameter CityRoadWindow::preview() const
     {
-        Parameters lines,points;auto target=current();if(!target)return Parameter(Parameters{Parameter(false)});
-        const auto &source=m_drafting?m_draft:target->getSource();size_t budget=0;
-        const auto point=[](Vector3F p){Parameter v;v.setVector3(p);return v;};
-        const auto world=[&](Vector3F p,bool drape=false)
+        Parameters lines, points;
+        auto target = current();
+        if( !target )
         {
-            p=target->localToWorld(p);
-            if(drape){f32 height=0;const auto snapshot=target->getTerrainSnapshot();if(!snapshot || !render::sampleTerrainHeight(*snapshot,target->getTerrainPlacement(),p,height))p.y=std::numeric_limits<float>::quiet_NaN();else p.y=height;}
-            return p+Vector3F(0,.035f,0);
+            return Parameter( Parameters{ Parameter( false ) } );
+        }
+        const auto &source = m_drafting ? m_draft : target->getSource();
+        size_t budget = 0;
+        const auto point = []( Vector3F p ) {
+            Parameter v;
+            v.setVector3( p );
+            return v;
+        };
+        const auto world = [&]( Vector3F p, bool drape = false ) {
+            p = target->localToWorld( p );
+            if( drape )
+            {
+                f32 height = 0;
+                const auto snapshot = target->getTerrainSnapshot();
+                if( !snapshot ||
+                    !render::sampleTerrainHeight( *snapshot, target->getTerrainPlacement(), p, height ) )
+                {
+                    p.y = std::numeric_limits<float>::quiet_NaN();
+                }
+                else
+                {
+                    p.y = height;
+                }
+            }
+            return p + Vector3F( 0, .035f, 0 );
         };
         const bool roadPicking = m_mode == Mode::SelectRoad || m_mode == Mode::InsertKnot;
-        const auto drawRoad = [&](const procedural::CityRoadSpline &road, bool drawControls)
-        {
-            if(drawControls) for(const auto &k:road.knots)
-            {if(++budget>4096)break;const auto center=controlPoint(k.position,road)+Vector3F(0,.035f,0),in=controlPoint(k.position+k.inHandle,road)+Vector3F(0,.035f,0),out=controlPoint(k.position+k.outHandle,road)+Vector3F(0,.035f,0);points.push_back(point(center));lines.push_back(point(in));lines.push_back(point(center));lines.push_back(point(center));lines.push_back(point(out));points.push_back(point(in));points.push_back(point(out));}
-            const size_t spans=road.knots.size()>1?(road.closed?road.knots.size():road.knots.size()-1):0;
-            for(size_t i=0;i<spans && budget<4096;++i)
+        const auto drawRoad = [&]( const procedural::CityRoadSpline &road, bool drawControls ) {
+            if( drawControls )
             {
-                const auto control=spanControls(road,i);auto previous=control.front();
-                for(unsigned j=1;j<=16 && budget<4096;++j,++budget)
-                {const auto p=evaluateSpan(control,j/16.f);const bool drape=road.heightMode==procedural::CityRoadHeightMode::Drape;lines.push_back(point(world(previous,drape)));lines.push_back(point(world(p,drape)));previous=p;}
+                for( const auto &k : road.knots )
+                {
+                    if( ++budget > 4096 )
+                    {
+                        break;
+                    }
+                    const auto center = controlPoint( k.position, road ) + Vector3F( 0, .035f, 0 ),
+                               in = controlPoint( k.position + k.inHandle, road ) +
+                                    Vector3F( 0, .035f, 0 ),
+                               out = controlPoint( k.position + k.outHandle, road ) +
+                                     Vector3F( 0, .035f, 0 );
+                    points.push_back( point( center ) );
+                    lines.push_back( point( in ) );
+                    lines.push_back( point( center ) );
+                    lines.push_back( point( center ) );
+                    lines.push_back( point( out ) );
+                    points.push_back( point( in ) );
+                    points.push_back( point( out ) );
+                }
+            }
+            const size_t spans =
+                road.knots.size() > 1 ? ( road.closed ? road.knots.size() : road.knots.size() - 1 ) : 0;
+            for( size_t i = 0; i < spans && budget < 4096; ++i )
+            {
+                const auto control = spanControls( road, i );
+                auto previous = control.front();
+                for( unsigned j = 1; j <= 16 && budget < 4096; ++j, ++budget )
+                {
+                    const auto p = evaluateSpan( control, j / 16.f );
+                    const bool drape = road.heightMode == procedural::CityRoadHeightMode::Drape;
+                    lines.push_back( point( world( previous, drape ) ) );
+                    lines.push_back( point( world( p, drape ) ) );
+                    previous = p;
+                }
             }
         };
         const procedural::CityRoadSpline *selected = nullptr;
-        if(roadPicking && m_selected)
+        if( roadPicking && m_selected )
         {
-            const auto it = std::find_if(source.roads.begin(), source.roads.end(),
-                [&](const auto &road) { return road.id == m_selectedRoadId; });
-            if(it != source.roads.end()) { selected = &*it; drawRoad(*selected, true); }
+            const auto it =
+                std::find_if( source.roads.begin(), source.roads.end(),
+                              [&]( const auto &road ) { return road.id == m_selectedRoadId; } );
+            if( it != source.roads.end() )
+            {
+                selected = &*it;
+                drawRoad( *selected, true );
+            }
         }
-        for(const auto &road:source.roads)
-            if(&road != selected) drawRoad(road, !roadPicking);
-        for(const auto &junction:source.roundabouts)
-            for(const float radius:{junction.outerRadius,junction.islandRadius})
-                for(unsigned i=0;i<64 && budget<4096;++i,++budget)
-                {const float a=i*6.28318530718f/64,b=(i+1)*6.28318530718f/64;auto p=junction.center+Vector3F(std::cos(a)*radius,0,std::sin(a)*radius),q=junction.center+Vector3F(std::cos(b)*radius,0,std::sin(b)*radius);p.y=junction.center.y+junction.gradeX*(p.x-junction.center.x)+junction.gradeZ*(p.z-junction.center.z);q.y=junction.center.y+junction.gradeX*(q.x-junction.center.x)+junction.gradeZ*(q.z-junction.center.z);lines.push_back(point(world(p)));lines.push_back(point(world(q)));}
-        return Parameter(Parameters{Parameter(m_enabled),Parameter(lines),Parameter(points)});
+        for( const auto &road : source.roads )
+        {
+            if( &road != selected )
+            {
+                drawRoad( road, !roadPicking );
+            }
+        }
+        for( const auto &junction : source.roundabouts )
+        {
+            for( const float radius : { junction.outerRadius, junction.islandRadius } )
+            {
+                for( unsigned i = 0; i < 64 && budget < 4096; ++i, ++budget )
+                {
+                    const float a = i * 6.28318530718f / 64, b = ( i + 1 ) * 6.28318530718f / 64;
+                    auto p = junction.center +
+                             Vector3F( std::cos( a ) * radius, 0, std::sin( a ) * radius ),
+                         q = junction.center +
+                             Vector3F( std::cos( b ) * radius, 0, std::sin( b ) * radius );
+                    p.y = junction.center.y + junction.gradeX * ( p.x - junction.center.x ) +
+                          junction.gradeZ * ( p.z - junction.center.z );
+                    q.y = junction.center.y + junction.gradeX * ( q.x - junction.center.x ) +
+                          junction.gradeZ * ( q.z - junction.center.z );
+                    lines.push_back( point( world( p ) ) );
+                    lines.push_back( point( world( q ) ) );
+                }
+            }
+        }
+        return Parameter(
+            Parameters{ Parameter( m_enabled ), Parameter( lines ), Parameter( points ) } );
     }
-    Parameter CityRoadWindow::processViewport(const Array<Parameter> &args,bool queued)
+
+    Parameter CityRoadWindow::processViewport( const Array<Parameter> &args, bool queued )
     {
-        if(args.size()!=7)return {};
-        const auto phase=args.front().getStr();
-        if(phase=="button"){action(static_cast<Widget>(s32(args[1].getF64())),!queued);return preview();}
-        if(!m_enabled || !current())return {};
-        if(phase=="cancel"){cancelDraft();m_enabled=false;return preview();}
-        if(phase=="finish"){action(Finish);return preview();}
-        if(phase=="undo" || phase=="redo"){history(phase=="redo");return preview();}
-        if(phase=="save"){action(Save);return preview();}
-        if(phase=="remove")
-        {if(m_drafting && m_mode==Mode::Draw)history(false);else action(RemoveRoad);return preview();}
-        if(phase=="commit")
+        if( args.size() != 7 )
         {
-            const bool constrained=m_portHandleDrag;
-            const auto revision=current()->getSourceRevision();
-            if(m_dragging && m_mode!=Mode::Draw && commitDraft() && constrained && current()->getSourceRevision()!=revision)
-                status("Roundabout handle committed along its port direction. The mouth and junction stay fixed. Undo/Redo restores this edit.");
-            m_dragging=false;return preview();
+            return {};
         }
-        if(phase!="begin" && phase!="update")return preview();
-        const bool roadPicking = m_mode == Mode::SelectRoad || m_mode == Mode::InsertKnot;
-        if(roadPicking && phase!="begin")return preview();
-        const Ray3F ray({f32(args[1].getF64()),f32(args[2].getF64()),f32(args[3].getF64())},{f32(args[4].getF64()),f32(args[5].getF64()),f32(args[6].getF64())});
-        Vector3F hit;String error;auto target=current();
-        if(!target->intersectTerrain(ray,hit,error))
+        const auto phase = args.front().getStr();
+        if( phase == "button" )
         {
-            if(m_mode==Mode::SelectRoad)m_selected=false;
-            status(error);
+            action( static_cast<Widget>( s32( args[1].getF64() ) ), !queued );
             return preview();
         }
-        if(roadPicking){editRoadAt(hit);return preview();}
-        if(m_mode==Mode::Roundabout){if(phase=="begin")addRoundabout(hit);return preview();}
-        if(phase=="begin")
+        if( !m_enabled || !current() )
         {
-            if(m_mode==Mode::Draw)
+            return {};
+        }
+        if( phase == "cancel" )
+        {
+            cancelDraft();
+            m_enabled = false;
+            return preview();
+        }
+        if( phase == "finish" )
+        {
+            action( Finish );
+            return preview();
+        }
+        if( phase == "undo" || phase == "redo" )
+        {
+            history( phase == "redo" );
+            return preview();
+        }
+        if( phase == "save" )
+        {
+            action( Save );
+            return preview();
+        }
+        if( phase == "remove" )
+        {
+            if( m_drafting && m_mode == Mode::Draw )
             {
-                if(!m_drafting && !beginDraw())return preview();auto &knots=m_draft.roads[m_road].knots;
-                if(knots.size()>=256){status("A road supports at most 256 knots.");return preview();}
-                if(!knots.empty() && (knots.back().position-hit).lengthSquared()<.01f)return preview();
-                procedural::CityRoadSplineKnot knot;knot.id=newId();knot.position=hit;
-                if(!knots.empty())
-                {
-                    auto &previous=knots.back();const auto span=hit-previous.position;knot.inHandle=-span/3.f;
-                    if(!m_manualHandles.count(previous.id))
-                    {const auto tangent=knots.size()>1?(hit-knots[knots.size()-2].position)/6.f:span/3.f;previous.outHandle=tangent;if(knots.size()>1)previous.inHandle=-tangent;}
-                }
-                knots.push_back(std::move(knot));m_knot=knots.size()-1;m_dragging=true;status("Draft knots: "+StringUtil::toString(u32(knots.size()))+". Enter commits the road.");
+                history( false );
             }
             else
             {
-                if(!beginDraft())return preview();float closest=4.f;bool found=false;
-                for(size_t r=0;r<m_draft.roads.size();++r)for(size_t k=0;k<m_draft.roads[r].knots.size();++k)
-                {const auto &road=m_draft.roads[r];const auto &knot=road.knots[k];const auto p=controlPoint(knot.position+(m_mode==Mode::InHandle?knot.inHandle:m_mode==Mode::OutHandle?knot.outHandle:Vector3F::zero()),road);const auto distance=(p-hit).lengthSquared();if(distance<closest){closest=distance;m_road=r;m_knot=k;found=true;}}
-                if(!found){cancelDraft();status("No knot/handle within 2 metres of the terrain pick.");return preview();}
-                m_dragging=true;const auto &road=m_draft.roads[m_road];selectRoad(road);m_selectedKnotId=road.knots[m_knot].id;
-                if(attachedPort(m_draft,road,m_knot))
+                action( RemoveRoad );
+            }
+            return preview();
+        }
+        if( phase == "commit" )
+        {
+            const bool constrained = m_portHandleDrag;
+            const auto revision = current()->getSourceRevision();
+            if( m_dragging && m_mode != Mode::Draw && commitDraft() && constrained &&
+                current()->getSourceRevision() != revision )
+            {
+                status(
+                    "Roundabout handle committed along its port direction. The mouth and junction stay "
+                    "fixed. Undo/Redo restores this edit." );
+            }
+            m_dragging = false;
+            return preview();
+        }
+        if( phase != "begin" && phase != "update" )
+        {
+            return preview();
+        }
+        const bool roadPicking = m_mode == Mode::SelectRoad || m_mode == Mode::InsertKnot;
+        if( roadPicking && phase != "begin" )
+        {
+            return preview();
+        }
+        const Ray3F ray( { f32( args[1].getF64() ), f32( args[2].getF64() ), f32( args[3].getF64() ) },
+                         { f32( args[4].getF64() ), f32( args[5].getF64() ), f32( args[6].getF64() ) } );
+        Vector3F hit;
+        String error;
+        auto target = current();
+        if( !target->intersectTerrain( ray, hit, error ) )
+        {
+            if( m_mode == Mode::SelectRoad )
+            {
+                m_selected = false;
+            }
+            status( error );
+            return preview();
+        }
+        if( roadPicking )
+        {
+            editRoadAt( hit );
+            return preview();
+        }
+        if( m_mode == Mode::Roundabout )
+        {
+            if( phase == "begin" )
+            {
+                addRoundabout( hit );
+            }
+            return preview();
+        }
+        if( phase == "begin" )
+        {
+            if( m_mode == Mode::Draw )
+            {
+                if( !m_drafting && !beginDraw() )
                 {
-                    if(m_mode==Mode::Move)
-                    {cancelDraft();status("This endpoint is attached to a roundabout port. Move an interior knot or the free end; the roundabout mouth stays fixed.");return preview();}
-                    m_portHandleDrag=true;
-                    status("This roundabout handle follows its port ray. Drag along the approach to change its length; the mouth stays fixed.");
+                    return preview();
+                }
+                auto &knots = m_draft.roads[m_road].knots;
+                if( knots.size() >= 256 )
+                {
+                    status( "A road supports at most 256 knots." );
+                    return preview();
+                }
+                if( !knots.empty() && ( knots.back().position - hit ).lengthSquared() < .01f )
+                {
+                    return preview();
+                }
+                procedural::CityRoadSplineKnot knot;
+                knot.id = newId();
+                knot.position = hit;
+                if( !knots.empty() )
+                {
+                    auto &previous = knots.back();
+                    const auto span = hit - previous.position;
+                    knot.inHandle = -span / 3.f;
+                    if( !m_manualHandles.count( previous.id ) )
+                    {
+                        const auto tangent = knots.size() > 1
+                                                 ? ( hit - knots[knots.size() - 2].position ) / 6.f
+                                                 : span / 3.f;
+                        previous.outHandle = tangent;
+                        if( knots.size() > 1 )
+                        {
+                            previous.inHandle = -tangent;
+                        }
+                    }
+                }
+                knots.push_back( std::move( knot ) );
+                m_knot = knots.size() - 1;
+                m_dragging = true;
+                status( "Draft knots: " + StringUtil::toString( u32( knots.size() ) ) +
+                        ". Enter commits the road." );
+            }
+            else
+            {
+                if( !beginDraft() )
+                {
+                    return preview();
+                }
+                float closest = 4.f;
+                bool found = false;
+                for( size_t r = 0; r < m_draft.roads.size(); ++r )
+                {
+                    for( size_t k = 0; k < m_draft.roads[r].knots.size(); ++k )
+                    {
+                        const auto &road = m_draft.roads[r];
+                        const auto &knot = road.knots[k];
+                        const auto p = controlPoint(
+                            knot.position + ( m_mode == Mode::InHandle    ? knot.inHandle
+                                              : m_mode == Mode::OutHandle ? knot.outHandle
+                                                                          : Vector3F::zero() ),
+                            road );
+                        const auto distance = ( p - hit ).lengthSquared();
+                        if( distance < closest )
+                        {
+                            closest = distance;
+                            m_road = r;
+                            m_knot = k;
+                            found = true;
+                        }
+                    }
+                }
+                if( !found )
+                {
+                    cancelDraft();
+                    status( "No knot/handle within 2 metres of the terrain pick." );
+                    return preview();
+                }
+                m_dragging = true;
+                const auto &road = m_draft.roads[m_road];
+                selectRoad( road );
+                m_selectedKnotId = road.knots[m_knot].id;
+                if( attachedPort( m_draft, road, m_knot ) )
+                {
+                    if( m_mode == Mode::Move )
+                    {
+                        cancelDraft();
+                        status(
+                            "This endpoint is attached to a roundabout port. Move an interior knot or "
+                            "the free end; the roundabout mouth stays fixed." );
+                        return preview();
+                    }
+                    m_portHandleDrag = true;
+                    status(
+                        "This roundabout handle follows its port ray. Drag along the approach to change "
+                        "its length; the mouth stays fixed." );
                 }
             }
         }
-        else if(m_dragging && m_drafting && m_road<m_draft.roads.size() && m_knot<m_draft.roads[m_road].knots.size())
+        else if( m_dragging && m_drafting && m_road < m_draft.roads.size() &&
+                 m_knot < m_draft.roads[m_road].knots.size() )
         {
-            auto &road=m_draft.roads[m_road];auto &knot=road.knots[m_knot];
-            if(m_portHandleDrag)
+            auto &road = m_draft.roads[m_road];
+            auto &knot = road.knots[m_knot];
+            if( m_portHandleDrag )
             {
-                if(const auto port=attachedPort(m_draft,road,m_knot))
+                if( const auto port = attachedPort( m_draft, road, m_knot ) )
                 {
-                    const bool active=(port->atStart && m_mode==Mode::OutHandle) || (!port->atStart && m_mode==Mode::InHandle);
-                    const auto direction=port->outward*(active?1.f:-1.f);
-                    const auto delta=hit-knot.position;
-                    const float length=delta.x*direction.x+delta.z*direction.z;
-                    if(!std::isfinite(length) || length<=.001f)
-                    {status("Keep the handle on its port ray, away from the roundabout mouth. The last valid handle is retained.");return preview();}
-                    auto handle=direction*length;handle.y=port->gradeX*handle.x+port->gradeZ*handle.z;
-                    if(m_mode==Mode::InHandle)knot.inHandle=handle;else knot.outHandle=handle;
-                    status("Handle projected onto the roundabout port direction; release to commit one undoable edit.");
+                    const bool active = ( port->atStart && m_mode == Mode::OutHandle ) ||
+                                        ( !port->atStart && m_mode == Mode::InHandle );
+                    const auto direction = port->outward * ( active ? 1.f : -1.f );
+                    const auto delta = hit - knot.position;
+                    const float length = delta.x * direction.x + delta.z * direction.z;
+                    if( !std::isfinite( length ) || length <= .001f )
+                    {
+                        status(
+                            "Keep the handle on its port ray, away from the roundabout mouth. The last "
+                            "valid handle is retained." );
+                        return preview();
+                    }
+                    auto handle = direction * length;
+                    handle.y = port->gradeX * handle.x + port->gradeZ * handle.z;
+                    if( m_mode == Mode::InHandle )
+                    {
+                        knot.inHandle = handle;
+                    }
+                    else
+                    {
+                        knot.outHandle = handle;
+                    }
+                    status(
+                        "Handle projected onto the roundabout port direction; release to commit one "
+                        "undoable edit." );
                     return preview();
                 }
-                status("The roundabout connection changed. Cancel this draft and select the approach again.");return preview();
+                status(
+                    "The roundabout connection changed. Cancel this draft and select the approach "
+                    "again." );
+                return preview();
             }
-            if(m_mode==Mode::Move)knot.position=hit;
-            else if(m_mode==Mode::InHandle)knot.inHandle=hit-knot.position;
-            else {knot.outHandle=hit-knot.position;if(m_mode==Mode::Draw){knot.inHandle=-knot.outHandle;m_manualHandles.insert(knot.id);}}
+            if( m_mode == Mode::Move )
+            {
+                knot.position = hit;
+            }
+            else if( m_mode == Mode::InHandle )
+            {
+                knot.inHandle = hit - knot.position;
+            }
+            else
+            {
+                knot.outHandle = hit - knot.position;
+                if( m_mode == Mode::Draw )
+                {
+                    knot.inHandle = -knot.outHandle;
+                    m_manualHandles.insert( knot.id );
+                }
+            }
         }
         return preview();
     }
-    Parameter CityRoadWindow::handleViewport(const Array<Parameter> &args)
+
+    Parameter CityRoadWindow::handleViewport( const Array<Parameter> &args )
     {
-        if(args.size()!=7)return {};
-        if(Thread::getCurrentTask()==TaskId::Application)
-        {const auto reply=processViewport(args);RecursiveMutex::ScopedLock lock(m_toolMutex);m_cachedPreview=reply;const auto &parts=reply.getArray();m_cachedEnabled=!parts.empty() && parts.front().getBool();return reply;}
-        const auto phase=args[0].getStr();RecursiveMutex::ScopedLock lock(m_toolMutex);if(!m_cachedEnabled && phase!="button")return {};
-        auto app=core::IApplicationManager::instancePtr();auto tasks=app?app->getTaskManager():nullptr;auto ownerTask=tasks?tasks->getTask(TaskId::Application):nullptr;
-        if(!ownerTask || !ownerTask->isLoaded() || ownerTask->getState()==ITask::State::Shutdown)return {};
-        Input input;input.phase.assign(phase.data(),phase.size());input.epoch=m_toolEpoch;
-        input.origin={f32(args[1].getF64()),f32(args[2].getF64()),f32(args[3].getF64())};input.direction={f32(args[4].getF64()),f32(args[5].getF64()),f32(args[6].getF64())};
-        const bool motion=phase=="hover" || phase=="update";
-        if(motion && !m_inputs.empty() && m_inputs.back().phase==input.phase)m_inputs.back()=std::move(input);
-        else if(m_inputs.size()<128)m_inputs.push_back(std::move(input));
-        else{m_inputs.clear();input.phase="cancel";m_inputs.push_back(std::move(input));}
-        if(!m_dispatchPending)
+        if( args.size() != 7 )
         {
-            auto job=make_ptr<ViewportJob>();job->setOwner(this);job->setPrimary(true);m_dispatchPending=true;
-            try{ownerTask->addJob(job);}catch(...){m_dispatchPending=false;m_inputs.clear();throw;}
+            return {};
         }
-        return m_cachedPreview.getArray().empty()?Parameter(Parameters{Parameter(true)}):m_cachedPreview;
+        if( Thread::getCurrentTask() == TaskId::Application )
+        {
+            const auto reply = processViewport( args );
+            RecursiveMutex::ScopedLock lock( m_toolMutex );
+            m_cachedPreview = reply;
+            const auto &parts = reply.getArray();
+            m_cachedEnabled = !parts.empty() && parts.front().getBool();
+            return reply;
+        }
+        const auto phase = args[0].getStr();
+        RecursiveMutex::ScopedLock lock( m_toolMutex );
+        if( !m_cachedEnabled && phase != "button" )
+        {
+            return {};
+        }
+        auto app = core::IApplicationManager::instancePtr();
+        auto tasks = app ? app->getTaskManager() : nullptr;
+        auto ownerTask = tasks ? tasks->getTask( TaskId::Application ) : nullptr;
+        if( !ownerTask || !ownerTask->isLoaded() || ownerTask->getState() == ITask::State::Shutdown )
+        {
+            return {};
+        }
+        Input input;
+        input.phase.assign( phase.data(), phase.size() );
+        input.epoch = m_toolEpoch;
+        input.origin = { f32( args[1].getF64() ), f32( args[2].getF64() ), f32( args[3].getF64() ) };
+        input.direction = { f32( args[4].getF64() ), f32( args[5].getF64() ), f32( args[6].getF64() ) };
+        const bool motion = phase == "hover" || phase == "update";
+        if( motion && !m_inputs.empty() && m_inputs.back().phase == input.phase )
+        {
+            m_inputs.back() = std::move( input );
+        }
+        else if( m_inputs.size() < 128 )
+        {
+            m_inputs.push_back( std::move( input ) );
+        }
+        else
+        {
+            m_inputs.clear();
+            input.phase = "cancel";
+            m_inputs.push_back( std::move( input ) );
+        }
+        if( !m_dispatchPending )
+        {
+            auto job = make_ptr<ViewportJob>();
+            job->setOwner( this );
+            job->setPrimary( true );
+            m_dispatchPending = true;
+            try
+            {
+                ownerTask->addJob( job );
+            }
+            catch( ... )
+            {
+                m_dispatchPending = false;
+                m_inputs.clear();
+                throw;
+            }
+        }
+        return m_cachedPreview.getArray().empty() ? Parameter( Parameters{ Parameter( true ) } )
+                                                  : m_cachedPreview;
     }
+
     void CityRoadWindow::drainViewport()
     {
         SourceBudgetVector<Input> pending;
-        {RecursiveMutex::ScopedLock lock(m_toolMutex);m_dispatchPending=false;pending=std::move(m_inputs);m_inputs={};}
-        if(Thread::getCurrentTask()!=TaskId::Application){status("Road viewport input was not delivered on the Application task; no source was changed.");WP_LOG_ERROR("CityRoadWindow: wrong viewport input task.");return;}
-        for(const auto &input:pending)
         {
-            {RecursiveMutex::ScopedLock lock(m_toolMutex);if(input.epoch!=m_toolEpoch)continue;}
-            if(!isLoaded() || !isWindowVisible() || (!m_enabled && input.phase!="button"))continue;
-            const Parameters args{Parameter(String(input.phase.data(),input.phase.size())),Parameter(f64(input.origin.x)),Parameter(f64(input.origin.y)),Parameter(f64(input.origin.z)),Parameter(f64(input.direction.x)),Parameter(f64(input.direction.y)),Parameter(f64(input.direction.z))};
-            const auto reply=processViewport(args,true);
-            {RecursiveMutex::ScopedLock lock(m_toolMutex);m_cachedPreview=reply;const auto &parts=reply.getArray();m_cachedEnabled=!parts.empty() && parts.front().getBool();}
+            RecursiveMutex::ScopedLock lock( m_toolMutex );
+            m_dispatchPending = false;
+            pending = std::move( m_inputs );
+            m_inputs = {};
+        }
+        if( Thread::getCurrentTask() != TaskId::Application )
+        {
+            status(
+                "Road viewport input was not delivered on the Application task; no source was "
+                "changed." );
+            WP_LOG_ERROR( "CityRoadWindow: wrong viewport input task." );
+            return;
+        }
+        for( const auto &input : pending )
+        {
+            {
+                RecursiveMutex::ScopedLock lock( m_toolMutex );
+                if( input.epoch != m_toolEpoch )
+                {
+                    continue;
+                }
+            }
+            if( !isLoaded() || !isWindowVisible() || ( !m_enabled && input.phase != "button" ) )
+            {
+                continue;
+            }
+            const Parameters args{ Parameter( String( input.phase.data(), input.phase.size() ) ),
+                                   Parameter( f64( input.origin.x ) ),
+                                   Parameter( f64( input.origin.y ) ),
+                                   Parameter( f64( input.origin.z ) ),
+                                   Parameter( f64( input.direction.x ) ),
+                                   Parameter( f64( input.direction.y ) ),
+                                   Parameter( f64( input.direction.z ) ) };
+            const auto reply = processViewport( args, true );
+            {
+                RecursiveMutex::ScopedLock lock( m_toolMutex );
+                m_cachedPreview = reply;
+                const auto &parts = reply.getArray();
+                m_cachedEnabled = !parts.empty() && parts.front().getBool();
+            }
         }
     }
-    void CityRoadWindow::ViewportJob::execute(){if(auto owner=m_owner.load().lock())owner->drainViewport();}
-    Parameter CityRoadWindow::Listener::handleEvent(EventType,hash_type value,const Array<Parameter> &args,SmartPtr<ISharedObject> sender,SmartPtr<ISharedObject>,SmartPtr<IEvent>)
+
+    void CityRoadWindow::ViewportJob::execute()
     {
-        auto owner=m_owner.load().lock();if(!owner || !owner->isLoaded() || !owner->isWindowVisible())return {};
-        if(!owner->getParentWindow() || !owner->getParentWindow()->isVisible())
-        {if(value==StringUtil::getHash("cityRoadViewportTool") && args.size()==7){auto cancel=args;cancel[0]=Parameter(String("cancel"));owner->handleViewport(cancel);}return {};}
-        if(value==StringUtil::getHash("cityRoadViewportTool"))return owner->handleViewport(args);
-        if(value==IEvent::handleSelection)if(auto element=dynamic_pointer_cast<ui::IUIElement>(sender))
-        {owner->handleViewport({Parameter(String("button")),Parameter(f64(element->getElementId())),Parameter(0.0),Parameter(0.0),Parameter(0.0),Parameter(0.0),Parameter(0.0)});}
+        if( auto owner = m_owner.load().lock() )
+        {
+            owner->drainViewport();
+        }
+    }
+
+    Parameter CityRoadWindow::Listener::handleEvent( EventType, hash_type value,
+                                                     const Array<Parameter> &args,
+                                                     SmartPtr<ISharedObject> sender,
+                                                     SmartPtr<ISharedObject>, SmartPtr<IEvent> )
+    {
+        auto owner = m_owner.load().lock();
+        if( !owner || !owner->isLoaded() || !owner->isWindowVisible() )
+        {
+            return {};
+        }
+        if( !owner->getParentWindow() || !owner->getParentWindow()->isVisible() )
+        {
+            if( value == StringUtil::getHash( "cityRoadViewportTool" ) && args.size() == 7 )
+            {
+                auto cancel = args;
+                cancel[0] = Parameter( String( "cancel" ) );
+                owner->handleViewport( cancel );
+            }
+            return {};
+        }
+        if( value == StringUtil::getHash( "cityRoadViewportTool" ) )
+        {
+            return owner->handleViewport( args );
+        }
+        if( value == IEvent::handleSelection )
+        {
+            if( auto element = dynamic_pointer_cast<ui::IUIElement>( sender ) )
+            {
+                owner->handleViewport( { Parameter( String( "button" ) ),
+                                         Parameter( f64( element->getElementId() ) ), Parameter( 0.0 ),
+                                         Parameter( 0.0 ), Parameter( 0.0 ), Parameter( 0.0 ),
+                                         Parameter( 0.0 ) } );
+            }
+        }
         return {};
     }
-}
+}  // namespace workphone::editor

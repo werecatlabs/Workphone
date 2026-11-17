@@ -24,8 +24,16 @@ namespace
     class SettingsTaskProbe : public Task
     {
     public:
-        f64 getTargetFPS() const override { return rate; }
-        void setTargetFPS( f64 value ) override { rate = value; }
+        f64 getTargetFPS() const override
+        {
+            return rate;
+        }
+
+        void setTargetFPS( f64 value ) override
+        {
+            rate = value;
+        }
+
         f64 rate = 60;
     };
 
@@ -36,13 +44,19 @@ namespace
         {
             switch( id )
             {
-            case TaskId::Primary: return primary;
-            case TaskId::Application: return application;
-            case TaskId::Render: return render;
-            case TaskId::Physics: return physics;
-            default: return nullptr;
+            case TaskId::Primary:
+                return primary;
+            case TaskId::Application:
+                return application;
+            case TaskId::Render:
+                return render;
+            case TaskId::Physics:
+                return physics;
+            default:
+                return nullptr;
             }
         }
+
         SmartPtr<SettingsTaskProbe> primary = workphone::make_ptr<SettingsTaskProbe>();
         SmartPtr<SettingsTaskProbe> application = workphone::make_ptr<SettingsTaskProbe>();
         SmartPtr<SettingsTaskProbe> render = workphone::make_ptr<SettingsTaskProbe>();
@@ -52,33 +66,60 @@ namespace
     class SettingsSoundProbe : public SoundManager
     {
     public:
-        void setVolume( f32 value ) override { volume = value; }
-        f32 getVolume() const override { return volume; }
+        void setVolume( f32 value ) override
+        {
+            volume = value;
+        }
+
+        f32 getVolume() const override
+        {
+            return volume;
+        }
+
         f32 volume = 1;
     };
 
     class SettingsGraphicsProbe : public render::GraphicsSystem
     {
     public:
-        SmartPtr<render::IGraphicsPipeline> getGraphicsPipeline() const override { return pipeline; }
-        SmartPtr<Properties> getProperties() const override { return make_ptr<Properties>(); }
-        void setProperties( SmartPtr<Properties> ) override {}
+        SmartPtr<render::IGraphicsPipeline> getGraphicsPipeline() const override
+        {
+            return pipeline;
+        }
+
+        SmartPtr<Properties> getProperties() const override
+        {
+            return make_ptr<Properties>();
+        }
+
+        void setProperties( SmartPtr<Properties> ) override
+        {
+        }
+
         SmartPtr<render::GraphicsPipeline> pipeline = make_ptr<render::GraphicsPipeline>();
     };
 
     class SettingsPhysicsSceneProbe : public physics::PhysicsScene3
     {
     public:
-        void setGravity( const Vector3<real_Num> &value ) override { gravity = value; }
-        Vector3<real_Num> getGravity() const override { return gravity; }
+        void setGravity( const Vector3<real_Num> &value ) override
+        {
+            gravity = value;
+        }
+
+        Vector3<real_Num> getGravity() const override
+        {
+            return gravity;
+        }
+
         Vector3<real_Num> gravity = Vector3<real_Num>( 2, -9.8f, 3 );
     };
 
     class SettingsPhysicsProbe : public physics::PhysicsManager
     {
     public:
-        SmartPtr<physics::IPhysicsShape3> addCollisionShapeByType(
-            hash64, SmartPtr<ISharedObject> ) override
+        SmartPtr<physics::IPhysicsShape3> addCollisionShapeByType( hash64,
+                                                                   SmartPtr<ISharedObject> ) override
         {
             return nullptr;
         }
@@ -106,7 +147,7 @@ namespace
             core::IApplicationManager::setInstance( previousApp );
         }
     };
-}
+}  // namespace
 
 BOOST_AUTO_TEST_CASE( project_settings_runtime_subsystem_contract_test )
 {
@@ -142,8 +183,10 @@ BOOST_AUTO_TEST_CASE( project_settings_runtime_subsystem_contract_test )
     auto patch = workphone::make_ptr<Properties>();
     patch->setProperty( "physics.gravity", -11.0f );
     auto patchResult = applyProjectSettingsRuntime( patch );
-    BOOST_REQUIRE_MESSAGE( patchResult->getPropertyAsBool( "success" ), patchResult->getProperty( "status" ) );
-    BOOST_CHECK_EQUAL( guard.app->getPlayerSettings()->getPropertyAsInt( "graphics.frameRateLimit" ), 144 );
+    BOOST_REQUIRE_MESSAGE( patchResult->getPropertyAsBool( "success" ),
+                           patchResult->getProperty( "status" ) );
+    BOOST_CHECK_EQUAL( guard.app->getPlayerSettings()->getPropertyAsInt( "graphics.frameRateLimit" ),
+                       144 );
     BOOST_CHECK_CLOSE( sound->volume, 0.25f, 0.001f );
     BOOST_CHECK_CLOSE( scene->gravity.Y(), -11.0f, 0.001f );
 
@@ -339,7 +382,8 @@ BOOST_AUTO_TEST_CASE( project_settings_runtime_validation_and_capabilities_test 
     core::IApplicationManager::setInstance( nullptr );
     const auto result = applyProjectSettingsRuntime( settings );
     BOOST_CHECK( result->getPropertyAsBool( "success" ) );
-    BOOST_CHECK_EQUAL( result->getProperty( "status" ).find( "Project settings stored; runtime is not loaded." ), 0u );
+    BOOST_CHECK_EQUAL(
+        result->getProperty( "status" ).find( "Project settings stored; runtime is not loaded." ), 0u );
     BOOST_CHECK( result->getProperty( "pendingKeys" ).find( "graphics.antiAliasing" ) != String::npos );
     BOOST_CHECK( result->getProperty( "pendingKeys" ).find( "physics.gravity" ) != String::npos );
 }

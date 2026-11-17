@@ -26,7 +26,12 @@ namespace workphone::editor::mesh_assets
             }
             auto extension = path.extension().u8string();
             for( auto &c : extension )
-                if( c >= 'A' && c <= 'Z' ) c += 'a' - 'A';
+            {
+                if( c >= 'A' && c <= 'Z' )
+                {
+                    c += 'a' - 'A';
+                }
+            }
             if( extension != ".png" && extension != ".jpg" && extension != ".jpeg" )
             {
                 error = "Choose a PNG or JPEG image file.";
@@ -40,15 +45,19 @@ namespace workphone::editor::mesh_assets
             }
             std::ifstream stream( path, std::ios::binary );
             std::vector<std::uint8_t> candidate( static_cast<std::size_t>( size ) );
-            stream.read( reinterpret_cast<char *>( candidate.data() ), static_cast<std::streamsize>( size ) );
+            stream.read( reinterpret_cast<char *>( candidate.data() ),
+                         static_cast<std::streamsize>( size ) );
             if( !stream || stream.peek() != std::char_traits<char>::eof() )
             {
                 error = "Could not read the complete image. Check permissions or choose it again.";
                 return false;
             }
             const std::string mime = extension == ".png" ? "image/png" : "image/jpeg";
-            if( !mesh_generation::validateSourceImage( candidate.data(), candidate.size(), mime, error ) )
+            if( !mesh_generation::validateSourceImage( candidate.data(), candidate.size(), mime,
+                                                       error ) )
+            {
                 return false;
+            }
             bytes = std::move( candidate );
             mimeType = mime;
             return true;
@@ -61,13 +70,16 @@ namespace workphone::editor::mesh_assets
     }
 
     inline bool saveGlb( const std::filesystem::path &projectRoot, const std::string &basename,
-                         const std::uint8_t *bytes, std::size_t size,
-                         std::filesystem::path &output, std::string &error )
+                         const std::uint8_t *bytes, std::size_t size, std::filesystem::path &output,
+                         std::string &error )
     {
         output.clear();
         error.clear();
-        if( !mesh_generation::validateGeneratedGlb( bytes, size, error ) ) return false;
+        if( !mesh_generation::validateGeneratedGlb( bytes, size, error ) )
+        {
+            return false;
+        }
         return generated_assets::saveUniqueFile( projectRoot, sanitizeBasename( basename ), ".glb",
                                                  bytes, size, output, error );
     }
-}
+}  // namespace workphone::editor::mesh_assets

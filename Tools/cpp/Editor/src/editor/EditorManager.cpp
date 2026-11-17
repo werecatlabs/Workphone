@@ -38,7 +38,10 @@ namespace workphone::editor
         if( isEditingPrefab() )
         {
             String error;
-            if( !m_prefabEditSession->close( error ) ) WP_LOG_ERROR( error );
+            if( !m_prefabEditSession->close( error ) )
+            {
+                WP_LOG_ERROR( error );
+            }
         }
         m_prefabEditSession.reset();
         clearPlayModeScene();
@@ -102,14 +105,18 @@ namespace workphone::editor
 
             auto runtimeSettings = loadProjectSettingsRuntime( project->getProperties() );
             if( !runtimeSettings->getPropertyAsBool( "success" ) )
+            {
                 WP_LOG_ERROR( runtimeSettings->getProperty( "status" ) );
+            }
             if( auto settingsWindow = uiManager->getProjectSettingsWindow() )
             {
                 auto settings = workphone::make_ptr<Properties>();
                 settings->setProperty( "action", String( "readProjectSettings" ) );
                 processProjectSettingsAction( settings );
                 if( settings->getPropertyAsBool( "success" ) )
+                {
                     settingsWindow->setProperties( settings );
+                }
             }
 
             auto editorSettings = applicationManager->getEditorSettings();
@@ -184,13 +191,24 @@ namespace workphone::editor
 
     bool EditorManager::openPrefab( const String &path, String &error )
     {
-        if( !m_prefabEditSession ) m_prefabEditSession = std::make_unique<PrefabEditSession>();
+        if( !m_prefabEditSession )
+        {
+            m_prefabEditSession = std::make_unique<PrefabEditSession>();
+        }
         const auto saved = getFileSaved();
         const bool result = m_prefabEditSession->open( path, error );
-        if( result ) { m_prefabOriginalFileSaved = saved; setFileSaved( false ); }
+        if( result )
+        {
+            m_prefabOriginalFileSaved = saved;
+            setFileSaved( false );
+        }
         if( auto ui = getUI() )
         {
-            if( result ) { ui->rebuildSceneTree(); ui->updateSelection(); }
+            if( result )
+            {
+                ui->rebuildSceneTree();
+                ui->updateSelection();
+            }
             ui->updatePrefabEditingUI( error );
         }
         return result;
@@ -200,16 +218,30 @@ namespace workphone::editor
     {
         size_t count = 0;
         const bool result = m_prefabEditSession && m_prefabEditSession->save( error, &count );
-        if( !m_prefabEditSession ) error = "No prefab is being edited.";
+        if( !m_prefabEditSession )
+        {
+            error = "No prefab is being edited.";
+        }
         if( result )
         {
             setFileSaved( true );
-            if( count ) m_prefabOriginalFileSaved = false;
+            if( count )
+            {
+                m_prefabOriginalFileSaved = false;
+            }
         }
-        if( updatedInstances ) *updatedInstances = count;
+        if( updatedInstances )
+        {
+            *updatedInstances = count;
+        }
         if( auto ui = getUI() )
-            ui->updatePrefabEditingUI( !error.empty() ? error : result ?
-                "Prefab saved; updated " + StringUtil::toString( static_cast<u64>( count ) ) + " placed instances." : String() );
+        {
+            ui->updatePrefabEditingUI( !error.empty() ? error
+                                       : result ? "Prefab saved; updated " +
+                                                      StringUtil::toString( static_cast<u64>( count ) ) +
+                                                      " placed instances."
+                                                : String() );
+        }
         return result;
     }
 
@@ -217,27 +249,43 @@ namespace workphone::editor
     {
         const bool wasEditing = isEditingPrefab();
         const bool result = !m_prefabEditSession || m_prefabEditSession->close( error );
-        if( result && wasEditing ) setFileSaved( m_prefabOriginalFileSaved );
+        if( result && wasEditing )
+        {
+            setFileSaved( m_prefabOriginalFileSaved );
+        }
         if( auto ui = getUI() )
         {
-            if( result ) { ui->rebuildSceneTree(); ui->updateSelection(); }
+            if( result )
+            {
+                ui->rebuildSceneTree();
+                ui->updateSelection();
+            }
             ui->updatePrefabEditingUI( error );
         }
         return result;
     }
 
     bool EditorManager::isEditingPrefab() const
-    { return m_prefabEditSession && m_prefabEditSession->active(); }
+    {
+        return m_prefabEditSession && m_prefabEditSession->active();
+    }
 
     String EditorManager::getEditingPrefabPath() const
-    { return m_prefabEditSession ? m_prefabEditSession->path() : String(); }
+    {
+        return m_prefabEditSession ? m_prefabEditSession->path() : String();
+    }
 
     SmartPtr<scene::IGameActor> EditorManager::getPrefabEditRoot() const
-    { return m_prefabEditSession ? m_prefabEditSession->root() : nullptr; }
+    {
+        return m_prefabEditSession ? m_prefabEditSession->root() : nullptr;
+    }
 
     SmartPtr<scene::IGameScene> EditorManager::getAuthoringScene() const
     {
-        if( isEditingPrefab() ) return m_prefabEditSession->authoringScene();
+        if( isEditingPrefab() )
+        {
+            return m_prefabEditSession->authoringScene();
+        }
         auto app = core::IApplicationManager::instancePtr();
         auto manager = app ? app->getGameManager() : nullptr;
         return manager ? manager->getCurrentScene() : nullptr;
@@ -245,7 +293,10 @@ namespace workphone::editor
 
     SmartPtr<ISharedObject> EditorManager::getAuthoringSceneData() const
     {
-        if( isEditingPrefab() ) return m_prefabEditSession->authoringData();
+        if( isEditingPrefab() )
+        {
+            return m_prefabEditSession->authoringData();
+        }
         auto scene = getAuthoringScene();
         return scene ? scene->toData() : nullptr;
     }

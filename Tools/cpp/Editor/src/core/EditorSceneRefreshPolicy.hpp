@@ -10,7 +10,10 @@ namespace workphone::editor
     class EditorSceneRefreshPolicy
     {
     public:
-        void requestActivity() { m_activity.store( true, std::memory_order_relaxed ); }
+        void requestActivity()
+        {
+            m_activity.store( true, std::memory_order_relaxed );
+        }
 
         bool needsFrame( double now, bool realtime, bool viewChanged )
         {
@@ -40,4 +43,4 @@ namespace workphone::editor
         bool m_initialized = false;
         double m_lastTime = 0.0, m_activeUntil = 0.0, m_nextRefresh = 0.0;
     };
-}
+}  // namespace workphone::editor

@@ -22,12 +22,19 @@ namespace workphone::editor
         WP_CLASS_REGISTER_DECL;
 
     private:
-        enum Action { None, Generate, Cancel };
+        enum Action
+        {
+            None,
+            Generate,
+            Cancel
+        };
+
         struct ResultState
         {
             IAiManager::ImageGenerationResult result;
             std::atomic<bool> ready{ false };
         };
+
         class Listener : public IEventListener
         {
         public:
@@ -58,4 +65,4 @@ namespace workphone::editor
         String m_projectPath, m_projectRoot, m_basename, m_message, m_previewProject;
         bool m_discard = false;
     };
-}
+}  // namespace workphone::editor
