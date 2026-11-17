@@ -22,7 +22,8 @@ namespace workphone
     void FileList::load( SmartPtr<ISharedObject> data )
     {
         setLoadingState( LoadingState::Loading );
-        m_files.reserve( 4096 );
+        // Each mounted folder owns a list. Allocate records on demand rather
+        // than committing thousands of large FileInfo entries per folder.
         setLoadingState( LoadingState::Loaded );
     }
 

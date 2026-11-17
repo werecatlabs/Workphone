@@ -4,6 +4,7 @@
 #include <Workphone/System/ApplicationManager.hpp>
 #include <Workphone/System/TaskManager.hpp>
 #include <Workphone/IO/FileSystem.hpp>
+#include <Workphone/IO/FileList.hpp>
 #include <Workphone/IO/PackageArchive.hpp>
 #include <Workphone/IO/PackagePaths.hpp>
 #include <Workphone/Scene/GameManager.hpp>
@@ -23,6 +24,46 @@ namespace
     void require( bool condition, const char *message )
     {
         if( !condition ) throw std::runtime_error( message );
+    }
+
+    void startupFileListStorageContract()
+    {
+        // Project mounting creates a list for every folder, including empty
+        // ones. A fixed 4096-record reserve here cost Werecat about 14 GiB.
+        Array<SmartPtr<FileList>> folders;
+        for( unsigned i = 0; i < 128; ++i )
+        {
+            auto list = make_ptr<FileList>();
+            list->load( nullptr );
+            require( list->isLoaded() && list->getNumFiles() == 0 &&
+                         list->getFiles().capacity() == 0,
+                     "Empty mounted folders must not allocate file-record storage" );
+            folders.push_back( list );
+        }
+
+        auto list = folders.front();
+        for( unsigned i = 0; i < 137; ++i )
+        {
+            FileInfo info;
+            const String name = ( "file" + std::to_string( i ) + ".lua" ).c_str();
+            info.fileName = name;
+            info.fileNameLowerCase = name;
+            info.filePath = "Assets/" + name;
+            info.filePathLowerCase = "assets/" + name;
+            info.uncompressedSize = i + 1;
+            list->addFile( info );
+        }
+        require( list->getNumFiles() == 137 && list->getFiles().capacity() <= 274,
+                 "Mounted file lists must grow in proportion to their contents" );
+        FileInfo found;
+        require( list->findFileInfo( "Assets/file136.lua", found ) &&
+                     found.uncompressedSize == 137 &&
+                     list->exists( "FILE136.LUA", true, true ),
+                 "Demand-grown folder records lost file metadata or lookup behavior" );
+        list->removeFile( found );
+        require( list->getNumFiles() == 136 && !list->exists( "Assets/file136.lua" ),
+                 "Demand-grown folder records could not be removed" );
+        for( auto &folder : folders ) folder->unload( nullptr );
     }
 
     // Observe the real GameManager's load and play dispatch without starting a
@@ -365,11 +406,12 @@ int main()
     int result = 0;
     try
     {
+        startupFileListStorageContract();
         selectedSceneAndPlayContract();
         failedAndPendingSceneContract();
         missingStartupDependenciesContract();
         packagedStartupContract();
-        std::cout << "WPRuntime startup contracts passed (selected scene, play ordering, camera state/reset, failed loads, missing dependencies, package paths).\n";
+        std::cout << "WPRuntime startup contracts passed (file-list storage, selected scene, play ordering, camera state/reset, failed loads, missing dependencies, package paths).\n";
     }
     catch( const std::exception &error )
     {
