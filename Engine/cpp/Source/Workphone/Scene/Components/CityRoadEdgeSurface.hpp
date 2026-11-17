@@ -165,6 +165,25 @@
                 const auto &placement = assets.roadAuthoring->getTerrainPlacement();
                 Geometry gutters, drainage;
                 constexpr size_t maximumQuads = 16000;
+                const auto runoffWidth = []( Vector3F point ) {
+                    // Keep the dirty band continuous across independently tessellated
+                    // kerb skirts, but let its width wander over several metres.
+                    // World coordinates also keep the same patch when a spline is edited.
+                    constexpr float scale = 1.f / 2.7f;
+                    const float x = point.x * scale, z = point.z * scale;
+                    const auto ix = s32( std::floor( x ) ), iz = s32( std::floor( z ) );
+                    const auto smooth = []( float t ) { return t * t * ( 3.f - 2.f * t ); };
+                    const auto value = []( s32 cx, s32 cz ) {
+                        const auto key = ( u64( u32( cx ) ) << 32 ) | u32( cz );
+                        return float( render::foliageStableHash( key ^ 0x4e47b8d6c29a5041ull ) >> 40 ) /
+                               16777216.f;
+                    };
+                    const float u = smooth( x - std::floor( x ) ), v = smooth( z - std::floor( z ) );
+                    const float low = value( ix, iz ) * ( 1.f - u ) + value( ix + 1, iz ) * u;
+                    const float high = value( ix, iz + 1 ) * ( 1.f - u ) + value( ix + 1, iz + 1 ) * u;
+                    const float noise = low * ( 1.f - v ) + high * v;
+                    return .012f + .045f * noise;
+                };
                 for( size_t i = 0; i + 2 < walks.indices.size() && gutters.indices.size() / 6 < maximumQuads; i += 3 )
                 {
                     const auto &top = walks.vertices[walks.indices[i]];
@@ -212,8 +231,8 @@
                             const float qReach = std::hypot( r.x - q.x, r.z - q.z );
                             if( pReach >= .025f && qReach >= .025f )
                             {
-                                const auto innerP = p + ( s - p ) * std::min( .55f, .045f / pReach );
-                                const auto innerQ = q + ( r - q ) * std::min( .55f, .045f / qReach );
+                                const auto innerP = p + ( s - p ) * std::min( .55f, runoffWidth( p ) / pReach );
+                                const auto innerQ = q + ( r - q ) * std::min( .55f, runoffWidth( q ) / qReach );
                                 const Vector3F lift( 0, .0008f, 0 );
                                 drainage.quad( p + lift, q + lift, innerQ + lift, innerP + lift, normal );
                             }
@@ -227,7 +246,7 @@
                 }
                 if( !drainage.indices.empty() )
                 {
-                    auto colour = asphalt->getDiffuse() * .76f;
+                    auto colour = asphalt->getDiffuse() * .81f;
                     colour.a = 1.f;
                     auto weathered = material( assets, colour, .88f );
                     // This material shares the scanned asphalt recipe, so keep

@@ -3,7 +3,10 @@
         namespace cityFootwayAppearance
         {
             constexpr float curbTileMetres = 5.76f;
-            constexpr u32 pavingPairs = 6, pavingCourses = 10;
+            // A larger repeat footprint prevents the same few slabs from
+            // reappearing every couple of footsteps without enlarging the atlas.
+            constexpr u32 pavingPairs = 8, pavingCourses = 14;
+            static_assert( pavingCourses % 2u == 0u ); // Preserve alternating stagger across V repeats.
             constexpr float pavingPairMetres = .80f, pavingCourseMetres = .40f;
             constexpr float pavingTileU = pavingPairs * pavingPairMetres;
             constexpr float pavingTileV = pavingCourses * pavingCourseMetres;
@@ -128,10 +131,9 @@
 
             SmartPtr<render::IMaterial> pavingMaterial( SceneAssets &assets, u32 seed )
             {
-                // Keep the slab dimensions fixed while resolving their aggregate
-                // and narrow joints at street-view distances.
+                // Keep nominal slab dimensions and narrow joints, but vary the
+                // stagger and cut slightly so runs do not form a mechanical grid.
                 constexpr u32 width = 1024, height = 1024;
-                constexpr float longSlab = .52f;
                 TextureBuffer colour( width, height ), roughness( width, height );
                 SourceBudgetVector<float> level( size_t( width ) * height );
                 for( u32 y = 0; y < height; ++y )
@@ -141,13 +143,18 @@
                     const auto row = u32( across );
                     const float withinRow = ( across - row ) * pavingCourseMetres;
                     const float rowDistance = std::min( withinRow, pavingCourseMetres - withinRow );
-                    const float stagger = row % 2 ? .40f : .13f;
+                    const float stagger = ( row % 2 ? .40f : .13f ) +
+                                          .09f * ( unit( ( u64( seed + 829u ) << 32 ) | row ) - .5f );
                     for( u32 x = 0; x < width; ++x )
                     {
                         const float u = ( x + .5f ) / width;
                         const float along = u * pavingTileU + stagger;
                         const auto pair = u32( along / pavingPairMetres );
+                        // Both sides of the U seam use the same cut and slab identity.
+                        const auto wrappedPair = pair % pavingPairs;
                         const float withinPair = along - pair * pavingPairMetres;
+                        const float longSlab = .52f + .05f *
+                            ( unit( ( u64( seed + 839u ) << 32 ) | ( row * pavingPairs + wrappedPair ) ) - .5f );
                         const bool shortSlab = withinPair > longSlab;
                         const float slabDistance = shortSlab ? std::min( withinPair - longSlab,
                                                                        pavingPairMetres - withinPair ) :
@@ -157,10 +164,12 @@
                         const float bloom = aggregateNoise( seed + 463u, u, v, 49, 39 );
                         const float weather = aggregateNoise( seed + 727u, u, v, 12, 10 );
                         const float runoff = aggregateNoise( seed + 733u, u, v, 52, 26 );
-                        const auto slab = ( row * pavingPairs + pair % pavingPairs ) * 2u + u32( shortSlab );
+                        const float broadWeather = aggregateNoise( seed + 743u, u, v, 4, 4 );
+                        const auto slab = ( row * pavingPairs + wrappedPair ) * 2u + u32( shortSlab );
                         const u64 slabKey = ( u64( seed ) << 32 ) | slab;
                         const float variation = unit( slabKey );
                         const float wear = unit( slabKey ^ 0x9829a1u );
+                        const float replacement = unit( slabKey ^ 0x61ab293du ) > .962f ? 1.f : 0.f;
                         const float distance = std::min( rowDistance, slabDistance );
                         const float face = ramp( .0025f, .0105f, distance - .0015f * fine );
                         const float patina = ramp( .55f, .88f, bloom ) * ( 1.f - wear );
@@ -174,9 +183,10 @@
                         const float concrete = 142.f + 16.f * variation + 11.f * ( fine - .5f ) +
                                                5.f * ( mineral - .5f ) + 4.f * ( grain - .5f ) +
                                                5.f * lightMineral - 8.f * pore - 9.f * patina -
-                                               11.f * edgeDirt - 12.f * rainStain;
+                                               11.f * edgeDirt - 12.f * rainStain -
+                                               7.f * ( broadWeather - .5f ) - 11.f * replacement;
                         stonePixels( colour, roughness, x, y, concrete, 108.f + 7.f * bloom,
-                                     face, wear, fine, 3.f + 5.f * variation );
+                                     face, wear, fine, 3.f + 5.f * variation - 2.f * replacement );
                         auto rough = roughness.pixel( x, y );
                         rough[0] = rough[1] = rough[2] = asByte(
                             233.f - face * ( 8.f + 11.f * wear ) + 4.f * pore -

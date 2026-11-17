@@ -253,7 +253,7 @@ namespace workphone::scene
             };
             for( u32 band = 0; band < paintProfiles; ++band )
             {
-                const float wear[] = { .12f, .38f, .58f, 1.f };
+                const float wear[] = { .12f, .38f, .64f, 1.f };
                 const float traffic = wear[band];
                 const u32 key = seed ^ ( 0x476ccbadu + band * 0x770db2bu );
                 for( u32 y = 0; y < paintBand; ++y )
@@ -282,9 +282,9 @@ namespace workphone::scene
                         const float nick = rough > .90f ? ( .012f + .013f * cluster ) * traffic : 0.f;
                         const float setback = .003f + .007f * rough + nick;
                         const float edge = smooth( ( std::min( v, 1.f - v ) - setback ) / .023f );
-                        const float base = .695f - .028f * traffic + .028f * ( broad - .5f ) + .032f * ( grain - .5f );
-                        const float scuff = ( .012f + .045f * traffic ) * cluster * ( .35f + .65f * grain );
-                        const float alpha = edge * ( .997f - ( .50f + .27f * traffic ) * loss - scuff );
+                        const float base = .625f - .045f * traffic + .045f * ( broad - .5f ) + .032f * ( grain - .5f );
+                        const float scuff = ( .028f + .16f * traffic ) * cluster * ( .35f + .65f * grain );
+                        const float alpha = edge * ( .985f - ( .50f + .27f * traffic ) * loss - scuff );
                         auto *pixel = result.pixel( x, band * paintBand + y );
                         pixel[0] = encoded( base );
                         pixel[1] = encoded( base * .985f );
@@ -885,10 +885,12 @@ namespace workphone::scene
                 }
                 return covered;
             };
-            const auto paintQuad = [&]( const std::array<Vector3F, 4> &p, PaintWear wear, bool draw, bool optional ) {
+            const auto paintQuad = [&]( const std::array<Vector3F, 4> &p, PaintWear wear, bool draw,
+                                        bool optional, float phaseOffset = 0.f ) {
                 const double dx = double( p[1].x ) - p[0].x, dz = double( p[1].z ) - p[0].z;
                 const double length = std::hypot( dx, dz );
-                const double phase = length > .0001 ? ( p[0].x * dx + p[0].z * dz ) / ( length * paintTileMetres ) : 0.;
+                const double phase = length > .0001 ?
+                    ( p[0].x * dx + p[0].z * dz ) / ( length * paintTileMetres ) + phaseOffset : 0.;
                 const float u0 = float( phase - std::floor( phase ) );
                 const float u1 = u0 + float( length / paintTileMetres );
                 const float v0 = paintV( wear, 0 ), v1 = paintV( wear, 1 );
@@ -909,9 +911,10 @@ namespace workphone::scene
                                    centre + start + side, centre - start + side };
             };
             const auto projectRectangle = [&]( const std::array<Vector3F, 4> &p, bool draw,
-                                               PaintWear wear = PaintWear::Lane ) {
+                                               PaintWear wear = PaintWear::Lane,
+                                               float phaseOffset = 0.f ) {
                 const double expected = std::abs( double( cityRoadCrossings::crossXZ( p[1] - p[0], p[3] - p[0] ) ) );
-                const double covered = paintQuad( p, wear, draw, true );
+                const double covered = paintQuad( p, wear, draw, true, phaseOffset );
                 return expected > .0001 &&
                        std::abs( covered - expected ) < std::max( .001, expected * .0006 );
             };
@@ -947,8 +950,14 @@ namespace workphone::scene
                             const float lane = std::abs( lateral ) / ( crossing.width * .5f );
                             const bool wheelBand = std::min( std::abs( lane - .27f ), std::abs( lane - .74f ) ) < .14f;
                             const auto wear = wheelBand ? PaintWear::Wheel : PaintWear::Zebra;
+                            // A shared phase made all bars sample the same 1.24 m wear
+                            // patch. Offset each bar deterministically without moving
+                            // its geometry or disturbing fitted-road projection.
+                            const float phase = float( i ) * .618034f +
+                                float( crossing.roadIndex ) * .414214f + crossing.firstStation * .103f;
                             if( !projectRectangle( rectangle( centre, crossing.outward, crossing.across,
-                                        crossing.depth, std::min( .53f, .57f * step ) ), true, wear ) ) return false;
+                                        crossing.depth, std::min( .53f, .57f * step ) ), true, wear,
+                                        phase ) ) return false;
                         }
                         return true;
                     } );
@@ -958,7 +967,6 @@ namespace workphone::scene
             } );
             for( const auto &run : connections.roadRuns )
             {
-                const auto &recipe = source.roads[run.roadIndex];
                 const auto &points = run.points;
                 const auto &authored = bake.roads[run.roadIndex].points;
                 const float firstDash = points.front().distance +
@@ -981,18 +989,18 @@ namespace workphone::scene
                     }
                     direction.normalise();
                     const Vector3F across( direction.z, 0, -direction.x );
-                    for( int side : { -1, 1 } )
-                    {
-                        const auto offset = across * ( side * ( recipe.width * .5f - .2f ) );
-                        strip( a.position + offset, b.position + offset, across, .12f );
-                    }
+                    // The kerb already marks the carriageway boundary. A white
+                    // stripe alongside every city footway reads as a racing track.
                     const float length = b.distance - a.distance;
                     for( float dash = std::floor( a.distance / 6 ) * 6; dash < b.distance; dash += 6 )
                     {
                         float start = std::max( { dash, a.distance, firstDash } );
                         const float end = std::min( { dash + 3, b.distance, lastDash } );
                         const auto dashSegment = [&]( float begin, float finish ) {
-                            if( finish - begin < .01f ) return;
+                            // A crossing can trim a three-metre dash down to a
+                            // tiny isolated stub. Suppress fragments that no
+                            // longer read as an intentional lane marking.
+                            if( finish - begin < 1.15f ) return;
                             const auto p = a.position + ( b.position - a.position ) * ( ( begin - a.distance ) / length );
                             const auto q = a.position + ( b.position - a.position ) * ( ( finish - a.distance ) / length );
                             strip( p, q, across, .12f, PaintWear::Lane );
@@ -1009,40 +1017,13 @@ namespace workphone::scene
                     }
                 }
             }
-            // Match the existing edge line's inset and width on the return.
-            // This also leaves an unmarked turning area at the true free end.
-            for( const auto &terminal : terminals )
-            {
-                for( size_t i = 1; i < terminal.edge.size(); ++i )
-                {
-                    const auto &a = terminal.edge[i - 1], &b = terminal.edge[i];
-                    const auto &na = terminal.outward[i - 1], &nb = terminal.outward[i];
-                    const auto ai = a - na * .26f, ao = a - na * .14f,
-                               bi = b - nb * .26f, bo = b - nb * .14f;
-                    paintQuad( { ai, bi, bo, ao }, PaintWear::Edge, true, false );
-                }
-            }
-            // The connector owns the mouth. Keep ordinary centre dashes out of
-            // it and continue edge paint around the same rounded kerb boundary.
-            for( const auto &connection : connections.junctions )
-            {
-                for( const auto &corner : connection.corners )
-                {
-                    for( size_t i = 1; i < corner.points.size(); ++i )
-                    {
-                        const auto &a = corner.points[i - 1], &b = corner.points[i];
-                        const auto &na = corner.outward[i - 1], &nb = corner.outward[i];
-                        const auto ai = a - na * .26f, ao = a - na * .14f,
-                                   bi = b - nb * .26f, bo = b - nb * .14f;
-                        paintQuad( { ai, bi, bo, ao }, PaintWear::Edge, true, false );
-                    }
-                }
-            }
+            // Centre dashes end before the connector mouth; the rounded kerb
+            // defines its edge without a second continuous painted outline.
             constexpr float pi = 3.14159265358979323846f;
             u32 yieldApproaches = 0;
             for( const auto &junction : source.roundabouts )
             {
-                for( float radius : { junction.islandRadius + .45f, junction.outerRadius - .25f } )
+                for( float radius : { junction.islandRadius + .45f } )
                 {
                     for( u32 sample = 0; sample < 128; ++sample )
                     {
@@ -1079,14 +1060,6 @@ namespace workphone::scene
                     outward.y = 0;
                     outward.normalise();
                     const Vector3F across( outward.z, 0, -outward.x );
-                    for( int side : { -1, 1 } )
-                    {
-                        const auto offset = across * ( side * ( port.width * .5f - .2f ) );
-                        strip(
-                            junction.center + outward * junction.outerRadius + offset,
-                            junction.center + outward * ( junction.outerRadius + port.length ) + offset,
-                            across, .12f );
-                    }
                     const float incoming = junction.clockwise ? 1.f : -1.f;
                     const auto nose = junction.center + outward * junction.outerRadius;
                     const auto crossing = std::find_if( crossingCandidates.begin(), crossingCandidates.end(),
