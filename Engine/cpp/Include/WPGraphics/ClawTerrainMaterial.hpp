@@ -40,9 +40,9 @@ namespace workphone::render
          * has verified that appearance and maps match and suspended rendering.
          */
         std::shared_ptr<const Candidate> stageHeightEdit( ClawRendererDX11 &renderer,
-                                                         TerrainSnapshot expected,
-                                                         TerrainSnapshot replacement,
-                                                         String &error ) const;
+                                                          TerrainSnapshot expected,
+                                                          TerrainSnapshot replacement,
+                                                          String &error ) const;
         void swapHeightEdit( std::shared_ptr<const Candidate> &candidate ) noexcept;
         bool bind( ClawRendererDX11 &renderer, String &error ) const;
         static void unbind( ClawRendererDX11 &renderer );

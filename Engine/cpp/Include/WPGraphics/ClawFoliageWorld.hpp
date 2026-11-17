@@ -35,9 +35,10 @@ namespace workphone::render
      * Near/inside cameras retain a positive-scale centre plane; detail LODs cover
      * that use. Invalid inputs leave output unchanged. No allocation or upload.
      */
-    WPGraphics_API bool buildFoliageImpostorPlacement(
-        const FoliageSpecies &, const Matrix4F &instanceWorld, const ClawFoliageView &,
-        s32 previousView, ClawFoliageImpostorPlacement &output );
+    WPGraphics_API bool buildFoliageImpostorPlacement( const FoliageSpecies &,
+                                                       const Matrix4F &instanceWorld,
+                                                       const ClawFoliageView &, s32 previousView,
+                                                       ClawFoliageImpostorPlacement &output );
 
     struct ClawFoliageInteraction
     {

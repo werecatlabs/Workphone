@@ -19,7 +19,8 @@ namespace workphone::render
         struct Constants
         {
             wp_vec4f base_color{}, emissive_color{}, specular_color{};
-            wp_vec4f surface{}, uv_transform{}, controls{}, texture_sources{}, projection{}, metallic_color{};
+            wp_vec4f surface{}, uv_transform{}, controls{}, texture_sources{}, projection{},
+                metallic_color{};
         } constants;
 
         std::array<u32, 6> textureSlots{ 1u, 2u, 3u, 13u, 22u, 24u };

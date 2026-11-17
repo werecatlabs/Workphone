@@ -157,10 +157,10 @@ namespace workphone
         protected:
             void releaseNativeRenderTexture();
 
-            Vector2I m_size;                         ///< Dimensions of the render target.
-            u32 m_colourDepth = 32;                  ///< Colour depth in bits per pixel.
-            u8 m_priority = 0;                       ///< Priority (0–255).
-            bool m_active = true;                    ///< Whether the target is active.
+            Vector2I m_size;         ///< Dimensions of the render target.
+            u32 m_colourDepth = 32;  ///< Colour depth in bits per pixel.
+            u8 m_priority = 0;       ///< Priority (0–255).
+            bool m_active = true;    ///< Whether the target is active.
             std::atomic<bool> m_autoUpdated{ true };
             std::atomic<bool> m_updateRequested{ false };
             // Frame snapshots can retain the target after its texture is destroyed.
