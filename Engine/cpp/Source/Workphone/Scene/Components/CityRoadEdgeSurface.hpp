@@ -163,7 +163,7 @@
                 const auto terrain = assets.roadAuthoring->getTerrainSnapshot();
                 if( !terrain || terrain->revision != walks.terrainRevision ) return;
                 const auto &placement = assets.roadAuthoring->getTerrainPlacement();
-                Geometry gutters;
+                Geometry gutters, drainage;
                 constexpr size_t maximumQuads = 16000;
                 for( size_t i = 0; i + 2 < walks.indices.size() && gutters.indices.size() / 6 < maximumQuads; i += 3 )
                 {
@@ -202,13 +202,50 @@
                         auto normal = ( q - p ).crossProduct( s - p );
                         normal.normalise();
                         if( normal.y < 0 ) normal = -normal;
-                        if( normal.y >= .7f ) gutters.quad( p, q, r, s, normal );
+                        if( normal.y >= .7f )
+                        {
+                            gutters.quad( p, q, r, s, normal );
+                            // A narrow, darker binder strip follows the actual fitted
+                            // kerb-to-asphalt apron. Keep it below the kerb top and
+                            // slightly above the apron so the two surfaces never fight.
+                            const float pReach = std::hypot( s.x - p.x, s.z - p.z );
+                            const float qReach = std::hypot( r.x - q.x, r.z - q.z );
+                            if( pReach >= .025f && qReach >= .025f )
+                            {
+                                const auto innerP = p + ( s - p ) * std::min( .55f, .045f / pReach );
+                                const auto innerQ = q + ( r - q ) * std::min( .55f, .045f / qReach );
+                                const Vector3F lift( 0, .0008f, 0 );
+                                drainage.quad( p + lift, q + lift, innerQ + lift, innerP + lift, normal );
+                            }
+                        }
                     }
                 }
                 if( auto actor = mesh( assets, "Terrain city fitted gutters", gutters, asphalt ) )
                 {
                     actor->getComponent<scene::MeshRenderer>()->setCastShadows( scene::Renderer::CastShadows::Off );
                     WP_LOG( String( "Terrain city fitted gutter segments=" ) + StringUtil::toString( gutters.indices.size() / 6 ) );
+                }
+                if( !drainage.indices.empty() )
+                {
+                    auto colour = asphalt->getDiffuse() * .76f;
+                    colour.a = 1.f;
+                    auto weathered = material( assets, colour, .88f );
+                    // This material shares the scanned asphalt recipe, so keep
+                    // every native PBR map bound with its darkened colour tint.
+                    for( const u32 slot : { 0u, 1u, 22u, 3u, 2u } )
+                        if( auto texture = asphalt->getTexture( slot ) )
+                            weathered->setTexture( texture, slot );
+                    weathered->setRoughness( 1.f );
+                    weathered->setMetalness( 1.f );
+                    weathered->setNormalStrength( .18f );
+                    weathered->setEditorUInt( "uvFilter", 3 );
+                    weathered->setEditorFloat( "uvAniso", 8.f );
+                    if( auto actor = mesh( assets, "Terrain city kerb drainage patina", drainage, weathered ) )
+                    {
+                        actor->getComponent<scene::MeshRenderer>()->setCastShadows( scene::Renderer::CastShadows::Off );
+                        WP_LOG( String( "Terrain city kerb drainage segments=" ) +
+                            StringUtil::toString( drainage.indices.size() / 6 ) );
+                    }
                 }
             }
         }

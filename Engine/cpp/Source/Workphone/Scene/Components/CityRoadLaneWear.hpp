@@ -20,7 +20,7 @@
                 for( u32 tile = 0; tile < 4; ++tile )
                 {
                     const auto key = ( u64( seed ) << 32 ) ^ ( 0x736b696c6c786d65ull + tile * 0x9e3779b9u );
-                    const float separation = .48f + .10f * cityHillside::unit( key + 1 );
+                    const float separation = .60f + .08f * cityHillside::unit( key + 1 );
                     const float phase = 2.f * pi * cityHillside::unit( key + 2 );
                     for( u32 y = 0; y < height; ++y )
                     {
@@ -44,9 +44,18 @@
                             }
                             const float centre = ( 1.f - smooth( .09f, .38f, std::abs( across + wander ) ) ) *
                                 ( .55f + .24f * std::cos( station * 17.f + phase ) );
-                            const float a = std::min( .34f, .338f * ( wheels + .29f * centre ) ) * edge *
-                                            ( .91f + .13f * grain );
-                            const float tone = 83.f + 11.f * wheels - 3.f * centre + 14.f * grain;
+                            // The scan supplies fine aggregate. This decal adds
+                            // metre-scale binder wear and two irregular traffic
+                            // tracks without painting an opaque rectangle.
+                            const float binder = .5f + .26f * std::sin( phase + station * 11.f + across * 4.8f ) +
+                                                 .17f * std::cos( phase * 1.7f + station * 23.f - across * 9.f );
+                            const float aged = smooth( .46f, .82f, binder );
+                            const float edgeDust = smooth( .68f, .96f, across );
+                            const float a = std::min( .58f, .09f * aged + .37f * wheels +
+                                                       .09f * centre + .10f * edgeDust ) * edge *
+                                            ( .94f + .12f * grain );
+                            const float tone = 68.f + 11.f * aged - 16.f * wheels +
+                                               14.f * edgeDust + 6.f * grain;
                             auto *pixel = result.pixel( x + tile * width, y );
                             pixel[0] = byte( tone + 1.f ); pixel[1] = byte( tone );
                             pixel[2] = byte( tone - 1.f ); pixel[3] = byte( a * 255.f );
@@ -150,7 +159,9 @@
                             if( !chord( samples, station + offset, halfLength, centre, along ) ) continue;
                             const Vector3F across( -along.z, 0, along.x );
                             const float halfWidth = std::clamp( roadHalf * .34f, 1.02f, 1.36f );
-                            Patch patch{ centre + across * ( side * roadHalf * .51f ), along, across,
+                            // Positive atlas V always points toward the kerb, so
+                            // the faint edge grit appears on the outside of both lanes.
+                            Patch patch{ centre + across * ( side * roadHalf * .51f ), along, across * side,
                                          halfLength, halfWidth, 0, 0, 0, 0, false };
                             if( std::any_of( walks.crossings.begin(), walks.crossings.end(), [&]( const auto &crossing ) {
                                     return cityCarriagewayUtilities::overlapsCrossing( patch, crossing );

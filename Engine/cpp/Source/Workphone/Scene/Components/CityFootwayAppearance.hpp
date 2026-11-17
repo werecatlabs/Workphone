@@ -105,14 +105,22 @@
                         const auto block = unit( seed + 1991u + course );
                         const float fine = aggregateNoise( seed + 71u, u, v, 196, 13 );
                         const float mineral = aggregateNoise( seed + 101u, u, v, 66, 5 );
+                        const float weather = aggregateNoise( seed + 181u, u, v, 23, 7 );
+                        const float streak = aggregateNoise( seed + 187u, u, v, 72, 3 );
                         const float jointDistance = std::min( station - joints[course], *next - station );
-                        const float face = ramp( .003f, .017f, jointDistance - .004f * mineral );
+                        const float face = ramp( .004f, .020f, jointDistance - .004f * mineral );
                         const float wornEdge = 1.f - ramp( .05f, .37f, v );
                         const float dirt = ramp( .40f, .96f, v ) * ( .25f + .75f * mineral );
-                        const float granite = 151.f + 16.f * block + 12.f * ( fine - .5f ) +
-                                              11.f * wornEdge - 17.f * dirt;
-                        stonePixels( colour, roughness, x, y, granite, 120.f + 10.f * mineral, face, wornEdge, fine );
-                        level[size_t( y ) * width + x] = face * ( .0035f + .0012f * fine - .0011f * wornEdge );
+                        // Road spray and runoff darken the lower kerb irregularly;
+                        // the cap remains lighter where feet and tyres polish it.
+                        const float waterline = ramp( .52f, .90f, v ) *
+                                                ( .35f + .65f * ramp( .55f, .84f, weather ) * streak );
+                        const float capChips = ( 1.f - ramp( .03f, .12f, v ) ) * ramp( .78f, .93f, fine );
+                        const float granite = 140.f + 16.f * block + 13.f * ( fine - .5f ) +
+                                              10.f * wornEdge - 18.f * dirt - 11.f * waterline + 5.f * capChips;
+                        stonePixels( colour, roughness, x, y, granite, 108.f + 9.f * mineral, face, wornEdge, fine );
+                        level[size_t( y ) * width + x] = face *
+                            ( .0034f + .0012f * fine - .0011f * wornEdge - .0003f * waterline );
                     }
                 }
                 return stoneMaterial( assets, colour, roughness, level, curbTileMetres, .15f, false, .57f );
@@ -147,29 +155,35 @@
                         const float fine = aggregateNoise( seed + 221u, u, v, 768, 640 );
                         const float mineral = aggregateNoise( seed + 467u, u, v, 167, 139 );
                         const float bloom = aggregateNoise( seed + 463u, u, v, 49, 39 );
+                        const float weather = aggregateNoise( seed + 727u, u, v, 12, 10 );
+                        const float runoff = aggregateNoise( seed + 733u, u, v, 52, 26 );
                         const auto slab = ( row * pavingPairs + pair % pavingPairs ) * 2u + u32( shortSlab );
                         const u64 slabKey = ( u64( seed ) << 32 ) | slab;
                         const float variation = unit( slabKey );
                         const float wear = unit( slabKey ^ 0x9829a1u );
                         const float distance = std::min( rowDistance, slabDistance );
-                        const float face = ramp( .0015f, .0075f, distance - .001f * fine );
+                        const float face = ramp( .0025f, .0105f, distance - .0015f * fine );
                         const float patina = ramp( .55f, .88f, bloom ) * ( 1.f - wear );
+                        const float rainStain = ramp( .61f, .83f, weather ) *
+                                                ( .35f + .65f * runoff ) * ( .65f + .35f * ( 1.f - wear ) );
                         const float grain = unit( ( u64( seed + 529u ) << 32 ) | ( y * width + x ) );
                         const float lightMineral = ramp( .67f, .86f, fine );
                         const float pore = 1.f - ramp( .045f, .17f, fine );
-                        const float edgeDirt = ( 1.f - ramp( .008f, .035f, distance ) ) *
+                        const float edgeDirt = ( 1.f - ramp( .010f, .048f, distance ) ) *
                                                ( .35f + .65f * mineral ) * ( .30f + .70f * ( 1.f - wear ) );
-                        const float concrete = 150.f + 15.f * variation + 10.f * ( fine - .5f ) +
+                        const float concrete = 142.f + 16.f * variation + 11.f * ( fine - .5f ) +
                                                5.f * ( mineral - .5f ) + 4.f * ( grain - .5f ) +
-                                               5.f * lightMineral - 8.f * pore - 6.f * patina - 6.f * edgeDirt;
-                        stonePixels( colour, roughness, x, y, concrete, 120.f + 6.f * bloom,
-                                     face, wear, fine, 4.f );
+                                               5.f * lightMineral - 8.f * pore - 9.f * patina -
+                                               11.f * edgeDirt - 12.f * rainStain;
+                        stonePixels( colour, roughness, x, y, concrete, 108.f + 7.f * bloom,
+                                     face, wear, fine, 3.f + 5.f * variation );
                         auto rough = roughness.pixel( x, y );
                         rough[0] = rough[1] = rough[2] = asByte(
-                            232.f - face * ( 8.f + 11.f * wear ) + 4.f * pore - 7.f * lightMineral );
+                            233.f - face * ( 8.f + 11.f * wear ) + 4.f * pore -
+                            7.f * lightMineral + 5.f * rainStain );
                         level[size_t( y ) * width + x] =
                             face * ( .0026f + .0011f * variation + .00042f * fine + .00018f * grain -
-                                     .00040f * pore + .00012f * lightMineral );
+                                     .00040f * pore + .00012f * lightMineral - .0003f * rainStain );
                     }
                 }
                 return stoneMaterial( assets, colour, roughness, level, pavingTileU, pavingTileV, true, .64f );

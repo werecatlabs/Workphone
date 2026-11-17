@@ -282,13 +282,13 @@ namespace workphone::scene
                         const float nick = rough > .90f ? ( .012f + .013f * cluster ) * traffic : 0.f;
                         const float setback = .003f + .007f * rough + nick;
                         const float edge = smooth( ( std::min( v, 1.f - v ) - setback ) / .023f );
-                        const float base = .736f - .028f * traffic + .028f * ( broad - .5f ) + .032f * ( grain - .5f );
+                        const float base = .695f - .028f * traffic + .028f * ( broad - .5f ) + .032f * ( grain - .5f );
                         const float scuff = ( .012f + .045f * traffic ) * cluster * ( .35f + .65f * grain );
                         const float alpha = edge * ( .997f - ( .50f + .27f * traffic ) * loss - scuff );
                         auto *pixel = result.pixel( x, band * paintBand + y );
                         pixel[0] = encoded( base );
-                        pixel[1] = encoded( base * .991f );
-                        pixel[2] = encoded( base * .963f );
+                        pixel[1] = encoded( base * .985f );
+                        pixel[2] = encoded( base * .94f );
                         pixel[3] = u8( std::lround( alpha * 255.f ) );
                     }
             }
@@ -297,11 +297,25 @@ namespace workphone::scene
 
         void weatherScannedAsphalt( procedural::SurfaceBakeResult &surface )
         {
-            // Preserve the scan's physical aggregate scale. Binder exposure varies
-            // in local patches, and the millimetre-scale grain filters out at distance.
+            // Preserve the scan's 2.1 m aggregate scale. Broad binder variation
+            // needs its own wavelength, but it must wrap at the 4.2 m atlas edge
+            // or repeated road tiles reveal a bright/dark checkerboard.
             constexpr u32 size = 1024;
             procedural::TextureBuffer colour( size, size ), normal( size, size ), orm( size, size );
             const auto byte = []( float value ) { return u8( std::clamp( std::lround( value ), 0l, 255l ) ); };
+            const auto periodicVariation = []( u32 seed, float u, float v, u32 cells ) {
+                const float x = u * cells, y = v * cells;
+                const u32 ix = u32( x ), iy = u32( y );
+                const float fx = x - ix, fy = y - iy;
+                const float sx = fx * fx * ( 3.f - 2.f * fx );
+                const float sy = fy * fy * ( 3.f - 2.f * fy );
+                const auto grain = [&]( u32 px, u32 py ) {
+                    return roadGrain( seed, px % cells, py % cells, cells );
+                };
+                const float a = grain( ix, iy ) * ( 1.f - sx ) + grain( ix + 1, iy ) * sx;
+                const float b = grain( ix, iy + 1 ) * ( 1.f - sx ) + grain( ix + 1, iy + 1 ) * sx;
+                return a * ( 1.f - sy ) + b * sy;
+            };
             for( u32 y = 0; y < size; ++y )
             {
                 for( u32 x = 0; x < size; ++x )
@@ -309,24 +323,27 @@ namespace workphone::scene
                     const u32 sx = ( x * asphaltTiles * surface.albedo.width / size ) % surface.albedo.width;
                     const u32 sy = ( y * asphaltTiles * surface.albedo.height / size ) % surface.albedo.height;
                     const float u = ( x + .5f ) / size, v = ( y + .5f ) / size;
-                    const float binder = .23f * roadVariation( 0x1f73a1u, u, v, 11 ) +
-                                         .39f * roadVariation( 0x673c51u, u, v, 27 ) +
-                                         .38f * roadVariation( 0x5521c3u, u, v, 53 );
+                    const float binder = .33f * periodicVariation( 0x1f73a1u, u, v, 7 ) +
+                                         .40f * periodicVariation( 0x673c51u, u, v, 19 ) +
+                                         .27f * periodicVariation( 0x5521c3u, u, v, 47 );
                     const float exposed = std::clamp( ( binder - .27f ) / .49f, 0.f, 1.f );
                     const float wear = exposed * exposed * ( 3.f - 2.f * exposed );
-                    const float grain = ( roadGrain( 0x7f33abu, x, y, size ) - .5f ) * ( 2.5f + 2.f * wear );
+                    const float grain = ( roadGrain( 0x7f33abu, x, y, size ) - .5f ) * ( 3.f + 2.5f * wear );
                     const auto *source = surface.albedo.pixel( sx, sy );
                     auto *pixel = colour.pixel( x, y );
-                    const float tone = .988f + .024f * wear;
-                    pixel[0] = byte( source[0] * tone + grain + .35f * wear );
-                    pixel[1] = byte( source[1] * tone + grain + .175f * wear );
+                    const float tone = .945f + .105f * wear;
+                    pixel[0] = byte( source[0] * tone + grain + .55f * wear );
+                    pixel[1] = byte( source[1] * tone + grain + .25f * wear );
                     pixel[2] = byte( source[2] * tone + grain );
                     pixel[3] = 255;
                     std::copy_n( surface.normal.pixel( sx, sy ), 4, normal.pixel( x, y ) );
                     const auto *surfaceOrm = surface.orm.pixel( sx, sy );
                     auto *response = orm.pixel( x, y );
                     std::copy_n( surfaceOrm, 4, response );
-                    // Keep the scan roughness independent of broad binder colour.
+                    // Dry, trafficked asphalt is matte even where binder is
+                    // exposed. Retain the scan's fine roughness ordering.
+                    response[1] = byte( std::max( 216.f, float( surfaceOrm[1] ) ) +
+                                        5.f * ( 1.f - wear ) );
                 }
             }
             surface.albedo = std::move( colour );

@@ -167,7 +167,7 @@
                     const float u = ( x + .5f ) * 6.f / size, v = ( y + .5f ) * 6.f / size;
                     const float radius = std::hypot( u - std::floor( u ) - .5f, v - std::floor( v ) - .5f );
                     const float shoulder = std::clamp( ( .32f - radius ) / .16f, 0.f, 1.f );
-                    return .0045f * shoulder * shoulder * ( 3.f - 2.f * shoulder ) - .003f * ( 1.f - joint( x, y ) );
+                    return .0053f * shoulder * shoulder * ( 3.f - 2.f * shoulder ) - .003f * ( 1.f - joint( x, y ) );
                 };
                 const auto byte = []( float v ) { return u8( std::clamp( v, 0.f, 255.f ) ); };
                 for( u32 y = 0; y < size; ++y )
@@ -178,11 +178,19 @@
                         const auto key = render::foliageStableHash( ( u64( x ) << 32 ) | y );
                         const float grain = float( ( key >> 28 ) & 31u ) - 15.f;
                         auto *pixel = colour.pixel( x, y );
-                        const float relief = std::max( 0.f, metres / .0045f );
+                        const float relief = std::max( 0.f, metres / .0053f );
                         const float tileFace = joint( float( x ), float( y ) );
-                        pixel[0] = byte( 121.f + 51.f * tileFace + .63f * grain + 8.f * relief );
-                        pixel[1] = byte( 97.f + 30.f * tileFace + .55f * grain + 5.f * relief );
-                        pixel[2] = byte( 71.f + 5.f * tileFace + .46f * grain + 3.f * relief );
+                        const float u = ( x + .5f ) * 6.f / size;
+                        const float v = ( y + .5f ) * 6.f / size;
+                        const float radius = std::hypot( u - std::floor( u ) - .5f,
+                                                         v - std::floor( v ) - .5f );
+                        const float rim = std::clamp( ( radius - .25f ) / .05f, 0.f, 1.f ) *
+                                          ( 1.f - std::clamp( ( radius - .34f ) / .05f, 0.f, 1.f ) );
+                        // A restrained clay tint and a dark foot at each raised
+                        // blister read as cast concrete instead of flat orange paint.
+                        pixel[0] = byte( 125.f + 46.f * tileFace + .58f * grain + 8.f * relief - 7.f * rim );
+                        pixel[1] = byte( 105.f + 34.f * tileFace + .53f * grain + 6.f * relief - 7.f * rim );
+                        pixel[2] = byte( 85.f + 20.f * tileFace + .44f * grain + 4.f * relief - 6.f * rim );
                         pixel[3] = 255;
                         const float dx = ( profile( float( x ) + 1, float( y ) ) - profile( float( x ) - 1, float( y ) ) ) * size / ( 2 * tile );
                         const float dy = ( profile( float( x ), float( y ) + 1 ) - profile( float( x ), float( y ) - 1 ) ) * size / ( 2 * tile );
