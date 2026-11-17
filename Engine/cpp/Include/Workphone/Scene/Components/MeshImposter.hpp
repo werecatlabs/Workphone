@@ -60,5 +60,6 @@ namespace workphone::scene
         bool updateFromCameraVector( const Vector3<real_Num> &worldVector, bool directionOnly );
 
         MeshImposterSystem::Handle m_storage;
+        time_interval m_nextUpdate = 0.0;
     };
 }

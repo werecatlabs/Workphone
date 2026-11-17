@@ -128,21 +128,40 @@ namespace workphone::scene
     {
         if( Thread::getCurrentTask() != TaskId::Application || !isLoaded() || !isEnabled() ) return;
         auto app = core::IApplicationManager::instancePtr();
-        auto manager = app ? app->getGameManager() : nullptr;
-        if( !manager ) return;
-        ScopedLock managerLock( manager );
-        auto actor = getActor();
-        if( !actor || !actor->isEnabledInScene() ) return;
-        // Resolve the system owning this renderer's enclosing LOD group. This is
-        // also the instance receiving raw-render-camera overrides from samples.
-        for( auto owner = actor; owner; owner = owner->getParent() )
+        auto timer = app->getTimer();
+        if( m_nextUpdate < timer->getTime() )
         {
-            const auto group = owner->getComponent<LODGroup>();
-            const auto system = group ? dynamic_pointer_cast<LODSystem>( group->getComponentSystem() ) : nullptr;
-            if( !system ) continue;
-            LODSystem::View view;
-            if( system->getView( view ) ) updateForView( view );
-            return;
+            m_nextUpdate = timer->getTime() + (1.0 / 3.0);  
+
+            auto manager = app ? app->getGameManager() : nullptr;
+            if( !manager )
+            {
+                return;
+            }
+            ScopedLock managerLock( manager );
+            auto actor = getActor();
+            if( !actor || !actor->isEnabledInScene() )
+            {
+                return;
+            }
+            // Resolve the system owning this renderer's enclosing LOD group. This is
+            // also the instance receiving raw-render-camera overrides from samples.
+            for( auto owner = actor; owner; owner = owner->getParent() )
+            {
+                const auto group = owner->getComponent<LODGroup>();
+                const auto system =
+                    group ? dynamic_pointer_cast<LODSystem>( group->getComponentSystem() ) : nullptr;
+                if( !system )
+                {
+                    continue;
+                }
+                LODSystem::View view;
+                if( system->getView( view ) )
+                {
+                    updateForView( view );
+                }
+                return;
+            }
         }
     }
 
