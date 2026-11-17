@@ -327,7 +327,9 @@ namespace workphone
         class ClawHammerSystem::ImGuiFrameJob final : public Job
         {
         public:
-            explicit ImGuiFrameJob( ClawHammerSystem *owner ) : m_owner( owner ) {}
+            explicit ImGuiFrameJob( ClawHammerSystem *owner ) : m_owner( owner )
+            {
+            }
 
             void execute() override
             {
@@ -354,9 +356,18 @@ namespace workphone
                         struct BuildScope
                         {
                             bool &active;
-                            explicit BuildScope( bool &value ) : active( value ) { active = true; }
-                            ~BuildScope() { active = false; }
+
+                            explicit BuildScope( bool &value ) : active( value )
+                            {
+                                active = true;
+                            }
+
+                            ~BuildScope()
+                            {
+                                active = false;
+                            }
                         } buildScope( owner->m_frameUpdateActive );
+
                         owner->m_imguiBuildAttempted = true;
                         owner->prepareImGuiFrame();
                     }
@@ -395,6 +406,7 @@ namespace workphone
             static wp_s32 execute( wp_graphics_system *, wp_f32, wp_graphics_system_frame_stage,
                                    void * );
             static wp_rtt_result transact( void *, wp_rtt_check_func, void * );
+
             static FramePassContext *&activeDrawPass()
             {
                 static thread_local FramePassContext *pass = nullptr;
@@ -1391,10 +1403,9 @@ namespace workphone
             {
                 pipeline->setFrameDeltaTime( deltaTime );
             }
-            m_framePipelineSettings = dx11 && m_graphicsPipeline ? m_graphicsPipeline->getRenderSettings()
-                                                                : nullptr;
-            if( !m_framePipelineSettings ||
-                !m_framePipelineSettings->dynamicResolution )
+            m_framePipelineSettings =
+                dx11 && m_graphicsPipeline ? m_graphicsPipeline->getRenderSettings() : nullptr;
+            if( !m_framePipelineSettings || !m_framePipelineSettings->dynamicResolution )
             {
                 m_adaptiveSceneScale = 1.0f;
             }
@@ -1402,14 +1413,18 @@ namespace workphone
             {
                 const auto fps = m_framePipelineSettings->frameRateLimit;
                 if( deltaTime > 1.1f / fps )
+                {
                     m_adaptiveSceneScale = std::max( 0.5f, m_adaptiveSceneScale - 0.0625f );
+                }
                 // A paced renderer can recover at its frame-rate limit.
                 else if( deltaTime <= 1.03f / fps )
+                {
                     m_adaptiveSceneScale = std::min( 1.0f, m_adaptiveSceneScale + 0.03125f );
+                }
             }
             const auto activeLayer = []( const IGraphicsCamera::CompositeLayer &layer ) {
-                return layer.enabled && layer.texture &&
-                       std::isfinite( layer.opacity ) && layer.opacity > 0.0f;
+                return layer.enabled && layer.texture && std::isfinite( layer.opacity ) &&
+                       layer.opacity > 0.0f;
             };
             const auto capture = [&]( const SmartPtr<IRenderTarget> &target,
                                       const SmartPtr<IViewport> &viewport, bool window,
@@ -1419,31 +1434,43 @@ namespace workphone
                     throw std::runtime_error( "Graphics frame exceeds native render pass capacity." );
                 }
                 wp_u32 flags = window ? WP_GRAPHICS_FRAME_TARGET_WINDOW : 0u;
-                if( !viewport || viewport->getEnableSceneRender() ) flags |= WP_GRAPHICS_FRAME_TARGET_SCENE;
-                if( !viewport || viewport->getEnableUI() ) flags |= WP_GRAPHICS_FRAME_TARGET_UI;
-                if( !viewport || viewport->getOverlaysEnabled() ) flags |= WP_GRAPHICS_FRAME_TARGET_OVERLAY;
+                if( !viewport || viewport->getEnableSceneRender() )
+                {
+                    flags |= WP_GRAPHICS_FRAME_TARGET_SCENE;
+                }
+                if( !viewport || viewport->getEnableUI() )
+                {
+                    flags |= WP_GRAPHICS_FRAME_TARGET_UI;
+                }
+                if( !viewport || viewport->getOverlaysEnabled() )
+                {
+                    flags |= WP_GRAPHICS_FRAME_TARGET_OVERLAY;
+                }
                 if( viewport )
                 {
                     flags |= viewport->getClearEveryFrame() ? WP_GRAPHICS_FRAME_TARGET_CLEAR
-                                                           : WP_GRAPHICS_FRAME_TARGET_PRESERVE_WINDOW;
+                                                            : WP_GRAPHICS_FRAME_TARGET_PRESERVE_WINDOW;
                 }
-                const bool nativeRtt = !window && dx11 && dynamic_pointer_cast<ClawRenderTarget>( target );
+                const bool nativeRtt =
+                    !window && dx11 && dynamic_pointer_cast<ClawRenderTarget>( target );
                 FramePassContext pass{ this, renderer, target, viewport, flags, nativeRtt };
                 pass.manualUpdate = manualUpdate;
                 if( auto camera = dx11 && viewport ? viewport->getCamera() : nullptr )
                 {
                     const auto clawCamera = dynamic_pointer_cast<ClawCamera>( camera );
                     pass.postProcess = clawCamera ? clawCamera->getRenderPostProcessSettings()
-                                                 : camera->getPostProcessSettings();
+                                                  : camera->getPostProcessSettings();
                     pass.compositeLayers = camera->getCompositeLayers();
                     if( pass.postProcess.enabled ||
-                        std::any_of( pass.compositeLayers.begin(), pass.compositeLayers.end(), activeLayer ) )
+                        std::any_of( pass.compositeLayers.begin(), pass.compositeLayers.end(),
+                                     activeLayer ) )
                     {
                         pass.flags |= WP_GRAPHICS_FRAME_TARGET_CAMERA_EFFECTS;
                     }
                 }
                 m_framePasses.push_back( std::move( pass ) );
             };
+
             struct TargetGroup
             {
                 IRenderTarget *target;
@@ -1451,6 +1478,7 @@ namespace workphone
                 size_t end;
                 bool visited = false;
             };
+
             std::vector<TargetGroup> groups;
             if( auto textures = getTextureManager() )
             {
@@ -1484,7 +1512,10 @@ namespace workphone
                     }
                     if( ordered.empty() )
                     {
-                        if( manualUpdate ) clawTarget->update();
+                        if( manualUpdate )
+                        {
+                            clawTarget->update();
+                        }
                         continue;
                     }
                     std::stable_sort( ordered.begin(), ordered.end(),
@@ -1504,17 +1535,28 @@ namespace workphone
                 std::vector<FramePassContext> ordered;
                 ordered.reserve( m_framePasses.size() + 1 );
                 const auto visit = [&]( auto &&visit, TargetGroup &group ) -> void {
-                    if( group.visited ) return;
+                    if( group.visited )
+                    {
+                        return;
+                    }
                     group.visited = true;
                     for( size_t i = group.begin; i < group.end; ++i )
                     {
                         for( const auto &layer : m_framePasses[i].compositeLayers )
                         {
-                            if( !activeLayer( layer ) ) continue;
+                            if( !activeLayer( layer ) )
+                            {
+                                continue;
+                            }
                             const auto source = layer.texture->getRenderTarget();
-                            const auto producer = std::find_if( groups.begin(), groups.end(),
-                                [&]( const auto &candidate ) { return candidate.target == source.get(); } );
-                            if( producer != groups.end() ) visit( visit, *producer );
+                            const auto producer = std::find_if(
+                                groups.begin(), groups.end(), [&]( const auto &candidate ) {
+                                    return candidate.target == source.get();
+                                } );
+                            if( producer != groups.end() )
+                            {
+                                visit( visit, *producer );
+                            }
                         }
                     }
                     for( size_t i = group.begin; i < group.end; ++i )
@@ -1522,7 +1564,10 @@ namespace workphone
                         ordered.push_back( std::move( m_framePasses[i] ) );
                     }
                 };
-                for( auto &group : groups ) visit( visit, group );
+                for( auto &group : groups )
+                {
+                    visit( visit, group );
+                }
                 m_framePasses.swap( ordered );
             }
             auto window = getDefaultWindow();
@@ -1552,14 +1597,16 @@ namespace workphone
             wp_s32 count = 0;
             for( auto &pass : m_framePasses )
             {
-                targets[count++] = { pass.flags, &pass, pass.nativeRtt ? &FramePassContext::transact : nullptr };
+                targets[count++] = { pass.flags, &pass,
+                                     pass.nativeRtt ? &FramePassContext::transact : nullptr };
             }
             return wp_graphics_system_render_target_frame( m_sys, deltaTime, advance, targets.data(),
-                                                          count, &FramePassContext::execute ) != 0;
+                                                           count, &FramePassContext::execute ) != 0;
         }
 
         wp_s32 ClawHammerSystem::FramePassContext::execute( wp_graphics_system *system, wp_f32,
-            wp_graphics_system_frame_stage stage, void *data )
+                                                            wp_graphics_system_frame_stage stage,
+                                                            void *data )
         {
             auto &pass = *static_cast<FramePassContext *>( data );
             auto owner = pass.owner;
@@ -1578,7 +1625,8 @@ namespace workphone
                     // Skip detached, inactive and minimized targets before entering
                     // begin/end/present. Keep virtual calls behind this exception barrier.
                     if( !renderer || !pass.target ||
-                        ( !(pass.flags & WP_GRAPHICS_FRAME_TARGET_WINDOW) && !pass.target->isActive() ) ||
+                        ( !( pass.flags & WP_GRAPHICS_FRAME_TARGET_WINDOW ) &&
+                          !pass.target->isActive() ) ||
                         pass.target->getSize().x <= 0 || pass.target->getSize().y <= 0 ||
                         ( viewport && !viewport->isActive() ) )
                     {
@@ -1752,7 +1800,7 @@ namespace workphone
                     break;
                 case WP_GRAPHICS_FRAME_BEGIN_TARGET:
                     renderer->beginRender();
-                    if( (pass.flags & WP_GRAPHICS_FRAME_TARGET_WINDOW) != 0 )
+                    if( ( pass.flags & WP_GRAPHICS_FRAME_TARGET_WINDOW ) != 0 )
                     {
                         if( auto dx11 = dynamic_pointer_cast<ClawRendererDX11>( renderer ) )
                         {
@@ -1762,9 +1810,13 @@ namespace workphone
                                 const auto colour = viewport->getBackgroundColour();
                                 const wp_vec4f background{ colour.r, colour.g, colour.b, colour.a };
                                 const auto camera = viewport->getCamera();
-                                const auto key = static_cast<wp_u64>( reinterpret_cast<uintptr_t>( camera.get() ) );
-                                if( !wp_renderer_dx11_restore_window_history( native, key, &background ) )
+                                const auto key =
+                                    static_cast<wp_u64>( reinterpret_cast<uintptr_t>( camera.get() ) );
+                                if( !wp_renderer_dx11_restore_window_history( native, key,
+                                                                              &background ) )
+                                {
                                     return WP_GRAPHICS_FRAME_FAILED;
+                                }
                             }
                             else
                             {
@@ -1778,17 +1830,24 @@ namespace workphone
                     break;
                 case WP_GRAPHICS_FRAME_BEGIN_EFFECTS:
                     return owner->beginGraphicsPipelineFrame(
-                               renderer, (pass.flags & WP_GRAPHICS_FRAME_TARGET_PRESERVE_WINDOW) != 0 ) ?
-                               WP_GRAPHICS_FRAME_OK : WP_GRAPHICS_FRAME_SKIP;
+                               renderer, ( pass.flags & WP_GRAPHICS_FRAME_TARGET_PRESERVE_WINDOW ) != 0 )
+                               ? WP_GRAPHICS_FRAME_OK
+                               : WP_GRAPHICS_FRAME_SKIP;
                 case WP_GRAPHICS_FRAME_DRAW_SCENE:
                 {
                     auto &active = activeDrawPass();
+
                     struct DrawPassScope
                     {
                         FramePassContext *&current;
                         FramePassContext *previous;
-                        ~DrawPassScope() { current = previous; }
+
+                        ~DrawPassScope()
+                        {
+                            current = previous;
+                        }
                     } scope{ active, active };
+
                     active = &pass;
                     RenderPhaseProfile timing( owner->m_sceneProfile, "Scene draw" );
                     owner->render();
@@ -1838,7 +1897,10 @@ namespace workphone
                     if( pass.flags & WP_GRAPHICS_FRAME_TARGET_PRESERVE_WINDOW )
                     {
                         if( auto dx11 = dynamic_pointer_cast<ClawRendererDX11>( renderer ) )
-                            wp_renderer_dx11_save_window_history( wp_renderer_get_dx11( dx11->getNativeRenderer() ) );
+                        {
+                            wp_renderer_dx11_save_window_history(
+                                wp_renderer_get_dx11( dx11->getNativeRenderer() ) );
+                        }
                     }
                     owner->drawImGuiOverlay();
                     break;
@@ -1896,8 +1958,8 @@ namespace workphone
             return WP_GRAPHICS_FRAME_FAILED;
         }
 
-        wp_rtt_result ClawHammerSystem::FramePassContext::transact( void *data,
-            wp_rtt_check_func draw, void *drawData )
+        wp_rtt_result ClawHammerSystem::FramePassContext::transact( void *data, wp_rtt_check_func draw,
+                                                                    void *drawData )
         {
             auto &pass = *static_cast<FramePassContext *>( data );
             try
@@ -1908,15 +1970,16 @@ namespace workphone
                 auto dx11 = wp_renderer_get_dx11( nativeRenderer );
                 auto output = target->getNativeRenderTexture( nativeRenderer );
                 const auto size = target->getSize();
-                const auto colour = pass.viewport ? pass.viewport->getBackgroundColour()
-                                                  : ColourF::Black;
+                const auto colour =
+                    pass.viewport ? pass.viewport->getBackgroundColour() : ColourF::Black;
                 wp_graphics_rtt_desc desc{};
                 desc.renderer_generation = wp_renderer_dx11_get_rtt_generation( dx11 );
                 desc.target_generation = wp_renderer_dx11_get_render_texture_generation( output );
                 desc.width = size.x;
                 desc.height = size.y;
                 desc.viewport = wp_renderer_dx11_get_viewport( dx11 );
-                desc.clear_colour = desc.clear_depth = (pass.flags & WP_GRAPHICS_FRAME_TARGET_CLEAR) != 0;
+                desc.clear_colour = desc.clear_depth =
+                    ( pass.flags & WP_GRAPHICS_FRAME_TARGET_CLEAR ) != 0;
                 desc.colour[0] = colour.r;
                 desc.colour[1] = colour.g;
                 desc.colour[2] = colour.b;
@@ -1929,6 +1992,7 @@ namespace workphone
                     wp_rtt_check_func draw;
                     void *drawData;
                 } context{ pass, draw, drawData };
+
                 const auto validate = []( void *opaque, const wp_graphics_rtt_desc *expected ) {
                     auto &pass = static_cast<RttContext *>( opaque )->pass;
                     try
@@ -1957,10 +2021,14 @@ namespace workphone
                     []( void *opaque, const wp_graphics_rtt_desc *descriptor ) {
                         auto &context = *static_cast<RttContext *>( opaque );
                         return context.draw( context.drawData, descriptor );
-                    }, &context );
+                    },
+                    &context );
                 if( result != WP_RTT_OK )
                 {
-                    if( pass.manualUpdate ) target->update();
+                    if( pass.manualUpdate )
+                    {
+                        target->update();
+                    }
                     WP_LOG_ERROR( "Native offscreen job failed: " + std::to_string( result ) );
                 }
                 return result;
@@ -1989,6 +2057,7 @@ namespace workphone
                     FramePassContext &pass;
                     std::exception_ptr error;
                 } submission{ *pass, {} };
+
                 const auto submit = []( size_t index, void *opaque ) -> wp_s32 {
                     auto &submission = *static_cast<Submission *>( opaque );
                     try
@@ -2003,10 +2072,13 @@ namespace workphone
                         return 0;
                     }
                 };
-                if( !wp_graphics_system_submit_frame_scenes(
-                        m_sys, pass->preparedScenes.size(), submit, &submission ) )
+                if( !wp_graphics_system_submit_frame_scenes( m_sys, pass->preparedScenes.size(), submit,
+                                                             &submission ) )
                 {
-                    if( submission.error ) std::rethrow_exception( submission.error );
+                    if( submission.error )
+                    {
+                        std::rethrow_exception( submission.error );
+                    }
                     throw std::runtime_error( "Native prepared scene submission was rejected." );
                 }
                 return;
@@ -2032,7 +2104,8 @@ namespace workphone
             }
         }
 
-        bool ClawHammerSystem::beginGraphicsPipelineFrame( SmartPtr<IRenderer> renderer, bool preserveContents )
+        bool ClawHammerSystem::beginGraphicsPipelineFrame( SmartPtr<IRenderer> renderer,
+                                                           bool preserveContents )
         {
             if( !renderer || !m_graphicsPipeline )
             {
@@ -2051,11 +2124,11 @@ namespace workphone
                 m_graphicsPipeline->setCamera( renderer->getCamera().get() );
                 m_graphicsPipeline->setScene( renderer->getCamera()->getCreator().get() );
                 const auto settings = m_frameUpdateActive && m_framePipelineSettings
-                                            ? m_framePipelineSettings
-                                            : m_graphicsPipeline->getRenderSettings();
+                                          ? m_framePipelineSettings
+                                          : m_graphicsPipeline->getRenderSettings();
                 const auto &options = *settings;
-                const bool legacyHdr = renderer->getRenderTarget() == getDefaultWindow() &&
-                                       options.legacyToneMapping;
+                const bool legacyHdr =
+                    renderer->getRenderTarget() == getDefaultWindow() && options.legacyToneMapping;
                 const bool bloom = options.bloom;
                 const bool motionBlur = options.motionBlur;
                 const bool ao = options.ambientOcclusion;
@@ -2083,19 +2156,23 @@ namespace workphone
                     wp_renderer_dx11_set_scene_sampling( native, 1, 1.f );
                     wp_renderer_dx11_set_pipeline_mode( native, 0, 0 );
                     wp_renderer_dx11_set_post_options( native, 0, 0, 0, 0 );
-                    wp_renderer_dx11_set_local_lights(
-                        native, nullptr, 0, nullptr, nullptr, 0, 1, 1, 1, .1f, 1000.f, nullptr );
+                    wp_renderer_dx11_set_local_lights( native, nullptr, 0, nullptr, nullptr, 0, 1, 1, 1,
+                                                       .1f, 1000.f, nullptr );
                     return false;
                 }
                 const s32 samples = aa == 3 ? 2 : aa == 4 ? 4 : aa == 5 ? 8 : 1;
                 wp_renderer_dx11_set_scene_sampling( native, samples, scale );
                 wp_renderer_dx11_set_pipeline_mode( native, pipeline, ao );
                 if( localLights || legacyHdr )
+                {
                     uploadProjectSceneLights( native, renderer->getCamera()->getCreator(),
                                               renderer->getCamera(), options );
+                }
                 else
-                    wp_renderer_dx11_set_local_lights(
-                        native, nullptr, 0, nullptr, nullptr, 0, 1, 1, 1, .1f, 1000.f, nullptr );
+                {
+                    wp_renderer_dx11_set_local_lights( native, nullptr, 0, nullptr, nullptr, 0, 1, 1, 1,
+                                                       .1f, 1000.f, nullptr );
+                }
                 wp_renderer_dx11_set_post_options(
                     native, aa, bloom, motionBlur,
                     static_cast<wp_u64>( reinterpret_cast<uintptr_t>( renderer->getCamera().get() ) ) );

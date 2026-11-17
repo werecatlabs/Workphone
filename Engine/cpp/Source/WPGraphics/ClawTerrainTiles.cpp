@@ -77,8 +77,7 @@ namespace workphone::render
     }
 
     bool ClawTerrain::prepareTerrainEditRenderer( TerrainSnapshot candidate,
-                                                   std::function<void()> &commitRenderer,
-                                                   String &error )
+                                                  std::function<void()> &commitRenderer, String &error )
     {
         commitRenderer = {};
         auto &state = *m_tiles;
@@ -95,8 +94,8 @@ namespace workphone::render
         }
         auto app = core::IApplicationManager::instancePtr();
         auto graphics = app ? app->getGraphicsSystem() : nullptr;
-        auto renderer = graphics ? dynamic_pointer_cast<ClawRendererDX11>( graphics->getRenderer() )
-                                 : nullptr;
+        auto renderer =
+            graphics ? dynamic_pointer_cast<ClawRendererDX11>( graphics->getRenderer() ) : nullptr;
         auto native = renderer && renderer->isLoaded()
                           ? wp_renderer_get_dx11( renderer->getNativeRenderer() )
                           : nullptr;
@@ -117,11 +116,12 @@ namespace workphone::render
             std::shared_ptr<const ClawTerrainMaterial::Candidate> material, retiredMaterial;
             u64 uploadedBytes = 0;
         };
+
         auto edit = std::make_shared<HeightEdit>();
         edit->source = candidate;
         auto scheduler = WorldStreamingScheduler::shared();
-        edit->sourceBudget = scheduler->reserve( StreamMemoryClass::SourceCpu,
-                                                 terrainSourceBytes( *candidate ), error );
+        edit->sourceBudget =
+            scheduler->reserve( StreamMemoryClass::SourceCpu, terrainSourceBytes( *candidate ), error );
         if( !edit->sourceBudget || !describeTerrainTiles( *candidate, edit->descriptions, error ) )
         {
             return false;

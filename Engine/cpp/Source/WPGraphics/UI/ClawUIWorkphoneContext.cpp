@@ -15,8 +15,8 @@ namespace workphone::ui
             }
             auto application = core::IApplicationManager::instancePtr();
             auto fileSystem = application ? application->getFileSystem() : nullptr;
-            auto stream = fileSystem ? fileSystem->open( path, true, true, false, false, true )
-                                     : nullptr;
+            auto stream =
+                fileSystem ? fileSystem->open( path, true, true, false, false, true ) : nullptr;
             if( !stream )
             {
                 return {};

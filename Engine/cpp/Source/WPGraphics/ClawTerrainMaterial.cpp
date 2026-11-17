@@ -83,8 +83,8 @@ namespace workphone::render
                 // Share the strict source-descriptor decoder and budgeted mip upload
                 // used by foliage. Saved authoring IDs remain valid after reopening;
                 // installed terrain continues to supply its captured runtime resolver.
-                return loadFoliageSourceTexture( app ? app->getProjectPath() : String(), name,
-                                                 renderer, error );
+                return loadFoliageSourceTexture( app ? app->getProjectPath() : String(), name, renderer,
+                                                 error );
 #else
                 error = "Authored terrain texture descriptors require the resource system.";
                 return {};
@@ -108,7 +108,8 @@ namespace workphone::render
 
         void *textureView( const SmartPtr<ITexture> &texture, wp_renderer_dx11 *renderer )
         {
-            if( auto claw = dynamic_pointer_cast<ClawTexture>( texture ); claw && !claw->getRenderTarget() )
+            if( auto claw = dynamic_pointer_cast<ClawTexture>( texture );
+                claw && !claw->getRenderTarget() )
             {
                 return claw->getNativeTextureView( renderer );
             }

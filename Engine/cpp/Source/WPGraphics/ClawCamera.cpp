@@ -18,43 +18,60 @@ namespace workphone
                 -> IGraphicsCamera::PostProcessSettings
             {
                 if( !settings.enabled || settings.workspace.empty() )
+                {
                     return settings;
+                }
 
                 try
                 {
                     auto app = core::IApplicationManager::instancePtr();
                     const auto projectPath = app ? app->getProjectPath() : String();
                     const auto relative = std::filesystem::u8path( settings.workspace.c_str() );
-                    if( projectPath.empty() || relative.has_root_path() || relative.extension() != ".json" )
+                    if( projectPath.empty() || relative.has_root_path() ||
+                        relative.extension() != ".json" )
+                    {
                         throw std::runtime_error( "Expected a project-relative JSON preset path." );
+                    }
 
-                    const auto root = std::filesystem::canonical(
-                        std::filesystem::u8path( projectPath.c_str() ) );
+                    const auto root =
+                        std::filesystem::canonical( std::filesystem::u8path( projectPath.c_str() ) );
                     const auto file = std::filesystem::canonical( root / relative );
                     const auto inProject = file.lexically_relative( root );
                     if( inProject.empty() || *inProject.begin() == ".." ||
                         !std::filesystem::is_regular_file( file ) )
+                    {
                         throw std::runtime_error( "The preset must be a file in the project." );
+                    }
 
                     const auto size = std::filesystem::file_size( file );
                     if( size > 64 * 1024 )
+                    {
                         throw std::runtime_error( "The preset exceeds 64 KiB." );
+                    }
 
                     std::string source( static_cast<size_t>( size ), '\0' );
                     std::ifstream input( file, std::ios::binary );
                     if( !input.read( source.data(), static_cast<std::streamsize>( size ) ) )
+                    {
                         throw std::runtime_error( "Could not read the preset." );
+                    }
                     const auto document = boost::json::parse( source );
                     const auto &values = document.as_object();
                     auto resolved = settings;
                     const auto readNumber = [&]( const char *key, f32 &destination ) {
                         if( const auto *value = values.if_contains( key ) )
+                        {
                             destination = boost::json::value_to<f32>( *value );
+                        }
                     };
                     if( const auto *value = values.if_contains( "fxaa" ) )
+                    {
                         resolved.fxaa = value->as_bool();
+                    }
                     if( const auto *value = values.if_contains( "bloom" ) )
+                    {
                         resolved.bloom = value->as_bool();
+                    }
                     readNumber( "exposure", resolved.exposure );
                     readNumber( "gamma", resolved.gamma );
                     readNumber( "contrast", resolved.contrast );
@@ -71,7 +88,7 @@ namespace workphone
                     return settings;
                 }
             }
-        }
+        }  // namespace
 
         WP_CLASS_REGISTER_DERIVED( workphone::render, ClawCamera, GraphicsCamera );
 
@@ -110,8 +127,9 @@ namespace workphone
             const auto halfHeight = std::isfinite( height ) && height > 0.0f ? height * 0.5f : 0.0f;
             wp_camera_set_ortho_width( m_camera, halfWidth );
             wp_camera_set_ortho_height( m_camera, halfHeight );
-            wp_camera_set_projection_type( m_camera, halfWidth > 0.0f || halfHeight > 0.0f ?
-                    WORKPHONE_PROJECTION_ORTHOGRAPHIC : WORKPHONE_PROJECTION_PERSPECTIVE );
+            wp_camera_set_projection_type( m_camera, halfWidth > 0.0f || halfHeight > 0.0f
+                                                         ? WORKPHONE_PROJECTION_ORTHOGRAPHIC
+                                                         : WORKPHONE_PROJECTION_PERSPECTIVE );
         }
 
         f32 ClawCamera::getNearClipDistance() const
@@ -224,7 +242,9 @@ namespace workphone
             if( auto context = getStateContextPtr() )
             {
                 if( auto state = context->getStateDataById<CameraStateData>( getId() ) )
+                {
                     return state->renderPostProcessSettings;
+                }
             }
             return {};
         }

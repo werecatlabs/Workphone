@@ -84,8 +84,8 @@ namespace workphone::render
             // XZ projection P. Bound M*R*P*R^-1*M^-1 for every view, including
             // tilted cards on rotated/nonuniform placements. Perspective card
             // scale cancels between the transform and its inverse.
-            const auto cardBend = species.farBillboard ?
-                std::max( 1.0f, scale * maximumScale( inverse ) ) : 1.0f;
+            const auto cardBend =
+                species.farBillboard ? std::max( 1.0f, scale * maximumScale( inverse ) ) : 1.0f;
             const auto wind = species.wind.amplitude * std::max( cardBend, x.length() );
             const auto interaction =
                 species.wind.maximumInteractionBend *
@@ -339,24 +339,37 @@ namespace workphone::render
         }
     }  // namespace
 
-    bool buildFoliageImpostorPlacement( const FoliageSpecies &species,
-        const Matrix4F &instanceWorld, const ClawFoliageView &view, s32 previousView,
-        ClawFoliageImpostorPlacement &output )
+    bool buildFoliageImpostorPlacement( const FoliageSpecies &species, const Matrix4F &instanceWorld,
+                                        const ClawFoliageView &view, s32 previousView,
+                                        ClawFoliageImpostorPlacement &output )
     {
         if( species.impostor.views.empty() || species.impostor.views.size() > 64 ||
-            !affine( instanceWorld ) || !finite( view.position ) ||
-            !finite( species.boundsMinimum ) || !finite( species.boundsMaximum ) ) return false;
+            !affine( instanceWorld ) || !finite( view.position ) || !finite( species.boundsMinimum ) ||
+            !finite( species.boundsMaximum ) )
+        {
+            return false;
+        }
         const auto centre = ( species.boundsMinimum + species.boundsMaximum ) * .5f;
         const auto half = ( species.boundsMaximum - species.boundsMinimum ) * .5f;
-        if( !finite( centre ) || !finite( half ) || half.x < 0 || half.y < 0 || half.z < 0 ) return false;
+        if( !finite( centre ) || !finite( half ) || half.x < 0 || half.y < 0 || half.z < 0 )
+        {
+            return false;
+        }
         const auto inverse = instanceWorld.inverse();
         const auto eye = point( inverse, view.position );
         auto toward = view.orthographic ? vector( inverse, -view.direction ) : eye - centre;
-        if( !finite( toward ) || !std::isfinite( toward.lengthSquared() ) ) return false;
-        const bool previousValid = previousView >= 0 && size_t( previousView ) < species.impostor.views.size();
+        if( !finite( toward ) || !std::isfinite( toward.lengthSquared() ) )
+        {
+            return false;
+        }
+        const bool previousValid =
+            previousView >= 0 && size_t( previousView ) < species.impostor.views.size();
         if( toward.lengthSquared() < 1e-12f )
         {
-            if( view.orthographic ) return false;
+            if( view.orthographic )
+            {
+                return false;
+            }
             toward = species.impostor.views[previousValid ? size_t( previousView ) : 0].direction;
         }
         toward.normalise();
@@ -365,13 +378,27 @@ namespace workphone::render
         for( size_t index = 0; index < species.impostor.views.size(); ++index )
         {
             const auto &direction = species.impostor.views[index].direction;
-            if( !finite( direction ) || std::abs( direction.lengthSquared() - 1 ) > .011f ) return false;
+            if( !finite( direction ) || std::abs( direction.lengthSquared() - 1 ) > .011f )
+            {
+                return false;
+            }
             const auto score = toward.dotProduct( direction );
-            if( score > best ) { best = score; selected = s32( index ); }
+            if( score > best )
+            {
+                best = score;
+                selected = s32( index );
+            }
         }
-        if( previousValid && best - toward.dotProduct( species.impostor.views[size_t( previousView )].direction ) <= .01f )
+        if( previousValid &&
+            best - toward.dotProduct( species.impostor.views[size_t( previousView )].direction ) <=
+                .01f )
+        {
             selected = previousView;
-        if( selected < 0 ) return false;
+        }
+        if( selected < 0 )
+        {
+            return false;
+        }
         const auto normal = species.impostor.views[size_t( selected )].direction.normaliseCopy();
         const auto referenceUp = std::abs( normal.y ) > .98f ? Vector3F( 0, 0, 1 ) : Vector3F( 0, 1, 0 );
         const auto right = referenceUp.crossProduct( normal ).normaliseCopy();
@@ -401,7 +428,10 @@ namespace workphone::render
                 conservative = true;
             }
         }
-        if( !finite( origin ) || !std::isfinite( scale ) || scale <= 0 ) return false;
+        if( !finite( origin ) || !std::isfinite( scale ) || scale <= 0 )
+        {
+            return false;
+        }
         Matrix4F local = Matrix4F::identity();
         for( int axis = 0; axis < 3; ++axis )
         {
@@ -411,7 +441,10 @@ namespace workphone::render
             local[axis][3] = origin[axis];
         }
         const auto transformed = instanceWorld * local;
-        if( !affine( transformed ) ) return false;
+        if( !affine( transformed ) )
+        {
+            return false;
+        }
         output = { transformed, selected, conservative };
         return true;
     }
@@ -446,6 +479,7 @@ namespace workphone::render
                 u64 id;
                 s32 lod, impostorView;
             };
+
             StreamBudget budget;
             Array<Entry> entries;
         };
@@ -944,8 +978,9 @@ namespace workphone::render
         if( !finite( view.position ) || !std::isfinite( view.projectionScale ) ||
             view.projectionScale <= 0 || !std::isfinite( view.lodBias ) || view.lodBias <= 0 ||
             view.forcedLod < -1 || view.forcedLod > 2 ||
-            ( view.orthographic && ( !finite( view.direction ) ||
-                !std::isfinite( view.direction.lengthSquared() ) || view.direction.lengthSquared() < 1e-12f ) ) )
+            ( view.orthographic &&
+              ( !finite( view.direction ) || !std::isfinite( view.direction.lengthSquared() ) ||
+                view.direction.lengthSquared() < 1e-12f ) ) )
         {
             error = "Invalid foliage view.";
             p.error = error;
@@ -998,11 +1033,15 @@ namespace workphone::render
         for( const auto &species : p.active->species )
         {
             if( species->lodDistances[0] > 0 )
-                thresholds.push_back( { 1.f / species->lodDistances[0],
-                                        1.f / species->lodDistances[1], 0.f } );
+            {
+                thresholds.push_back(
+                    { 1.f / species->lodDistances[0], 1.f / species->lodDistances[1], 0.f } );
+            }
             else
+            {
                 thresholds.emplace_back( species->screenHeightThresholds.begin(),
                                          species->screenHeightThresholds.end() );
+            }
         }
         using Bin = std::pair<u32, u32>;
         std::map<Bin, Array<wp_foliage_instance_dx11>> bins;
@@ -1068,25 +1107,28 @@ namespace workphone::render
                 const bool previousValid = previous != history.end() && previous->id == instance.id;
                 const auto screen = baseRadius * maxScale * view.projectionScale * view.lodBias /
                                     ( view.orthographic ? 1.0f : std::max( .001f, distance ) );
-                const auto metric = species.lodDistances[0] > 0
-                    ? view.lodBias / std::max( .001f, distance ) : screen;
-                auto lod = scene::LODSystem::selectLOD(
-                    metric, thresholds[instance.species],
-                    previousValid ? previous->lod : -1,
-                    view.forcedLod, species.hysteresis, false );
+                const auto metric =
+                    species.lodDistances[0] > 0 ? view.lodBias / std::max( .001f, distance ) : screen;
+                auto lod = scene::LODSystem::selectLOD( metric, thresholds[instance.species],
+                                                        previousValid ? previous->lod : -1,
+                                                        view.forcedLod, species.hysteresis, false );
                 if( nextHistory.entries.size() >= maximumVisible )
                 {
                     error = "Foliage per-view visible-instance budget exceeded (262144).";
                     p.error = error;
                     return false;
                 }
-                nextHistory.entries.push_back( { instance.id, lod, previousValid ? previous->impostorView : -1 } );
+                nextHistory.entries.push_back(
+                    { instance.id, lod, previousValid ? previous->impostorView : -1 } );
                 if( view.shadow )
                 {
                     lod = std::min<s32>( 2, lod + species.shadowLodBias );
                     // Camera-selected cards do not reconstruct light-space depth.
                     // Keep bounded woody shadows on the reduced geometry LOD.
-                    if( species.farBillboard ) lod = std::min<s32>( lod, 1 );
+                    if( species.farBillboard )
+                    {
+                        lod = std::min<s32>( lod, 1 );
+                    }
                 }
                 const auto hash = foliageStableHash( instance.id ^ instance.seed );
                 const auto fraction = double( hash >> 11 ) * ( 1.0 / 9007199254740992.0 );
@@ -1096,18 +1138,27 @@ namespace workphone::render
                     auto delta = root - interaction.position;
                     delta.y = 0;
                     const auto length = delta.length();
-                    if( length >= interaction.radius ) continue;
+                    if( length >= interaction.radius )
+                    {
+                        continue;
+                    }
                     delta = length < 1e-5f ? Vector3F( 1, 0, 0 ) : delta / length;
                     worldBend += delta * ( interaction.strength * ( 1 - length / interaction.radius ) );
                 }
-                if( worldBend.lengthSquared() > 1 ) worldBend.normalise();
+                if( worldBend.lengthSquared() > 1 )
+                {
+                    worldBend.normalise();
+                }
                 const auto phase = std::fmod( double( p.seconds ) * species.wind.frequency +
                                                   double( hash & 65535u ) / 65535.0 * 6.283185307,
                                               6.283185307 );
                 // A signed coverage value selects complementary, seeded cutout
                 // masks. Forced LODs and shadows remain single-geometry reviews.
                 const auto emit = [&]( s32 level, f32 opacity, bool entering ) -> bool {
-                    if( opacity <= 0 || fraction >= species.densityFractions[size_t( level )] ) return true;
+                    if( opacity <= 0 || fraction >= species.densityFractions[size_t( level )] )
+                    {
+                        return true;
+                    }
                     auto transform = world;
                     wp_foliage_instance_dx11 output{};
                     output.uv_rect = { 0, 0, 1, 1 };
@@ -1115,7 +1166,8 @@ namespace workphone::render
                     {
                         ClawFoliageImpostorPlacement placement;
                         if( !buildFoliageImpostorPlacement( species, transform, view,
-                                nextHistory.entries.back().impostorView, placement ) )
+                                                            nextHistory.entries.back().impostorView,
+                                                            placement ) )
                         {
                             error = "Invalid foliage impostor camera or captured projection.";
                             p.error = error;
@@ -1146,24 +1198,39 @@ namespace workphone::render
                 s32 blendNear = -1;
                 f32 blendFarWeight = 0;
                 if( !view.shadow && view.forcedLod < 0 )
+                {
                     for( s32 boundary = 0; boundary < 2; ++boundary )
                     {
                         const auto threshold = thresholds[instance.species][size_t( boundary )];
                         const auto width = threshold * std::max( .08f, species.hysteresis );
-                        if( width <= 0 || metric < threshold - width || metric > threshold + width ) continue;
-                        const auto t = std::clamp( ( threshold + width - metric ) / ( 2 * width ), 0.f, 1.f );
+                        if( width <= 0 || metric < threshold - width || metric > threshold + width )
+                        {
+                            continue;
+                        }
+                        const auto t =
+                            std::clamp( ( threshold + width - metric ) / ( 2 * width ), 0.f, 1.f );
                         blendNear = boundary;
                         blendFarWeight = t * t * ( 3 - 2 * t );
                         break;
                     }
+                }
                 const auto beforeCount = stats.lodInstances;
                 if( blendNear >= 0 )
                 {
                     if( !emit( blendNear, 1 - blendFarWeight, false ) ||
-                        !emit( blendNear + 1, blendFarWeight, true ) ) return false;
+                        !emit( blendNear + 1, blendFarWeight, true ) )
+                    {
+                        return false;
+                    }
                 }
-                else if( !emit( lod, 1, false ) ) return false;
-                if( stats.lodInstances == beforeCount ) ++stats.culledInstances;
+                else if( !emit( lod, 1, false ) )
+                {
+                    return false;
+                }
+                if( stats.lodInstances == beforeCount )
+                {
+                    ++stats.culledInstances;
+                }
             }
         }
         std::sort( nextHistory.entries.begin(), nextHistory.entries.end(),
@@ -1179,9 +1246,8 @@ namespace workphone::render
             const auto &species = *p.active->species[bin.first.first];
             const auto lod = bin.first.second;
             const auto billboard = lod == 2 && species.farBillboard;
-            const f32 offset = billboard
-                                   ? ( species.boundsMinimum.y + species.boundsMaximum.y ) * .5f
-                                   : 0;
+            const f32 offset =
+                billboard ? ( species.boundsMinimum.y + species.boundsMaximum.y ) * .5f : 0;
             const wp_foliage_parameters_dx11 parameters = { { 0, species.wind.frequency, 0, 0 },
                                                             { species.wind.bendStart - offset,
                                                               species.wind.bendEnd - offset, 0, 0 } };
@@ -1197,11 +1263,11 @@ namespace workphone::render
                 ++visibleSpecies;
                 previousSpecies = bin.first.first;
             }
-            const auto sectionCount = billboard ? size_t( 1 )
-                                                : std::max<size_t>( 1, species.lods[lod].sections.size() );
-            const auto chunks = batch ? ( bin.second.size() + WP_DX11_INSTANCE_CAPACITY - 1 ) /
-                                            WP_DX11_INSTANCE_CAPACITY
-                                      : bin.second.size();
+            const auto sectionCount =
+                billboard ? size_t( 1 ) : std::max<size_t>( 1, species.lods[lod].sections.size() );
+            const auto chunks =
+                batch ? ( bin.second.size() + WP_DX11_INSTANCE_CAPACITY - 1 ) / WP_DX11_INSTANCE_CAPACITY
+                      : bin.second.size();
             groups += sectionCount;
             predictedDraws += sectionCount * chunks;
         }

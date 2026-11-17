@@ -1102,11 +1102,13 @@ namespace workphone::render
                 result->source.snapshot = FoliageSnapshot( owner, world.get() );
                 result->source.maximumGeometryRadius = envelope.data.geometryRadius;
                 result->source.maximumBendRadius = envelope.data.bendRadius;
+
                 struct PageDirectory
                 {
                     Envelope envelope;
                     std::map<FoliageCellKey, Entry> entries;
                 };
+
                 auto directory = std::make_shared<PageDirectory>();
                 for( const auto &entry : envelope.data.pages )
                 {
@@ -1370,13 +1372,15 @@ namespace workphone::render
                 bytes += payload;
                 if( type == resource::ResourceTypeID( "folspec" ) )
                 {
-                    dependencyScratch = std::max( dependencyScratch,
-                        std::min( u64( payload ), speciesLimit ) * 64 );
+                    dependencyScratch =
+                        std::max( dependencyScratch, std::min( u64( payload ), speciesLimit ) * 64 );
                 }
-                else if( type == resource::ResourceTypeID( "texres" ) && !isRuntimeTextureSnapshot( *value ) )
+                else if( type == resource::ResourceTypeID( "texres" ) &&
+                         !isRuntimeTextureSnapshot( *value ) )
                 {
-                    dependencyScratch = std::max( dependencyScratch,
-                        std::min( u64( payload ), graphicsTextureByteLimit + 4096 ) * 2 );
+                    dependencyScratch =
+                        std::max( dependencyScratch,
+                                  std::min( u64( payload ), graphicsTextureByteLimit + 4096 ) * 2 );
                 }
                 auto budget = reserve( StreamMemoryClass::SourceCpu, metadata + payload + 1024, error );
                 if( !budget )
@@ -1442,8 +1446,8 @@ namespace workphone::render
             // directory and largest sequential decode instead of claiming the entire shared
             // WorkingCpu envelope while the enclosing scene still owns its startup lease.
             auto bounded = options;
-            bounded.maximumWorkingBytes = std::min( options.maximumWorkingBytes,
-                ( u64( 1 ) << 20 ) + directoryScratch + dependencyScratch );
+            bounded.maximumWorkingBytes = std::min(
+                options.maximumWorkingBytes, ( u64( 1 ) << 20 ) + directoryScratch + dependencyScratch );
             auto scratch = reserve( StreamMemoryClass::WorkingCpu, bounded.maximumWorkingBytes, error );
             if( !scratch )
             {

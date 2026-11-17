@@ -275,7 +275,8 @@ namespace workphone::ui
         }
 
 #if defined WP_PLATFORM_WIN32
-        wp_ui_draw_list_dx11 drawList{ vertices.data(), getIndices(), m_vertexCount, m_indexCount,
+        wp_ui_draw_list_dx11 drawList{ vertices.data(),         getIndices(),
+                                       m_vertexCount,           m_indexCount,
                                        sizeof( wp_draw_index ), 0 };
 #endif
         size_t indexOffset = 0;

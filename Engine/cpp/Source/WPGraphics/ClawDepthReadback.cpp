@@ -111,7 +111,7 @@ namespace workphone::render
                 m_native = std::make_unique<Native>();
             }
             return wp_renderer_dx11_read_depth( m_native->handle, dx11, depth.data(), width, height,
-                                               static_cast<wp_u32>( depth.size() ) ) != 0;
+                                                static_cast<wp_u32>( depth.size() ) ) != 0;
         }
 #endif
         return false;
