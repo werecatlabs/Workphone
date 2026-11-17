@@ -37,6 +37,7 @@
 #include <Workphone/System/SourceBudgetContainers.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
 #include "CityBuildingKit.hpp"
+#include "CityTrafficAppearance.hpp"
 #include "CityRoadCrossings.hpp"
 #include "../RuntimeSceneMembership.hpp"
 
@@ -81,6 +82,12 @@ namespace workphone::scene::race
         cityStreetDetail( other.cityStreetDetail ),
         cityStreetPropDensity( other.cityStreetPropDensity ),
         cityBuildingDensity( other.cityBuildingDensity ),
+        cityTrafficDensity( other.cityTrafficDensity ),
+        cityTrafficDriveOnLeft( other.cityTrafficDriveOnLeft ),
+        cityTraffic( other.cityTraffic ),
+        cityTrafficActors( other.cityTrafficActors ),
+        cityTrafficAccumulator( other.cityTrafficAccumulator ),
+        cityTrafficLastTick( other.cityTrafficLastTick ),
         cityDebugBlocks( other.cityDebugBlocks ),
         cityDebugLots( other.cityDebugLots ),
         cityDebugBlockCount( other.cityDebugBlockCount ),
@@ -163,6 +170,12 @@ namespace workphone::scene::race
         swap( cityStreetDetail, other.cityStreetDetail );
         swap( cityStreetPropDensity, other.cityStreetPropDensity );
         swap( cityBuildingDensity, other.cityBuildingDensity );
+        swap( cityTrafficDensity, other.cityTrafficDensity );
+        swap( cityTrafficDriveOnLeft, other.cityTrafficDriveOnLeft );
+        cityTraffic.swap( other.cityTraffic );
+        cityTrafficActors.swap( other.cityTrafficActors );
+        swap( cityTrafficAccumulator, other.cityTrafficAccumulator );
+        swap( cityTrafficLastTick, other.cityTrafficLastTick );
         swap( cityDebugBlocks, other.cityDebugBlocks );
         swap( cityDebugLots, other.cityDebugLots );
         swap( cityDebugBlockCount, other.cityDebugBlockCount );
@@ -3711,6 +3724,163 @@ namespace workphone::scene::race
             }
         }
 
+        void buildCityTraffic( SceneAssets &assets, const OpenCityLayout &city,
+                               SmartPtr<IGameActor> player, u32 seed )
+        {
+            if( assets.cityTrafficDensity == 0 ) return;
+
+            procedural::CityRoadSplineSource flatSource;
+            procedural::CityRoadSplineBake flatBake;
+            procedural::CityRoadHeightSampler height =
+                []( const Vector3F &, f32 &y ) { y = 0; return true; };
+            const procedural::CityRoadSplineSource *source = nullptr;
+            const procedural::CityRoadSplineBake *bake = nullptr;
+            String error;
+            if( assets.roadAuthoring )
+            {
+                source = &assets.roadAuthoring->getSource();
+                bake = &assets.roadAuthoring->getBake();
+                const auto terrain = assets.roadAuthoring->getTerrainSnapshot();
+                const auto placement = assets.roadAuthoring->getTerrainPlacement();
+                if( !terrain ) return;
+                height = [terrain, placement]( const Vector3F &point, f32 &y ) {
+                    return render::sampleTerrainHeight( *terrain, placement, point, y );
+                };
+            }
+            else
+            {
+                procedural::OpenCityRoadSourceOptions options;
+                options.seed = seed;
+                // The flat city's y=0 sampling plane is a stable virtual terrain
+                // binding; spline validation still requires GUID provenance.
+                options.sourceId = "10000000-0000-4000-8000-000000000001";
+                options.terrainResourceUuid = "10000000-0000-4000-8000-000000000002";
+                procedural::OpenCityRoadSourceResult generated;
+                if( !procedural::buildOpenCityRoadSource( city, options, height, generated, error ) ||
+                    !procedural::sampleCityRoadSplines( generated.source, {}, height, flatBake, error ) )
+                {
+                    WP_LOG( String( "City traffic source unavailable: " ) + error );
+                    return;
+                }
+                flatSource = std::move( generated.source );
+                source = &flatSource;
+                bake = &flatBake;
+            }
+
+            scene::CityTrafficSettings settings;
+            settings.densityPercent = std::min( assets.cityTrafficDensity, 100u );
+            settings.maximumVehicles = 32;
+            settings.driveOnLeft = assets.cityTrafficDriveOnLeft;
+            auto traffic = std::make_shared<scene::CityTrafficSimulation>();
+            if( player ) traffic->setExternalObstacle( player->getPosition(), 2.2f );
+            if( !traffic->initialize( *source, *bake, height, settings, seed, error ) )
+            {
+                WP_LOG( String( "City traffic unavailable: " ) + error );
+                return;
+            }
+            assets.cityTraffic = traffic;
+            if( traffic->vehicles().empty() ) return;
+
+            auto app = core::IApplicationManager::instance();
+            auto actorManager = app->getGameManager();
+            auto meshManager = dynamic_pointer_cast<MeshManager>( app->getMeshManager() );
+            if( !meshManager )
+            {
+                meshManager = make_ptr<MeshManager>();
+                app->setMeshManager( meshManager );
+            }
+            const auto sharedMesh = [&]( const String &name, const Geometry &geometry ) {
+                if( geometry.indices.empty() )
+                    throw std::runtime_error( "City traffic mesh has no triangles." );
+                auto generated = MeshUtil::createMesh( geometry.positions, geometry.normals,
+                    geometry.tangents, geometry.uv, geometry.indices );
+                generated->updateAABB( true );
+                const auto path = assets.resourcePrefix + "/traffic/" + name + ".meshbin";
+                reserveOwnerSlot( assets.meshes );
+                auto resource = dynamic_pointer_cast<IMeshResource>(
+                    meshManager->createOrRetrieve( path ).first );
+                if( !resource ) throw std::runtime_error( "Cannot create city traffic mesh resource." );
+                assets.meshes.push_back( resource );
+                resource->setName( path );
+                resource->setFilePath( path );
+                resource->setMesh( generated );
+                resource->setLoadingState( LoadingState::Loaded );
+                assets.triangles += geometry.indices.size() / 3;
+                return resource;
+            };
+            const auto visiblePart = [&]( const String &name, SmartPtr<IMeshResource> resource,
+                                          SmartPtr<render::IMaterial> finish,
+                                          SmartPtr<IGameActor> parent = nullptr ) {
+                reserveOwnerSlot( assets.actors );
+                auto actor = actorManager->createActor();
+                if( !actor ) throw std::runtime_error( "Cannot create city traffic actor." );
+                assets.actors.push_back( actor );
+                actor->setName( name );
+                if( parent ) parent->addChild( actor );
+                actor->addComponent<scene::Mesh>()->setMeshResource( resource );
+                actor->addComponent<scene::MeshRenderer>();
+                actor->addComponent<scene::Material>()->setMaterial( finish );
+                return actor;
+            };
+
+            std::array<SmartPtr<IMeshResource>, 3> shells, windows, fronts, rears;
+            for( u32 style = 0; style < 3; ++style )
+            {
+                Geometry shell, glass, head, tail;
+                cityTrafficAppearance::body( shell, style );
+                cityTrafficAppearance::glazing( glass, style );
+                cityTrafficAppearance::lamps( head, tail, style );
+                const auto suffix = StringUtil::toString( style );
+                shells[style] = sharedMesh( "body-" + suffix, shell );
+                windows[style] = sharedMesh( "glass-" + suffix, glass );
+                fronts[style] = sharedMesh( "front-lamp-" + suffix, head );
+                rears[style] = sharedMesh( "rear-lamp-" + suffix, tail );
+            }
+            Geometry tireGeometry, hubGeometry;
+            cityTrafficAppearance::wheels( tireGeometry, hubGeometry );
+            const auto tires = sharedMesh( "tires", tireGeometry );
+            const auto hubs = sharedMesh( "hubs", hubGeometry );
+            const std::array<ColourF, 6> paintColours{
+                ColourF( .60f, .64f, .67f, 1 ), ColourF( .08f, .11f, .15f, 1 ),
+                ColourF( .76f, .77f, .72f, 1 ), ColourF( .06f, .20f, .38f, 1 ),
+                ColourF( .36f, .08f, .10f, 1 ), ColourF( .56f, .39f, .14f, 1 ) };
+            std::array<SmartPtr<render::IMaterial>, 6> paints;
+            for( size_t i = 0; i < paints.size(); ++i )
+                paints[i] = material( assets, paintColours[i], .28f, .27f );
+            const auto glazing = material( assets, { .075f, .125f, .15f, 1 }, .16f, .08f );
+            const auto rubber = material( assets, { .025f, .027f, .03f, 1 }, .94f );
+            const auto alloy = material( assets, { .39f, .42f, .43f, 1 }, .34f, .64f );
+            const auto whiteLamp = material( assets, { .90f, .91f, .76f, 1 }, .17f );
+            const auto redLamp = material( assets, { .65f, .045f, .035f, 1 }, .20f );
+
+            assets.cityTrafficActors.reserve( traffic->vehicles().size() );
+            for( const auto &pose : traffic->vehicles() )
+            {
+                const u32 style = pose.variant % 3;
+                const auto label = "City traffic " + StringUtil::toString( pose.id );
+                auto car = visiblePart( label, shells[style],
+                    paints[pose.variant % paints.size()] );
+                car->setStatic( false );
+                car->setPosition( pose.position + Vector3F( 0, cityTrafficAppearance::chassisLift, 0 ) );
+                car->setOrientation( cityTrafficAppearance::roadOrientation( pose.forward ) );
+                auto collider = car->addComponent<scene::CollisionBox>();
+                collider->setExtents( { 1.76f, style == 2 ? 1.73f : 1.44f,
+                    cityTrafficAppearance::lengths[style] - .16f } );
+                if( style == 2 ) collider->setPosition( { 0, .16f, 0 } );
+                auto rigidbody = car->addComponent<scene::Rigidbody>();
+                rigidbody->setKinematic( true );
+                rigidbody->setUseGravity( false );
+                visiblePart( label + " windows", windows[style], glazing, car );
+                visiblePart( label + " wheels", tires, rubber, car );
+                visiblePart( label + " alloys", hubs, alloy, car );
+                visiblePart( label + " headlights", fronts[style], whiteLamp, car );
+                visiblePart( label + " tail lamps", rears[style], redLamp, car );
+                assets.cityTrafficActors.push_back( { pose.id, car } );
+            }
+            WP_LOG( "City traffic spawned " + StringUtil::toString( assets.cityTrafficActors.size() ) +
+                    " kinematic vehicles." );
+        }
+
         void buildCity( SceneAssets &assets, SmartPtr<IGameActor> sourceOwner,
                         SmartPtr<IGameActor> vehicle, u32 seed, VehicleAppearanceQuality quality )
         {
@@ -5647,6 +5817,7 @@ namespace workphone::scene::race
                 arrows.quad( p - sample.right * 1.5f, p + sample.right * 1.5f, tip + sample.right * .01f,
                              tip - sample.right * .01f, { 0, 1, 0 } );
             }
+            buildCityTraffic( assets, city, vehicle, seed );
             if( !assets.cityTerrainRoads )
             {
                 mesh( assets, "City race route arrows", arrows,
@@ -6450,6 +6621,35 @@ namespace workphone::scene::race
                         continue;
                     }
                     auto rigidbody = generated->getComponent<scene::Rigidbody>();
+                    const bool trafficActor = std::any_of( assets.cityTrafficActors.begin(),
+                        assets.cityTrafficActors.end(), [&]( const auto &entry ) {
+                            return entry.actor == generated;
+                        } );
+                    if( trafficActor )
+                    {
+                        auto movingBody = rigidbody ? rigidbody->getRigidDynamic() : nullptr;
+                        if( generated->isStatic() || !rigidbody || !rigidbody->isKinematic() ||
+                            !movingBody || !collision->getShape() ||
+                            !collision->getShape()->isAttached() ||
+                            movingBody->getScene() != physics || movingBody->getNumShapes() == 0 ||
+                            rigidbody->getState() != componentState ||
+                            collision->getState() != componentState )
+                        {
+                            throw std::runtime_error(
+                                "Generated traffic collision publication is incomplete: " +
+                                generated->getName() );
+                        }
+                        const auto expected = generated->getWorldTransform();
+                        const auto actual = movingBody->getTransform();
+                        if( ( expected.getPosition() - actual.getPosition() ).length() > .001f ||
+                            ( expected.getOrientation() * Vector3F::unitX() -
+                              actual.getOrientation() * Vector3F::unitX() ).length() > .001f )
+                        {
+                            throw std::runtime_error( "Generated traffic collision pose is stale: " +
+                                                      generated->getName() );
+                        }
+                        continue;
+                    }
                     auto body = rigidbody ? rigidbody->getRigidStatic() : nullptr;
                     if( !generated->isStatic() || !rigidbody || !body || !collision->getShape() ||
                         !collision->getShape()->isAttached() || body->getScene() != physics ||

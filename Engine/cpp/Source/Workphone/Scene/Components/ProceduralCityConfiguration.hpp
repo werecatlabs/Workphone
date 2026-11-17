@@ -50,6 +50,8 @@ namespace workphone::scene
         s32 m_streetDetail = 100;
         s32 m_streetPropDensity = 150;
         s32 m_buildingDensity = 150;
+        s32 m_trafficDensity = 35;
+        bool m_trafficDriveOnLeft = false;
         bool m_debugBlocks = false, m_debugLots = false;
         std::array<f32, 6> m_foliageLODDistances = { 65, 260, 20, 100, 8, 35 };
         s32 m_foliageImpostorResolution = 0, m_buildingImpostorResolution = 0;

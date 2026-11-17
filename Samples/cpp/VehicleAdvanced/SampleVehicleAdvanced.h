@@ -75,6 +75,8 @@ namespace workphone
         void setCityTerrainRelief( f32 relief ) { m_cityTerrainRelief = relief; }
         void setCityStreetDetail( s32 detail ) { m_cityStreetDetail = detail; }
         void setCityStreetPropDensity( s32 density ) { m_cityStreetPropDensity = density; }
+        void setCityTrafficOptions( s32 density, bool driveOnLeft )
+        { m_cityTrafficDensity = density; m_cityTrafficDriveOnLeft = driveOnLeft; }
         void setCityLayoutDebug( bool blocks, bool lots ) { m_cityDebugBlocks = blocks; m_cityDebugLots = lots; }
         void setCityStreaming( bool enabled ) { m_cityStreaming = enabled; }
         void setCityStreamingSmokeTest( bool enabled ) { m_cityStreamingSmokeTest = enabled; }
@@ -240,6 +242,8 @@ namespace workphone
         s32 m_cityBlocks = 8, m_cityRoute = 0;
         s32 m_cityStreetDetail = -1;
         s32 m_cityStreetPropDensity = -1;
+        s32 m_cityTrafficDensity = -1;
+        bool m_cityTrafficDriveOnLeft = false;
         bool m_cityDebugBlocks = false, m_cityDebugLots = false;
         bool m_cityStreaming = true;
         bool m_cityStreamingSmokeTest = false;
@@ -310,6 +314,9 @@ namespace workphone
         Vector3F m_cityRoadProfileNearRoad{}, m_cityRoadProfileFarRoad{};
         size_t m_cityRoadProfileRoad = 0, m_cityRoadProfileCandidates = 0;
         f32 m_cityRoadProfileWidth = 0, m_cityRoadProfileStation = 0;
+        Vector3F m_cityTrafficEye{}, m_cityTrafficTarget{}, m_cityTrafficFocusInitial{};
+        u32 m_cityTrafficFocusId = 0;
+        bool m_cityTrafficFocusReady = false;
         Vector3F m_roadTerrainEditEye{}, m_roadTerrainEditTarget{};
         Vector3F m_roadTerrainEditBeforeKnot{}, m_roadTerrainEditAfterKnot{}, m_roadTerrainEditProbe{};
         size_t m_roadTerrainEditRoad = 0, m_roadTerrainEditChangedSamples = 0;
