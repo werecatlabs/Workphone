@@ -562,4 +562,42 @@ BOOST_FIXTURE_TEST_CASE( off_axis_orthographic_depth_shift_preserves_parallel_pr
     }
 }
 
+BOOST_AUTO_TEST_CASE( pooled_storage_rejects_released_and_reused_handles )
+{
+    auto &storage = MeshImposterSystem::instance();
+    const auto count = storage.getActiveCount();
+    const auto first = storage.create();
+    BOOST_CHECK( storage.contains( first ) );
+    BOOST_CHECK_EQUAL( storage.getActiveCount(), count + 1 );
+    storage.destroy( first );
+    BOOST_CHECK( !storage.contains( first ) );
+    const auto second = storage.create();
+    BOOST_CHECK_EQUAL( second.index, first.index );
+    BOOST_CHECK_NE( second.generation, first.generation );
+    storage.destroy( first );
+    BOOST_CHECK( storage.contains( second ) );
+    storage.destroy( second );
+    BOOST_CHECK_EQUAL( storage.getActiveCount(), count );
+}
+
+BOOST_FIXTURE_TEST_CASE( pooled_components_keep_configuration_isolated_across_page_growth, ImposterFixture )
+{
+    BOOST_REQUIRE( updateCamera( cameraFor( 5 ) ) );
+    const auto selected = imposter->getSelectedView();
+    Array<SmartPtr<MeshImposter>> others;
+    for( unsigned i = 0; i < 70; ++i ) others.push_back( make_ptr<MeshImposter>() );
+    BOOST_CHECK_EQUAL( imposter->getSelectedView(), selected );
+    BOOST_CHECK_EQUAL( imposter->getViewCount(), sheet.views.size() );
+    for( const auto &other : others )
+    {
+        BOOST_CHECK_EQUAL( other->getViewCount(), 0u );
+        BOOST_CHECK_EQUAL( other->getSelectedView(), -1 );
+    }
+    others.clear();
+    auto replacement = make_ptr<MeshImposter>();
+    BOOST_CHECK_EQUAL( replacement->getViewCount(), 0u );
+    BOOST_CHECK_EQUAL( replacement->getSelectionChanges(), 0u );
+    BOOST_REQUIRE( updateCamera( cameraFor( 7 ) ) );
+}
+
 BOOST_AUTO_TEST_SUITE_END()

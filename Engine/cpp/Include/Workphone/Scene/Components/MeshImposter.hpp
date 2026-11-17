@@ -2,8 +2,7 @@
 
 #include <Workphone/Scene/Components/Component.hpp>
 #include <Workphone/Scene/Systems/LODSystem.hpp>
-#include <Workphone/Mesh/MeshImposterGenerator.hpp>
-#include <mutex>
+#include <Workphone/Scene/Systems/MeshImposterSystem.hpp>
 
 namespace workphone::scene
 {
@@ -60,11 +59,6 @@ namespace workphone::scene
                         bool orthographic = true );
         bool updateFromCameraVector( const Vector3<real_Num> &worldVector, bool directionOnly );
 
-        mutable std::recursive_mutex m_viewMutex;
-        Array<MeshImposterView> m_views{ Allocator<MeshImposterView>( sourceBudget ) };
-        SmartPtr<render::IMaterial> m_material;
-        Vector3F m_centre = Vector3F::zero();
-        s32 m_selectedView = -1;
-        u64 m_selectionChanges = 0;
+        MeshImposterSystem::Handle m_storage;
     };
 }

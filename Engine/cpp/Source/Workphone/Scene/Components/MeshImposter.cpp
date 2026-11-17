@@ -68,8 +68,8 @@ namespace workphone::scene
 
     WP_CLASS_REGISTER_DERIVED( workphone::scene, MeshImposter, Component );
 
-    MeshImposter::MeshImposter() = default;
-    MeshImposter::~MeshImposter() = default;
+    MeshImposter::MeshImposter() : m_storage( MeshImposterSystem::instance().create() ) {}
+    MeshImposter::~MeshImposter() { MeshImposterSystem::instance().destroy( m_storage ); }
 
     void MeshImposter::load( SmartPtr<ISharedObject> data )
     {
@@ -81,8 +81,8 @@ namespace workphone::scene
                 manager->registerComponentUpdate( TaskId::Application, Thread::UpdateState::Update, this );
         {
             ImposterPublicationLock publication;
-            std::lock_guard<std::recursive_mutex> lock( m_viewMutex );
-            if( !m_views.empty() ) applyView( m_selectedView >= 0 ? m_selectedView : 0 );
+            auto state = MeshImposterSystem::instance().access( m_storage );
+            if( !state.views.empty() ) applyView( state.selectedView >= 0 ? state.selectedView : 0 );
         }
         setLoadingState( LoadingState::Loaded );
     }
@@ -115,12 +115,12 @@ namespace workphone::scene
         }
         auto admitted = makeSourceBudgetSnapshot( views );
         ImposterPublicationLock publication;
-        std::lock_guard<std::recursive_mutex> lock( m_viewMutex );
-        m_views.swap( admitted );
-        m_centre = centre;
-        m_material = std::move( material );
-        m_selectedView = -1;
-        m_selectionChanges = 0;
+        auto state = MeshImposterSystem::instance().access( m_storage );
+        state.views.swap( admitted );
+        state.centre = centre;
+        state.material = std::move( material );
+        state.selectedView = -1;
+        state.selectionChanges = 0;
         applyView( 0 );
     }
 
@@ -164,9 +164,9 @@ namespace workphone::scene
     {
         if( !finiteVector( worldVector ) ) return false;
         ImposterPublicationLock publication;
-        std::lock_guard<std::recursive_mutex> lock( m_viewMutex );
+        auto state = MeshImposterSystem::instance().access( m_storage );
         auto actor = getActor();
-        if( !actor || m_views.empty() || !m_material ) return false;
+        if( !actor || state.views.empty() || !state.material ) return false;
         auto localVector = worldVector;
         if( !actor->getFlag( IGameActor::ActorFlagWorldSpaceTransform ) )
             if( const auto parent = actor->getParent() )
@@ -188,11 +188,11 @@ namespace workphone::scene
                 localVector.y /= scale.y;
                 localVector.z /= scale.z;
             }
-        const auto localDirection = directionOnly ? localVector : localVector - realVector( m_centre );
+        const auto localDirection = directionOnly ? localVector : localVector - realVector( state.centre );
         const Vector3F direction( f32( localDirection.x ), f32( localDirection.y ), f32( localDirection.z ) );
         const auto directionLengthSquared = direction.lengthSquared();
         if( !finiteVector( direction ) || !std::isfinite( directionLengthSquared ) || directionLengthSquared < 1e-12f ) return false;
-        const auto selected = selectMeshImposterView( m_views, direction, m_selectedView );
+        const auto selected = selectMeshImposterView( state.views, direction, state.selectedView );
         if( selected < 0 ) return false;
         // The supporting plane's ray-preserving placement changes as the eye
         // moves, even while angular hysteresis retains the same atlas frame.
@@ -202,12 +202,13 @@ namespace workphone::scene
     bool MeshImposter::applyView( s32 selected, const Vector3<real_Num> *localCamera,
                                   bool orthographic )
     {
+        auto state = MeshImposterSystem::instance().access( m_storage );
         auto actor = getActor();
         auto transform = actor ? actor->getTransform() : nullptr;
-        if( !transform || !m_material || selected < 0 || size_t( selected ) >= m_views.size() ) return false;
-        const auto &view = m_views[size_t( selected )];
+        if( !transform || !state.material || selected < 0 || size_t( selected ) >= state.views.size() ) return false;
+        const auto &view = state.views[size_t( selected )];
         const auto midpoint = view.minimum + ( view.maximum - view.minimum ) * .5f;
-        const auto centre = realVector( m_centre + view.right * midpoint.x + view.up * midpoint.y );
+        const auto centre = realVector( state.centre + view.right * midpoint.x + view.up * midpoint.y );
         const auto normal = realVector( view.towardCamera );
         auto projectedCentre = centre;
         real_Num projectionScale = 1;
@@ -223,7 +224,7 @@ namespace workphone::scene
         }
         else if( localCamera )
         {
-            const auto distance = ( *localCamera - realVector( m_centre ) ).dotProduct( normal );
+            const auto distance = ( *localCamera - realVector( state.centre ) ).dotProduct( normal );
             const auto gap = distance - real_Num( view.maximumDepth );
             if( std::isfinite( distance ) && std::isfinite( gap ) && distance > 1e-6 && gap > 1e-4 )
             {
@@ -242,10 +243,10 @@ namespace workphone::scene
         const Quaternion<real_Num> orientation( realVector( view.right ), realVector( view.up ),
                                                 realVector( view.towardCamera ) );
         const Transform3<real_Num> pose( projectedCentre, orientation, scale );
-        if( selected != m_selectedView )
+        if( selected != state.selectedView )
         {
-            m_material->setUVTiling( view.uvMaximum - view.uvMinimum );
-            m_material->setUVOffset( view.uvMinimum );
+            state.material->setUVTiling( view.uvMaximum - view.uvMinimum );
+            state.material->setUVOffset( view.uvMinimum );
         }
         if( transform->getLocalTransform() != pose || transform->isDirty() || transform->isLocalDirty() )
         {
@@ -253,47 +254,47 @@ namespace workphone::scene
             transform->setDirty( true );
             actor->updateTransform();
         }
-        if( m_selectedView >= 0 && m_selectedView != selected ) ++m_selectionChanges;
-        m_selectedView = selected;
+        if( state.selectedView >= 0 && state.selectedView != selected ) ++state.selectionChanges;
+        state.selectedView = selected;
         return true;
     }
 
     Vector3F MeshImposter::getLocalCentre() const
     {
-        std::lock_guard<std::recursive_mutex> lock( m_viewMutex );
-        return m_centre;
+        auto state = MeshImposterSystem::instance().access( m_storage );
+        return state.centre;
     }
 
     Vector3F MeshImposter::getSelectedDirection() const
     {
-        std::lock_guard<std::recursive_mutex> lock( m_viewMutex );
-        return m_selectedView >= 0 && size_t( m_selectedView ) < m_views.size()
-            ? m_views[size_t( m_selectedView )].towardCamera : Vector3F::zero();
+        auto state = MeshImposterSystem::instance().access( m_storage );
+        return state.selectedView >= 0 && size_t( state.selectedView ) < state.views.size()
+            ? state.views[size_t( state.selectedView )].towardCamera : Vector3F::zero();
     }
 
     bool MeshImposter::getSelectedFrame( MeshImposterView &view ) const
     {
-        std::lock_guard<std::recursive_mutex> lock( m_viewMutex );
-        if( m_selectedView < 0 || size_t( m_selectedView ) >= m_views.size() ) return false;
-        view = m_views[size_t( m_selectedView )];
+        auto state = MeshImposterSystem::instance().access( m_storage );
+        if( state.selectedView < 0 || size_t( state.selectedView ) >= state.views.size() ) return false;
+        view = state.views[size_t( state.selectedView )];
         return true;
     }
 
     s32 MeshImposter::getSelectedView() const
     {
-        std::lock_guard<std::recursive_mutex> lock( m_viewMutex );
-        return m_selectedView;
+        auto state = MeshImposterSystem::instance().access( m_storage );
+        return state.selectedView;
     }
 
     u32 MeshImposter::getViewCount() const
     {
-        std::lock_guard<std::recursive_mutex> lock( m_viewMutex );
-        return static_cast<u32>( m_views.size() );
+        auto state = MeshImposterSystem::instance().access( m_storage );
+        return static_cast<u32>( state.views.size() );
     }
 
     u64 MeshImposter::getSelectionChanges() const
     {
-        std::lock_guard<std::recursive_mutex> lock( m_viewMutex );
-        return m_selectionChanges;
+        auto state = MeshImposterSystem::instance().access( m_storage );
+        return state.selectionChanges;
     }
 }
