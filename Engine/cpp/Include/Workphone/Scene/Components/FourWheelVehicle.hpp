@@ -303,6 +303,7 @@ namespace workphone
             static const String driveTypeStr;
             static const Array<String> driveTypesEnumTypes;
             static const String handlingPresetStr;
+            static const String authoredGeometryStr;
 
             /**
              * @brief Construct a FourWheelVehicle with default tuning values.
@@ -464,6 +465,7 @@ namespace workphone
             f32 m_height = 1.170f;     ///< Vehicle overall height
 
             f32 m_wheelChassisOffset = 0.0f;  ///< Vertical offset of wheels relative to chassis
+            bool m_useAuthoredGeometry = false;  ///< Keep the saved chassis shape and wheel mounts
 
             // Wheel & suspension tuning parameters
             f32 m_radius = 0.35f;               ///< Wheel radius (m)

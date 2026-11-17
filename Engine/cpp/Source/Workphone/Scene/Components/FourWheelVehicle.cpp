@@ -36,6 +36,7 @@ namespace workphone::scene
     const String FourWheelVehicle::dampingStr = "damping";
     const String FourWheelVehicle::driveTypeStr = "Drive Type";
     const String FourWheelVehicle::handlingPresetStr = "Handling Preset";
+    const String FourWheelVehicle::authoredGeometryStr = "Use Authored Vehicle Geometry";
 
     const Array<String> FourWheelVehicle::driveTypesEnumTypes = Array<String>(
         { "All Wheel Drive", "Four Wheel Drive", "Rear Wheel Drive", "Front Wheel Drive" } );
@@ -160,7 +161,7 @@ namespace workphone::scene
             }
 
             auto collisionBox = workphone::dynamic_pointer_cast<CollisionBox>( m_collision );
-            if( collisionBox )
+            if( collisionBox && !m_useAuthoredGeometry )
             {
                 auto extents = Vector3<real_Num>( m_width * 0.5f, m_height * 0.5f, m_length * 0.5f );
                 collisionBox->setExtents( extents );
@@ -180,8 +181,10 @@ namespace workphone::scene
             m_wheelSpinAngles.reserve( 4 );
             m_wheelBaseOrientations.reserve( 4 );
 
-            auto moi = Vector3<real_Num>::unit() * 1000.0f;
-            setMOI( moi );
+            if( !m_useAuthoredGeometry )
+            {
+                setMOI( Vector3<real_Num>::unit() * 1000.0f );
+            }
 
             setLoadingState( LoadingState::Loaded );
         }
@@ -551,8 +554,10 @@ namespace workphone::scene
                     auto frontLeftActor = frontLeft->getActor();
                     m_wheels.emplace_back( frontLeft );
 
-                    auto wheelPosition =
-                        Vector3<real_Num>( -halfWidth, -m_wheelChassisOffset, -halfWheelBase );
+                    auto wheelPosition = m_useAuthoredGeometry
+                                             ? frontLeftActor->getLocalPosition()
+                                             : Vector3<real_Num>( -halfWidth, -m_wheelChassisOffset,
+                                                                  -halfWheelBase );
 
                     auto localWheelTransform = Transform3<real_Num>();
                     localWheelTransform.setPosition( wheelPosition );
@@ -593,8 +598,10 @@ namespace workphone::scene
                     auto frontRightActor = frontRight->getActor();
                     m_wheels.emplace_back( frontRight );
 
-                    auto wheelPosition =
-                        Vector3<real_Num>( halfWidth, -m_wheelChassisOffset, -halfWheelBase );
+                    auto wheelPosition = m_useAuthoredGeometry
+                                             ? frontRightActor->getLocalPosition()
+                                             : Vector3<real_Num>( halfWidth, -m_wheelChassisOffset,
+                                                                  -halfWheelBase );
 
                     auto localWheelTransform = Transform3<real_Num>();
                     localWheelTransform.setPosition( wheelPosition );
@@ -635,8 +642,10 @@ namespace workphone::scene
                     auto frontLeftActor = rearLeft->getActor();
                     m_wheels.emplace_back( rearLeft );
 
-                    auto wheelPosition =
-                        Vector3<real_Num>( -halfWidth, -m_wheelChassisOffset, halfWheelBase );
+                    auto wheelPosition = m_useAuthoredGeometry
+                                             ? frontLeftActor->getLocalPosition()
+                                             : Vector3<real_Num>( -halfWidth, -m_wheelChassisOffset,
+                                                                  halfWheelBase );
 
                     auto localWheelTransform = Transform3<real_Num>();
                     localWheelTransform.setPosition( wheelPosition );
@@ -677,8 +686,10 @@ namespace workphone::scene
                     auto frontRightActor = rearRight->getActor();
                     m_wheels.emplace_back( rearRight );
 
-                    auto wheelPosition =
-                        Vector3<real_Num>( halfWidth, -m_wheelChassisOffset, halfWheelBase );
+                    auto wheelPosition = m_useAuthoredGeometry
+                                             ? frontRightActor->getLocalPosition()
+                                             : Vector3<real_Num>( halfWidth, -m_wheelChassisOffset,
+                                                                  halfWheelBase );
 
                     auto localWheelTransform = Transform3<real_Num>();
                     localWheelTransform.setPosition( wheelPosition );
@@ -1050,6 +1061,7 @@ namespace workphone::scene
             properties->setProperty( suspensionTravelStr, m_suspensionTravel );
             properties->setProperty( dampingStr, m_damping );
             properties->setProperty( "Visual Steering Sign", m_visualSteeringSign );
+            properties->setProperty( authoredGeometryStr, m_useAuthoredGeometry );
 
             properties->setPropertyAsEnum( driveTypeStr, static_cast<s32>( m_driveType ),
                                            driveTypesEnumTypes );
@@ -1078,10 +1090,18 @@ namespace workphone::scene
                                    .getAttribute( "applyHandlingPreset" ) == "true";
         const bool wasPreset = hasHandlingPreset();
         const bool updatePhysics = wasPreset || ( validPreset && preset != 0 );
-        const auto physicsTask = updatePhysics && m_vehicleController ? handlingPhysicsTask() : nullptr;
+        auto authoredGeometry = m_useAuthoredGeometry;
+        properties->getPropertyValue( authoredGeometryStr, authoredGeometry );
+        const bool geometryChanged = authoredGeometry != m_useAuthoredGeometry;
+        const auto physicsTask = ( updatePhysics || geometryChanged ) && m_vehicleController
+                                     ? handlingPhysicsTask()
+                                     : nullptr;
         ScopedLock physicsLock( physicsTask );
         const auto previousRadius = m_radius;
         const auto previousTravel = m_suspensionTravel;
+        // Scene components receive fromData before load, including this option.
+        // Read it before the base setter can dispatch a component state change.
+        m_useAuthoredGeometry = authoredGeometry;
         VehicleController::setProperties( properties );
 
         properties->getPropertyValue( radiusStr, m_radius );
@@ -1132,6 +1152,10 @@ namespace workphone::scene
                 }
             }
             applyHandlingConfiguration();
+        }
+        if( geometryChanged && m_vehicleController )
+        {
+            setupWheels();
         }
     }
 
