@@ -12,7 +12,7 @@ param(
     [ValidatePattern('^\d+x\d+$')][string]$Resolution = '1280x720',
     [ValidateSet('auto', 'none', 'msaa2', 'msaa4')][string]$SceneAA = 'auto',
     [ValidateRange(0.1, 3600)][double]$Seconds = 10,
-    [ValidateSet('follow', 'car', 'track', 'corner', 'junction', 'hillside', 'verge', 'street', 'boulevard', 'frontage', 'facade', 'building', 'utilities', 'park', 'shopfront', 'entry-route', 'rooftop', 'pitched-roof', 'road-edit-before', 'road-edit-after', 'imposter-front', 'imposter-diagonal', 'imposter-back', 'imposter-high')][string[]]$Views = @('car', 'track', 'corner', 'follow'),
+    [ValidateSet('follow', 'car', 'track', 'corner', 'junction', 'hillside', 'verge', 'street', 'boulevard', 'frontage', 'facade', 'building', 'utilities', 'road-profile', 'park', 'shopfront', 'entry-route', 'rooftop', 'pitched-roof', 'road-edit-before', 'road-edit-after', 'imposter-front', 'imposter-diagonal', 'imposter-back', 'imposter-high')][string[]]$Views = @('car', 'track', 'corner', 'follow'),
     [string]$Replay,
     [switch]$NoEffects,
     [switch]$FoliageWorld,
@@ -53,6 +53,7 @@ if ($streetPropDensityExplicit -and !$CityTerrainRoads) { throw '-CityStreetProp
 if (($CityDebugBlocks -or $CityDebugLots) -and !$CityTerrainRoads) { throw 'City debug overlay capture requires -CityTerrainRoads.' }
 if ($Views -contains 'frontage' -and !$CityTerrainRoads) { throw '-Views frontage requires -CityTerrainRoads.' }
 if ($Views -contains 'utilities' -and !$CityTerrainRoads) { throw '-Views utilities requires -CityTerrainRoads.' }
+if ($Views -contains 'road-profile' -and !$CityTerrainRoads) { throw '-Views road-profile requires -CityTerrainRoads.' }
 if ($Views -contains 'park' -and !$CityTerrainRoads) { throw '-Views park requires -CityTerrainRoads.' }
 if ($Views -contains 'shopfront' -and !$CityTerrainRoads) { throw '-Views shopfront requires -CityTerrainRoads.' }
 if ($Views -contains 'entry-route' -and !$CityTerrainRoads) { throw '-Views entry-route requires -CityTerrainRoads.' }
@@ -354,6 +355,15 @@ try {
                 $utility = $run.evidence.cityUtilitiesCamera
                 $run.passed = $run.passed -and $null -ne $utility -and $utility.valid -eq $true -and
                     $utility.primaryPresent -eq $true -and $utility.nativeReady -eq $true
+            }
+            if ($view -eq 'road-profile') {
+                $profile = $run.evidence.cityRoadProfileCamera
+                $run.passed = $run.passed -and $null -ne $profile -and $profile.valid -eq $true -and
+                    $profile.roadSamplesDriveable -eq $true -and $profile.roadWidthMetres -ge 9 -and
+                    $profile.crownMetres -ge 0.02 -and $profile.crossSlope -le 0.035 -and
+                    $profile.candidateSamples -gt 0 -and
+                    @($profile.eye).Count -eq 3 -and @($profile.target).Count -eq 3 -and
+                    $run.evidence.terrainCity.footwayCollisionReady -eq $true
             }
             if ($view -eq 'park') {
                 $park = $run.evidence.cityParkCamera

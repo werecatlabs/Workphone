@@ -295,7 +295,7 @@ namespace workphone::scene
             return result;
         }
 
-        void weatherScannedAsphalt( procedural::SurfaceBakeResult &surface )
+        void weatherScannedAsphalt( procedural::SurfaceBakeResult &surface, u32 seed )
         {
             // Preserve the scan's 2.1 m aggregate scale. Broad binder variation
             // needs its own wavelength, but it must wrap at the 4.2 m atlas edge
@@ -303,6 +303,10 @@ namespace workphone::scene
             constexpr u32 size = 1024;
             procedural::TextureBuffer colour( size, size ), normal( size, size ), orm( size, size );
             const auto byte = []( float value ) { return u8( std::clamp( std::lround( value ), 0l, 255l ) ); };
+            const auto wrappedSample = []( s32 coordinate, u32 period ) {
+                const s32 wrapped = coordinate % s32( period );
+                return u32( wrapped < 0 ? wrapped + s32( period ) : wrapped );
+            };
             const auto periodicVariation = []( u32 seed, float u, float v, u32 cells ) {
                 const float x = u * cells, y = v * cells;
                 const u32 ix = u32( x ), iy = u32( y );
@@ -320,18 +324,36 @@ namespace workphone::scene
             {
                 for( u32 x = 0; x < size; ++x )
                 {
-                    const u32 sx = ( x * asphaltTiles * surface.albedo.width / size ) % surface.albedo.width;
-                    const u32 sy = ( y * asphaltTiles * surface.albedo.height / size ) % surface.albedo.height;
                     const float u = ( x + .5f ) / size, v = ( y + .5f ) / size;
-                    const float binder = .33f * periodicVariation( 0x1f73a1u, u, v, 7 ) +
-                                         .40f * periodicVariation( 0x673c51u, u, v, 19 ) +
-                                         .27f * periodicVariation( 0x5521c3u, u, v, 47 );
+                    const float broad = .58f * periodicVariation( seed ^ 0x35911au, u, v, 3 ) +
+                                        .42f * periodicVariation( seed ^ 0x1738cdu, u, v, 5 );
+                    // Move the scan by about a centimetre at most. Both offsets
+                    // repeat at the atlas boundary and address all PBR maps
+                    // together, so the two source-scan copies do not form an
+                    // obvious four-square grid or split their normal detail.
+                    const s32 shiftX = s32( std::lround( ( broad - .5f ) * 7.f ) );
+                    const s32 shiftY = s32( std::lround( ( periodicVariation( seed ^ 0x9125bdu, u, v, 4 ) - .5f ) * 7.f ) );
+                    const u32 sx = wrappedSample( s32( x * asphaltTiles * surface.albedo.width / size ) + shiftX,
+                                                  surface.albedo.width );
+                    const u32 sy = wrappedSample( s32( y * asphaltTiles * surface.albedo.height / size ) + shiftY,
+                                                  surface.albedo.height );
+                    const float binder = .16f * broad +
+                                         .29f * periodicVariation( seed ^ 0x1f73a1u, u, v, 7 ) +
+                                         .34f * periodicVariation( seed ^ 0x673c51u, u, v, 19 ) +
+                                         .21f * periodicVariation( seed ^ 0x5521c3u, u, v, 47 );
                     const float exposed = std::clamp( ( binder - .27f ) / .49f, 0.f, 1.f );
                     const float wear = exposed * exposed * ( 3.f - 2.f * exposed );
+                    // Weathering exposes some aggregate while compacted binder stays
+                    // darker and a little smoother. Use the existing wrapped
+                    // metre-scale fields so the response follows the photographed
+                    // aggregate without adding a hard-edged repeating repair decal.
+                    const float compactedInput = std::clamp( ( .60f * broad + .40f * binder - .43f ) / .29f,
+                                                             0.f, 1.f );
+                    const float compacted = compactedInput * compactedInput * ( 3.f - 2.f * compactedInput );
                     const float grain = ( roadGrain( 0x7f33abu, x, y, size ) - .5f ) * ( 3.f + 2.5f * wear );
                     const auto *source = surface.albedo.pixel( sx, sy );
                     auto *pixel = colour.pixel( x, y );
-                    const float tone = .945f + .105f * wear;
+                    const float tone = .95f + .13f * wear + .085f * ( broad - .5f ) - .030f * compacted;
                     pixel[0] = byte( source[0] * tone + grain + .55f * wear );
                     pixel[1] = byte( source[1] * tone + grain + .25f * wear );
                     pixel[2] = byte( source[2] * tone + grain );
@@ -340,10 +362,11 @@ namespace workphone::scene
                     const auto *surfaceOrm = surface.orm.pixel( sx, sy );
                     auto *response = orm.pixel( x, y );
                     std::copy_n( surfaceOrm, 4, response );
-                    // Dry, trafficked asphalt is matte even where binder is
-                    // exposed. Retain the scan's fine roughness ordering.
-                    response[1] = byte( std::max( 216.f, float( surfaceOrm[1] ) ) +
-                                        5.f * ( 1.f - wear ) );
+                    // Preserve more of the scan's roughness ordering: dusty
+                    // aggregate remains matte, compacted binder responds subtly
+                    // at grazing angles without looking wet.
+                    response[1] = byte( std::max( 205.f, float( surfaceOrm[1] ) ) +
+                                        9.f * ( 1.f - wear ) - 4.f * compacted + 5.f * ( .5f - broad ) );
                 }
             }
             surface.albedo = std::move( colour );
@@ -399,7 +422,7 @@ namespace workphone::scene
                 String diagnostic;
                 if( loadCitySurface( family, 512, scanned, diagnostic ) )
                 {
-                    if( asphalt ) weatherScannedAsphalt( scanned );
+                    if( asphalt ) weatherScannedAsphalt( scanned, seed );
                     if( turf ) finishIslandTurf( scanned.albedo, seed );
                     surfaceMaps( state, prefix + "/city-surface/" + citySurfaceAssetId( family ), material, scanned );
                     material->setNormalStrength( asphalt ? .45f : turf ? .34f : .35f );

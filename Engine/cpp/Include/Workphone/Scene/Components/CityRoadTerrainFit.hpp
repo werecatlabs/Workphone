@@ -35,7 +35,8 @@ namespace workphone::scene
 
     /** Prepare a bounded cut/fill candidate without publishing scene or terrain edits.
      * Editable XZ controls, IDs, materials, holes and samples outside the feathered
-     * corridor are preserved. Drape roads receive smoothed longitudinal profiles;
+     * corridor are preserved. Drape roads receive smoothed longitudinal profiles
+     * and a bounded terrain-supported crown which fades at edges and open ends;
      * Fixed roads retain their authored profile. Roundabouts receive local grade
      * planes with cell-wide support, including approach caps. Every successful
      * result passes the ordinary sampler and complete terrain-road mesh builder.
@@ -48,7 +49,9 @@ namespace workphone::scene
         CityRoadTerrainFitResult &output, String &error );
 
     // Grade an edit only where the draft changes road geometry or a junction.
-    // A draft already supported by the terrain returns the original snapshot.
+    // New or moved road footprints and width changes refresh the terrain-supported
+    // crown even when an uncrowned mesh would already be supported. Compatible
+    // edits such as a grade-limit change can retain the exact terrain snapshot.
     // Unchanged roundabouts and unrelated carriageways retain their support.
     WPCore_API bool prepareCityRoadTerrainEdit(
         const procedural::CityRoadSplineSource &before, const procedural::CityRoadSplineSource &draft,

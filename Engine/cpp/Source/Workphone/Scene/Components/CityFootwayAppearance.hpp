@@ -56,7 +56,8 @@
             SmartPtr<render::IMaterial> stoneMaterial( SceneAssets &assets, const TextureBuffer &colour,
                                                        const TextureBuffer &roughness,
                                                        const SourceBudgetVector<float> &level,
-                                                       float tileU, float tileV, bool wrapV, float strength )
+                                                       float tileU, float tileV, bool wrapV, float strength,
+                                                       const TextureBuffer *microNormal = nullptr )
             {
                 const auto width = colour.width, height = colour.height;
                 TextureBuffer normal( width, height );
@@ -70,7 +71,17 @@
                         const float dx = ( point( ( x + 1 ) % width, y ) - point( ( x + width - 1 ) % width, y ) ) *
                                          ( width / ( 2.f * tileU ) );
                         const float dy = ( point( x, next ) - point( x, previous ) ) * ( height / ( 2.f * tileV ) );
-                        const auto n = Vector3F( -dx, -dy, 1 ).normaliseCopy();
+                        auto n = Vector3F( -dx, -dy, 1 ).normaliseCopy();
+                        if( microNormal )
+                        {
+                            const auto *detail = microNormal->pixel( x, y );
+                            const float weight = .82f * detail[3] / 255.f;
+                            const Vector3F grain( detail[0] / 127.5f - 1.f,
+                                                  detail[1] / 127.5f - 1.f,
+                                                  detail[2] / 127.5f - 1.f );
+                            n = Vector3F( n.x + weight * grain.x, n.y + weight * grain.y,
+                                          n.z * ( 1.f - weight + weight * grain.z ) ).normaliseCopy();
+                        }
                         auto pixel = normal.pixel( x, y );
                         pixel[0] = asByte( 127.5f * ( 1.f + n.x ) );
                         pixel[1] = asByte( 127.5f * ( 1.f + n.y ) );
@@ -136,6 +147,73 @@
                 constexpr u32 width = 1024, height = 1024;
                 TextureBuffer colour( width, height ), roughness( width, height );
                 SourceBudgetVector<float> level( size_t( width ) * height );
+                // Use only the interiors of the bundled photographed pavers.
+                // Sampling the whole scan would stamp its mortar joints across
+                // the separately authored slab joints below.
+                constexpr u32 photoWidth = 100, photoHeight = 60;
+                constexpr std::array<std::array<u32, 2>, 15> photoPatches{{
+                    { 100, 12 }, { 270, 12 },
+                    { 15, 97 }, { 185, 97 }, { 355, 97 },
+                    { 100, 182 }, { 270, 182 },
+                    { 15, 267 }, { 185, 267 }, { 355, 267 },
+                    { 100, 352 }, { 270, 352 },
+                    { 15, 437 }, { 185, 437 }, { 355, 437 }
+                }};
+                procedural::SurfaceBakeResult photo;
+                String photoDiagnostic;
+                const bool hasPhoto = loadCitySurface( CitySurface::Paving, 512, photo, photoDiagnostic );
+                std::unique_ptr<TextureBuffer> microNormal;
+                std::array<float, 256> toLinear{};
+                std::array<u8, 4097> toSrgb{};
+                std::array<std::array<float, 3>, photoPatches.size()> patchMeans{};
+                if( hasPhoto )
+                {
+                    microNormal = std::make_unique<TextureBuffer>( width, height );
+                    for( u32 i = 0; i < toLinear.size(); ++i )
+                    {
+                        const float value = i / 255.f;
+                        toLinear[i] = value <= .04045f ? value / 12.92f :
+                                      std::pow( ( value + .055f ) / 1.055f, 2.4f );
+                    }
+                    for( u32 i = 0; i < toSrgb.size(); ++i )
+                    {
+                        const float value = i / 4096.f;
+                        toSrgb[i] = asByte( 255.f * ( value <= .0031308f ? value * 12.92f :
+                                             1.055f * std::pow( value, 1.f / 2.4f ) - .055f ) );
+                    }
+                    for( size_t i = 0; i < photoPatches.size(); ++i )
+                    {
+                        const auto &patch = photoPatches[i];
+                        auto &mean = patchMeans[i];
+                        for( u32 y = 0; y < photoHeight; ++y )
+                            for( u32 x = 0; x < photoWidth; ++x )
+                            {
+                                const auto *pixel = photo.albedo.pixel( patch[0] + x, patch[1] + y );
+                                for( u32 c = 0; c < 3; ++c ) mean[c] += toLinear[pixel[c]];
+                            }
+                        for( auto &channel : mean ) channel /= photoWidth * photoHeight;
+                    }
+                }
+                const auto encodeLinear = [&]( float value ) {
+                    return toSrgb[u32( std::clamp( std::lround( value * 4096.f ), 0l, 4096l ) )];
+                };
+                const auto photoSample = [&]( const TextureBuffer &map, float px, float py, bool albedo ) {
+                    const u32 x0 = u32( px ), y0 = u32( py );
+                    const u32 x1 = std::min( x0 + 1, map.width - 1 ), y1 = std::min( y0 + 1, map.height - 1 );
+                    const float u = px - x0, v = py - y0;
+                    const auto *a = map.pixel( x0, y0 ), *b = map.pixel( x1, y0 );
+                    const auto *c = map.pixel( x0, y1 ), *d = map.pixel( x1, y1 );
+                    std::array<float, 4> result{};
+                    for( u32 channel = 0; channel < 4; ++channel )
+                    {
+                        const auto value = [&]( const u8 *pixel ) {
+                            return albedo && channel < 3 ? toLinear[pixel[channel]] : pixel[channel] / 255.f;
+                        };
+                        result[channel] = ( value( a ) * ( 1.f - u ) + value( b ) * u ) * ( 1.f - v ) +
+                                          ( value( c ) * ( 1.f - u ) + value( d ) * u ) * v;
+                    }
+                    return result;
+                };
                 for( u32 y = 0; y < height; ++y )
                 {
                     const float v = ( y + .5f ) / height;
@@ -171,32 +249,88 @@
                         const float wear = unit( slabKey ^ 0x9829a1u );
                         const float replacement = unit( slabKey ^ 0x61ab293du ) > .962f ? 1.f : 0.f;
                         const float distance = std::min( rowDistance, slabDistance );
-                        const float face = ramp( .0025f, .0105f, distance - .0015f * fine );
+                        // Aggregate catches at some joints and knocks back a few
+                        // arrises without turning the mortar into a crack grid.
+                        const float edgeChips = ( 1.f - ramp( .005f, .028f, distance ) ) *
+                                                ramp( .71f, .91f, mineral ) * ( .38f + .62f * ( 1.f - wear ) );
+                        const float face = ramp( .0025f, .0105f,
+                                                 distance - .0015f * fine - .0022f * edgeChips );
                         const float patina = ramp( .55f, .88f, bloom ) * ( 1.f - wear );
                         const float rainStain = ramp( .61f, .83f, weather ) *
                                                 ( .35f + .65f * runoff ) * ( .65f + .35f * ( 1.f - wear ) );
+                        const float damp = ramp( .58f, .82f, broadWeather ) * ( .35f + .65f * runoff );
                         const float grain = unit( ( u64( seed + 529u ) << 32 ) | ( y * width + x ) );
                         const float lightMineral = ramp( .67f, .86f, fine );
                         const float pore = 1.f - ramp( .045f, .17f, fine );
                         const float edgeDirt = ( 1.f - ramp( .010f, .048f, distance ) ) *
                                                ( .35f + .65f * mineral ) * ( .30f + .70f * ( 1.f - wear ) );
-                        const float concrete = 142.f + 16.f * variation + 11.f * ( fine - .5f ) +
+                        const float concrete = 139.f + 22.f * variation + 11.f * ( fine - .5f ) +
                                                5.f * ( mineral - .5f ) + 4.f * ( grain - .5f ) +
                                                5.f * lightMineral - 8.f * pore - 9.f * patina -
-                                               11.f * edgeDirt - 12.f * rainStain -
-                                               7.f * ( broadWeather - .5f ) - 11.f * replacement;
-                        stonePixels( colour, roughness, x, y, concrete, 108.f + 7.f * bloom,
-                                     face, wear, fine, 3.f + 5.f * variation - 2.f * replacement );
+                                               12.f * edgeDirt - 12.f * rainStain -
+                                               8.f * damp - 4.f * edgeChips - 11.f * replacement;
+                        stonePixels( colour, roughness, x, y, concrete,
+                                     108.f + 7.f * bloom - 3.f * damp,
+                                     face, wear, fine, -2.f + 8.f * wear + 4.f * variation -
+                                     2.f * replacement );
                         auto rough = roughness.pixel( x, y );
                         rough[0] = rough[1] = rough[2] = asByte(
                             233.f - face * ( 8.f + 11.f * wear ) + 4.f * pore -
-                            7.f * lightMineral + 5.f * rainStain );
+                            7.f * lightMineral + 5.f * rainStain + 5.f * damp );
+                        if( hasPhoto )
+                        {
+                            const u64 sampleKey = render::foliageStableHash( slabKey ^ 0x706176657273636eull );
+                            const size_t patchIndex = size_t( ( sampleKey >> 16 ) % photoPatches.size() );
+                            const auto &patch = photoPatches[patchIndex];
+                            const float slabStart = shortSlab ? longSlab : 0.f;
+                            const float slabLength = shortSlab ? pavingPairMetres - longSlab : longSlab;
+                            const float slabU = std::clamp( ( withinPair - slabStart ) / slabLength, 0.f, 1.f );
+                            const float slabV = std::clamp( withinRow / pavingCourseMetres, 0.f, 1.f );
+                            const bool flipU = ( sampleKey & 1u ) != 0, flipV = ( sampleKey & 2u ) != 0;
+                            const float px = patch[0] + ( flipU ? 1.f - slabU : slabU ) * ( photoWidth - 1 );
+                            const float py = patch[1] + ( flipV ? 1.f - slabV : slabV ) * ( photoHeight - 1 );
+                            const auto photographed = photoSample( photo.albedo, px, py, true );
+                            const auto &mean = patchMeans[patchIndex];
+                            const float luminance = .22f * photographed[0] + .70f * photographed[1] +
+                                                    .08f * photographed[2];
+                            const float meanLuminance = .22f * mean[0] + .70f * mean[1] + .08f * mean[2];
+                            // A dark source seam must never become a second joint
+                            // inside one of our generated concrete slabs.
+                            const float photoFace = face * ramp( meanLuminance - .16f,
+                                                                 meanLuminance - .09f, luminance );
+                            auto *paint = colour.pixel( x, y );
+                            for( u32 c = 0; c < 3; ++c )
+                            {
+                                const float base = toLinear[paint[c]];
+                                paint[c] = encodeLinear( std::clamp( base + photoFace *
+                                    ( .95f * ( photographed[c] - mean[c] ) + .16f * ( mean[c] - base ) ),
+                                    0.f, 1.f ) );
+                            }
+                            const auto scannedRoughness = photoSample( photo.orm, px, py, false )[1];
+                            const float response = ( 1.f - .30f * photoFace ) * rough[0] / 255.f +
+                                                   .30f * photoFace * scannedRoughness;
+                            rough[0] = rough[1] = rough[2] = asByte( response * 255.f );
+                            const auto sampledNormal = photoSample( photo.normal, px, py, false );
+                            auto detail = Vector3F( sampledNormal[0] * 2.f - 1.f,
+                                                    sampledNormal[1] * 2.f - 1.f,
+                                                    sampledNormal[2] * 2.f - 1.f );
+                            if( flipU ) detail.x = -detail.x;
+                            if( flipV ) detail.y = -detail.y;
+                            detail.normalise();
+                            auto *normal = microNormal->pixel( x, y );
+                            normal[0] = asByte( 127.5f * ( detail.x + 1.f ) );
+                            normal[1] = asByte( 127.5f * ( detail.y + 1.f ) );
+                            normal[2] = asByte( 127.5f * ( detail.z + 1.f ) );
+                            normal[3] = asByte( photoFace * 255.f );
+                        }
                         level[size_t( y ) * width + x] =
                             face * ( .0026f + .0011f * variation + .00042f * fine + .00018f * grain -
-                                     .00040f * pore + .00012f * lightMineral - .0003f * rainStain );
+                                     .00040f * pore + .00012f * lightMineral - .0003f * rainStain -
+                                     .00022f * edgeChips );
                     }
                 }
-                return stoneMaterial( assets, colour, roughness, level, pavingTileU, pavingTileV, true, .64f );
+                return stoneMaterial( assets, colour, roughness, level, pavingTileU, pavingTileV,
+                                      true, .64f, microNormal.get() );
             }
 
             SmartPtr<render::IMaterial> sharedTopMaterial( SceneAssets &assets, SmartPtr<render::IMaterial> shared )

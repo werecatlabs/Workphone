@@ -183,12 +183,40 @@
                 }
             }
 
-            TextureBuffer utilityAtlas( u64 seed )
+            std::pair<TextureBuffer, TextureBuffer> utilityAtlas( u64 seed )
             {
                 constexpr u32 cell = 96;
-                TextureBuffer result( 4 * cell, cell );
+                TextureBuffer colourAtlas( 4 * cell, cell ), normalAtlas( 4 * cell, cell );
                 const auto frac = []( float x ) { return x - std::floor( x ); };
                 const auto byte = []( float x ) { return u8( std::clamp( x, 0.f, 255.f ) ); };
+                const auto smooth = []( float low, float high, float value ) {
+                    const float t = std::clamp( ( value - low ) / ( high - low ), 0.f, 1.f );
+                    return t * t * ( 3.f - 2.f * t );
+                };
+                const auto relief = [&]( u32 tile, s32 x, s32 y ) {
+                    x = std::clamp( x, 0, s32( cell ) - 1 );
+                    y = std::clamp( y, 0, s32( cell ) - 1 );
+                    const float u = ( x + .5f ) / cell * 2.f - 1.f;
+                    const float v = ( y + .5f ) / cell * 2.f - 1.f;
+                    const float round = std::hypot( u, v );
+                    const float square = std::max( std::abs( u ), std::abs( v ) ) +
+                                         .17f * std::min( std::abs( u ), std::abs( v ) );
+                    if( tile < 2 )
+                    {
+                        const float edge = tile == 0 ? round : square;
+                        const float diamond = std::abs( frac( ( u + v ) * 6.2f ) - .5f ) +
+                                              std::abs( frac( ( u - v ) * 6.2f ) - .5f );
+                        const float tread = 1.f - smooth( .27f, .38f, diamond );
+                        const float recess = smooth( .73f, .79f, edge ) * ( 1.f - smooth( .80f, .85f, edge ) );
+                        const float rim = smooth( .80f, .84f, edge ) * ( 1.f - smooth( .87f, .91f, edge ) );
+                        return .0007f + .0011f * tread - .0017f * recess + .0023f * rim;
+                    }
+                    const float jagged = .049f * std::sin( 12.f * u + 7.f * v ) +
+                                         .031f * std::sin( 31.f * u - 13.f * v );
+                    const float edge = ( tile == 2 ? round : square ) + jagged;
+                    const float seam = smooth( .72f, .79f, edge ) * ( 1.f - smooth( .86f, .92f, edge ) );
+                    return .0005f * ( 1.f - smooth( .77f, .88f, edge ) ) - .0008f * seam;
+                };
                 for( u32 tile = 0; tile < 4; ++tile )
                     for( u32 y = 0; y < cell; ++y )
                         for( u32 x = 0; x < cell; ++x )
@@ -217,16 +245,35 @@
                                                      .031f * std::sin( 31.f * u - 13.f * v );
                                 const float edge = ( tile == 2 ? round : square ) + jagged;
                                 const float fade = std::clamp( ( .92f - edge ) * 5.8f, 0.f, 1.f );
-                                alpha = fade * ( tile == 2 ? .64f : .56f );
-                                colour = 69.f + 28.f * grain + ( edge > .76f ? -7.f : 5.f );
+                                const float sealedEdge = smooth( .72f, .79f, edge ) *
+                                                         ( 1.f - smooth( .86f, .92f, edge ) );
+                                alpha = std::min( 1.f, fade * ( tile == 2 ? .64f : .56f ) + .08f * sealedEdge );
+                                colour = 69.f + 28.f * grain + ( edge > .76f ? -7.f : 5.f ) -
+                                         13.f * sealedEdge;
                             }
-                            auto *pixel = result.pixel( tile * cell + x, y );
+                            auto *pixel = colourAtlas.pixel( tile * cell + x, y );
                             pixel[0] = byte( colour * 1.04f );
                             pixel[1] = byte( colour );
                             pixel[2] = byte( colour * .93f );
                             pixel[3] = byte( alpha * 255.f );
+
+                            // A small tangent-space bevel makes the inset iron
+                            // rim and the sealed repair edge catch grazing light.
+                            const float metresPerPixel = tile < 2 ? .0085f : .018f;
+                            const float dx = ( relief( tile, s32( x ) + 1, s32( y ) ) -
+                                               relief( tile, s32( x ) - 1, s32( y ) ) ) /
+                                             ( 2.f * metresPerPixel );
+                            const float dy = ( relief( tile, s32( x ), s32( y ) + 1 ) -
+                                               relief( tile, s32( x ), s32( y ) - 1 ) ) /
+                                             ( 2.f * metresPerPixel );
+                            const auto n = Vector3F( -dx, -dy, 1.f ).normaliseCopy();
+                            auto *normal = normalAtlas.pixel( tile * cell + x, y );
+                            normal[0] = byte( 127.5f * ( 1.f + n.x ) );
+                            normal[1] = byte( 127.5f * ( 1.f + n.y ) );
+                            normal[2] = byte( 127.5f * ( 1.f + n.z ) );
+                            normal[3] = 255;
                         }
-                return result;
+                return { std::move( colourAtlas ), std::move( normalAtlas ) };
             }
 
             bool overlapsCrossing( const Patch &patch, const CityRoadCrossing &crossing )
@@ -408,12 +455,16 @@
                     ++counts[site.family];
                 }
                 if( asphalt.indices.empty() ) return;
-                const auto atlas = upload( assets, utilityAtlas( seed ), render::TextureMipFilter::Colour, 4 );
+                const auto atlases = utilityAtlas( seed );
+                const auto atlas = upload( assets, atlases.first, render::TextureMipFilter::Colour, 4 );
+                const auto normalAtlas = upload( assets, atlases.second, render::TextureMipFilter::Normal, 4 );
                 const auto publish = [&]( const char *name, const Geometry &geometry, float roughness, float metal,
                                           bool cutout ) {
                     if( geometry.indices.empty() ) return;
                     auto surface = material( assets, ColourF::White, roughness, metal );
                     surface->setTexture( atlas, 0 );
+                    surface->setTexture( normalAtlas, 1 );
+                    surface->setNormalStrength( cutout ? .65f : .38f );
                     if( cutout )
                     {
                         surface->setCutout( true );

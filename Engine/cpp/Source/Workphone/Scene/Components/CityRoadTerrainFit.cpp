@@ -231,6 +231,89 @@ namespace workphone::scene
             return a.x == b.x && a.z == b.z && ( horizontal || a.y == b.y );
         }
 
+        bool splitPreservesRoadCurve( const CityRoadSpline &old, const CityRoadSpline &road )
+        {
+            if( old.closed || road.closed || road.knots.size() != old.knots.size() + 1 ) return false;
+            size_t at = 0;
+            while( at < old.knots.size() && old.knots[at].id == road.knots[at].id ) ++at;
+            if( at == 0 || at == old.knots.size() ) return false;
+            for( size_t i = at; i < old.knots.size(); ++i )
+                if( old.knots[i].id != road.knots[i+1].id ) return false;
+            const bool drape = road.heightMode == CityRoadHeightMode::Drape;
+            for( size_t i = 0; i < old.knots.size(); ++i )
+            {
+                const auto &a = old.knots[i], &b = road.knots[i + ( i >= at )];
+                if( !samePoint( a.position, b.position, drape ) ||
+                    ( i != at && !samePoint( a.inHandle, b.inHandle, drape ) ) ||
+                    ( i + 1 != at && !samePoint( a.outHandle, b.outHandle, drape ) ) ) return false;
+            }
+            const auto &first = old.knots[at-1], &last = old.knots[at];
+            const auto &splitFirst = road.knots[at-1], &middle = road.knots[at], &splitLast = road.knots[at+1];
+            const auto p0 = first.position, p1 = p0 + first.outHandle;
+            const auto p3 = last.position, p2 = p3 + last.inHandle;
+            const auto dot = [&]( Vector3F a, Vector3F b ) {
+                return a.x*b.x + a.z*b.z + ( drape ? 0.f : a.y*b.y );
+            };
+            const auto lerp = []( Vector3F a, Vector3F b, float t ) { return a + ( b-a )*t; };
+            const auto closePosition = [&]( Vector3F a, Vector3F b ) {
+                return std::abs( a.x-b.x ) <= .005f && std::abs( a.z-b.z ) <= .005f &&
+                    ( drape || std::abs( a.y-b.y ) <= .005f );
+            };
+            float t = 0;
+            if( dot( first.outHandle, first.outHandle ) > 1e-8f )
+                t = dot( splitFirst.outHandle, first.outHandle ) / dot( first.outHandle, first.outHandle );
+            else if( dot( last.inHandle, last.inHandle ) > 1e-8f )
+                t = 1.f - dot( splitLast.inHandle, last.inHandle ) / dot( last.inHandle, last.inHandle );
+            else
+            {
+                const auto chord = p3-p0;
+                if( dot( chord, chord ) < 1e-8f ) return false;
+                const float fraction = dot( middle.position-p0, chord ) / dot( chord, chord );
+                float low = 0.f, high = 1.f;
+                for( int i = 0; i < 24; ++i )
+                {
+                    const float mid = ( low + high ) * .5f;
+                    if( mid*mid*( 3.f - 2.f*mid ) < fraction ) low = mid; else high = mid;
+                }
+                t = ( low + high ) * .5f;
+            }
+            if( !std::isfinite( t ) || t <= 0.f || t >= 1.f ) return false;
+            const auto a = lerp( p0, p1, t ), b = lerp( p1, p2, t ), c = lerp( p2, p3, t );
+            const auto d = lerp( a, b, t ), e = lerp( b, c, t ), f = lerp( d, e, t );
+            return closePosition( splitFirst.position + splitFirst.outHandle, a ) &&
+                closePosition( middle.position + middle.inHandle, d ) && closePosition( middle.position, f ) &&
+                closePosition( middle.position + middle.outHandle, e ) &&
+                closePosition( splitLast.position + splitLast.inHandle, c );
+        }
+
+        bool changedRoadFootprint( const CityRoadSplineSource &before, const CityRoadSplineSource &draft )
+        {
+            for( const auto &road : draft.roads )
+            {
+                const auto old = std::find_if( before.roads.begin(), before.roads.end(),
+                    [&]( const auto &entry ) { return entry.id == road.id; } );
+                if( old == before.roads.end() ) return true;
+                if( road.width != old->width || road.heightMode != old->heightMode ||
+                    ( road.heightMode == CityRoadHeightMode::Fixed && road.heightOffset != old->heightOffset ) ||
+                    road.closed != old->closed ) return true;
+                const bool drape = road.heightMode == CityRoadHeightMode::Drape;
+                if( road.knots.size() != old->knots.size() )
+                {
+                    // Only an exact Bezier subdivision retains the prior crown.
+                    if( !splitPreservesRoadCurve( *old, road ) ) return true;
+                    continue;
+                }
+                for( size_t i = 0; i < road.knots.size(); ++i )
+                {
+                    const auto &a = road.knots[i], &b = old->knots[i];
+                    if( !samePoint( a.position, b.position, drape ) ||
+                        !samePoint( a.inHandle, b.inHandle, drape ) ||
+                        !samePoint( a.outHandle, b.outHandle, drape ) ) return true;
+                }
+            }
+            return false;
+        }
+
         struct Bounds
         {
             float minX, maxX, minZ, maxZ;
@@ -264,6 +347,7 @@ namespace workphone::scene
                 const auto old = std::find_if( before.roads.begin(), before.roads.end(),
                     [&]( const auto &other ) { return other.id == road.id; } );
                 if( old == before.roads.end() || road.width != old->width || road.maxGrade != old->maxGrade ||
+                    road.closed != old->closed ||
                     road.heightOffset != old->heightOffset || road.heightMode != old->heightMode )
                 {
                     edit.all = true;
@@ -691,7 +775,8 @@ namespace workphone::scene
                 CityRoadTerrainFitResult candidate;
                 CityRoadTerrainMesh mesh;
                 const auto denials = sourceBudgetDenialCount();
-                if( sampleCityRoadSplines( source, options.sampling, sampler, candidate.bake, originalError ) &&
+                if( !changedRoadFootprint( *before, source ) &&
+                    sampleCityRoadSplines( source, options.sampling, sampler, candidate.bake, originalError ) &&
                     buildCityRoadTerrainMesh( source, candidate.bake, terrain, placement, mesh, originalError, options.connectRoads ) )
                 {
                     // Retain the exact snapshot for supported drawings, deletions
@@ -825,6 +910,12 @@ namespace workphone::scene
                     const auto &road = source.roads[r]; const bool fixed = road.heightMode == CityRoadHeightMode::Fixed;
                     const auto &points = fixed ? authoredBake.roads[r].points : flatBake.roads[r].points;
                     const float core = road.width * .5f + grid.apron;
+                    // The emitted carriageway follows the fitted heightfield exactly.
+                    // A small crowned terrain profile gives both its render and collision
+                    // mesh real crossfall without separating the road from its support.
+                    const float crownHeight = fixed ? 0.f : std::min( .05f, road.width * .006f );
+                    const float endTaper = std::max( 6.f, road.width * .75f );
+                    const float roadLength = points.empty() ? 0.f : points.back().distance;
                     for( size_t j = 1; j < points.size(); ++j )
                     {
                         if( before && !activeSegments[r][j] ) continue;
@@ -848,7 +939,33 @@ namespace workphone::scene
                             // Short capped segments otherwise over-weight dense knot
                             // regions. Distance weighting preserves a continuous blend.
                             const float confidence = std::sqrt( length2 ) / ( 1.f + d*d );
-                            roads[index].add( ay + (by-ay)*t, influence, confidence );
+                            float crown = 0.f;
+                            if( d < road.width * .5f )
+                            {
+                                float capTaper = 1.f;
+                                if( !road.closed )
+                                {
+                                    const float station = points[j-1].distance +
+                                        ( points[j].distance - points[j-1].distance ) * t;
+                                    float start = station, end = roadLength - station;
+                                    const auto &first = points.front().position, &last = points.back().position;
+                                    // A neighbouring segment can rasterize the same cap
+                                    // vertex with a nonzero station; radial distance makes
+                                    // the taper exact at the authored endpoint.
+                                    if( std::abs( point.x-first.x ) < endTaper &&
+                                        std::abs( point.z-first.z ) < endTaper )
+                                        start = std::min( start, distance( point, first ) );
+                                    if( std::abs( point.x-last.x ) < endTaper &&
+                                        std::abs( point.z-last.z ) < endTaper )
+                                        end = std::min( end, distance( point, last ) );
+                                    capTaper = ( 1.f - feather( start, 0.f, endTaper ) ) *
+                                               ( 1.f - feather( end, 0.f, endTaper ) );
+                                }
+                                crown = crownHeight * feather( d, 0.f, road.width * .5f ) * capTaper;
+                            }
+                            // Junction and roundabout pad weights below blend this
+                            // crown out through their shoulder into an exact plane.
+                            roads[index].add( ay + (by-ay)*t + crown, influence, confidence );
                         } );
                     }
                 }

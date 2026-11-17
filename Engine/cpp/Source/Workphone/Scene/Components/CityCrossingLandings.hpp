@@ -156,18 +156,44 @@
                 constexpr u32 size = 128;
                 constexpr float tile = .432f;
                 TextureBuffer colour( size, size ), normal( size, size );
-                const auto joint = [size, tile]( float x, float y ) {
+                const auto smooth = []( float low, float high, float value ) {
+                    const float t = std::clamp( ( value - low ) / ( high - low ), 0.f, 1.f );
+                    return t * t * ( 3.f - 2.f * t );
+                };
+                const auto wrapped = []( s32 value, s32 count ) {
+                    const s32 coordinate = value % count;
+                    return u32( coordinate < 0 ? coordinate + count : coordinate );
+                };
+                const auto unit = [&]( s32 x, s32 y, s32 count, u64 salt ) {
+                    const u64 key = ( u64( wrapped( x, count ) ) << 32 ) | wrapped( y, count );
+                    return float( render::foliageStableHash( key ^ salt ) >> 40 ) / 16777216.f;
+                };
+                const auto aggregate = [&]( float x, float y, s32 cells, u64 salt ) {
+                    const float u = ( x + .5f ) * cells / size, v = ( y + .5f ) * cells / size;
+                    const auto ix = s32( std::floor( u ) ), iy = s32( std::floor( v ) );
+                    const float fu = smooth( 0.f, 1.f, u - ix ), fv = smooth( 0.f, 1.f, v - iy );
+                    const float a = unit( ix, iy, cells, salt ) * ( 1.f - fu ) +
+                                    unit( ix + 1, iy, cells, salt ) * fu;
+                    const float b = unit( ix, iy + 1, cells, salt ) * ( 1.f - fu ) +
+                                    unit( ix + 1, iy + 1, cells, salt ) * fu;
+                    return a * ( 1.f - fv ) + b * fv;
+                };
+                const auto joint = [size, tile, &aggregate, &smooth]( float x, float y ) {
                     const float u = ( x + .5f ) / size, v = ( y + .5f ) / size;
                     const float localU = u - std::floor( u ), localV = v - std::floor( v );
                     const float distance = tile * std::min( { localU, 1.f - localU, localV, 1.f - localV } );
-                    const float bevel = std::clamp( ( distance - .0025f ) / .007f, 0.f, 1.f );
-                    return bevel * bevel * ( 3.f - 2.f * bevel );
+                    const float edgeWear = aggregate( x, y, 24, 0x74616374696c6531ull );
+                    return smooth( .0025f + .0014f * ( edgeWear - .5f ),
+                                   .0095f + .0014f * ( edgeWear - .5f ), distance );
                 };
                 const auto profile = [&]( float x, float y ) {
                     const float u = ( x + .5f ) * 6.f / size, v = ( y + .5f ) * 6.f / size;
                     const float radius = std::hypot( u - std::floor( u ) - .5f, v - std::floor( v ) - .5f );
-                    const float shoulder = std::clamp( ( .32f - radius ) / .16f, 0.f, 1.f );
-                    return .0053f * shoulder * shoulder * ( 3.f - 2.f * shoulder ) - .003f * ( 1.f - joint( x, y ) );
+                    const auto blisterX = s32( std::floor( u ) ), blisterY = s32( std::floor( v ) );
+                    const float height = .0058f * ( .90f + .20f *
+                        unit( blisterX, blisterY, 6, 0x626c697374657231ull ) );
+                    return height * ( 1.f - smooth( .16f, .33f, radius ) ) -
+                           .0035f * ( 1.f - joint( x, y ) );
                 };
                 const auto byte = []( float v ) { return u8( std::clamp( v, 0.f, 255.f ) ); };
                 for( u32 y = 0; y < size; ++y )
@@ -178,19 +204,24 @@
                         const auto key = render::foliageStableHash( ( u64( x ) << 32 ) | y );
                         const float grain = float( ( key >> 28 ) & 31u ) - 15.f;
                         auto *pixel = colour.pixel( x, y );
-                        const float relief = std::max( 0.f, metres / .0053f );
+                        const float relief = std::max( 0.f, metres / .0058f );
                         const float tileFace = joint( float( x ), float( y ) );
                         const float u = ( x + .5f ) * 6.f / size;
                         const float v = ( y + .5f ) * 6.f / size;
                         const float radius = std::hypot( u - std::floor( u ) - .5f,
                                                          v - std::floor( v ) - .5f );
-                        const float rim = std::clamp( ( radius - .25f ) / .05f, 0.f, 1.f ) *
-                                          ( 1.f - std::clamp( ( radius - .34f ) / .05f, 0.f, 1.f ) );
-                        // A restrained clay tint and a dark foot at each raised
-                        // blister read as cast concrete instead of flat orange paint.
-                        pixel[0] = byte( 125.f + 46.f * tileFace + .58f * grain + 8.f * relief - 7.f * rim );
-                        pixel[1] = byte( 105.f + 34.f * tileFace + .53f * grain + 6.f * relief - 7.f * rim );
-                        pixel[2] = byte( 85.f + 20.f * tileFace + .44f * grain + 4.f * relief - 6.f * rim );
+                        const float rim = smooth( .23f, .29f, radius ) *
+                                          ( 1.f - smooth( .34f, .40f, radius ) );
+                        const float mineral = aggregate( float( x ), float( y ), 28, 0x6d696e6572616c32ull );
+                        const float weather = smooth( .55f, .83f,
+                            aggregate( float( x ), float( y ), 8, 0x7765617468657232ull ) );
+                        const float dust = rim * ( .55f + .45f * mineral );
+                        const float fleck = .46f * grain + 7.f * ( mineral - .5f ) - 6.f * weather;
+                        // Dust accumulates at blister feet and imperfect mortar;
+                        // the exposed crowns remain lighter and readable.
+                        pixel[0] = byte( 125.f + 46.f * tileFace + fleck + 8.f * relief - 11.f * dust );
+                        pixel[1] = byte( 105.f + 34.f * tileFace + .88f * fleck + 6.f * relief - 10.f * dust );
+                        pixel[2] = byte( 85.f + 20.f * tileFace + .65f * fleck + 4.f * relief - 8.f * dust );
                         pixel[3] = 255;
                         const float dx = ( profile( float( x ) + 1, float( y ) ) - profile( float( x ) - 1, float( y ) ) ) * size / ( 2 * tile );
                         const float dy = ( profile( float( x ), float( y ) + 1 ) - profile( float( x ), float( y ) - 1 ) ) * size / ( 2 * tile );
@@ -205,7 +236,7 @@
                 auto surface = material( assets, ColourF::White, .94f );
                 surface->setTexture( upload( assets, colour ), 0 );
                 surface->setTexture( upload( assets, normal, render::TextureMipFilter::Normal ), 1 );
-                surface->setNormalStrength( .82f );
+                surface->setNormalStrength( .97f );
                 surface->setUVProjection( 0 );
                 surface->setEditorUInt( "uvFilter", 3 );
                 surface->setEditorFloat( "uvAniso", 8.f );

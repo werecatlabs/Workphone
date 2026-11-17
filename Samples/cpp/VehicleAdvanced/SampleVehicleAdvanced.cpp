@@ -770,6 +770,103 @@ namespace workphone
             return best;
         }
 
+        struct CityRoadProfileView
+        {
+            Vector3F eye{}, target{}, centre{}, nearRoad{}, farRoad{};
+            size_t road = 0, candidates = 0;
+            float width = 0, station = 0;
+        };
+
+        CityRoadProfileView cityRoadProfileInspectionView( const advanced::SceneAssets &assets )
+        {
+            const auto authoring = assets.roadAuthoring;
+            const auto terrain = authoring->getTerrainSnapshot();
+            const auto &placement = authoring->getTerrainPlacement();
+            const auto &source = authoring->getSource();
+            const auto &roads = authoring->getBake().roads;
+            const auto connections = cityConnections( *authoring );
+            CityRoadProfileView view;
+            Vector3F along{};
+            float bestScore = std::numeric_limits<float>::infinity();
+            // Search the same central arterial neighbourhood on every run,
+            // measuring actual fitted runtime heights rather than assuming
+            // the terrain fit leaves a visible crown at a particular station.
+            const Vector3F desired( 0, 0, 24 );
+            constexpr float minimumCrown = .02f;
+            constexpr float maximumCrossSlope = .035f;
+            constexpr float connectionClearance = 32.f;
+            for( size_t road = 0; road < std::min( source.roads.size(), roads.size() ); ++road )
+            {
+                if( source.roads[road].width < 9.f ) continue;
+                const auto &points = roads[road].points;
+                if( points.size() < 3 ) continue;
+                // At most sixteen evenly spaced probes per road. For the
+                // generated six-block city this bounds the profile search to
+                // fewer than 512 runtime surface triplets.
+                const size_t stride = std::max<size_t>( 1, ( points.size() + 15 ) / 16 );
+                for( size_t i = 1; i + 1 < points.size(); i += stride )
+                {
+                    const auto centre = points[i].position;
+                    const float station = points[i].distance;
+                    if( station < 15.f || points.back().distance - station < 15.f )
+                        continue;
+                    bool nearConnection = false;
+                    for( const auto &junction : connections.junctions )
+                        if( std::hypot( centre.x - junction.center.x, centre.z - junction.center.z ) <
+                            connectionClearance )
+                            nearConnection = true;
+                    for( const auto &roundabout : source.roundabouts )
+                        if( std::hypot( centre.x - roundabout.center.x, centre.z - roundabout.center.z ) <
+                            std::max( connectionClearance, roundabout.outerRadius + 18.f ) )
+                            nearConnection = true;
+                    if( nearConnection ) continue;
+                    auto axis = points[i + 1].position - points[i - 1].position;
+                    axis.y = 0;
+                    if( axis.lengthSquared() < .01f ) continue;
+                    const auto tangent = axis.normaliseCopy();
+                    const Vector3F lateral( -tangent.z, 0, tangent.x );
+                    const float width = source.roads[road].width;
+                    const auto nearRoad = centre + lateral * ( width * .35f );
+                    const auto farRoad = centre - lateral * ( width * .35f );
+                    ++view.candidates;
+                    bool nearDriveable = false, centreDriveable = false, farDriveable = false;
+                    float nearHeight = 0, centreHeight = 0, farHeight = 0;
+                    if( !authoring->getRuntimeSurface( nearRoad.x, nearRoad.z, nearHeight, nearDriveable ) ||
+                        !authoring->getRuntimeSurface( centre.x, centre.z, centreHeight, centreDriveable ) ||
+                        !authoring->getRuntimeSurface( farRoad.x, farRoad.z, farHeight, farDriveable ) ||
+                        !nearDriveable || !centreDriveable || !farDriveable )
+                        continue;
+                    const float crown = centreHeight - .5f * ( nearHeight + farHeight );
+                    const float crossSlope = std::abs( farHeight - nearHeight ) / ( width * .7f );
+                    if( crown < minimumCrown || crossSlope > maximumCrossSlope ) continue;
+                    const float score = std::hypot( centre.x - desired.x, centre.z - desired.z ) +
+                        std::max( 0.f, 12.f - width ) * 10.f + crossSlope * 80.f - crown * 20.f;
+                    if( score >= bestScore ) continue;
+                    bestScore = score;
+                    view.centre = centre;
+                    view.road = road;
+                    view.width = width;
+                    view.station = station;
+                    view.nearRoad = nearRoad;
+                    view.farRoad = farRoad;
+                    along = tangent;
+                }
+            }
+            if( !std::isfinite( bestScore ) )
+                throw std::runtime_error( "Road-profile view found no crowned arterial away from a junction." );
+            Vector3F side( -along.z, 0, along.x );
+            const float halfWidth = view.width * .5f;
+            view.eye = view.centre + side * ( halfWidth + 1.8f ) - along * 2.0f;
+            view.target = view.centre - side * ( halfWidth + .8f ) + along * 1.2f;
+            float nearGround = 0, farGround = 0;
+            if( !render::sampleTerrainHeight( *terrain, placement, view.eye, nearGround ) ||
+                !render::sampleTerrainHeight( *terrain, placement, view.target, farGround ) )
+                throw std::runtime_error( "Road-profile view requires terrain under both pavements." );
+            view.eye.y = nearGround + 1.12f;
+            view.target.y = std::min( view.centre.y + .12f, farGround + .23f );
+            return view;
+        }
+
         CityVergeView cityVergeInspectionView( const advanced::SceneAssets &assets )
         {
             const auto authoring = assets.roadAuthoring;
@@ -3456,6 +3553,45 @@ namespace workphone
                         else evidence << "null";
                         evidence << '}';
                     }
+                    if( m_captureView == "road-profile" )
+                    {
+                        const auto eye = m_cameraActor->getWorldTransform().getPosition();
+                        float nearHeight = 0, centreHeight = 0, farHeight = 0;
+                        bool nearDriveable = false, centreDriveable = false, farDriveable = false;
+                        const bool nearReady = m_assets.roadAuthoring->getRuntimeSurface(
+                            m_cityRoadProfileNearRoad.x, m_cityRoadProfileNearRoad.z, nearHeight, nearDriveable );
+                        const bool centreReady = m_assets.roadAuthoring->getRuntimeSurface(
+                            m_cityRoadProfileCentre.x, m_cityRoadProfileCentre.z, centreHeight, centreDriveable );
+                        const bool farReady = m_assets.roadAuthoring->getRuntimeSurface(
+                            m_cityRoadProfileFarRoad.x, m_cityRoadProfileFarRoad.z, farHeight, farDriveable );
+                        const bool roadSamplesDriveable = nearReady && centreReady && farReady &&
+                            nearDriveable && centreDriveable && farDriveable;
+                        const float crown = centreHeight - .5f * ( nearHeight + farHeight );
+                        const float crossSlope = std::abs( farHeight - nearHeight ) /
+                            ( m_cityRoadProfileWidth * .7f );
+                        const bool valid = roadSamplesDriveable && m_cityRoadProfileWidth >= 9.f &&
+                            crown >= .02f && crossSlope <= .035f &&
+                            ( eye - m_cityRoadProfileEye ).lengthSquared() < .0001f;
+                        cityValid = cityValid && valid;
+                        const auto vector = [&]( Vector3F p ) { evidence << '[' << p.x << ',' << p.y << ',' << p.z << ']'; };
+                        evidence << ",\n  \"cityRoadProfileCamera\":{\"valid\":" << ( valid ? "true" : "false" )
+                                 << ",\"roadSamplesDriveable\":" << ( roadSamplesDriveable ? "true" : "false" )
+                                 << ",\"roadIndex\":" << m_cityRoadProfileRoad
+                                 << ",\"roadWidthMetres\":" << m_cityRoadProfileWidth
+                                 << ",\"stationMetres\":" << m_cityRoadProfileStation
+                                 << ",\"candidateSamples\":" << m_cityRoadProfileCandidates
+                                 << ",\"targetXZ\":[0,24],\"minimumCrownMetres\":0.02"
+                                 << ",\"maximumCrossSlope\":0.035,\"connectionClearanceMetres\":32"
+                                 << ",\"eye\":";
+                        vector( eye );
+                        evidence << ",\"target\":"; vector( m_cityRoadProfileTarget );
+                        evidence << ",\"centre\":"; vector( m_cityRoadProfileCentre );
+                        evidence << ",\"nearRoadHeight\":" << nearHeight
+                                 << ",\"centreRoadHeight\":" << centreHeight
+                                 << ",\"farRoadHeight\":" << farHeight
+                                 << ",\"crownMetres\":" << crown
+                                 << ",\"crossSlope\":" << crossSlope << '}';
+                    }
                     const auto expectedDetail = m_cityStreetDetail >= 0 ? m_cityStreetDetail : 100;
                     const auto expectedPropDensity = m_cityStreetPropDensity >= 0 ? m_cityStreetPropDensity : 150;
                     const bool expectStreetDetail = m_cityStreetDetail == 100 && expectedPropDensity > 0 && m_seed == 42 &&
@@ -5763,6 +5899,19 @@ namespace workphone
                 m_cityUtilityGrates = view.grates;
                 m_cityUtilityHasGrate = view.nearby;
             }
+            if( m_captureView == "road-profile" )
+            {
+                const auto view = cityRoadProfileInspectionView( m_assets );
+                m_cityRoadProfileEye = view.eye;
+                m_cityRoadProfileTarget = view.target;
+                m_cityRoadProfileCentre = view.centre;
+                m_cityRoadProfileNearRoad = view.nearRoad;
+                m_cityRoadProfileFarRoad = view.farRoad;
+                m_cityRoadProfileRoad = view.road;
+                m_cityRoadProfileCandidates = view.candidates;
+                m_cityRoadProfileWidth = view.width;
+                m_cityRoadProfileStation = view.station;
+            }
             if( m_captureView == "junction" )
             {
                 const auto connections = cityConnections( *m_assets.roadAuthoring );
@@ -6202,6 +6351,11 @@ namespace workphone
                         m_cameraActor->setPosition( m_cityUtilityEye );
                         m_cameraActor->lookAt( m_cityUtilityTarget, Vector3F::unitY() );
                     }
+                    else if( m_captureView == "road-profile" )
+                    {
+                        m_cameraActor->setPosition( m_cityRoadProfileEye );
+                        m_cameraActor->lookAt( m_cityRoadProfileTarget, Vector3F::unitY() );
+                    }
                     else if( isRoadTerrainEditView( m_captureView ) && m_roadTerrainEditPrepared )
                     {
                         m_cameraActor->setPosition( m_roadTerrainEditEye );
@@ -6419,7 +6573,7 @@ int main( int argc, char **argv )
                    "  --track-smoke-test            Drive one full lap through the physics controller\n"
                    "  --collision-smoke-test        Verify native boxes; circuit garage impact or city road/sidewalk grades\n"
                    "  --validate-circuit           Validate 100 generated closed circuits\n"
-                   "  --capture PATH.bmp --view follow|car|track|corner|junction|hillside|street|boulevard|frontage|facade|building|utilities|park|shopfront|entry-route|rooftop|pitched-roof   Save a rendered view and "
+                   "  --capture PATH.bmp --view follow|car|track|corner|junction|hillside|street|boulevard|frontage|facade|building|utilities|road-profile|park|shopfront|entry-route|rooftop|pitched-roof   Save a rendered view and "
                    "exit\n"
                    "  --view imposter-front|imposter-diagonal|imposter-back|imposter-high  Same city patch from four angles, with exported sprite sheet\n"
                    "  --no-hud --force-lod auto|0|1  Clean captures and tree LOD comparisons\n"
@@ -6453,6 +6607,7 @@ int main( int argc, char **argv )
                    "  --view street|boulevard       Opposite street-level city inspections; track is the overview\n"
                    "  --view frontage               Close sidewalk inspection (requires --city-terrain-roads)\n"
                    "  --view utilities              Close inspection of a fitted carriageway cover and nearby grate\n"
+                   "  --view road-profile           Low view across a fitted road and both pavements\n"
                    "  --view park                   Inspect a generated park parcel from street level\n"
                    "  --view shopfront              Inspect a commercial entrance from street level\n"
                    "  --view entry-route            Inspect the space between a commercial entrance and its street\n"
@@ -6824,7 +6979,7 @@ int main( int argc, char **argv )
         }
         if( captureView != "follow" && captureView != "car" && captureView != "track" &&
             captureView != "corner" && captureView != "junction" && captureView != "hillside" && captureView != "verge" && captureView != "street" && captureView != "boulevard" &&
-            captureView != "frontage" && captureView != "facade" && captureView != "building" && captureView != "utilities" && captureView != "park" && captureView != "shopfront" && captureView != "entry-route" && captureView != "rooftop" && captureView != "pitched-roof" &&
+            captureView != "frontage" && captureView != "facade" && captureView != "building" && captureView != "utilities" && captureView != "road-profile" && captureView != "park" && captureView != "shopfront" && captureView != "entry-route" && captureView != "rooftop" && captureView != "pitched-roof" &&
             !isRoadTerrainEditView( captureView ) && !isCityImposterView( captureView ) )
             throw std::runtime_error( "Unknown capture view; use --help for scene and directional imposter review views." );
         if( isCityImposterView( captureView ) && ( !openCity || roadAuthoringShowcase || !cityStreaming ||
@@ -6843,6 +6998,8 @@ int main( int argc, char **argv )
             throw std::runtime_error( "--view frontage requires --city-terrain-roads." );
         if( captureView == "utilities" && ( !cityTerrainRoads || orbit ) )
             throw std::runtime_error( "--view utilities requires --city-terrain-roads and a fixed camera." );
+        if( captureView == "road-profile" && ( !cityTerrainRoads || orbit ) )
+            throw std::runtime_error( "--view road-profile requires --city-terrain-roads and a fixed camera." );
         if( captureView == "park" && ( !cityTerrainRoads || orbit ) )
             throw std::runtime_error( "--view park requires --city-terrain-roads and a fixed camera." );
         if( captureView == "shopfront" && ( !cityTerrainRoads || orbit ) )

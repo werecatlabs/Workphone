@@ -115,6 +115,69 @@ namespace
                   "Identical fit inputs produced different terrain or roundabout profiles" );
         }
     }
+    void crownedFlatRoad()
+    {
+        auto ground = terrain();
+        std::fill( ground->heights.begin(), ground->heights.end(), 0.f );
+        auto s = source();
+        s.version = 2;
+        s.roads.push_back( road( 1, { 0, 0, -80 }, { 0, 0, 80 }, 8 ) );
+        CityRoadTerrainFitResult result; String error;
+        check( prepareCityRoadTerrainFit( s, ground, {}, {}, result, error ), error );
+        preserved( s, result, *ground );
+        const auto height = [&]( float x, float z ) {
+            float value = 0;
+            need( render::sampleTerrainHeight( *result.terrain, {}, { x, 0, z }, value ),
+                  "Crowned flat road lost terrain support" );
+            return value;
+        };
+        const float centre = height( 0, 0 ), edge = height( 4, 0 );
+        need( centre > edge + .025f && centre < .055f && std::abs( edge ) < .005f,
+              "Draped carriageway has no bounded centre crown or zero-height edge" );
+        need( std::abs( height( 0, -80 ) ) < .005f && height( 0, -76 ) < centre,
+              "Open road crown did not taper into its end cap" );
+        need( std::abs( height( 16, 0 ) ) < .005f,
+              "Road crown escaped the carriageway and shoulder" );
+
+        // A newly drawn road and a width change still need a fitted crown even
+        // when the original flat terrain could support an uncrowned road mesh.
+        auto before = source(); before.version = 2;
+        CityRoadTerrainFitResult drawn;
+        check( prepareCityRoadTerrainEdit( before, s, ground, {}, {}, drawn, error ), error );
+        need( drawn.terrain != ground && drawn.report.changedSamples > 0,
+              "Supported new Drape road skipped its crown fit" );
+        auto narrower = s; narrower.roads.front().width = 6;
+        check( prepareCityRoadTerrainEdit( s, narrower, ground, {}, {}, drawn, error ), error );
+        need( drawn.terrain != ground && drawn.report.changedSamples > 0,
+              "Supported road width change skipped its crown fit" );
+
+        auto split = s;
+        auto &knots = split.roads.front().knots;
+        const auto p0 = knots.front().position, p1 = p0 + knots.front().outHandle;
+        const auto p3 = knots.back().position, p2 = p3 + knots.back().inHandle;
+        const auto midpoint = []( Vector3F a, Vector3F b ) { return ( a+b )*.5f; };
+        const auto a = midpoint( p0, p1 ), b = midpoint( p1, p2 ), c = midpoint( p2, p3 );
+        const auto d = midpoint( a, b ), e = midpoint( b, c ), f = midpoint( d, e );
+        knots.front().outHandle = a-p0;
+        knots.back().inHandle = c-p3;
+        CityRoadSplineKnot inserted; inserted.id = id( 4, 100 );
+        inserted.position = f; inserted.inHandle = d-f; inserted.outHandle = e-f;
+        knots.insert( knots.begin()+1, inserted );
+        check( prepareCityRoadTerrainEdit( s, split, result.terrain, {}, {}, drawn, error ), error );
+        need( drawn.terrain == result.terrain && !drawn.report.changedSamples,
+              "Curve-preserving knot insertion changed an exact supported terrain snapshot" );
+        auto bent = split; bent.roads.front().knots[1].position.x += 2.f;
+        check( prepareCityRoadTerrainEdit( s, bent, ground, {}, {}, drawn, error ), error );
+        need( drawn.terrain != ground && drawn.report.changedSamples > 0,
+              "Reshaped interior knot insertion skipped terrain fit" );
+
+        auto junction = s;
+        junction.roads.push_back( road( 2, { 0, 0, 0 }, { 80, 0, 0 }, 6 ) );
+        check( prepareCityRoadTerrainFit( junction, ground, {}, {}, result, error ), error );
+        const float cap = height( 0, 0 ), approach = height( 0, 60 );
+        need( std::abs( cap ) < .005f && approach > .025f && height( 0, 20 ) < approach,
+              "Junction pad failed to blend crowned approach into its plane" );
+    }
     void localEdits()
     {
         auto ground = std::make_shared<render::TerrainData>();
@@ -133,7 +196,7 @@ namespace
         const auto original = checksum( *ground ); const auto originalSource = encoded( before );
         CityRoadTerrainFitResult result; String error;
         auto compatible = before;
-        compatible.roads[0].width = 10;
+        compatible.roads[0].maxGrade = .07f;
         check( prepareCityRoadTerrainEdit( before, compatible, ground, {}, {}, result, error ), error );
         need( result.terrain == ground && !result.report.changedSamples && encoded( result.source ) == encoded( compatible ),
               "Compatible road edit unexpectedly changed existing terrain" );
@@ -475,6 +538,7 @@ int main()
     try
     {
         run( "hills, controls, masks, transforms and determinism", hillsAndTransforms );
+        run( "flat road crown, end caps, junction blend and supported edits", crownedFlatRoad );
         run( "local road edits, unchanged neighbours and compatible edits", localEdits );
         run( "persistent terrain grading ownership and external brush edits", terrainGradingOwnership );
         run( "ordinary junction and roundabout local planes", junctions );

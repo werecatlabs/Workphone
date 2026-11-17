@@ -3587,6 +3587,7 @@ namespace workphone::scene::race
 #include "CityRoundaboutSigns.hpp"
 #include "CityFootwayAppearance.hpp"
 #include "CityKerbCoping.hpp"
+#include "CityPavementRelief.hpp"
 #include "CityCrossingLandings.hpp"
 #include "CityCrossingBollards.hpp"
 #include "CityParkLandscape.hpp"
@@ -5559,6 +5560,7 @@ namespace workphone::scene::race
                     cityRoundaboutSigns::build( assets, fitted, terrainStreetLamps, quality );
                     cityRoadEdges::buildGutters( assets, fitted, roadSurface, layers.roadMaterial );
                     cityKerbCoping::build( assets, fitted, roadSurface, walks.curb, seed );
+                    cityPavementRelief::build( assets, fitted, walks.slab, seed );
                     cityRoadLaneWear::build( assets, fitted, layers, seed, quality );
                     buildTerrainCityVergeTransitions( assets, fitted, seed, quality, roadSurface );
                     parkLayouts = cityParkLandscape::build( assets, city, fitted, walks.mesh, roadSurface,

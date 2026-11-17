@@ -306,6 +306,10 @@ namespace workphone
         Vector3F m_cityUtilityEye{}, m_cityUtilityTarget{}, m_cityUtilityPrimary{}, m_cityUtilityGrate{};
         size_t m_cityUtilityCovers = 0, m_cityUtilityGrates = 0;
         bool m_cityUtilityHasGrate = false;
+        Vector3F m_cityRoadProfileEye{}, m_cityRoadProfileTarget{}, m_cityRoadProfileCentre{};
+        Vector3F m_cityRoadProfileNearRoad{}, m_cityRoadProfileFarRoad{};
+        size_t m_cityRoadProfileRoad = 0, m_cityRoadProfileCandidates = 0;
+        f32 m_cityRoadProfileWidth = 0, m_cityRoadProfileStation = 0;
         Vector3F m_roadTerrainEditEye{}, m_roadTerrainEditTarget{};
         Vector3F m_roadTerrainEditBeforeKnot{}, m_roadTerrainEditAfterKnot{}, m_roadTerrainEditProbe{};
         size_t m_roadTerrainEditRoad = 0, m_roadTerrainEditChangedSamples = 0;
