@@ -3465,6 +3465,24 @@ namespace workphone
                     if(authoring)cityValid=writeCityConnections(evidence,*authoring,app->getPhysicsManager()->getPhysicsScene()) && cityValid;
                     if(authoring)cityValid=writeCityTerrainInteraction(evidence,*authoring,app->getPhysicsManager()->getPhysicsScene()) && cityValid;
                     const auto &layout=m_assets.cityLayout;size_t parks=0;for(const auto &lot:layout.lots)parks+=lot.park?1:0;
+                    size_t cityDebugActors = 0;
+                    bool cityDebugRenderersReady = true;
+                    for( const auto &actor : m_assets.actors )
+                    {
+                        if( !actor || actor->getName().find( "City debug " ) != 0 ) continue;
+                        ++cityDebugActors;
+                        const auto renderer = actor->getComponent<scene::MeshRenderer>();
+                        cityDebugRenderersReady = cityDebugRenderersReady && renderer && renderer->getGraphicsObject();
+                    }
+                    const bool cityDebugValid = m_assets.cityDebugBlocks == m_cityDebugBlocks &&
+                        m_assets.cityDebugLots == m_cityDebugLots &&
+                        ( !m_cityDebugBlocks || m_assets.cityDebugBlockCount > 0 ) &&
+                        ( !m_cityDebugLots || m_assets.cityDebugLotCount == layout.lots.size() ) &&
+                        ( m_cityDebugBlocks || m_assets.cityDebugBlockCount == 0 ) &&
+                        ( m_cityDebugLots || m_assets.cityDebugLotCount == 0 ) &&
+                        ( ( m_cityDebugBlocks || m_cityDebugLots ) == ( cityDebugActors > 0 ) ) &&
+                        cityDebugRenderersReady;
+                    cityValid = cityValid && cityDebugValid;
                     evidence<<",\n  \"terrainCity\": {\"sourceId\":"<<advanced::jsonString(authoring?String(authoring->getSource().id.data(),authoring->getSource().id.size()):String())
                         <<",\"terrainBindingUUID\":"<<advanced::jsonString(authoring?authoring->getTerrainBindingUUID():String())
                         <<",\"bindingValid\":"<<(check.binding?"true":"false")<<",\"sourceReused\":"<<(m_assets.citySourceReused?"true":"false")
@@ -3498,6 +3516,9 @@ namespace workphone
                         <<",\"lots\":"<<layout.lots.size()<<",\"buildingLots\":"<<layout.lots.size()-parks<<",\"parkLots\":"<<parks
                         <<",\"buildingCollisionActors\":"<<check.buildingBodies<<",\"expectedBuildingCollisionActors\":"<<check.expectedBuildingBodies
                         <<",\"buildingSupportChecks\":"<<m_assets.cityBuildingSupportChecks<<",\"culledParcels\":"<<m_assets.cityCulledParcels
+                        <<",\"cityDebugBlocks\":"<<(m_assets.cityDebugBlocks?"true":"false")<<",\"cityDebugLots\":"<<(m_assets.cityDebugLots?"true":"false")
+                        <<",\"cityDebugBlockCount\":"<<m_assets.cityDebugBlockCount<<",\"cityDebugLotCount\":"<<m_assets.cityDebugLotCount
+                        <<",\"cityDebugActors\":"<<cityDebugActors<<",\"cityDebugValid\":"<<(cityDebugValid?"true":"false")
                         <<",\"cityStreetDetail\":"<<m_assets.cityStreetDetail<<",\"cityStreetPropDensity\":"<<m_assets.cityStreetPropDensity<<",\"cityStreetDetailCount\":"<<m_assets.cityStreetDetailCount
                         <<",\"streetDetailActors\":"<<streetDetailActors<<",\"streetDetailRenderersReady\":"<<(streetDetailRenderersReady?"true":"false")
                         <<",\"streetDetailPlacementsRequired\":"<<(expectStreetDetail?"true":"false")<<",\"streetDetailValid\":"<<(streetDetailValid?"true":"false")
@@ -5386,6 +5407,8 @@ namespace workphone
                 properties->setProperty( "City Street Detail", m_cityStreetDetail );
             if( m_cityStreetPropDensity >= 0 )
                 properties->setProperty( "City Street Prop Density", m_cityStreetPropDensity );
+            properties->setProperty( "City Debug Blocks", m_cityDebugBlocks );
+            properties->setProperty( "City Debug Lots", m_cityDebugLots );
             if( m_cityBuildingStyle >= 0 )
                 properties->setProperty( "City Building Style", m_cityBuildingStyle );
             for( size_t role = 0; role < cityBuildingMeshProperties.size(); ++role )
@@ -6392,6 +6415,8 @@ int main( int argc, char **argv )
                    "  --city-terrain-relief 0..2      Initial city terrain relief multiplier (default 1; retained terrain is preserved)\n"
                    "  --city-street-detail 0..100     Roadside detail density (requires --city-terrain-roads, default 100)\n"
                    "  --city-street-prop-density 0..200  Optional street furniture density (default 150)\n"
+                   "  --city-debug-blocks            Show generated block boundary overlays\n"
+                   "  --city-debug-lots              Show parcel and building footprint overlays\n"
                    "  --city-streaming on|off        Stream building mesh tiers; keep skyline imposters resident\n"
                    "  --city-streaming-smoke-test   Verify native city unload and reload before capture\n"
                    "  --city-source-memory-mib N     Shared source-memory minimum for city generation (128..4096, default 1024)\n"
@@ -6459,6 +6484,7 @@ int main( int argc, char **argv )
     s32 cityBlocks = 8, cityRoute = 0;
     s32 cityStreetDetail = -1;
     s32 cityStreetPropDensity = -1;
+    bool cityDebugBlocks = false, cityDebugLots = false;
     s32 cityBuildingStyle = -1;
     std::array<String, 5> cityBuildingMeshes;
     bool cityBuildingMeshOverride = false;
@@ -6558,6 +6584,16 @@ int main( int argc, char **argv )
                 const auto parsed = std::from_chars( value.data(), end, cityStreetPropDensity );
                 if( parsed.ec != std::errc{} || parsed.ptr != end || cityStreetPropDensity < 0 || cityStreetPropDensity > 200 )
                     throw std::runtime_error( "City street prop density must be an integer from 0 to 200." );
+            }
+            else if( String( argv[i] ) == "--city-debug-blocks" )
+            {
+                cityDebugBlocks = true;
+                cityOptionsExplicit = true;
+            }
+            else if( String( argv[i] ) == "--city-debug-lots" )
+            {
+                cityDebugLots = true;
+                cityOptionsExplicit = true;
             }
             else if( String( argv[i] ) == "--city-building-style" && i + 1 < argc )
             {
@@ -6927,6 +6963,7 @@ int main( int argc, char **argv )
         app->setCityTerrainRelief( cityTerrainRelief );
         app->setCityStreetDetail( cityStreetDetail );
         app->setCityStreetPropDensity( cityStreetPropDensity );
+        app->setCityLayoutDebug( cityDebugBlocks, cityDebugLots );
         app->setCityStreaming( cityStreaming );
         app->setCityStreamingSmokeTest( cityStreamingSmokeTest );
         app->setCitySourceMemoryMiB( citySourceMemoryMiB );

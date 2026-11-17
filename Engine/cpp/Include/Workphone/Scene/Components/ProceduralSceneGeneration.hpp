@@ -112,6 +112,8 @@ namespace workphone::scene::race
         int cityStreetDetail = 100;
         int cityStreetPropDensity = 150;
         int cityBuildingDensity = 150;
+        bool cityDebugBlocks = false, cityDebugLots = false;
+        u32 cityDebugBlockCount = 0, cityDebugLotCount = 0;
         // LOD0->1 and LOD1->2 distances for trees, shrubs and grass (metres).
         std::array<f32, 6> cityFoliageLODDistances = { 65, 260, 20, 100, 8, 35 };
         // Zero follows the appearance-quality default; otherwise pixels per view.

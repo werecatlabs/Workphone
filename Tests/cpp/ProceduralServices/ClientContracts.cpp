@@ -10,6 +10,7 @@
 #include <Workphone/Interface/Procedural/IVehicleGeometry.hpp>
 #include <Workphone/Interface/Procedural/IVehiclePhysics.hpp>
 #include <Workphone/Interface/Procedural/IVehiclePresentation.hpp>
+#include <Workphone/Interface/Procedural/OpenCityDebugBlocks.hpp>
 #include <Workphone/Interface/System/IFactoryManager.hpp>
 #include <Workphone/Scene/Components/ProceduralVehicle.hpp>
 #include <Workphone/Scene/Components/ProceduralRaceScene.hpp>
@@ -324,6 +325,22 @@ void checkClientContracts( SmartPtr<IFactoryManager> factories )
     s32 streetPropDensity = -1;
     require( cityOptions->getPropertyValue( "City Street Prop Density", streetPropDensity ) && streetPropDensity == 150,
              "New city scenes should have the populated street prop preset" );
+    bool debugBlocks = true, debugLots = true;
+    require( cityOptions->getPropertyValue( "City Debug Blocks", debugBlocks ) && !debugBlocks &&
+                 cityOptions->getPropertyValue( "City Debug Lots", debugLots ) && !debugLots,
+             "City layout debug geometry should be off by default" );
+    OpenCityLayout square;
+    square.naturalRoads = true;
+    square.roads.nodes = { { 0, 0 }, { 20, 0 }, { 20, 20 }, { 0, 20 } };
+    square.roads.edges = { { 0, 1 }, { 1, 2 }, { 2, 3 }, { 3, 0 } };
+    const auto squareFaces = openCityDebugBlocks( square );
+    require( squareFaces.size() == 1 && squareFaces.front().size() == 4,
+             "Natural city debug blocks must select the bounded road face" );
+    const auto insetSquare = insetOpenCityDebugBlock( squareFaces.front(), 3.f );
+    require( insetSquare.size() == 4 && insetSquare.front().x > 0 && insetSquare.front().z > 0,
+             "City debug block outlines must sit inside the road graph face" );
+    const auto gridFaces = openCityDebugBlocks( OpenCityLayout::generate( 42, 6, 0, false ) );
+    require( gridFaces.size() == 36, "Grid city debug blocks must match the planning cells" );
     size_t sparse = 0, dense = 0, central = 0, peripheral = 0;
     for( u64 id = 1; id <= 1000; ++id )
     {
@@ -401,6 +418,8 @@ void checkClientContracts( SmartPtr<IFactoryManager> factories )
     cityOptions->setProperty( "City Building Impostor Resolution", s32( 1 ) );
     cityOptions->setProperty( "City Building Density", s32( 160 ) );
     cityOptions->setProperty( "City Street Prop Density", s32( 65 ) );
+    cityOptions->setProperty( "City Debug Blocks", true );
+    cityOptions->setProperty( "City Debug Lots", true );
     city->setProperties( cityOptions );
     auto restoredCity = workphone::make_ptr<scene::ProceduralCityScene>();
     restoredCity->setProperties( city->getProperties() );
@@ -423,6 +442,9 @@ void checkClientContracts( SmartPtr<IFactoryManager> factories )
              "City building density did not survive the component property round-trip" );
     require( savedOptions->getPropertyValue( "City Street Prop Density", streetPropDensity ) && streetPropDensity == 65,
              "City street prop density did not survive the component property round-trip" );
+    require( savedOptions->getPropertyValue( "City Debug Blocks", debugBlocks ) && debugBlocks &&
+                 savedOptions->getPropertyValue( "City Debug Lots", debugLots ) && debugLots,
+             "City layout debug toggles did not survive the component property round-trip" );
     savedOptions->setProperty( "City Street Prop Density", s32( 201 ) );
     restoredCity->setProperties( savedOptions );
     savedOptions = restoredCity->getProperties();

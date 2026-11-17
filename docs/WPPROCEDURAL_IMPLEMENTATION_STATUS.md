@@ -1,5 +1,25 @@
 # WPProcedural implementation status
 
+## City block and lot debug overlays — 17 November 2026
+
+The city scene components expose saved **City Debug Blocks** and **City Debug
+Lots** toggles, both off by default. Regeneration creates terrain-following
+line meshes as child actors of the generated scene. Grid cities show their
+planning cells; natural layouts show bounded faces of the generated planar
+road graph. The lot overlay separates occupied parcels, park parcels and
+building footprints by color. Read-only Inspector counts report the drawn
+blocks and lots. Sample flags `--city-debug-blocks` and `--city-debug-lots`
+and capture switches `-CityDebugBlocks` and `-CityDebugLots` expose the same
+overlay for validation. Natural block faces describe the generated graph;
+hand-edited spline topology is not yet reconstructed into new faces.
+The block outline is inset from road centrelines and clipped against the
+active roundabout footprint and driveable road surface, keeping the overlay
+off the circulating carriageway. Debug meshes have no collision bodies.
+Debug engine and sample builds, `WPProcedural.services`, and a seed-42
+six-block terrain-city capture passed. The final capture reported 14 visible
+block faces, 122 lots and four ready overlay actors with structural validation
+true. See the [roundabout overview](../artifacts/procedural/city-layout-debug-clipped-20261117/street.bmp).
+
 ## Street prop density and variety — 17 November 2026
 
 **City Street Prop Density** is a saved 0–200 city component property, default

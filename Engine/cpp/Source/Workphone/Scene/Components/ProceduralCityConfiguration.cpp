@@ -168,6 +168,8 @@ namespace workphone::scene
         assets.cityStreetDetail = m_streetDetail;
         assets.cityStreetPropDensity = m_streetPropDensity;
         assets.cityBuildingDensity = m_buildingDensity;
+        assets.cityDebugBlocks = m_debugBlocks;
+        assets.cityDebugLots = m_debugLots;
         assets.cityFoliageLODDistances = m_foliageLODDistances;
         assets.cityFoliageImpostorResolution = cityImpostorResolutions[size_t( m_foliageImpostorResolution )];
         assets.cityBuildingImpostorResolution = cityImpostorResolutions[size_t( m_buildingImpostorResolution )];
@@ -312,6 +314,14 @@ namespace workphone::scene
         density.setAttribute( "min", "0" );
         density.setAttribute( "max", "200" );
         density.setAttribute( "description", "100 keeps the existing city. Lower values landscape vacant lots; higher values split suitable street-facing parcels for extra buildings." );
+        properties.setProperty( "City Debug Blocks", m_debugBlocks );
+        properties.getPropertyObject( "City Debug Blocks" ).setAttribute( "description",
+            "Show generated road-enclosed blocks, or planning cells on a grid city. Press Regenerate." );
+        properties.setProperty( "City Debug Lots", m_debugLots );
+        properties.getPropertyObject( "City Debug Lots" ).setAttribute( "description",
+            "Show parcel boundaries and occupied building footprints. Press Regenerate." );
+        properties.setProperty( "City Debug Block Count", assets.cityDebugBlockCount, true );
+        properties.setProperty( "City Debug Lot Count", assets.cityDebugLotCount, true );
         for( size_t i = 0; i < cityFoliageDistanceProperties.size(); ++i )
         {
             const auto name = cityFoliageDistanceProperties[i];
@@ -429,6 +439,8 @@ namespace workphone::scene
             if( buildingDensity >= 0 && buildingDensity <= 200 ) m_buildingDensity = buildingDensity;
             else if( error.empty() ) error = "City Building Density must be between 0 and 200.";
         }
+        properties.getPropertyValue( "City Debug Blocks", m_debugBlocks );
+        properties.getPropertyValue( "City Debug Lots", m_debugLots );
         auto distances = m_foliageLODDistances;
         bool changedDistances = false;
         for( size_t i = 0; i < cityFoliageDistanceProperties.size(); ++i )

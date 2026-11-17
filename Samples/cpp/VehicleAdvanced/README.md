@@ -126,6 +126,14 @@ fixture. Zero removes optional furniture; 100 requests the earlier spacing and
 count. Press **Regenerate** after changing it. The sample and capture harness
 accept `--city-street-prop-density` and `-CityStreetPropDensity` respectively.
 
+For layout inspection, enable **City Debug Blocks** and **City Debug Lots** on
+the city scene component and press **Regenerate**. Orange lines trace grid
+planning cells or closed faces of the generated natural road graph. Cyan lines
+outline occupied parcels, green lines outline park parcels, and yellow lines
+mark building footprints. The overlay follows the terrain and is disabled by
+default. The Inspector reports the generated block and lot counts. In the
+sample, use `--city-debug-blocks` and `--city-debug-lots`.
+
 With `--view verge`, the sample looks across an open road end from pavement
 level. Use `-Views verge` in the capture harness with `-CityTerrainRoads`.
 The evidence records the selected endpoint camera and counts uploaded planting
