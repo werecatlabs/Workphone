@@ -163,7 +163,9 @@ namespace workphone::editor
     {
         if( window && window->isLoaded() && window->isWindowVisible() &&
             window->getClassName() == "MaterialEditor" )
+        {
             window->callScriptMember( "update" );
+        }
     }
 
     void ScriptWindow::setProperties( SmartPtr<Properties> properties )
@@ -207,9 +209,9 @@ namespace workphone::editor
     }
 
     Parameter ScriptWindow::handleEvent( EventType eventType, hash_type eventValue,
-                                        const Array<Parameter> &arguments,
-                                        SmartPtr<ISharedObject> sender, SmartPtr<ISharedObject> object,
-                                        SmartPtr<IEvent> event )
+                                         const Array<Parameter> &arguments,
+                                         SmartPtr<ISharedObject> sender, SmartPtr<ISharedObject> object,
+                                         SmartPtr<IEvent> event )
     {
         if( getClassName() == "ProjectSettings" && eventType == EventType::UI )
         {
@@ -218,7 +220,8 @@ namespace workphone::editor
                 createOpenAISettingsControls( dynamic_pointer_cast<ui::IUIElement>( sender ) );
                 return {};
             }
-            if( eventValue == static_cast<hash_type>( StringUtil::getHash32( "refreshOpenAISettings" ) ) )
+            if( eventValue ==
+                static_cast<hash_type>( StringUtil::getHash32( "refreshOpenAISettings" ) ) )
             {
                 refreshOpenAISettingsControls( dynamic_pointer_cast<ui::IUIElement>( sender ) );
                 return {};
@@ -233,22 +236,25 @@ namespace workphone::editor
                 refreshMeshySettingsControls( dynamic_pointer_cast<ui::IUIElement>( sender ) );
                 return {};
             }
-            if( eventValue == static_cast<hash_type>( StringUtil::getHash32( "createTrellis2Settings" ) ) )
+            if( eventValue ==
+                static_cast<hash_type>( StringUtil::getHash32( "createTrellis2Settings" ) ) )
             {
                 createTrellis2SettingsControls( dynamic_pointer_cast<ui::IUIElement>( sender ) );
                 return {};
             }
-            if( eventValue == static_cast<hash_type>( StringUtil::getHash32( "refreshTrellis2Settings" ) ) )
+            if( eventValue ==
+                static_cast<hash_type>( StringUtil::getHash32( "refreshTrellis2Settings" ) ) )
             {
                 refreshTrellis2SettingsControls( dynamic_pointer_cast<ui::IUIElement>( sender ) );
                 return {};
             }
         }
-        if(eventType == EventType::UI &&
-           eventValue == static_cast<hash_type>(StringUtil::getHash32("materialShaderReloadAction")))
+        if( eventType == EventType::UI && eventValue == static_cast<hash_type>( StringUtil::getHash32(
+                                                            "materialShaderReloadAction" ) ) )
         {
-            processMaterialShaderReloadAction(workphone::dynamic_pointer_cast<render::IMaterial>(sender),
-                workphone::dynamic_pointer_cast<Properties>(object));
+            processMaterialShaderReloadAction(
+                workphone::dynamic_pointer_cast<render::IMaterial>( sender ),
+                workphone::dynamic_pointer_cast<Properties>( object ) );
             return {};
         }
         if( getClassName() == "ProjectSettings" && eventType == EventType::UI &&
@@ -258,13 +264,15 @@ namespace workphone::editor
             return {};
         }
         if( getClassName() == "ProjectSettings" && eventType == EventType::UI &&
-            eventValue == static_cast<hash_type>( StringUtil::getHash32( "createProjectCollisionMatrix" ) ) )
+            eventValue ==
+                static_cast<hash_type>( StringUtil::getHash32( "createProjectCollisionMatrix" ) ) )
         {
             if( auto parent = dynamic_pointer_cast<ui::IUIElement>( sender ) )
             {
                 auto application = core::IApplicationManager::instancePtr();
                 auto uiManager = application ? application->getUI() : nullptr;
-                const auto type = TypeManager::instance()->getIdFromName( "workphone::ui::ImGuiCollisionMatrix" );
+                const auto type =
+                    TypeManager::instance()->getIdFromName( "workphone::ui::ImGuiCollisionMatrix" );
                 if( uiManager && type )
                 {
                     if( auto matrix = uiManager->addElement( type ) )

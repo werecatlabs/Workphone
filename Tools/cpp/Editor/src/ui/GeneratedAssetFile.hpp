@@ -23,26 +23,54 @@ namespace workphone::editor::generated_assets
         {
             auto suffix = source.substr( source.size() - extension.size() );
             for( auto &c : suffix )
-                if( c >= 'A' && c <= 'Z' ) c += 'a' - 'A';
-            if( suffix == extension ) source.resize( source.size() - extension.size() );
+            {
+                if( c >= 'A' && c <= 'Z' )
+                {
+                    c += 'a' - 'A';
+                }
+            }
+            if( suffix == extension )
+            {
+                source.resize( source.size() - extension.size() );
+            }
         }
         std::string result;
         for( const unsigned char c : source )
         {
-            if( result.size() == 80 ) break;
+            if( result.size() == 80 )
+            {
+                break;
+            }
             const bool valid = ( c >= 'a' && c <= 'z' ) || ( c >= 'A' && c <= 'Z' ) ||
                                ( c >= '0' && c <= '9' ) || c == '-' || c == '_';
             const char next = valid ? static_cast<char>( c ) : '_';
-            if( next != '_' || ( !result.empty() && result.back() != '_' ) ) result += next;
+            if( next != '_' || ( !result.empty() && result.back() != '_' ) )
+            {
+                result += next;
+            }
         }
-        while( !result.empty() && ( result.back() == '_' || result.back() == '-' ) ) result.pop_back();
-        if( result.empty() ) result = fallback;
+        while( !result.empty() && ( result.back() == '_' || result.back() == '-' ) )
+        {
+            result.pop_back();
+        }
+        if( result.empty() )
+        {
+            result = fallback;
+        }
         auto upper = result;
         for( auto &c : upper )
-            if( c >= 'a' && c <= 'z' ) c -= 'a' - 'A';
+        {
+            if( c >= 'a' && c <= 'z' )
+            {
+                c -= 'a' - 'A';
+            }
+        }
         if( upper == "CON" || upper == "PRN" || upper == "AUX" || upper == "NUL" ||
             ( upper.size() == 4 && ( upper.substr( 0, 3 ) == "COM" || upper.substr( 0, 3 ) == "LPT" ) &&
-              upper[3] >= '0' && upper[3] <= '9' ) ) result = "generated-" + result;
+              upper[3] >= '0' && upper[3] <= '9' ) )
+        {
+            result = "generated-" + result;
+        }
         return result;
     }
 
@@ -74,7 +102,10 @@ namespace workphone::editor::generated_assets
                 auto part = path.begin();
                 for( const auto &component : root )
                 {
-                    if( part == path.end() || *part != component ) return false;
+                    if( part == path.end() || *part != component )
+                    {
+                        return false;
+                    }
                     ++part;
                 }
                 return part != path.end();
@@ -104,7 +135,10 @@ namespace workphone::editor::generated_assets
 #endif
                 if( file < 0 )
                 {
-                    if( errno == EEXIST ) continue;
+                    if( errno == EEXIST )
+                    {
+                        continue;
+                    }
                     error = "Could not create the generated asset. Check project folder permissions.";
                     return false;
                 }
@@ -112,12 +146,15 @@ namespace workphone::editor::generated_assets
                 while( written < size )
                 {
 #ifdef _WIN32
-                    const auto count = _write( file, bytes + written,
-                                               static_cast<unsigned>( size - written ) );
+                    const auto count =
+                        _write( file, bytes + written, static_cast<unsigned>( size - written ) );
 #else
                     const auto count = ::write( file, bytes + written, size - written );
 #endif
-                    if( count <= 0 ) break;
+                    if( count <= 0 )
+                    {
+                        break;
+                    }
                     written += static_cast<std::size_t>( count );
                 }
 #ifdef _WIN32
@@ -143,4 +180,4 @@ namespace workphone::editor::generated_assets
         }
         return false;
     }
-}
+}  // namespace workphone::editor::generated_assets

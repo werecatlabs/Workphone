@@ -20,57 +20,98 @@
 #include <Workphone/System/FSMManager.hpp>
 
 #if WP_EDITOR_TESTS
-#include <boost/test/unit_test.hpp>
-#include <filesystem>
-#include <fstream>
-#include <iterator>
-#include <set>
-#include <algorithm>
-#include <array>
-#include <vector>
-#include <cstdint>
-#include <limits>
+#    include <boost/test/unit_test.hpp>
+#    include <filesystem>
+#    include <fstream>
+#    include <iterator>
+#    include <set>
+#    include <algorithm>
+#    include <array>
+#    include <vector>
+#    include <cstdint>
+#    include <limits>
 
 using namespace workphone;
 using namespace workphone::editor;
+
 namespace
 {
     struct CityPersistenceDirectory
     {
-        std::filesystem::path path = std::filesystem::temp_directory_path() /
+        std::filesystem::path path =
+            std::filesystem::temp_directory_path() /
             std::string( ( "workphone-terrain-city-persistence-" + StringUtil::getUUID() ).c_str() );
-        ~CityPersistenceDirectory() { std::error_code ignored; std::filesystem::remove_all( path, ignored ); }
+
+        ~CityPersistenceDirectory()
+        {
+            std::error_code ignored;
+            std::filesystem::remove_all( path, ignored );
+        }
     };
+
     struct CityPersistenceEditor
     {
         EditorApplication app;
+
         ~CityPersistenceEditor()
         {
-            if( auto state = core::IApplicationManager::instancePtr() ) { state->setQuit( true ); state->setRunning( false ); }
+            if( auto state = core::IApplicationManager::instancePtr() )
+            {
+                state->setQuit( true );
+                state->setRunning( false );
+            }
             app.unload( nullptr );
         }
     };
+
     struct CityPersistenceTask
     {
         TaskId previous = Thread::getCurrentTask();
-        CityPersistenceTask() { Thread::setCurrentTask( TaskId::Application ); }
-        ~CityPersistenceTask() { Thread::setCurrentTask( previous ); }
+
+        CityPersistenceTask()
+        {
+            Thread::setCurrentTask( TaskId::Application );
+        }
+
+        ~CityPersistenceTask()
+        {
+            Thread::setCurrentTask( previous );
+        }
     };
+
     struct CityPersistenceTaskOwner
     {
-        SmartPtr<ITask> task; SmartPtr<ISharedObject> previous;
-        explicit CityPersistenceTaskOwner( SmartPtr<ITask> value ) : task( value ), previous( value->getOwner() ) { task->setOwner( nullptr ); }
-        ~CityPersistenceTaskOwner() { task->setOwner( previous ); }
+        SmartPtr<ITask> task;
+        SmartPtr<ISharedObject> previous;
+
+        explicit CityPersistenceTaskOwner( SmartPtr<ITask> value ) :
+            task( value ),
+            previous( value->getOwner() )
+        {
+            task->setOwner( nullptr );
+        }
+
+        ~CityPersistenceTaskOwner()
+        {
+            task->setOwner( previous );
+        }
     };
+
     class CityPersistenceBarrier : public Job
     {
     public:
         bool *complete = nullptr;
-        void execute() override { *complete = true; }
+
+        void execute() override
+        {
+            *complete = true;
+        }
     };
+
     String canonicalSource( const procedural::CityRoadSplineSource &source )
     {
-        SourceBudgetText json; String error;
+        SourceBudgetText json;
+        String error;
         BOOST_REQUIRE_MESSAGE( procedural::serializeCityRoadSplineSource( source, json, error ), error );
         return String( json.data(), json.size() );
     }
@@ -80,21 +121,37 @@ namespace
         // Internal invalid-candidate regression, not a supported UI workflow:
         // the property reader rejects NaN. Direct builder input reaches initial
         // terrain preparation after creating its two temporary source anchors.
-        auto scene = manager->getCurrentScene(); BOOST_REQUIRE( scene );
-        auto owner = manager->createActor(); BOOST_REQUIRE( owner );
+        auto scene = manager->getCurrentScene();
+        BOOST_REQUIRE( scene );
+        auto owner = manager->createActor();
+        BOOST_REQUIRE( owner );
         owner->setName( "Invalid city candidate cleanup probe" );
-        scene->addActor( owner ); owner->setState( scene::IGameActor::State::Edit );
+        scene->addActor( owner );
+        owner->setState( scene::IGameActor::State::Edit );
         scene::race::SceneAssets assets;
+
         struct Cleanup
         {
             scene::race::SceneAssets &assets;
             SmartPtr<scene::IGameManager> manager;
             SmartPtr<scene::IGameActor> owner;
-            ~Cleanup() { scene::race::clearScene( assets, owner ); manager->destroyActor( owner ); }
+
+            ~Cleanup()
+            {
+                scene::race::clearScene( assets, owner );
+                manager->destroyActor( owner );
+            }
         } cleanup{ assets, manager, owner };
+
         const auto liveActors = [&] {
             std::set<scene::IGameActor *> actors;
-            for( const auto &actor : manager->getActors() ) if( actor ) actors.insert( actor.get() );
+            for( const auto &actor : manager->getActors() )
+            {
+                if( actor )
+                {
+                    actors.insert( actor.get() );
+                }
+            }
             return actors;
         };
         const auto beforeActors = liveActors();
@@ -113,16 +170,23 @@ namespace
                 try
                 {
                     scene::race::buildCityScene( assets, owner, 42,
-                        procedural::VehicleAppearanceQuality::Preview );
+                                                 procedural::VehicleAppearanceQuality::Preview );
                 }
-                catch( const std::exception &error ) { failure = error.what(); }
-                BOOST_REQUIRE_MESSAGE( failure.find( "Terrain samples and scaled heights must be finite" ) != String::npos,
-                    "Expected rejection inside terrain fitting after anchor creation; received: " + failure );
+                catch( const std::exception &error )
+                {
+                    failure = error.what();
+                }
+                BOOST_REQUIRE_MESSAGE(
+                    failure.find( "Terrain samples and scaled heights must be finite" ) != String::npos,
+                    "Expected rejection inside terrain fitting after anchor creation; received: " +
+                        failure );
                 // Check before the outer caller clears disposable generation data:
                 // clearing that data alone intentionally does not own these anchors.
-                BOOST_CHECK( !assets.roadAuthoring ); BOOST_CHECK( !assets.roadTerrain );
+                BOOST_CHECK( !assets.roadAuthoring );
+                BOOST_CHECK( !assets.roadTerrain );
                 BOOST_CHECK( owner->getChildren().empty() );
-                BOOST_CHECK_EQUAL( scene->getComponents<scene::CityRoadAuthoring>().size(), beforeRoads );
+                BOOST_CHECK_EQUAL( scene->getComponents<scene::CityRoadAuthoring>().size(),
+                                   beforeRoads );
                 BOOST_CHECK_EQUAL( scene->getComponents<scene::TerrainSystem>().size(), beforeTerrain );
                 BOOST_CHECK( liveActors() == beforeActors );
                 scene::race::clearScene( assets, owner );
@@ -136,10 +200,17 @@ namespace
 
     void registrationRemovalOrdering( SmartPtr<scene::IGameManager> manager )
     {
-        auto registry = make_ptr<scene::GameScene>(); registry->load( nullptr ); BOOST_REQUIRE( registry->isLoaded() );
+        auto registry = make_ptr<scene::GameScene>();
+        registry->load( nullptr );
+        BOOST_REQUIRE( registry->isLoaded() );
         using Actor = SmartPtr<scene::IGameActor>;
         std::array<Actor, 5> actors;
-        for( auto &actor : actors ) { actor = manager->createActor(); BOOST_REQUIRE( actor ); BOOST_REQUIRE( actor->getHandle() ); }
+        for( auto &actor : actors )
+        {
+            actor = manager->createActor();
+            BOOST_REQUIRE( actor );
+            BOOST_REQUIRE( actor->getHandle() );
+        }
         std::sort( actors.begin(), actors.end() );
         const Actor removed = actors[1], added = actors[4];
         const auto removedId = removed->getHandle()->getInstanceId();
@@ -147,149 +218,274 @@ namespace
         constexpr auto taskCount = static_cast<u32>( TaskId::Count );
         using Lists = std::vector<Array<Actor>>;
         const auto snapshot = [&] {
-            Lists lists; lists.reserve( phaseCount * taskCount );
-            for( u32 phase = 0; phase < phaseCount; ++phase ) for( u32 task = 0; task < taskCount; ++task )
-                lists.push_back( registry->getRegisteredObjects( static_cast<Thread::UpdateState>( phase ), static_cast<TaskId>( task ) ).snapshot() );
+            Lists lists;
+            lists.reserve( phaseCount * taskCount );
+            for( u32 phase = 0; phase < phaseCount; ++phase )
+            {
+                for( u32 task = 0; task < taskCount; ++task )
+                {
+                    lists.push_back(
+                        registry
+                            ->getRegisteredObjects( static_cast<Thread::UpdateState>( phase ),
+                                                    static_cast<TaskId>( task ) )
+                            .snapshot() );
+                }
+            }
             return lists;
         };
         const auto checkLists = [&]( const Lists &expected ) {
-            const auto actual = snapshot(); BOOST_REQUIRE_EQUAL( actual.size(), expected.size() );
+            const auto actual = snapshot();
+            BOOST_REQUIRE_EQUAL( actual.size(), expected.size() );
             for( size_t list = 0; list < actual.size(); ++list )
             {
-                BOOST_TEST_CONTEXT( "registry phase=" << list / taskCount << " task=" << list % taskCount )
+                BOOST_TEST_CONTEXT( "registry phase=" << list / taskCount
+                                                      << " task=" << list % taskCount )
                 {
                     BOOST_REQUIRE_EQUAL( actual[list].size(), expected[list].size() );
-                    for( size_t actor = 0; actor < actual[list].size(); ++actor ) BOOST_CHECK( actual[list][actor] == expected[list][actor] );
+                    for( size_t actor = 0; actor < actual[list].size(); ++actor )
+                    {
+                        BOOST_CHECK( actual[list][actor] == expected[list][actor] );
+                    }
                 }
             }
         };
         // The public setter permits an explicit schedule. Make every list
         // deliberately non-sorted so a hidden global re-sort is observable.
         const std::array<Actor, 4> schedule = { actors[3], actors[1], actors[0], actors[2] };
-        for( u32 phase = 0; phase < phaseCount; ++phase ) for( u32 task = 0; task < taskCount; ++task )
+        for( u32 phase = 0; phase < phaseCount; ++phase )
         {
-            ConcurrentArray<Actor> ordered;
-            for( size_t actor = 0; actor < schedule.size(); ++actor ) ordered.push_back( schedule[( actor + phase + task ) % schedule.size()] );
-            registry->setRegisteredObjects( static_cast<Thread::UpdateState>( phase ), static_cast<TaskId>( task ), ordered );
+            for( u32 task = 0; task < taskCount; ++task )
+            {
+                ConcurrentArray<Actor> ordered;
+                for( size_t actor = 0; actor < schedule.size(); ++actor )
+                {
+                    ordered.push_back( schedule[( actor + phase + task ) % schedule.size()] );
+                }
+                registry->setRegisteredObjects( static_cast<Thread::UpdateState>( phase ),
+                                                static_cast<TaskId>( task ), ordered );
+            }
         }
         auto expected = snapshot();
-        const auto registrationTask = TaskId::Application; const auto registrationPhase = Thread::UpdateState::Update;
-        const auto registrationList = static_cast<size_t>( registrationPhase ) * taskCount + static_cast<size_t>( registrationTask );
+        const auto registrationTask = TaskId::Application;
+        const auto registrationPhase = Thread::UpdateState::Update;
+        const auto registrationList = static_cast<size_t>( registrationPhase ) * taskCount +
+                                      static_cast<size_t>( registrationTask );
         registry->registerUpdate( registrationTask, registrationPhase, added );
-        expected[registrationList].push_back( added ); std::sort( expected[registrationList].begin(), expected[registrationList].end() );
+        expected[registrationList].push_back( added );
+        std::sort( expected[registrationList].begin(), expected[registrationList].end() );
         checkLists( expected );
-        registry->registerUpdate( registrationTask, registrationPhase, added ); checkLists( expected ); // Duplicate admission is a no-op.
+        registry->registerUpdate( registrationTask, registrationPhase, added );
+        checkLists( expected );  // Duplicate admission is a no-op.
 
-        const auto removalTask = TaskId::Physics; const auto removalPhase = Thread::UpdateState::PostUpdate;
-        const auto removalList = static_cast<size_t>( removalPhase ) * taskCount + static_cast<size_t>( removalTask );
+        const auto removalTask = TaskId::Physics;
+        const auto removalPhase = Thread::UpdateState::PostUpdate;
+        const auto removalList =
+            static_cast<size_t>( removalPhase ) * taskCount + static_cast<size_t>( removalTask );
         registry->unregisterUpdate( removalTask, removalPhase, removed );
-        auto &single = expected[removalList]; single.erase( std::remove( single.begin(), single.end(), removed ), single.end() );
+        auto &single = expected[removalList];
+        single.erase( std::remove( single.begin(), single.end(), removed ), single.end() );
         checkLists( expected );
-        registry->unregisterUpdate( removalTask, removalPhase, removed ); checkLists( expected ); // Repeated removal cannot disturb another schedule.
+        registry->unregisterUpdate( removalTask, removalPhase, removed );
+        checkLists( expected );  // Repeated removal cannot disturb another schedule.
 
         registry->unregisterAll( removed );
-        for( auto &list : expected ) list.erase( std::remove( list.begin(), list.end(), removed ), list.end() );
+        for( auto &list : expected )
+        {
+            list.erase( std::remove( list.begin(), list.end(), removed ), list.end() );
+        }
         checkLists( expected );
-        for( const auto &list : snapshot() ) for( const auto &actor : list )
-            BOOST_CHECK( actor->getHandle()->getInstanceId() != removedId );
-        registry->unregisterAll( removed ); checkLists( expected );
+        for( const auto &list : snapshot() )
+        {
+            for( const auto &actor : list )
+            {
+                BOOST_CHECK( actor->getHandle()->getInstanceId() != removedId );
+            }
+        }
+        registry->unregisterAll( removed );
+        checkLists( expected );
         registry->unload( nullptr );
-        for( const auto &actor : actors ) manager->destroyActor( actor, true );
+        for( const auto &actor : actors )
+        {
+            manager->destroyActor( actor, true );
+        }
     }
 
     void queuedSceneActivation( SmartPtr<scene::IGameManager> manager )
     {
-        auto app = core::IApplicationManager::instancePtr(); BOOST_REQUIRE( app ); BOOST_REQUIRE( app->isEditor() );
+        auto app = core::IApplicationManager::instancePtr();
+        BOOST_REQUIRE( app );
+        BOOST_REQUIRE( app->isEditor() );
         BOOST_REQUIRE( Thread::getCurrentTask() == TaskId::Application );
+
         struct ModeRestore
         {
-            u32 flags = Thread::getTaskFlags(); bool playing = core::IApplicationManager::instancePtr()->isPlaying();
-            ~ModeRestore() { Thread::setTaskFlags( flags ); core::IApplicationManager::instancePtr()->setPlaying( playing ); }
+            u32 flags = Thread::getTaskFlags();
+            bool playing = core::IApplicationManager::instancePtr()->isPlaying();
+
+            ~ModeRestore()
+            {
+                Thread::setTaskFlags( flags );
+                core::IApplicationManager::instancePtr()->setPlaying( playing );
+            }
         } restore;
+
         Thread::setTaskFlags( restore.flags | Thread::Application_Flag );
-        const auto physics = app->getPhysicsManager(); const auto physicsScene = physics ? physics->getPhysicsScene() : nullptr;
+        const auto physics = app->getPhysicsManager();
+        const auto physicsScene = physics ? physics->getPhysicsScene() : nullptr;
         using Actor = SmartPtr<scene::IGameActor>;
         for( bool play : { true, false } )
         {
             auto registry = make_ptr<scene::GameScene>(), other = make_ptr<scene::GameScene>();
-            registry->load( nullptr ); other->load( nullptr ); BOOST_REQUIRE( registry->isLoaded() && other->isLoaded() );
+            registry->load( nullptr );
+            other->load( nullptr );
+            BOOST_REQUIRE( registry->isLoaded() && other->isLoaded() );
             std::array<Actor, 4> actors;
+
             struct ActorsCleanup
             {
-                SmartPtr<scene::IGameManager> manager; SmartPtr<scene::GameScene> registry, other; std::array<Actor, 4> &actors;
+                SmartPtr<scene::IGameManager> manager;
+                SmartPtr<scene::GameScene> registry, other;
+                std::array<Actor, 4> &actors;
+
                 ~ActorsCleanup()
                 {
-                    for( auto &actor : actors ) if( actor ) manager->destroyActor( actor, true );
-                    registry->unload( nullptr ); other->unload( nullptr );
+                    for( auto &actor : actors )
+                    {
+                        if( actor )
+                        {
+                            manager->destroyActor( actor, true );
+                        }
+                    }
+                    registry->unload( nullptr );
+                    other->unload( nullptr );
                 }
             } cleanup{ manager, registry, other, actors };
+
             app->setPlaying( play );
             registry->setState( play ? scene::IGameScene::State::Play : scene::IGameScene::State::Edit );
             for( size_t i = 0; i < 3; ++i )
             {
                 auto &actor = actors[i];
-                actor = manager->createActor(); BOOST_REQUIRE( actor && actor->isLoaded() ); actor->setStatic( true );
-                BOOST_REQUIRE( actor->addComponent<scene::CollisionBox>() ); BOOST_REQUIRE( actor->addComponent<scene::Rigidbody>() );
+                actor = manager->createActor();
+                BOOST_REQUIRE( actor && actor->isLoaded() );
+                actor->setStatic( true );
+                BOOST_REQUIRE( actor->addComponent<scene::CollisionBox>() );
+                BOOST_REQUIRE( actor->addComponent<scene::Rigidbody>() );
                 registry->addActor( actor );
                 // Enter through the real public load event, then drain the real
                 // deferred queues with preUpdate; no test-only queue mutation.
-                registry->handleEvent( EventType::Scene, IEvent::actorLoaded, {}, registry, actor, nullptr );
+                registry->handleEvent( EventType::Scene, IEvent::actorLoaded, {}, registry, actor,
+                                       nullptr );
             }
             const auto removed = actors[0], transferred = actors[2];
             auto active = actors[1];
             const auto removedState = removed->getState(), transferredState = transferred->getState();
-            auto removedBody = removed->getComponent<scene::Rigidbody>(), activeBody = active->getComponent<scene::Rigidbody>();
+            auto removedBody = removed->getComponent<scene::Rigidbody>(),
+                 activeBody = active->getComponent<scene::Rigidbody>();
             auto transferredBody = transferred->getComponent<scene::Rigidbody>();
             BOOST_REQUIRE( removedBody && activeBody && transferredBody );
-            BOOST_REQUIRE( !removedBody->getRigidStatic() && !activeBody->getRigidStatic() && !transferredBody->getRigidStatic() );
-            registry->removeActor( removed ); registry->removeActor( transferred ); other->addActor( transferred );
-            BOOST_REQUIRE( removed->isLoaded() && !removed->getFlag( scene::IGameActor::ActorFlagInScene ) );
-            BOOST_REQUIRE( transferred->getFlag( scene::IGameActor::ActorFlagInScene ) && transferred->getScene() == other );
+            BOOST_REQUIRE( !removedBody->getRigidStatic() && !activeBody->getRigidStatic() &&
+                           !transferredBody->getRigidStatic() );
+            registry->removeActor( removed );
+            registry->removeActor( transferred );
+            other->addActor( transferred );
+            BOOST_REQUIRE( removed->isLoaded() &&
+                           !removed->getFlag( scene::IGameActor::ActorFlagInScene ) );
+            BOOST_REQUIRE( transferred->getFlag( scene::IGameActor::ActorFlagInScene ) &&
+                           transferred->getScene() == other );
             registry->preUpdate();
-            const auto actorState = play ? scene::IGameActor::State::Play : scene::IGameActor::State::Edit;
-            const auto componentState = play ? scene::IComponent::State::Play : scene::IComponent::State::Edit;
+            const auto actorState =
+                play ? scene::IGameActor::State::Play : scene::IGameActor::State::Edit;
+            const auto componentState =
+                play ? scene::IComponent::State::Play : scene::IComponent::State::Edit;
             BOOST_CHECK( removed->getState() == removedState && !removedBody->getRigidStatic() );
-            BOOST_CHECK( transferred->getState() == transferredState && !transferredBody->getRigidStatic() );
-            BOOST_REQUIRE( active->getState() == actorState && activeBody->getState() == componentState );
+            BOOST_CHECK( transferred->getState() == transferredState &&
+                         !transferredBody->getRigidStatic() );
+            BOOST_REQUIRE( active->getState() == actorState &&
+                           activeBody->getState() == componentState );
             const auto body = activeBody->getRigidStatic();
-            if( physicsScene ) { BOOST_REQUIRE( body ); BOOST_CHECK( body->getScene() == physicsScene ); BOOST_CHECK( body->getNumShapes() > 0 ); }
+            if( physicsScene )
+            {
+                BOOST_REQUIRE( body );
+                BOOST_CHECK( body->getScene() == physicsScene );
+                BOOST_CHECK( body->getNumShapes() > 0 );
+            }
             const auto bodyCount = physicsScene ? physicsScene->getActors().size() : 0;
-            registry->handleEvent( EventType::Scene, IEvent::actorLoaded, {}, registry, active, nullptr ); registry->preUpdate();
-            BOOST_CHECK( active->getState() == actorState && activeBody->getState() == componentState && activeBody->getRigidStatic() == body );
-            if( physicsScene ) BOOST_CHECK_EQUAL( physicsScene->getActors().size(), bodyCount );
-            BOOST_CHECK( removed->getState() == removedState && transferred->getState() == transferredState );
+            registry->handleEvent( EventType::Scene, IEvent::actorLoaded, {}, registry, active,
+                                   nullptr );
+            registry->preUpdate();
+            BOOST_CHECK( active->getState() == actorState && activeBody->getState() == componentState &&
+                         activeBody->getRigidStatic() == body );
+            if( physicsScene )
+            {
+                BOOST_CHECK_EQUAL( physicsScene->getActors().size(), bodyCount );
+            }
+            BOOST_CHECK( removed->getState() == removedState &&
+                         transferred->getState() == transferredState );
 
-            auto &child = actors[3]; child = manager->createActor(); BOOST_REQUIRE( child && child->isLoaded() );
-            child->setStatic( true ); BOOST_REQUIRE( child->addComponent<scene::CollisionBox>() );
-            auto childBody = child->addComponent<scene::Rigidbody>(); BOOST_REQUIRE( childBody );
+            auto &child = actors[3];
+            child = manager->createActor();
+            BOOST_REQUIRE( child && child->isLoaded() );
+            child->setStatic( true );
+            BOOST_REQUIRE( child->addComponent<scene::CollisionBox>() );
+            auto childBody = child->addComponent<scene::Rigidbody>();
+            BOOST_REQUIRE( childBody );
             {
                 // Model a non-owner hierarchy producer: inheritance queues its
                 // actor FSM, then the real Application load queue must finish it.
                 // Do not update the FSM manager separately and hide a skipped child.
-                struct FlagsRestore { u32 value = Thread::getTaskFlags(); ~FlagsRestore() { Thread::setTaskFlags( value ); } } flags;
-                Thread::setTaskFlags( flags.value & ~Thread::Application_Flag ); active->addChild( child );
+                struct FlagsRestore
+                {
+                    u32 value = Thread::getTaskFlags();
+
+                    ~FlagsRestore()
+                    {
+                        Thread::setTaskFlags( value );
+                    }
+                } flags;
+
+                Thread::setTaskFlags( flags.value & ~Thread::Application_Flag );
+                active->addChild( child );
             }
             BOOST_REQUIRE( active->getState() == actorState );
             BOOST_REQUIRE( child->getParent() == active && child->getScene() == registry &&
-                !child->getFlag( scene::IGameActor::ActorFlagInScene ) );
-            BOOST_REQUIRE( child->getState() != actorState ); // Old own-root-only guard would leave this pending.
-            if( play ) BOOST_REQUIRE( !childBody->getRigidStatic() );
-            registry->handleEvent( EventType::Scene, IEvent::actorLoaded, {}, registry, child, nullptr ); registry->preUpdate();
+                           !child->getFlag( scene::IGameActor::ActorFlagInScene ) );
+            BOOST_REQUIRE( child->getState() !=
+                           actorState );  // Old own-root-only guard would leave this pending.
+            if( play )
+            {
+                BOOST_REQUIRE( !childBody->getRigidStatic() );
+            }
+            registry->handleEvent( EventType::Scene, IEvent::actorLoaded, {}, registry, child, nullptr );
+            registry->preUpdate();
             BOOST_REQUIRE( child->getState() == actorState && childBody->getState() == componentState );
             const auto childNative = childBody->getRigidStatic();
-            if( physicsScene ) { BOOST_REQUIRE( childNative ); BOOST_CHECK( childNative->getScene() == physicsScene ); BOOST_CHECK( childNative->getNumShapes() > 0 ); }
+            if( physicsScene )
+            {
+                BOOST_REQUIRE( childNative );
+                BOOST_CHECK( childNative->getScene() == physicsScene );
+                BOOST_CHECK( childNative->getNumShapes() > 0 );
+            }
             const auto childBodyCount = physicsScene ? physicsScene->getActors().size() : 0;
-            registry->handleEvent( EventType::Scene, IEvent::actorLoaded, {}, registry, child, nullptr ); registry->preUpdate();
+            registry->handleEvent( EventType::Scene, IEvent::actorLoaded, {}, registry, child, nullptr );
+            registry->preUpdate();
             BOOST_CHECK( child->getState() == actorState && childBody->getRigidStatic() == childNative );
-            if( physicsScene ) BOOST_CHECK_EQUAL( physicsScene->getActors().size(), childBodyCount );
-            BOOST_CHECK( removed->getState() == removedState && transferred->getState() == transferredState );
+            if( physicsScene )
+            {
+                BOOST_CHECK_EQUAL( physicsScene->getActors().size(), childBodyCount );
+            }
+            BOOST_CHECK( removed->getState() == removedState &&
+                         transferred->getState() == transferredState );
         }
     }
 
     class CityPersistenceFSMManager : public FSMManager
     {
     public:
-        void growStorage( size_t size ) { resize( size ); }
+        void growStorage( size_t size )
+        {
+            resize( size );
+        }
     };
 
     void fsmFlagsSurviveStorageGrowth( SmartPtr<IFSMManager> applicationManager )
@@ -298,67 +494,118 @@ namespace
         // Use the real parallel-array implementation, isolated from the Editor's
         // own FSMs. One explicit capacity growth avoids consuming thousands of IDs.
         auto manager = make_ptr<CityPersistenceFSMManager>();
-        manager->setGrowSize( applicationManager->getNumFsms() + 64 ); manager->load( nullptr );
-        BOOST_REQUIRE( manager->isLoaded() ); auto first = manager->createFSM(); BOOST_REQUIRE( first );
-        auto concrete = dynamic_pointer_cast<FSM>( first ); BOOST_REQUIRE( concrete ); BOOST_REQUIRE( first->getHandle() );
+        manager->setGrowSize( applicationManager->getNumFsms() + 64 );
+        manager->load( nullptr );
+        BOOST_REQUIRE( manager->isLoaded() );
+        auto first = manager->createFSM();
+        BOOST_REQUIRE( first );
+        auto concrete = dynamic_pointer_cast<FSM>( first );
+        BOOST_REQUIRE( concrete );
+        BOOST_REQUIRE( first->getHandle() );
         const auto id = first->getHandle()->getInstanceId();
         const u32 beforeFlags = IFSM::autoChangeStateFlag | IFSM::isPendingFlag | IFSM::isLockedFlag;
-        manager->setFlags( id, beforeFlags ); BOOST_REQUIRE_EQUAL( first->getFlags(), beforeFlags );
+        manager->setFlags( id, beforeFlags );
+        BOOST_REQUIRE_EQUAL( first->getFlags(), beforeFlags );
         const auto oldAddress = reinterpret_cast<std::uintptr_t>( manager->getFlagsPtr( id ) );
         manager->growStorage( manager->getSize() * 2 + 17 );
         BOOST_REQUIRE( reinterpret_cast<std::uintptr_t>( manager->getFlagsPtr( id ) ) != oldAddress );
-        const u32 liveFlags = 0x5a000000u | IFSM::allowStateChangeFlag | IFSM::isStateChangeCompleteFlag | IFSM::isReadyFlag;
+        const u32 liveFlags = 0x5a000000u | IFSM::allowStateChangeFlag |
+                              IFSM::isStateChangeCompleteFlag | IFSM::isReadyFlag;
         manager->setFlags( id, liveFlags );
         // This is a value-level regression: the stale implementation reads the
         // old allocation instead of this deliberately different live-slot pattern.
         BOOST_REQUIRE_EQUAL( first->getFlags(), liveFlags );
-        BOOST_CHECK( !first->getAutoChangeState() ); BOOST_CHECK( !first->isPending() );
-        BOOST_CHECK( concrete->getAllowStateChange() ); BOOST_CHECK( concrete->isStateChangeComplete() );
-        first->setAutoChangeState( true ); BOOST_CHECK_EQUAL( manager->getFlags( id ), liveFlags | IFSM::autoChangeStateFlag );
-        first->setAutoChangeState( false ); BOOST_CHECK_EQUAL( manager->getFlags( id ), liveFlags );
-        concrete->setAllowStateChange( false ); BOOST_CHECK_EQUAL( manager->getFlags( id ), liveFlags & ~IFSM::allowStateChangeFlag );
-        concrete->setAllowStateChange( true ); BOOST_CHECK_EQUAL( manager->getFlags( id ), liveFlags );
-        concrete->setStateChangeComplete( false ); BOOST_CHECK_EQUAL( manager->getFlags( id ), liveFlags & ~IFSM::isStateChangeCompleteFlag );
-        concrete->setStateChangeComplete( true ); BOOST_CHECK_EQUAL( manager->getFlags( id ), liveFlags );
+        BOOST_CHECK( !first->getAutoChangeState() );
+        BOOST_CHECK( !first->isPending() );
+        BOOST_CHECK( concrete->getAllowStateChange() );
+        BOOST_CHECK( concrete->isStateChangeComplete() );
+        first->setAutoChangeState( true );
+        BOOST_CHECK_EQUAL( manager->getFlags( id ), liveFlags | IFSM::autoChangeStateFlag );
+        first->setAutoChangeState( false );
+        BOOST_CHECK_EQUAL( manager->getFlags( id ), liveFlags );
+        concrete->setAllowStateChange( false );
+        BOOST_CHECK_EQUAL( manager->getFlags( id ), liveFlags & ~IFSM::allowStateChangeFlag );
+        concrete->setAllowStateChange( true );
+        BOOST_CHECK_EQUAL( manager->getFlags( id ), liveFlags );
+        concrete->setStateChangeComplete( false );
+        BOOST_CHECK_EQUAL( manager->getFlags( id ), liveFlags & ~IFSM::isStateChangeCompleteFlag );
+        concrete->setStateChangeComplete( true );
+        BOOST_CHECK_EQUAL( manager->getFlags( id ), liveFlags );
         first->setFlags( liveFlags | IFSM::isPendingFlag );
-        BOOST_CHECK( first->isPending() ); BOOST_CHECK_EQUAL( manager->getFlags( id ), liveFlags | IFSM::isPendingFlag );
+        BOOST_CHECK( first->isPending() );
+        BOOST_CHECK_EQUAL( manager->getFlags( id ), liveFlags | IFSM::isPendingFlag );
 
-        first->setNewState( 17, false ); // Leave a real deferred queue reference alive through destruction.
-        manager->destroyFSM( first ); BOOST_CHECK( !first->isLoaded() );
+        first->setNewState( 17,
+                            false );  // Leave a real deferred queue reference alive through destruction.
+        manager->destroyFSM( first );
+        BOOST_CHECK( !first->isLoaded() );
         const u32 retiredSlot = 0xa6000000u | IFSM::isReadyFlag;
         manager->setFlags( id, retiredSlot );
-        first->setFlags( 0 ); first->setAutoChangeState( true ); concrete->setAllowStateChange( true ); concrete->setStateChangeComplete( true );
-        first->update(); first->updateState(); manager->update();
-        BOOST_CHECK_EQUAL( first->getFlags(), 0u ); BOOST_CHECK( !first->getAutoChangeState() ); BOOST_CHECK( !first->isPending() );
-        BOOST_CHECK( !concrete->getAllowStateChange() ); BOOST_CHECK( !concrete->isStateChangeComplete() );
+        first->setFlags( 0 );
+        first->setAutoChangeState( true );
+        concrete->setAllowStateChange( true );
+        concrete->setStateChangeComplete( true );
+        first->update();
+        first->updateState();
+        manager->update();
+        BOOST_CHECK_EQUAL( first->getFlags(), 0u );
+        BOOST_CHECK( !first->getAutoChangeState() );
+        BOOST_CHECK( !first->isPending() );
+        BOOST_CHECK( !concrete->getAllowStateChange() );
+        BOOST_CHECK( !concrete->isStateChangeComplete() );
         BOOST_CHECK_EQUAL( manager->getFlags( id ), retiredSlot );
         manager->unload( nullptr );
         BOOST_CHECK_EQUAL( manager->getFlags( id ), 0u );
         manager->setFlags( id, 0xffffffffu );
         BOOST_CHECK_EQUAL( manager->getFlags( id ), 0u );
     }
-}
+}  // namespace
 
 BOOST_AUTO_TEST_CASE( terrain_city_source_anchor_roundtrip_test )
 {
     CityPersistenceDirectory temporary;
-    Project project; project.create( temporary.path.generic_u8string() ); project.setMediaPaths( {} ); project.save();
-    CityPersistenceEditor guard; guard.app.setDebugMode( true ); guard.app.setActiveThreads( 0 ); guard.app.load( nullptr );
+    Project project;
+    project.create( temporary.path.generic_u8string() );
+    project.setMediaPaths( {} );
+    project.save();
+    CityPersistenceEditor guard;
+    guard.app.setDebugMode( true );
+    guard.app.setActiveThreads( 0 );
+    guard.app.load( nullptr );
     BOOST_REQUIRE( guard.app.isLoaded() );
-    auto app = core::IApplicationManager::instancePtr(); auto editor = EditorManager::getSingletonPtr();
-    BOOST_REQUIRE( app ); BOOST_REQUIRE( editor ); editor->loadProject( project.getFilePath() );
+    auto app = core::IApplicationManager::instancePtr();
+    auto editor = EditorManager::getSingletonPtr();
+    BOOST_REQUIRE( app );
+    BOOST_REQUIRE( editor );
+    editor->loadProject( project.getFilePath() );
     CityPersistenceTask application;
-    auto manager = app->getGameManager(); BOOST_REQUIRE( manager );
-    auto originalScene = manager->getCurrentScene(); BOOST_REQUIRE( originalScene );
-    auto task = app->getTaskManager()->getTask( TaskId::Application ); BOOST_REQUIRE( task );
-    BOOST_REQUIRE( task->isLoaded() ); BOOST_REQUIRE( !task->isStopped() ); CityPersistenceTaskOwner owner( task );
+    auto manager = app->getGameManager();
+    BOOST_REQUIRE( manager );
+    auto originalScene = manager->getCurrentScene();
+    BOOST_REQUIRE( originalScene );
+    auto task = app->getTaskManager()->getTask( TaskId::Application );
+    BOOST_REQUIRE( task );
+    BOOST_REQUIRE( task->isLoaded() );
+    BOOST_REQUIRE( !task->isStopped() );
+    CityPersistenceTaskOwner owner( task );
     const auto flush = [&] {
-        bool complete = false; auto barrier = make_ptr<CityPersistenceBarrier>(); barrier->complete = &complete; task->addJob( barrier );
+        bool complete = false;
+        auto barrier = make_ptr<CityPersistenceBarrier>();
+        barrier->complete = &complete;
+        task->addJob( barrier );
         for( unsigned pass = 0; pass < 8 && !complete; ++pass )
-        { task->setState( ITask::State::Idle ); task->setNextUpdateTime( -1 ); task->update(); }
-        BOOST_REQUIRE_MESSAGE( complete, "Application queue did not execute the scene persistence barrier" );
+        {
+            task->setState( ITask::State::Idle );
+            task->setNextUpdateTime( -1 );
+            task->update();
+        }
+        BOOST_REQUIRE_MESSAGE( complete,
+                               "Application queue did not execute the scene persistence barrier" );
         auto queue = app->getJobQueue();
-        for( unsigned pass = 0; pass < 100 && queue->hasJobs(); ++pass ) queue->update();
+        for( unsigned pass = 0; pass < 100 && queue->hasJobs(); ++pass )
+        {
+            queue->update();
+        }
         BOOST_REQUIRE_MESSAGE( !queue->hasJobs(), "Scene persistence callbacks did not drain" );
     };
     flush();
@@ -371,40 +618,76 @@ BOOST_AUTO_TEST_CASE( terrain_city_source_anchor_roundtrip_test )
     originalScene->addActor( anchorOwner );
     anchorOwner->setState( scene::IGameActor::State::Edit );
     anchorOwner->setPosition( { 17, 3, -8 } );
-    auto terrainActor = manager->createActor(); BOOST_REQUIRE( terrainActor ); terrainActor->setName( "Terrain city persisted terrain" );
+    auto terrainActor = manager->createActor();
+    BOOST_REQUIRE( terrainActor );
+    terrainActor->setName( "Terrain city persisted terrain" );
     terrainActor->setFlag( scene::IGameActor::ActorFlagWorldSpaceTransform, true, false );
     anchorOwner->addChild( terrainActor );
-    auto terrain = terrainActor->addComponent<scene::TerrainSystem>(); BOOST_REQUIRE( terrain );
-    if( auto renderer = dynamic_pointer_cast<render::Terrain>( terrain->getTerrain() ) ) renderer->setDeferredTerrainPublication( false );
-    render::TerrainData data; data.dimensions = { 33, 33 }; data.spacing = { 8, 8 }; data.origin = { -128, -128 };
+    auto terrain = terrainActor->addComponent<scene::TerrainSystem>();
+    BOOST_REQUIRE( terrain );
+    if( auto renderer = dynamic_pointer_cast<render::Terrain>( terrain->getTerrain() ) )
+    {
+        renderer->setDeferredTerrainPublication( false );
+    }
+    render::TerrainData data;
+    data.dimensions = { 33, 33 };
+    data.spacing = { 8, 8 };
+    data.origin = { -128, -128 };
     data.heights.resize( 33 * 33 );
-    for( int z = 0; z < 33; ++z ) for( int x = 0; x < 33; ++x ) data.heights[size_t( z ) * 33 + x] = 2 + ( -128 + x * 8 ) * .01f;
-    String error; BOOST_REQUIRE_MESSAGE( terrain->applyTerrainData( data, error ), error );
-    auto sourceActor = manager->createActor(); BOOST_REQUIRE( sourceActor ); sourceActor->setName( "Terrain city persisted source" );
+    for( int z = 0; z < 33; ++z )
+    {
+        for( int x = 0; x < 33; ++x )
+        {
+            data.heights[size_t( z ) * 33 + x] = 2 + ( -128 + x * 8 ) * .01f;
+        }
+    }
+    String error;
+    BOOST_REQUIRE_MESSAGE( terrain->applyTerrainData( data, error ), error );
+    auto sourceActor = manager->createActor();
+    BOOST_REQUIRE( sourceActor );
+    sourceActor->setName( "Terrain city persisted source" );
     sourceActor->setFlag( scene::IGameActor::ActorFlagWorldSpaceTransform, true, false );
     anchorOwner->addChild( sourceActor );
-    auto source = sourceActor->addComponent<scene::CityRoadAuthoring>(); BOOST_REQUIRE( source );
+    auto source = sourceActor->addComponent<scene::CityRoadAuthoring>();
+    BOOST_REQUIRE( source );
     unsigned publications = 0;
     const auto publisher = [&]( const auto &, const auto &, auto, const auto &, String &diagnostic ) {
-        BOOST_CHECK( Thread::getCurrentTask() == TaskId::Application ); ++publications; diagnostic.clear(); return true;
+        BOOST_CHECK( Thread::getCurrentTask() == TaskId::Application );
+        ++publications;
+        diagnostic.clear();
+        return true;
     };
-    source->setPublishCallback( publisher ); BOOST_REQUIRE_MESSAGE( source->bindTerrain( terrain, error ), error );
+    source->setPublishCallback( publisher );
+    BOOST_REQUIRE_MESSAGE( source->bindTerrain( terrain, error ), error );
     auto authored = source->getSource();
-    procedural::CityRoadSpline road; road.id = "30000000-0000-4000-8000-000000000001";
-    road.width = 10.25f; road.heightOffset = .025f; road.maxGrade = .08f;
+    procedural::CityRoadSpline road;
+    road.id = "30000000-0000-4000-8000-000000000001";
+    road.width = 10.25f;
+    road.heightOffset = .025f;
+    road.maxGrade = .08f;
     road.knots = {
         { "40000000-0000-4000-8000-000000000001", { -30, 0, -16 }, {}, { 18.25f, 0, -3.5f } },
-        { "40000000-0000-4000-8000-000000000002", { 32.5f, 0, -21.25f }, { -17.75f, 0, 5.5f }, {} } };
+        { "40000000-0000-4000-8000-000000000002", { 32.5f, 0, -21.25f }, { -17.75f, 0, 5.5f }, {} }
+    };
     authored.roads.push_back( road );
-    BOOST_REQUIRE_MESSAGE( source->setSourceJSON( canonicalSource( authored ), source->getSourceRevision(), error ), error );
+    BOOST_REQUIRE_MESSAGE(
+        source->setSourceJSON( canonicalSource( authored ), source->getSourceRevision(), error ),
+        error );
     // Preserve a subsequent manual control edit, rather than only an untouched generated curve.
-    authored = source->getSource(); authored.roads[0].knots[0].outHandle.x = 20.5f;
+    authored = source->getSource();
+    authored.roads[0].knots[0].outHandle.x = 20.5f;
     authored.roads[0].knots[1].position.z = -24.75f;
-    BOOST_REQUIRE_MESSAGE( source->setSourceJSON( canonicalSource( authored ), source->getSourceRevision(), error ), error );
+    BOOST_REQUIRE_MESSAGE(
+        source->setSourceJSON( canonicalSource( authored ), source->getSourceRevision(), error ),
+        error );
     const auto expected = source->getSource();
-    BOOST_REQUIRE( source->getHandle() ); BOOST_REQUIRE( terrain->getHandle() );
-    const String sourceUuid = source->getHandle()->getUUIDAsString(), terrainUuid = terrain->getHandle()->getUUIDAsString();
-    BOOST_REQUIRE( !sourceUuid.empty() ); BOOST_REQUIRE( !terrainUuid.empty() ); BOOST_REQUIRE( sourceUuid != terrainUuid );
+    BOOST_REQUIRE( source->getHandle() );
+    BOOST_REQUIRE( terrain->getHandle() );
+    const String sourceUuid = source->getHandle()->getUUIDAsString(),
+                 terrainUuid = terrain->getHandle()->getUUIDAsString();
+    BOOST_REQUIRE( !sourceUuid.empty() );
+    BOOST_REQUIRE( !terrainUuid.empty() );
+    BOOST_REQUIRE( sourceUuid != terrainUuid );
 
     // The factory list is also the Editor's Add Component inventory.
     const auto factory = app->getFactoryManager();
@@ -443,8 +726,10 @@ BOOST_AUTO_TEST_CASE( terrain_city_source_anchor_roundtrip_test )
     BOOST_CHECK_EQUAL( standaloneCircuit->getCircuitSampleCount(), deterministicCircuit.samples.size() );
     BOOST_CHECK_EQUAL( circuitLength, deterministicCircuit.length );
     const auto middleSample = standaloneCircuit->getCircuitSampleCount() / 2;
-    BOOST_CHECK( standaloneCircuit->getCircuitPosition( middleSample ) == deterministicCircuit.samples.at( middleSample ).position );
-    BOOST_CHECK( standaloneCircuit->getCircuitRight( middleSample ) == deterministicCircuit.samples.at( middleSample ).right );
+    BOOST_CHECK( standaloneCircuit->getCircuitPosition( middleSample ) ==
+                 deterministicCircuit.samples.at( middleSample ).position );
+    BOOST_CHECK( standaloneCircuit->getCircuitRight( middleSample ) ==
+                 deterministicCircuit.samples.at( middleSample ).right );
     BOOST_CHECK_EQUAL( originalScene->getActors().size(), sceneRootCount );
 
     const auto initialChildren = circuitOwner->getChildren();
@@ -461,7 +746,10 @@ BOOST_AUTO_TEST_CASE( terrain_city_source_anchor_roundtrip_test )
         BOOST_CHECK( child->getParent() == scenery );
         BOOST_CHECK( child->getFlag( scene::IGameActor::ActorFlagDontSave ) );
         BOOST_CHECK( !child->getComponent<scene::FourWheelVehicle>() );
-        if( child->getName() == "Circuit collision plane" ) ground = child;
+        if( child->getName() == "Circuit collision plane" )
+        {
+            ground = child;
+        }
     }
     BOOST_REQUIRE( ground );
     auto groundRigidbody = ground->getComponent<scene::Rigidbody>();
@@ -490,7 +778,8 @@ BOOST_AUTO_TEST_CASE( terrain_city_source_anchor_roundtrip_test )
     cityOwner->setState( scene::IGameActor::State::Edit );
     auto citySettings = standaloneCity->getProperties();
     citySettings->setProperty( "Seed", u32( 621 ) );
-    citySettings->setProperty( "Appearance Quality", static_cast<s32>( procedural::VehicleAppearanceQuality::Preview ) );
+    citySettings->setProperty( "Appearance Quality",
+                               static_cast<s32>( procedural::VehicleAppearanceQuality::Preview ) );
     citySettings->setProperty( "City Blocks", 6 );
     citySettings->setProperty( "City Building Style", 8 );
     flush();
@@ -522,72 +811,106 @@ BOOST_AUTO_TEST_CASE( terrain_city_source_anchor_roundtrip_test )
     standaloneCity->setProperties( citySettings );
     standaloneCity->setEnabled( false );
 
-    auto vehicleActor = manager->createActor(); BOOST_REQUIRE( vehicleActor ); vehicleActor->setName( "Terrain city persisted vehicle" );
-    auto vehicle = vehicleActor->addComponent<scene::ProceduralRaceScene>(); BOOST_REQUIRE( vehicle ); originalScene->addActor( vehicleActor );
+    auto vehicleActor = manager->createActor();
+    BOOST_REQUIRE( vehicleActor );
+    vehicleActor->setName( "Terrain city persisted vehicle" );
+    auto vehicle = vehicleActor->addComponent<scene::ProceduralRaceScene>();
+    BOOST_REQUIRE( vehicle );
+    originalScene->addActor( vehicleActor );
     BOOST_CHECK_EQUAL( vehicle->getProperties()->getPropertyAsInt( "City Street Detail" ), 100 );
     f32 terrainRelief = 0;
     BOOST_REQUIRE( vehicle->getProperties()->getPropertyValue( "City Terrain Relief", terrainRelief ) );
     BOOST_CHECK_EQUAL( terrainRelief, 1.f );
     auto reliefEdit = vehicle->getProperties();
-    reliefEdit->setProperty( "City Terrain Relief", -1.f ); vehicle->setProperties( reliefEdit );
+    reliefEdit->setProperty( "City Terrain Relief", -1.f );
+    vehicle->setProperties( reliefEdit );
     BOOST_REQUIRE( vehicle->getProperties()->getPropertyValue( "City Terrain Relief", terrainRelief ) );
     BOOST_CHECK_EQUAL( terrainRelief, 0.f );
-    reliefEdit->setProperty( "City Terrain Relief", 3.f ); vehicle->setProperties( reliefEdit );
+    reliefEdit->setProperty( "City Terrain Relief", 3.f );
+    vehicle->setProperties( reliefEdit );
     BOOST_REQUIRE( vehicle->getProperties()->getPropertyValue( "City Terrain Relief", terrainRelief ) );
     BOOST_CHECK_EQUAL( terrainRelief, 2.f );
     auto streetEdit = vehicle->getProperties();
-    streetEdit->setProperty( "City Street Detail", -12 ); vehicle->setProperties( streetEdit );
+    streetEdit->setProperty( "City Street Detail", -12 );
+    vehicle->setProperties( streetEdit );
     BOOST_CHECK_EQUAL( vehicle->getProperties()->getPropertyAsInt( "City Street Detail" ), 0 );
-    streetEdit->setProperty( "City Street Detail", 140 ); vehicle->setProperties( streetEdit );
+    streetEdit->setProperty( "City Street Detail", 140 );
+    vehicle->setProperties( streetEdit );
     BOOST_CHECK_EQUAL( vehicle->getProperties()->getPropertyAsInt( "City Street Detail" ), 100 );
     auto styleEdit = vehicle->getProperties();
-    styleEdit->setProperty( "City Building Style", -10 ); vehicle->setProperties( styleEdit );
+    styleEdit->setProperty( "City Building Style", -10 );
+    vehicle->setProperties( styleEdit );
     BOOST_CHECK_EQUAL( vehicle->getProperties()->getPropertyAsInt( "City Building Style" ), 0 );
-    styleEdit->setProperty( "City Building Style", 99 ); vehicle->setProperties( styleEdit );
+    styleEdit->setProperty( "City Building Style", 99 );
+    vehicle->setProperties( styleEdit );
     BOOST_CHECK_EQUAL( vehicle->getProperties()->getPropertyAsInt( "City Building Style" ), 9 );
-    const String expectedStyleLabels = "District Mix;Masonry Residential;Civic Stone;Modern Office;"
+    const String expectedStyleLabels =
+        "District Mix;Masonry Residential;Civic Stone;Modern Office;"
         "European Terrace;Parisian Mansard;Warehouse Loft;Mediterranean;Art Deco;Timber Gabled;";
-    BOOST_CHECK_EQUAL( vehicle->getProperties()->getPropertyObject( "City Building Style" )
-        .getAttribute( Properties::enumTypeStr ), expectedStyleLabels );
-    auto properties = vehicle->getProperties(); properties->setProperty( "City Terrain Roads", true );
+    BOOST_CHECK_EQUAL( vehicle->getProperties()
+                           ->getPropertyObject( "City Building Style" )
+                           .getAttribute( Properties::enumTypeStr ),
+                       expectedStyleLabels );
+    auto properties = vehicle->getProperties();
+    properties->setProperty( "City Terrain Roads", true );
     properties->setProperty( "City Street Detail", 64 );
     properties->setProperty( "City Terrain Relief", 1.25f );
     properties->setProperty( "City Building Style", 9 );
     properties->setProperty( "City Window Mesh", String( " Assets/architecture/arched-window.glb " ) );
     properties->setProperty( "City Roof Mesh", String( "56c12775-468d-41fb-936a-a7f932b081f4" ) );
-    properties->setProperty( "City Road Authoring UUID", sourceUuid ); properties->setProperty( "Audio Enabled", false );
-    properties->setProperty( "Effects Enabled", false ); vehicle->setProperties( properties );
-    vehicle->setEnabled( false ); // This gate saves/restores anchors; it does not regenerate a WPVehicle.
+    properties->setProperty( "City Road Authoring UUID", sourceUuid );
+    properties->setProperty( "Audio Enabled", false );
+    properties->setProperty( "Effects Enabled", false );
+    vehicle->setProperties( properties );
+    vehicle->setEnabled(
+        false );  // This gate saves/restores anchors; it does not regenerate a WPVehicle.
     // Save all earlier preset IDs through the actual scene serializer as well.
     // Disabled preview components share the existing source; they never generate a city.
     for( int style = 0; style < 9; ++style )
     {
-        auto styleActor = manager->createActor(); BOOST_REQUIRE( styleActor );
+        auto styleActor = manager->createActor();
+        BOOST_REQUIRE( styleActor );
         styleActor->setName( "Persisted building style " + StringUtil::toString( style ) );
-        auto styleComponent = styleActor->addComponent<scene::ProceduralRaceScene>(); BOOST_REQUIRE( styleComponent );
+        auto styleComponent = styleActor->addComponent<scene::ProceduralRaceScene>();
+        BOOST_REQUIRE( styleComponent );
         originalScene->addActor( styleActor );
-        auto preset = vehicle->getProperties(); preset->setProperty( "City Building Style", style );
-        styleComponent->setProperties( preset ); styleComponent->setEnabled( false );
-        BOOST_CHECK_EQUAL( styleComponent->getProperties()->getPropertyAsInt( "City Building Style" ), style );
+        auto preset = vehicle->getProperties();
+        preset->setProperty( "City Building Style", style );
+        styleComponent->setProperties( preset );
+        styleComponent->setEnabled( false );
+        BOOST_CHECK_EQUAL( styleComponent->getProperties()->getPropertyAsInt( "City Building Style" ),
+                           style );
     }
     flush();
     const auto path = temporary.path / "Assets" / "TerrainCityAnchors.scene";
-    BOOST_REQUIRE_MESSAGE(source->getSource().roads.size()==1u,"Manual source was lost before scene save: "+source->getError());
-    originalScene->saveScene( path.generic_u8string() ); BOOST_REQUIRE( std::filesystem::is_regular_file( path ) );
+    BOOST_REQUIRE_MESSAGE( source->getSource().roads.size() == 1u,
+                           "Manual source was lost before scene save: " + source->getError() );
+    originalScene->saveScene( path.generic_u8string() );
+    BOOST_REQUIRE( std::filesystem::is_regular_file( path ) );
     std::ifstream saved( path, std::ios::binary );
-    const std::string bytes( ( std::istreambuf_iterator<char>( saved ) ), std::istreambuf_iterator<char>() );
-    BOOST_REQUIRE( !bytes.empty() ); BOOST_CHECK( bytes.find( sourceUuid.c_str() ) != std::string::npos );
-    BOOST_REQUIRE_MESSAGE(bytes.find("30000000-0000-4000-8000-000000000001")!=std::string::npos,"Scene serialization omitted the authored road");
+    const std::string bytes( ( std::istreambuf_iterator<char>( saved ) ),
+                             std::istreambuf_iterator<char>() );
+    BOOST_REQUIRE( !bytes.empty() );
+    BOOST_CHECK( bytes.find( sourceUuid.c_str() ) != std::string::npos );
+    BOOST_REQUIRE_MESSAGE( bytes.find( "30000000-0000-4000-8000-000000000001" ) != std::string::npos,
+                           "Scene serialization omitted the authored road" );
     BOOST_CHECK( bytes.find( terrainUuid.c_str() ) != std::string::npos );
     BOOST_CHECK( bytes.find( "Circuit collision plane" ) == std::string::npos );
     BOOST_CHECK( bytes.find( "Procedural scenery" ) == std::string::npos );
     BOOST_CHECK( bytes.find( "Authored circuit child" ) != std::string::npos );
 
-    if( auto selection = app->getSelectionManager() ) selection->clearSelection();
-    if( auto history = app->getCommandManager() ) history->clearAll();
+    if( auto selection = app->getSelectionManager() )
+    {
+        selection->clearSelection();
+    }
+    if( auto history = app->getCommandManager() )
+    {
+        history->clearAll();
+    }
     originalScene->clear( true );
     BOOST_CHECK( originalScene->getComponents<scene::CityRoadAuthoring>().empty() );
-    BOOST_CHECK( !source->getActor() ); BOOST_CHECK( !terrain->getActor() );
+    BOOST_CHECK( !source->getActor() );
+    BOOST_CHECK( !terrain->getActor() );
     BOOST_CHECK( !standaloneCircuit->isLoaded() );
     BOOST_CHECK( !standaloneCircuit->isGenerated() );
     BOOST_CHECK_EQUAL( standaloneCircuit->getCircuitSampleCount(), 0u );
@@ -597,12 +920,15 @@ BOOST_AUTO_TEST_CASE( terrain_city_source_anchor_roundtrip_test )
         BOOST_CHECK( !child->getParent() );
         BOOST_CHECK( !child->getScene() );
     }
-    auto reopenedScene = app->getFactoryManager()->make_ptr<scene::GameScene>(); BOOST_REQUIRE( reopenedScene );
-    reopenedScene->load( nullptr ); manager->setCurrentScene( reopenedScene );
+    auto reopenedScene = app->getFactoryManager()->make_ptr<scene::GameScene>();
+    BOOST_REQUIRE( reopenedScene );
+    reopenedScene->load( nullptr );
+    manager->setCurrentScene( reopenedScene );
     BOOST_REQUIRE( manager->getCurrentScene() != originalScene );
     // Production SceneLoadJob/GameActorUtil reconstruction, not a component-properties clone.
     reopenedScene->loadScene( path.generic_u8string(), false );
-    BOOST_REQUIRE_MESSAGE( reopenedScene->getSceneLoadingState() == scene::IGameScene::SceneLoadingState::Loaded,
+    BOOST_REQUIRE_MESSAGE(
+        reopenedScene->getSceneLoadingState() == scene::IGameScene::SceneLoadingState::Loaded,
         "Actual saved terrain-city scene failed to reopen" );
     auto restoredAnchorOwner = reopenedScene->findActorByName( "Terrain city anchor owner" );
     auto restoredVehicleActor = reopenedScene->findActorByName( "Terrain city persisted vehicle" );
@@ -610,10 +936,18 @@ BOOST_AUTO_TEST_CASE( terrain_city_source_anchor_roundtrip_test )
     SmartPtr<scene::IGameActor> restoredSourceActor, restoredTerrainActor;
     for( auto child : restoredAnchorOwner->getChildren() )
     {
-        if( child->getName() == "Terrain city persisted source" ) restoredSourceActor = child;
-        if( child->getName() == "Terrain city persisted terrain" ) restoredTerrainActor = child;
+        if( child->getName() == "Terrain city persisted source" )
+        {
+            restoredSourceActor = child;
+        }
+        if( child->getName() == "Terrain city persisted terrain" )
+        {
+            restoredTerrainActor = child;
+        }
     }
-    BOOST_REQUIRE( restoredSourceActor ); BOOST_REQUIRE( restoredTerrainActor ); BOOST_REQUIRE( restoredVehicleActor );
+    BOOST_REQUIRE( restoredSourceActor );
+    BOOST_REQUIRE( restoredTerrainActor );
+    BOOST_REQUIRE( restoredVehicleActor );
     BOOST_CHECK( restoredSourceActor->getParent() == restoredAnchorOwner );
     BOOST_CHECK( restoredTerrainActor->getParent() == restoredAnchorOwner );
     BOOST_CHECK( !restoredSourceActor->getFlag( scene::IGameActor::ActorFlagInScene ) );
@@ -622,20 +956,32 @@ BOOST_AUTO_TEST_CASE( terrain_city_source_anchor_roundtrip_test )
     auto restoredSource = restoredSourceActor->getComponent<scene::CityRoadAuthoring>();
     auto restoredTerrain = restoredTerrainActor->getComponent<scene::TerrainSystem>();
     auto restoredVehicle = restoredVehicleActor->getComponent<scene::ProceduralRaceScene>();
-    BOOST_REQUIRE( restoredSource ); BOOST_REQUIRE( restoredTerrain ); BOOST_REQUIRE( restoredVehicle );
-    BOOST_CHECK( restoredSource != source ); BOOST_CHECK( restoredTerrain != terrain ); BOOST_CHECK( restoredVehicle != vehicle );
+    BOOST_REQUIRE( restoredSource );
+    BOOST_REQUIRE( restoredTerrain );
+    BOOST_REQUIRE( restoredVehicle );
+    BOOST_CHECK( restoredSource != source );
+    BOOST_CHECK( restoredTerrain != terrain );
+    BOOST_CHECK( restoredVehicle != vehicle );
     restoredSource->setPublishCallback( publisher );
-    if( auto renderer = dynamic_pointer_cast<render::Terrain>( restoredTerrain->getTerrain() ) ) renderer->setDeferredTerrainPublication( false );
-    flush(); restoredSource->update();
-    BOOST_REQUIRE_MESSAGE(restoredSource->getSource().roads.size()==1u,"Source lost during actual scene restore: "+restoredSource->getError()+"; JSON="+restoredSource->getSourceJSON());
+    if( auto renderer = dynamic_pointer_cast<render::Terrain>( restoredTerrain->getTerrain() ) )
+    {
+        renderer->setDeferredTerrainPublication( false );
+    }
+    flush();
+    restoredSource->update();
+    BOOST_REQUIRE_MESSAGE( restoredSource->getSource().roads.size() == 1u,
+                           "Source lost during actual scene restore: " + restoredSource->getError() +
+                               "; JSON=" + restoredSource->getSourceJSON() );
     BOOST_REQUIRE_MESSAGE( restoredSource->rebuild( error ), error );
     BOOST_CHECK_GT( restoredSource->getActiveRevision(), 0u );
     BOOST_REQUIRE_EQUAL( restoredSource->getSource().roads.size(), 1u );
     const auto &actual = restoredSource->getSource();
     const auto &actualRoad = actual.roads[0], &expectedRoad = expected.roads[0];
-    BOOST_CHECK( actual.id == expected.id ); BOOST_CHECK( actualRoad.id == expectedRoad.id );
+    BOOST_CHECK( actual.id == expected.id );
+    BOOST_CHECK( actualRoad.id == expectedRoad.id );
     BOOST_CHECK_EQUAL( actual.version, 2u );
-    BOOST_CHECK_EQUAL( actualRoad.width, expectedRoad.width ); BOOST_CHECK_EQUAL( actualRoad.heightOffset, expectedRoad.heightOffset );
+    BOOST_CHECK_EQUAL( actualRoad.width, expectedRoad.width );
+    BOOST_CHECK_EQUAL( actualRoad.heightOffset, expectedRoad.heightOffset );
     BOOST_REQUIRE_EQUAL( actualRoad.knots.size(), expectedRoad.knots.size() );
     for( size_t knot = 0; knot < expectedRoad.knots.size(); ++knot )
     {
@@ -646,24 +992,33 @@ BOOST_AUTO_TEST_CASE( terrain_city_source_anchor_roundtrip_test )
     }
     BOOST_CHECK_EQUAL( restoredSource->getHandle()->getUUIDAsString(), sourceUuid );
     BOOST_CHECK_EQUAL( restoredTerrain->getHandle()->getUUIDAsString(), terrainUuid );
-    BOOST_CHECK_EQUAL( restoredSource->getTerrainBindingUUID(), restoredTerrain->getHandle()->getUUIDAsString() );
-    BOOST_CHECK_EQUAL( String( actual.terrainResourceUuid.data(), actual.terrainResourceUuid.size() ), terrainUuid );
+    BOOST_CHECK_EQUAL( restoredSource->getTerrainBindingUUID(),
+                       restoredTerrain->getHandle()->getUUIDAsString() );
+    BOOST_CHECK_EQUAL( String( actual.terrainResourceUuid.data(), actual.terrainResourceUuid.size() ),
+                       terrainUuid );
     BOOST_CHECK( restoredSource->getTerrain() == restoredTerrain );
     BOOST_CHECK( restoredSource->getActor()->getScene() == manager->getCurrentScene() );
     BOOST_CHECK( restoredTerrain->getActor()->getScene() == manager->getCurrentScene() );
     BOOST_REQUIRE( restoredTerrain->getTerrainSnapshot() );
     BOOST_CHECK( restoredTerrain->getTerrainSnapshot()->heights == data.heights );
-    bool terrainRoads = false; String vehicleSourceUuid;
-    BOOST_REQUIRE( restoredVehicle->getProperties()->getPropertyValue( "City Terrain Roads", terrainRoads ) );
-    BOOST_REQUIRE( restoredVehicle->getProperties()->getPropertyValue( "City Road Authoring UUID", vehicleSourceUuid ) );
-    BOOST_CHECK( terrainRoads ); BOOST_CHECK_EQUAL( vehicleSourceUuid, restoredSource->getHandle()->getUUIDAsString() );
+    bool terrainRoads = false;
+    String vehicleSourceUuid;
+    BOOST_REQUIRE(
+        restoredVehicle->getProperties()->getPropertyValue( "City Terrain Roads", terrainRoads ) );
+    BOOST_REQUIRE( restoredVehicle->getProperties()->getPropertyValue( "City Road Authoring UUID",
+                                                                       vehicleSourceUuid ) );
+    BOOST_CHECK( terrainRoads );
+    BOOST_CHECK_EQUAL( vehicleSourceUuid, restoredSource->getHandle()->getUUIDAsString() );
     BOOST_CHECK_EQUAL( restoredVehicle->getProperties()->getPropertyAsInt( "City Street Detail" ), 64 );
-    BOOST_REQUIRE( restoredVehicle->getProperties()->getPropertyValue( "City Terrain Relief", terrainRelief ) );
+    BOOST_REQUIRE(
+        restoredVehicle->getProperties()->getPropertyValue( "City Terrain Relief", terrainRelief ) );
     BOOST_CHECK_EQUAL( terrainRelief, 1.25f );
     const auto building = restoredVehicle->getProperties();
     BOOST_CHECK_EQUAL( building->getPropertyAsInt( "City Building Style" ), 9 );
-    BOOST_CHECK_EQUAL( building->getProperty( "City Window Mesh" ), "Assets/architecture/arched-window.glb" );
-    BOOST_CHECK_EQUAL( building->getProperty( "City Roof Mesh" ), "56c12775-468d-41fb-936a-a7f932b081f4" );
+    BOOST_CHECK_EQUAL( building->getProperty( "City Window Mesh" ),
+                       "Assets/architecture/arched-window.glb" );
+    BOOST_CHECK_EQUAL( building->getProperty( "City Roof Mesh" ),
+                       "56c12775-468d-41fb-936a-a7f932b081f4" );
     BOOST_CHECK( building->getProperty( "City Corner Mesh" ).empty() );
     BOOST_CHECK( !restoredVehicle->isGenerated() );
 
@@ -677,7 +1032,8 @@ BOOST_AUTO_TEST_CASE( terrain_city_source_anchor_roundtrip_test )
     BOOST_REQUIRE( restoredCity );
     BOOST_CHECK( !restoredCircuit->isGenerated() );
     BOOST_CHECK_EQUAL( restoredCircuit->getSeed(), 428u );
-    BOOST_CHECK_EQUAL( restoredCircuit->getQuality(), static_cast<s32>( procedural::VehicleAppearanceQuality::Preview ) );
+    BOOST_CHECK_EQUAL( restoredCircuit->getQuality(),
+                       static_cast<s32>( procedural::VehicleAppearanceQuality::Preview ) );
     BOOST_REQUIRE_EQUAL( restoredCircuitOwner->getChildren().size(), 1u );
     auto restoredCircuitChild = restoredCircuitOwner->getChildren().front();
     BOOST_CHECK_EQUAL( restoredCircuitChild->getName(), "Authored circuit child" );
@@ -695,31 +1051,55 @@ BOOST_AUTO_TEST_CASE( terrain_city_source_anchor_roundtrip_test )
 
     for( int style = 0; style < 9; ++style )
     {
-        auto styleActor = reopenedScene->findActorByName( "Persisted building style " + StringUtil::toString( style ) );
+        auto styleActor = reopenedScene->findActorByName( "Persisted building style " +
+                                                          StringUtil::toString( style ) );
         BOOST_REQUIRE( styleActor );
-        auto preset = styleActor->getComponent<scene::ProceduralRaceScene>(); BOOST_REQUIRE( preset );
+        auto preset = styleActor->getComponent<scene::ProceduralRaceScene>();
+        BOOST_REQUIRE( preset );
         const auto restoredPreset = preset->getProperties();
         BOOST_CHECK_EQUAL( restoredPreset->getPropertyAsInt( "City Building Style" ), style );
         BOOST_CHECK_EQUAL( restoredPreset->getProperty( "City Road Authoring UUID" ), sourceUuid );
-        BOOST_CHECK_EQUAL( restoredPreset->getProperty( "City Window Mesh" ), "Assets/architecture/arched-window.glb" );
-        BOOST_CHECK_EQUAL( restoredPreset->getProperty( "City Roof Mesh" ), "56c12775-468d-41fb-936a-a7f932b081f4" );
+        BOOST_CHECK_EQUAL( restoredPreset->getProperty( "City Window Mesh" ),
+                           "Assets/architecture/arched-window.glb" );
+        BOOST_CHECK_EQUAL( restoredPreset->getProperty( "City Roof Mesh" ),
+                           "56c12775-468d-41fb-936a-a7f932b081f4" );
         BOOST_CHECK( !preset->isGenerated() );
     }
 
     // Assert these identities belong to the current live manager/scene registry,
     // with one terrain/source, ten saved preset components and no constructor-ID clone.
-    std::set<String> liveIds; unsigned liveSources = 0, liveTerrains = 0, liveVehicles = 0;
-    for( auto actor : manager->getActors() ) if( actor && actor->getScene() == reopenedScene )
+    std::set<String> liveIds;
+    unsigned liveSources = 0, liveTerrains = 0, liveVehicles = 0;
+    for( auto actor : manager->getActors() )
     {
-        BOOST_REQUIRE( actor->getHandle() ); BOOST_CHECK( liveIds.insert( actor->getHandle()->getUUIDAsString() ).second );
-        for( auto component : actor->getComponents() )
-        { BOOST_REQUIRE( component->getHandle() ); BOOST_CHECK( liveIds.insert( component->getHandle()->getUUIDAsString() ).second ); }
-        if( actor->getComponent<scene::CityRoadAuthoring>() ) ++liveSources;
-        if( actor->getComponent<scene::TerrainSystem>() ) ++liveTerrains;
-        if( actor->getComponent<scene::ProceduralRaceScene>() ) ++liveVehicles;
+        if( actor && actor->getScene() == reopenedScene )
+        {
+            BOOST_REQUIRE( actor->getHandle() );
+            BOOST_CHECK( liveIds.insert( actor->getHandle()->getUUIDAsString() ).second );
+            for( auto component : actor->getComponents() )
+            {
+                BOOST_REQUIRE( component->getHandle() );
+                BOOST_CHECK( liveIds.insert( component->getHandle()->getUUIDAsString() ).second );
+            }
+            if( actor->getComponent<scene::CityRoadAuthoring>() )
+            {
+                ++liveSources;
+            }
+            if( actor->getComponent<scene::TerrainSystem>() )
+            {
+                ++liveTerrains;
+            }
+            if( actor->getComponent<scene::ProceduralRaceScene>() )
+            {
+                ++liveVehicles;
+            }
+        }
     }
-    BOOST_CHECK_EQUAL( liveSources, 1u ); BOOST_CHECK_EQUAL( liveTerrains, 1u ); BOOST_CHECK_EQUAL( liveVehicles, 10u );
-    BOOST_CHECK( liveIds.count( sourceUuid ) == 1 ); BOOST_CHECK( liveIds.count( terrainUuid ) == 1 );
+    BOOST_CHECK_EQUAL( liveSources, 1u );
+    BOOST_CHECK_EQUAL( liveTerrains, 1u );
+    BOOST_CHECK_EQUAL( liveVehicles, 10u );
+    BOOST_CHECK( liveIds.count( sourceUuid ) == 1 );
+    BOOST_CHECK( liveIds.count( terrainUuid ) == 1 );
     BOOST_CHECK( publications > 0 );
     reopenedScene->clear( true );
 }

@@ -560,7 +560,9 @@ namespace workphone::editor
                 properties->getPropertyValue( "project.autoLoadLastScene", autoLoadLastScene );
                 auto scenePath = autoLoadLastScene ? m_currentScenePath : String();
                 if( !autoLoadLastScene || scenePath.empty() )
+                {
                     properties->getPropertyValue( "project.startupScene", scenePath );
+                }
                 if( !scenePath.empty() )
                 {
                     scenes->loadScene( scenePath );
@@ -579,22 +581,31 @@ namespace workphone::editor
         const auto destination = checkedPath( filePath );
         auto properties = workphone::static_pointer_cast<Properties>( toData() );
         const fs::path paths[] = { destination.parent_path() / "ProjectRuntime.settings",
-                                  destination.parent_path() / "GameGraphics.settings", destination };
-        const String contents[] = {
-            DataUtil::toString( properties.get(), true ),
-            DataUtil::toString( m_graphicsSettingsDirector->getProperties().get(), true ),
-            DataUtil::toString( properties.get(), true ) };
+                                   destination.parent_path() / "GameGraphics.settings", destination };
+        const String contents[] = { DataUtil::toString( properties.get(), true ),
+                                    DataUtil::toString(
+                                        m_graphicsSettingsDirector->getProperties().get(), true ),
+                                    DataUtil::toString( properties.get(), true ) };
         String previous[3];
         bool existed[3] = {};
         for( size_t i = 0; i < 3; ++i )
         {
             existed[i] = fs::is_regular_file( paths[i] );
-            if( !existed[i] ) continue;
+            if( !existed[i] )
+            {
+                continue;
+            }
             std::ifstream stream( paths[i], std::ios::binary );
-            if( !stream ) throw std::runtime_error( "Unable to read previous project settings" );
+            if( !stream )
+            {
+                throw std::runtime_error( "Unable to read previous project settings" );
+            }
             std::ostringstream buffer;
             buffer << stream.rdbuf();
-            if( stream.bad() ) throw std::runtime_error( "Unable to read previous project settings" );
+            if( stream.bad() )
+            {
+                throw std::runtime_error( "Unable to read previous project settings" );
+            }
             previous[i] = buffer.str();
         }
         // Publish the main file last. Every already-published sidecar is restored
@@ -603,15 +614,23 @@ namespace workphone::editor
         try
         {
             for( ; published < 3; ++published )
+            {
                 writeProjectFile( paths[published], contents[published] );
+            }
         }
         catch( ... )
         {
             while( published > 0 )
             {
                 --published;
-                if( existed[published] ) writeProjectFile( paths[published], previous[published] );
-                else fs::remove( paths[published] );
+                if( existed[published] )
+                {
+                    writeProjectFile( paths[published], previous[published] );
+                }
+                else
+                {
+                    fs::remove( paths[published] );
+                }
             }
             throw;
         }
@@ -749,9 +768,13 @@ namespace workphone::editor
             // A legacy inspector may edit a snapshot which also contains the new
             // alias. Prefer the field which changed relative to the live value.
             if( hasSettings && ( !hasLegacy || legacyValue == value || settingsValue != value ) )
+            {
                 value = settingsValue;
+            }
             else if( hasLegacy )
+            {
                 value = legacyValue;
+            }
         };
         readIdentity( "label", "project.name", m_label );
         readIdentity( "productName", "project.productName", m_productName );
@@ -930,7 +953,10 @@ namespace workphone::editor
     void Project::compile()
     {
         auto app = core::IApplicationManager::instancePtr();
-        if( !app ) throw std::runtime_error( "Compilation requires the application manager" );
+        if( !app )
+        {
+            throw std::runtime_error( "Compilation requires the application manager" );
+        }
         compile( app->getBuildConfig(), {}, true );
     }
 
@@ -944,9 +970,15 @@ namespace workphone::editor
         const auto directory = checkedPath( m_projectDirectory );
         if( configuration != "Debug" && configuration != "RelWithDebInfo" &&
             configuration != "Release" && configuration != "MinSizeRel" )
+        {
             throw std::invalid_argument( "Unknown project build configuration" );
+        }
         String profileKey = configuration + '\n';
-        for( const auto &argument : configureArguments ) { profileKey += argument; profileKey += '\n'; }
+        for( const auto &argument : configureArguments )
+        {
+            profileKey += argument;
+            profileKey += '\n';
+        }
         const auto profileHash = StringUtil::toString( StringUtil::getHash( profileKey ) );
         // CMake and MSBuild add several levels of intermediate files below this path.
         const auto buildDirectory = configureArguments.empty()
@@ -983,22 +1015,27 @@ namespace workphone::editor
         app->setCachePath( cacheDirectoryPath( directory / "Cache" ) );
         app->setProjectLibraryName( "Plugin" );
         const auto library = app->getProjectLibraryPath();
-        const auto outputDirectory = loadPlugin
-                                         ? checkedPath( library ).parent_path().u8string()
-                                         : ( buildDirectory / "artifacts" ).u8string();
+        const auto outputDirectory = loadPlugin ? checkedPath( library ).parent_path().u8string()
+                                                : ( buildDirectory / "artifacts" ).u8string();
         auto upperConfig = configuration;
         std::transform( upperConfig.begin(), upperConfig.end(), upperConfig.begin(),
                         []( unsigned char c ) { return static_cast<char>( std::toupper( c ) ); } );
-        Array<String> arguments = { "-S", directory.u8string(), "-B", buildDirectory.u8string(),
+        Array<String> arguments = {
+            "-S",
+            directory.u8string(),
+            "-B",
+            buildDirectory.u8string(),
             "-DCMAKE_BUILD_TYPE=" + configuration,
             "-DCMAKE_RUNTIME_OUTPUT_DIRECTORY_" + upperConfig + "=" + outputDirectory,
-            "-DCMAKE_LIBRARY_OUTPUT_DIRECTORY_" + upperConfig + "=" + outputDirectory };
+            "-DCMAKE_LIBRARY_OUTPUT_DIRECTORY_" + upperConfig + "=" + outputDirectory
+        };
         arguments.insert( arguments.end(), configureArguments.begin(), configureArguments.end() );
         runCMake( arguments, buildDirectory / "configure.log" );
         if( !loadPlugin )
         {
-            runCMake( { "--build", buildDirectory.u8string(), "--config", configuration,
-                        "--target", "Plugin" }, buildDirectory / "build.log" );
+            runCMake( { "--build", buildDirectory.u8string(), "--config", configuration, "--target",
+                        "Plugin" },
+                      buildDirectory / "build.log" );
             return;
         }
         auto oldPlugin = m_plugin;

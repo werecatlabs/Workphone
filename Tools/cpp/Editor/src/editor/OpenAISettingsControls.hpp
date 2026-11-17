@@ -12,4 +12,4 @@ namespace workphone::editor
     void refreshMeshySettingsControls( SmartPtr<ui::IUIElement> parent );
     void createTrellis2SettingsControls( SmartPtr<ui::IUIElement> parent );
     void refreshTrellis2SettingsControls( SmartPtr<ui::IUIElement> parent );
-}
+}  // namespace workphone::editor

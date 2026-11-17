@@ -12,9 +12,9 @@ namespace workphone::editor
     SmartPtr<Properties> validateProjectSettingsRuntime( SmartPtr<Properties> settings );
 
     /** Copies supported game graphics options into the project's existing graphics director. */
-    void updateProjectGraphicsSettings(
-        SmartPtr<Properties> settings, SmartPtr<scene::GraphicsSettingsDirector> director,
-        const Properties *changes = nullptr );
+    void updateProjectGraphicsSettings( SmartPtr<Properties> settings,
+                                        SmartPtr<scene::GraphicsSettingsDirector> director,
+                                        const Properties *changes = nullptr );
 
     /**
      * Validates supported options before applying live settings. The result contains success,
@@ -25,6 +25,6 @@ namespace workphone::editor
     /** Replaces the previous project's runtime profile, filling non-graphics
      * defaults while retaining legacy output/theme behavior when unspecified. */
     SmartPtr<Properties> loadProjectSettingsRuntime( SmartPtr<Properties> settings );
-}
+}  // namespace workphone::editor
 
 #endif

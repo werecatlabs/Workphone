@@ -507,12 +507,14 @@ BOOST_AUTO_TEST_CASE( components_car_controller_properties_round_trip )
     checkScalarProperty( properties, FourWheelVehicle::radiusStr, 0.35f );
     checkScalarProperty( properties, FourWheelVehicle::suspensionTravelStr, 0.3f );
     checkScalarProperty( properties, FourWheelVehicle::dampingStr, 1000.0f );
+    checkScalarProperty( properties, FourWheelVehicle::authoredGeometryStr, false );
     checkEnumProperty( properties, FourWheelVehicle::driveTypeStr,
                        static_cast<s32>( VehicleDriveType::AllWheelDrive ) );
 
     properties->setProperty( FourWheelVehicle::radiusStr, 0.42f );
     properties->setProperty( FourWheelVehicle::suspensionTravelStr, 0.18f );
     properties->setProperty( FourWheelVehicle::dampingStr, 2400.0f );
+    properties->setProperty( FourWheelVehicle::authoredGeometryStr, true );
     properties->setProperty( FourWheelVehicle::driveTypeStr,
                              static_cast<s32>( VehicleDriveType::FrontWheelDrive ) );
     properties->setProperty( VehicleController::massStr, 1550.0f );
@@ -526,6 +528,7 @@ BOOST_AUTO_TEST_CASE( components_car_controller_properties_round_trip )
     checkScalarProperty( restoredProperties, FourWheelVehicle::radiusStr, 0.42f );
     checkScalarProperty( restoredProperties, FourWheelVehicle::suspensionTravelStr, 0.18f );
     checkScalarProperty( restoredProperties, FourWheelVehicle::dampingStr, 2400.0f );
+    checkScalarProperty( restoredProperties, FourWheelVehicle::authoredGeometryStr, true );
     checkEnumProperty( restoredProperties, FourWheelVehicle::driveTypeStr,
                        static_cast<s32>( VehicleDriveType::FrontWheelDrive ) );
     checkClose( restored->getMass(), 1550.0f );
@@ -692,6 +695,72 @@ BOOST_AUTO_TEST_CASE( components_car_controller_wires_four_wheels_by_drive_type 
         checkVectorClose( wheelActors[i]->getLocalPosition(), expectedPositions[i] );
     }
 
+    fixture.sceneManager->destroyActor( actor );
+}
+
+BOOST_AUTO_TEST_CASE( components_car_controller_preserves_authored_geometry_when_loaded )
+{
+    TestGuard fixture;
+    BOOST_REQUIRE( fixture.isAvailable );
+    VehicleFactoryGuard factoryGuard;
+
+    auto actor = fixture.sceneManager->createActor();
+    BOOST_REQUIRE( actor );
+    auto collision = actor->addComponent<CollisionBox>();
+    auto chassis = actor->addComponent<Rigidbody>();
+    BOOST_REQUIRE( collision );
+    BOOST_REQUIRE( chassis );
+    const Vector3<real_Num> extents( 1.16f, .915f, 2.325f );
+    const Vector3<real_Num> offset( 0.0f, 1.43f, -.075f );
+    const Vector3<real_Num> inertia( 3750.0f, 4050.0f, 1310.0f );
+    collision->setExtents( extents );
+    collision->setPosition( offset );
+
+    const std::array<Vector3<real_Num>, 4> positions = {
+        Vector3<real_Num>( -.96f, .56f, -1.45f ), Vector3<real_Num>( .96f, .56f, -1.45f ),
+        Vector3<real_Num>( -.96f, .56f, 1.45f ), Vector3<real_Num>( .96f, .56f, 1.45f )
+    };
+    std::array<SmartPtr<IGameActor>, 4> wheelActors;
+    std::array<SmartPtr<WheelController>, 4> wheels;
+    for( u32 i = 0; i < wheels.size(); ++i )
+    {
+        wheelActors[i] = fixture.sceneManager->createActor();
+        actor->addChild( wheelActors[i] );
+        wheelActors[i]->setLocalPosition( positions[i] );
+        wheels[i] = wheelActors[i]->addComponent<WheelController>();
+    }
+
+    // Match GameActor deserialization: attach and hydrate before loading.
+    auto controller = make_ptr<FourWheelVehicle>();
+    actor->addComponentInstance( controller );
+    auto saved = controller->getProperties();
+    saved->setProperty( FourWheelVehicle::authoredGeometryStr, true );
+    saved->setProperty( FourWheelVehicle::radiusStr, .56f );
+    saved->setProperty( VehicleController::moiStr, inertia );
+    controller->fromData( saved );
+    controller->load( nullptr );
+    BOOST_REQUIRE( controller->getVehicleController() );
+    controller->refreshWheels();
+
+    checkVectorClose( collision->getExtents(), extents );
+    checkVectorClose( collision->getPosition(), offset );
+    checkVectorClose( chassis->getMassSpaceInertiaTensor(), inertia );
+    for( u32 i = 0; i < wheels.size(); ++i )
+    {
+        auto wheel = wheels[i]->getWheelController();
+        BOOST_REQUIRE( wheel );
+        checkVectorClose( wheelActors[i]->getLocalPosition(), positions[i] );
+        checkVectorClose( wheel->getLocalTransform().getPosition(), positions[i] );
+        checkClose( wheel->getRadius(), .56f );
+        checkClose( wheel->getSuspensionTravel(), .3f );
+    }
+
+    // Reentering Play/resetting wheel configuration must keep the saved mounts.
+    controller->refreshWheels();
+    for( u32 i = 0; i < wheels.size(); ++i )
+    {
+        checkVectorClose( wheelActors[i]->getLocalPosition(), positions[i] );
+    }
     fixture.sceneManager->destroyActor( actor );
 }
 

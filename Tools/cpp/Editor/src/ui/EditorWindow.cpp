@@ -19,27 +19,56 @@ namespace workphone::editor
     void EditorWindow::callScriptMember( const String &member )
     {
         if( auto editor = EditorManager::getSingletonPtr() )
+        {
             if( auto ui = editor->getUI() )
-                if( ui->deferScriptCall( this, member, {}, false ) ) return;
-        if( auto invoker = getInvoker() ) invoker->callObjectMember( member );
+            {
+                if( ui->deferScriptCall( this, member, {}, false ) )
+                {
+                    return;
+                }
+            }
+        }
+        if( auto invoker = getInvoker() )
+        {
+            invoker->callObjectMember( member );
+        }
     }
 
     void EditorWindow::callScriptMember( const String &member, const Parameters &parameters )
     {
         if( auto editor = EditorManager::getSingletonPtr() )
+        {
             if( auto ui = editor->getUI() )
-                if( ui->deferScriptCall( this, member, parameters, true ) ) return;
-        if( auto invoker = getInvoker() ) invoker->callObjectMember( member, parameters );
+            {
+                if( ui->deferScriptCall( this, member, parameters, true ) )
+                {
+                    return;
+                }
+            }
+        }
+        if( auto invoker = getInvoker() )
+        {
+            invoker->callObjectMember( member, parameters );
+        }
     }
 
     void EditorWindow::callScriptMemberWithDiscardedResults( const String &member,
-                                                            const Parameters &parameters )
+                                                             const Parameters &parameters )
     {
         if( auto editor = EditorManager::getSingletonPtr() )
+        {
             if( auto ui = editor->getUI() )
-                if( ui->deferScriptCall( this, member, parameters, true, true ) ) return;
+            {
+                if( ui->deferScriptCall( this, member, parameters, true, true ) )
+                {
+                    return;
+                }
+            }
+        }
         if( auto invoker = getInvoker() )
+        {
             invokeEditorScriptCall( *invoker, member, parameters, true, true );
+        }
     }
 
     void EditorWindow::load( SmartPtr<ISharedObject> data )

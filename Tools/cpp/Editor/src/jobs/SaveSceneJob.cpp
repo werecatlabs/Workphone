@@ -35,7 +35,10 @@ namespace workphone::editor
         if( editorManager->isEditingPrefab() )
         {
             String error;
-            if( !editorManager->savePrefab( error ) ) WP_LOG_ERROR( error );
+            if( !editorManager->savePrefab( error ) )
+            {
+                WP_LOG_ERROR( error );
+            }
             return;
         }
 

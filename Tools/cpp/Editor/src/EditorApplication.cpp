@@ -1647,8 +1647,10 @@ namespace workphone::editor
                                         // its clock. Refresh the scene without advancing simulation.
                                         auto sceneWindow = dynamic_pointer_cast<ui::IUIRenderWindow>(
                                             app->getSceneRenderWindow() );
-                                        auto texture = sceneWindow ? sceneWindow->getRenderTexture() : nullptr;
-                                        if( auto target = texture ? texture->getRenderTarget() : nullptr )
+                                        auto texture =
+                                            sceneWindow ? sceneWindow->getRenderTexture() : nullptr;
+                                        if( auto target =
+                                                texture ? texture->getRenderTarget() : nullptr )
                                             target->update();
                                         claw->updatePausedFrame();
                                     }
@@ -2410,7 +2412,10 @@ namespace workphone::editor
 
     bool EditorApplication::inputEvent( SmartPtr<IInputEvent> event )
     {
-        if( event ) m_sceneRefresh.requestActivity();
+        if( event )
+        {
+            m_sceneRefresh.requestActivity();
+        }
         auto applicationManager = core::IApplicationManager::instance();
         WP_ASSERT( applicationManager );
 
@@ -3197,33 +3202,44 @@ namespace workphone::editor
         auto app = core::IApplicationManager::instancePtr();
         auto graphics = app ? app->getGraphicsSystem() : nullptr;
         if( !graphics || !dynamic_cast<render::ClawRendererDX11 *>( graphics->getRenderer().get() ) ||
-            !m_renderTarget ) return;
+            !m_renderTarget )
+        {
+            return;
+        }
         auto target = m_renderTarget->getRenderTarget();
-        if( !target ) return;
+        if( !target )
+        {
+            return;
+        }
         // Restrict the policy to the editor's own scene texture. Explicit requests
         // from animation previews/tools remain pending even during idle throttling.
-        const bool realtime = app->isPlaying() || !m_renderWindow ||
-                              m_renderWindow->getRealtimePreview();
+        const bool realtime =
+            app->isPlaying() || !m_renderWindow || m_renderWindow->getRealtimePreview();
         target->setAutoUpdated( realtime );
         const auto viewport = target->getNumViewports() ? target->getViewport( 0 ) : nullptr;
         const auto camera = viewport ? viewport->getCamera() : nullptr;
         const auto size = target->getSize();
-        bool changed = m_sceneRefreshTarget != target.get() ||
-                       m_sceneRefreshCamera != camera.get() || size != m_sceneRefreshSize;
+        bool changed = m_sceneRefreshTarget != target.get() || m_sceneRefreshCamera != camera.get() ||
+                       size != m_sceneRefreshSize;
         if( camera )
         {
             const auto view = camera->getViewMatrix();
             const auto projection = camera->getProjectionMatrix();
             for( unsigned i = 0; i < 16; ++i )
+            {
                 changed = changed || view.ptr()[i] != m_sceneRefreshView.ptr()[i] ||
                           projection.ptr()[i] != m_sceneRefreshProjection.ptr()[i];
+            }
             m_sceneRefreshView = view;
             m_sceneRefreshProjection = projection;
         }
         m_sceneRefreshTarget = target.get();
         m_sceneRefreshCamera = camera.get();
         m_sceneRefreshSize = size;
-        if( m_sceneRefresh.needsFrame( now, realtime, changed ) ) target->update();
+        if( m_sceneRefresh.needsFrame( now, realtime, changed ) )
+        {
+            target->update();
+        }
 #else
         (void)now;
 #endif
@@ -3846,11 +3862,12 @@ namespace workphone::editor
         EventType eventType, hash_type eventValue, const Array<Parameter> &arguments,
         SmartPtr<ISharedObject> sender, SmartPtr<ISharedObject> object, SmartPtr<IEvent> event )
     {
-        if( m_application && ( eventType == EventType::UI ||
-                              eventValue == scene::IGameManager::sceneLoadedHash ||
-                              eventValue == scene::IGameManager::sceneUnloadedHash ||
-                              eventValue == IEvent::addActor ) )
+        if( m_application &&
+            ( eventType == EventType::UI || eventValue == scene::IGameManager::sceneLoadedHash ||
+              eventValue == scene::IGameManager::sceneUnloadedHash || eventValue == IEvent::addActor ) )
+        {
             m_application->m_sceneRefresh.requestActivity();
+        }
         auto applicationManager = core::IApplicationManager::instance();
 
         if( eventType == EventType::UI && eventValue == StringUtil::getHash( "sceneActorPicked" ) )
@@ -3876,8 +3893,11 @@ namespace workphone::editor
                     profile->getPropertyAsInt( "graphics.gi" ) != 0 )
                 {
                     String error;
-                    if( !applyProjectIrradianceSettings( profile, applicationManager->getProjectPath(), error ) )
+                    if( !applyProjectIrradianceSettings( profile, applicationManager->getProjectPath(),
+                                                         error ) )
+                    {
                         WP_LOG_ERROR( error );
+                    }
                 }
             }
         }

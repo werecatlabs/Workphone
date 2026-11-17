@@ -61,15 +61,28 @@ namespace workphone::editor
         class FinishPrefabEditJob : public Job
         {
         public:
-            explicit FinishPrefabEditJob( bool save ) : m_save( save ) { setPrimary( true ); }
+            explicit FinishPrefabEditJob( bool save ) : m_save( save )
+            {
+                setPrimary( true );
+            }
+
             void execute() override
             {
                 auto app = core::IApplicationManager::instancePtr();
-                if( !app || app->getQuit() ) return;
+                if( !app || app->getQuit() )
+                {
+                    return;
+                }
                 auto manager = EditorManager::getSingletonPtr();
-                if( !manager || !manager->isEditingPrefab() ) return;
+                if( !manager || !manager->isEditingPrefab() )
+                {
+                    return;
+                }
                 auto ui = manager->getUI();
-                if( !ui ) return;
+                if( !ui )
+                {
+                    return;
+                }
                 String error;
                 size_t count = 0;
                 if( m_save && !manager->savePrefab( error, &count ) )
@@ -83,22 +96,26 @@ namespace workphone::editor
                     ui->updatePrefabEditingUI( error );
                     return;
                 }
-                ui->updatePrefabEditingUI( m_save ?
-                    "Prefab saved. Updated " + StringUtil::toString( count ) +
-                    " instance(s). Save the scene to keep these instance changes." +
-                    ( saveWarning.empty() ? String() : "\n" + saveWarning ) : String() );
+                ui->updatePrefabEditingUI(
+                    m_save ? "Prefab saved. Updated " + StringUtil::toString( count ) +
+                                 " instance(s). Save the scene to keep these instance changes." +
+                                 ( saveWarning.empty() ? String() : "\n" + saveWarning )
+                           : String() );
             }
+
         private:
             bool m_save;
         };
-    }
+    }  // namespace
 
     void UIManager::updatePrefabEditingUI( const String &message )
     {
         auto manager = EditorManager::getSingletonPtr();
         const bool editing = manager && manager->isEditingPrefab();
         if( auto app = core::IApplicationManager::instancePtr(); app && m_playmodeToggle )
+        {
             m_playmodeToggle->setValue( app->isPlaying() );
+        }
         // Toolbar toggles are drawn directly by ImGui and do not honor element
         // visibility. Change the child list so inactive controls cannot render.
         if( m_toolbar && editing != m_prefabToolbarActive )
@@ -112,8 +129,11 @@ namespace workphone::editor
             {
                 const auto id = static_cast<WidgetId>( element->getElementId() );
                 if( editing && ( id == WidgetId::RunId || id == WidgetId::ShowDebugId ||
-                    id == WidgetId::ShowSceneDebugId || id == WidgetId::ShowUiDebugId ||
-                    id == WidgetId::StatsId || id == WidgetId::ReloadScriptsId ) ) continue;
+                                 id == WidgetId::ShowSceneDebugId || id == WidgetId::ShowUiDebugId ||
+                                 id == WidgetId::StatsId || id == WidgetId::ReloadScriptsId ) )
+                {
+                    continue;
+                }
                 m_toolbar->addChild( element );
             }
             if( editing )
@@ -128,22 +148,44 @@ namespace workphone::editor
                  m_playmodeToggle, m_toolbarShowDebugButton, m_toolbarShowSceneDebugButton,
                  m_toolbarShowUiDebugButton, m_toolbarStatsButton, m_toolbarReloadButton } )
         {
-            if( element ) element->setVisible( !editing );
+            if( element )
+            {
+                element->setVisible( !editing );
+            }
         }
-        if( m_savePrefabButton ) m_savePrefabButton->setVisible( editing );
-        if( m_discardPrefabButton ) m_discardPrefabButton->setVisible( editing );
+        if( m_savePrefabButton )
+        {
+            m_savePrefabButton->setVisible( editing );
+        }
+        if( m_discardPrefabButton )
+        {
+            m_discardPrefabButton->setVisible( editing );
+        }
         if( m_prefabLabel )
         {
             m_prefabLabel->setVisible( editing );
-            if( editing ) m_prefabLabel->setText( "Prefab: " + Path::getFileName( manager->getEditingPrefabPath() ) );
+            if( editing )
+            {
+                m_prefabLabel->setText( "Prefab: " +
+                                        Path::getFileName( manager->getEditingPrefabPath() ) );
+            }
         }
         if( !message.empty() )
         {
             WP_LOG( message );
-            if( m_prefabStatusText ) m_prefabStatusText->setText( message );
-            if( m_prefabStatusWindow ) m_prefabStatusWindow->setVisible( true );
+            if( m_prefabStatusText )
+            {
+                m_prefabStatusText->setText( message );
+            }
+            if( m_prefabStatusWindow )
+            {
+                m_prefabStatusWindow->setVisible( true );
+            }
         }
-        else if( m_prefabStatusWindow ) m_prefabStatusWindow->setVisible( false );
+        else if( m_prefabStatusWindow )
+        {
+            m_prefabStatusWindow->setVisible( false );
+        }
     }
 
     SmartPtr<EditorWindow> UIManager::getLuaDebuggerWindow() const
@@ -809,10 +851,12 @@ namespace workphone::editor
                                ICON_FA_FILM " Scene", "Scene", ui::IUIMenuItem::Type::Normal );
             Util::addMenuItem( windowMenu, static_cast<s32>( WidgetId::CityRoadWindowId ), "City Roads",
                                "Draw and edit road splines on terrain", ui::IUIMenuItem::Type::Normal );
-            Util::addMenuItem( windowMenu, static_cast<s32>( WidgetId::TextToImageWindowId ), "Text to Image",
-                               "Generate image assets from a text prompt", ui::IUIMenuItem::Type::Normal );
-            Util::addMenuItem( windowMenu, static_cast<s32>( WidgetId::ImageToMeshWindowId ), "Image to Mesh",
-                               "Generate a 3D mesh from an image", ui::IUIMenuItem::Type::Normal );
+            Util::addMenuItem( windowMenu, static_cast<s32>( WidgetId::TextToImageWindowId ),
+                               "Text to Image", "Generate image assets from a text prompt",
+                               ui::IUIMenuItem::Type::Normal );
+            Util::addMenuItem( windowMenu, static_cast<s32>( WidgetId::ImageToMeshWindowId ),
+                               "Image to Mesh", "Generate a 3D mesh from an image",
+                               ui::IUIMenuItem::Type::Normal );
             Util::addMenuItem( windowMenu, static_cast<s32>( WidgetId::SoundWindowId ),
                                ICON_FA_MUSIC " Sound", "Sound", ui::IUIMenuItem::Type::Normal );
             Util::addMenuItem( windowMenu, static_cast<s32>( WidgetId::ParticleWindowId ),
@@ -962,7 +1006,8 @@ namespace workphone::editor
             m_savePrefabButton->setVisible( false );
             toolbar->addChild( m_savePrefabButton );
             m_discardPrefabButton = ui->addElementByType<ui::IUIButton>();
-            m_discardPrefabButton->setElementId( static_cast<s32>( WidgetId::DiscardPrefabAndReturnId ) );
+            m_discardPrefabButton->setElementId(
+                static_cast<s32>( WidgetId::DiscardPrefabAndReturnId ) );
             m_discardPrefabButton->setLabel( "Discard & Return" );
             m_discardPrefabButton->setVisible( false );
             toolbar->addChild( m_discardPrefabButton );
@@ -1441,7 +1486,10 @@ namespace workphone::editor
         m_savePrefabButton = nullptr;
         m_discardPrefabButton = nullptr;
         m_prefabLabel = nullptr;
-        if( m_prefabStatusWindow ) ui->removeElement( m_prefabStatusWindow );
+        if( m_prefabStatusWindow )
+        {
+            ui->removeElement( m_prefabStatusWindow );
+        }
         m_prefabStatusWindow = nullptr;
         m_prefabStatusText = nullptr;
         m_regularToolbarChildren.clear();
@@ -1523,7 +1571,10 @@ namespace workphone::editor
         // Scene/prefab transitions must replace the Inspector's actor and
         // transform immediately, before another edit can target the old scene.
         // This stateless job also refreshes the other selection-specific panes.
-        if( auto selectionJob = m_updateSelectionJob ) selectionJob->execute();
+        if( auto selectionJob = m_updateSelectionJob )
+        {
+            selectionJob->execute();
+        }
     }
 
     void UIManager::updateActorSelection()
@@ -2860,7 +2911,8 @@ namespace workphone::editor
             case WidgetId::SavePrefabAndReturnId:
             case WidgetId::DiscardPrefabAndReturnId:
             {
-                auto job = workphone::make_ptr<FinishPrefabEditJob>( id == WidgetId::SavePrefabAndReturnId );
+                auto job =
+                    workphone::make_ptr<FinishPrefabEditJob>( id == WidgetId::SavePrefabAndReturnId );
                 jobQueue->addJob( job );
             }
             break;

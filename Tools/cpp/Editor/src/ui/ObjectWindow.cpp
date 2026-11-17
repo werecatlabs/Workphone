@@ -278,7 +278,9 @@ namespace workphone::editor
     void ObjectWindow::updateMaterialEditorStatus()
     {
         if( isLoaded() && isWindowVisible() )
+        {
             ScriptWindow::updateMaterialEditorStatus( m_materialWindow.get() );
+        }
     }
 
     void ObjectWindow::updateSelection()
@@ -364,21 +366,38 @@ namespace workphone::editor
         // A restored project-file selection (or no selection) must release the
         // previous actor, even though a different inspector pane is now shown.
         if( m_objectType != ObjectType::Actor && m_actorWindow )
+        {
             m_actorWindow->updateSelection();
+        }
 
         switch( m_objectType )
         {
         case ObjectType::None:
         {
-            if( m_actorWindow ) m_actorWindow->setWindowVisible( false );
-            if( m_materialWindow ) m_materialWindow->setWindowVisible( false );
-            if( m_fileViewWindow ) m_fileViewWindow->setWindowVisible( false );
-            if( m_resourceWindow ) m_resourceWindow->setWindowVisible( false );
+            if( m_actorWindow )
+            {
+                m_actorWindow->setWindowVisible( false );
+            }
+            if( m_materialWindow )
+            {
+                m_materialWindow->setWindowVisible( false );
+            }
+            if( m_fileViewWindow )
+            {
+                m_fileViewWindow->setWindowVisible( false );
+            }
+            if( m_resourceWindow )
+            {
+                m_resourceWindow->setWindowVisible( false );
+            }
             if( m_propertiesWindow )
             {
                 m_propertiesWindow->setSelected( nullptr );
                 m_propertiesWindow->setSelection( {} );
-                if( auto grid = m_propertiesWindow->getPropertyGrid() ) grid->setProperties( nullptr );
+                if( auto grid = m_propertiesWindow->getPropertyGrid() )
+                {
+                    grid->setProperties( nullptr );
+                }
                 m_propertiesWindow->setWindowVisible( false );
             }
         }

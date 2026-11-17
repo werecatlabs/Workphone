@@ -320,10 +320,13 @@ namespace workphone::editor
         if( m_animator && m_animator->isPlaying() )
         {
             auto app = core::IApplicationManager::instancePtr();
-            auto window = app ? dynamic_pointer_cast<ui::IUIRenderWindow>( app->getSceneRenderWindow() )
-                              : nullptr;
+            auto window =
+                app ? dynamic_pointer_cast<ui::IUIRenderWindow>( app->getSceneRenderWindow() ) : nullptr;
             auto texture = window ? window->getRenderTexture() : nullptr;
-            if( auto target = texture ? texture->getRenderTarget() : nullptr ) target->update();
+            if( auto target = texture ? texture->getRenderTarget() : nullptr )
+            {
+                target->update();
+            }
         }
     }
 

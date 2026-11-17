@@ -11,8 +11,8 @@ namespace workphone::editor::image_assets
     }
 
     inline bool savePng( const std::filesystem::path &projectRoot, const std::string &basename,
-                         const unsigned char *bytes, std::size_t size,
-                         std::filesystem::path &output, std::string &error )
+                         const unsigned char *bytes, std::size_t size, std::filesystem::path &output,
+                         std::string &error )
     {
         output.clear();
         error.clear();
@@ -26,4 +26,4 @@ namespace workphone::editor::image_assets
         return generated_assets::saveUniqueFile( projectRoot, sanitizeBasename( basename ), ".png",
                                                  bytes, size, output, error );
     }
-}
+}  // namespace workphone::editor::image_assets

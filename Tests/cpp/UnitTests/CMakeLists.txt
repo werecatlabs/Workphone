@@ -797,7 +797,7 @@ endif()
 # UnitTests objects can silently mismatch subclass layouts across DLL changes.
 add_executable(WPActorSceneTests main.cpp UnitTests.cpp UnitTestsFixture.cpp
     TypeManagerFixture.cpp GameTestFixture.cpp GraphicsTestFixture.cpp TestGuard.cpp
-    SceneWorldStreamingTests.cpp ActorTransformTests.cpp ActorSmoothMotionTests.cpp ComponentTestsMeshRenderer.cpp
+    SceneWorldStreamingTests.cpp ActorCoreTests.cpp ActorTransformTests.cpp ActorSmoothMotionTests.cpp ComponentTestsMeshRenderer.cpp
     GameManagerRegistrationTests.cpp CameraManagerFallbackTests.cpp LODSystemTests.cpp MeshImposterComponentTests.cpp
     GraphicsSceneNodeTests.cpp GameSceneAsyncLoadingTests.cpp GameSceneLoadingTests.cpp MeshTest.cpp
     MeshAssetBudgetTests.cpp
@@ -826,6 +826,11 @@ add_test(NAME Workphone.component_update_registration COMMAND WPActorSceneTests
     --run_test=GameManagerRegistrationTests)
 set_tests_properties(Workphone.component_update_registration PROPERTIES TIMEOUT 60
     WORKING_DIRECTORY "$<TARGET_FILE_DIR:WPActorSceneTests>" LABELS "scene;concurrency;headless")
+add_test(NAME Workphone.actor_data_contracts COMMAND WPActorSceneTests
+    --run_test=actor_dispatch_*,actor_sparse_metadata_*,actor_resource_file_path_*,actor_update_callbacks_*,actor_flag_callbacks_*,actor_creation_validation,actor_hierarchy_management,actor_component_management_enhanced,actor_state_flags_comprehensive,actor_loading_lifecycle,actor_detached_unload_does_not_require_game_manager
+    --report_level=detailed)
+set_tests_properties(Workphone.actor_data_contracts PROPERTIES TIMEOUT 90
+    WORKING_DIRECTORY "$<TARGET_FILE_DIR:WPActorSceneTests>" LABELS "scene;actor;memory;concurrency;headless")
 add_test(NAME Workphone.camera_manager_fallback COMMAND WPActorSceneTests
     --run_test=CameraManagerFallbackTests)
 set_tests_properties(Workphone.camera_manager_fallback PROPERTIES TIMEOUT 60

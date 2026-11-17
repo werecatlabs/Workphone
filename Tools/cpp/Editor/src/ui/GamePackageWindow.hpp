@@ -21,7 +21,14 @@ namespace workphone::editor
         WP_CLASS_REGISTER_DECL;
 
     private:
-        enum Action { Browse = 1, Build, Cancel, OpenFolder, Run };
+        enum Action
+        {
+            Browse = 1,
+            Build,
+            Cancel,
+            OpenFolder,
+            Run
+        };
 
         class Listener : public IEventListener
         {
@@ -50,4 +57,4 @@ namespace workphone::editor
         bool m_cancelling = false;
         bool m_usedDefaultDestination = false;
     };
-}
+}  // namespace workphone::editor

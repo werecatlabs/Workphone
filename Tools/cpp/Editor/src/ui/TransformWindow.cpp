@@ -15,7 +15,7 @@ namespace workphone::editor
             static auto *gate = new std::mutex;
             return *gate;
         }
-    }
+    }  // namespace
 
     WP_CLASS_REGISTER_DERIVED( workphone::editor, TransformWindow, EditorWindow );
     WP_CLASS_REGISTER_DERIVED( workphone::editor, TransformWindow::VectorListener, IEventListener );

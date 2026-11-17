@@ -15,15 +15,21 @@ namespace workphone::editor
         {
             auto cachePath = Path::getAbsolutePath( workspacePath, "Cache" );
             std::filesystem::create_directories( std::filesystem::u8path( cachePath.c_str() ) );
-            if( cachePath.back() != '/' ) cachePath += "/";
+            if( cachePath.back() != '/' )
+            {
+                cachePath += "/";
+            }
             application->setCachePath( cachePath );
         }
         if( application->getSettingsPath().empty() )
         {
             auto settingsPath = Path::getAbsolutePath( workspacePath, "SettingsCache" );
             std::filesystem::create_directories( std::filesystem::u8path( settingsPath.c_str() ) );
-            if( settingsPath.back() != '/' ) settingsPath += "/";
+            if( settingsPath.back() != '/' )
+            {
+                settingsPath += "/";
+            }
             application->setSettingsPath( settingsPath );
         }
     }
-}
+}  // namespace workphone::editor

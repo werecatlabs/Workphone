@@ -5,7 +5,7 @@
 #include <Workphone/Scene/Components/Rigidbody.hpp>
 #include <Workphone/System/InteractionBackendProviders.hpp>
 #if WP_BUILD_PHYSICS3
-#include <WPPhysics/WPPhysicsUtil.hpp>
+#    include <WPPhysics/WPPhysicsUtil.hpp>
 #endif
 #include <cstdlib>
 #include <cerrno>
@@ -15,14 +15,18 @@ namespace workphone::editor
 {
     namespace
     {
-        const char *physicsKeys[] = { "physics.gravity", "physics.simulationRate", "physics.solverIterations",
-            "physics.collisionLayers", "physics.broadphase", "physics.continuousCollision", "physics.substeps",
-            "physics.threads", "physics.deterministic", "physics.debugDraw" };
-        const char *audioKeys[] = { "sound.masterVolume", "sound.musicVolume", "sound.sfxVolume", "sound.voiceVolume",
-            "sound.spatialization", "sound.backend", "sound.outputDevice", "sound.sampleRate", "sound.bufferSize",
-            "sound.voiceLimit", "sound.streaming", "sound.occlusion" };
-        const char *inputKeys[] = { "input.system", "input.gamepad", "input.touch", "input.mouseCapture",
-            "input.rebinds", "input.gestures", "input.haptics" };
+        const char *physicsKeys[] = { "physics.gravity",          "physics.simulationRate",
+                                      "physics.solverIterations", "physics.collisionLayers",
+                                      "physics.broadphase",       "physics.continuousCollision",
+                                      "physics.substeps",         "physics.threads",
+                                      "physics.deterministic",    "physics.debugDraw" };
+        const char *audioKeys[] = { "sound.masterVolume", "sound.musicVolume",    "sound.sfxVolume",
+                                    "sound.voiceVolume",  "sound.spatialization", "sound.backend",
+                                    "sound.outputDevice", "sound.sampleRate",     "sound.bufferSize",
+                                    "sound.voiceLimit",   "sound.streaming",      "sound.occlusion" };
+        const char *inputKeys[] = { "input.system",       "input.gamepad", "input.touch",
+                                    "input.mouseCapture", "input.rebinds", "input.gestures",
+                                    "input.haptics" };
         constexpr bool supportsCollisionMatrix = WP_BUILD_PHYSICS3 != 0;
 
         String appendKey( const String &list, const String &key )
@@ -42,7 +46,10 @@ namespace workphone::editor
         bool validNumber( const Properties &settings, const char *key, double minimum, double maximum,
                           bool integral, String &error )
         {
-            if( !settings.hasProperty( key ) ) return true;
+            if( !settings.hasProperty( key ) )
+            {
+                return true;
+            }
             const auto text = settings.getPropertyObject( key ).getValue();
             char *end = nullptr;
             errno = 0;
@@ -58,23 +65,43 @@ namespace workphone::editor
 
         bool validate( const Properties &settings, String &error )
         {
-            const struct { const char *key; double minimum, maximum; bool integral; } ranges[] = {
-                { "physics.gravity", -100, 100, false }, { "physics.simulationRate", 15, 240, true },
-                { "physics.solverIterations", 1, 64, true }, { "physics.substeps", 1, 8, true },
-                { "physics.threads", 1, 16, true }, { "physics.broadphase", 0, 3, true },
-                { "sound.masterVolume", 0, 100, true }, { "sound.musicVolume", 0, 100, true },
-                { "sound.sfxVolume", 0, 100, true }, { "sound.voiceVolume", 0, 100, true },
-                { "sound.sampleRate", 22050, 96000, true }, { "sound.bufferSize", 128, 4096, true },
-                { "sound.voiceLimit", 1, 512, true }, { "sound.outputDevice", 0, 4, true },
-                { "sound.backend", 0, 3, true }, { "input.system", 0, 3, true }
-            };
-            for( const auto &range : ranges )
-                if( !validNumber( settings, range.key, range.minimum, range.maximum, range.integral, error ) )
-                    return false;
-            const auto audioBackend = settings.getPropertyAsInt( "sound.backend", 0 );
-            if( settings.getPropertyAsInt( "physics.broadphase", 0 ) == 3 && !hasPhysicsBroadphaseProvider() )
+            const struct
             {
-                error = "GPU Broadphase needs a registered physics plugin. Select Sweep And Prune, Dynamic AABB Tree or Automatic.";
+                const char *key;
+                double minimum, maximum;
+                bool integral;
+            } ranges[] = { { "physics.gravity", -100, 100, false },
+                           { "physics.simulationRate", 15, 240, true },
+                           { "physics.solverIterations", 1, 64, true },
+                           { "physics.substeps", 1, 8, true },
+                           { "physics.threads", 1, 16, true },
+                           { "physics.broadphase", 0, 3, true },
+                           { "sound.masterVolume", 0, 100, true },
+                           { "sound.musicVolume", 0, 100, true },
+                           { "sound.sfxVolume", 0, 100, true },
+                           { "sound.voiceVolume", 0, 100, true },
+                           { "sound.sampleRate", 22050, 96000, true },
+                           { "sound.bufferSize", 128, 4096, true },
+                           { "sound.voiceLimit", 1, 512, true },
+                           { "sound.outputDevice", 0, 4, true },
+                           { "sound.backend", 0, 3, true },
+                           { "input.system", 0, 3, true } };
+
+            for( const auto &range : ranges )
+            {
+                if( !validNumber( settings, range.key, range.minimum, range.maximum, range.integral,
+                                  error ) )
+                {
+                    return false;
+                }
+            }
+            const auto audioBackend = settings.getPropertyAsInt( "sound.backend", 0 );
+            if( settings.getPropertyAsInt( "physics.broadphase", 0 ) == 3 &&
+                !hasPhysicsBroadphaseProvider() )
+            {
+                error =
+                    "GPU Broadphase needs a registered physics plugin. Select Sweep And Prune, Dynamic "
+                    "AABB Tree or Automatic.";
                 return false;
             }
             auto app = core::IApplicationManager::instancePtr();
@@ -82,61 +109,101 @@ namespace workphone::editor
             if( audioBackend == 1 || audioBackend == 2 )
             {
                 if( !hasProjectSoundBackend( factories, audioBackend ) )
-                { error = "The selected FMOD/OpenAL sound provider is not registered. Install its backend plugin."; return false; }
+                {
+                    error =
+                        "The selected FMOD/OpenAL sound provider is not registered. Install its backend "
+                        "plugin.";
+                    return false;
+                }
             }
             const auto inputBackend = settings.getPropertyAsInt( "input.system", 0 );
-            if( ( inputBackend == 1 || inputBackend == 3 ) && !hasProjectInputBackend( factories, inputBackend ) )
+            if( ( inputBackend == 1 || inputBackend == 3 ) &&
+                !hasProjectInputBackend( factories, inputBackend ) )
             {
-                error = inputBackend == 1 ? "SDL Input requires a registered SDLInputDeviceManager plugin." :
-                    "Hybrid Input requires a registered HybridInputDeviceManager plugin that merges its device sources.";
+                error = inputBackend == 1
+                            ? "SDL Input requires a registered SDLInputDeviceManager plugin."
+                            : "Hybrid Input requires a registered HybridInputDeviceManager plugin that "
+                              "merges its device sources.";
                 return false;
             }
-            for( const auto *key : { "physics.continuousCollision", "physics.deterministic", "physics.debugDraw",
-                 "sound.spatialization", "sound.streaming", "sound.occlusion", "input.gamepad", "input.touch",
-                 "input.mouseCapture", "input.rebinds", "input.gestures", "input.haptics" } )
+            for( const auto *key :
+                 { "physics.continuousCollision", "physics.deterministic", "physics.debugDraw",
+                   "sound.spatialization", "sound.streaming", "sound.occlusion", "input.gamepad",
+                   "input.touch", "input.mouseCapture", "input.rebinds", "input.gestures",
+                   "input.haptics" } )
             {
-                if( !settings.hasProperty( key ) ) continue;
+                if( !settings.hasProperty( key ) )
+                {
+                    continue;
+                }
                 const auto value = settings.getPropertyObject( key ).getValue();
                 if( value != "true" && value != "false" && value != "0" && value != "1" )
-                { error = "Invalid boolean interaction setting: " + String( key ); return false; }
+                {
+                    error = "Invalid boolean interaction setting: " + String( key );
+                    return false;
+                }
             }
             if( settings.hasProperty( "physics.collisionLayers" ) )
             {
                 Array<String> layers;
-                if( !physics::parseCollisionLayerNames( settings.getProperty( "physics.collisionLayers" ),
-                                                        layers ) )
-                { error = "Collision Layers requires 1 to 32 distinct, comma-separated names."; return false; }
+                if( !physics::parseCollisionLayerNames(
+                        settings.getProperty( "physics.collisionLayers" ), layers ) )
+                {
+                    error = "Collision Layers requires 1 to 32 distinct, comma-separated names.";
+                    return false;
+                }
             }
             if( settings.hasProperty( physics::disabledCollisionPairsProperty ) )
             {
                 StringPairs pairs;
                 if( !physics::parseDisabledCollisionPairs(
                         settings.getProperty( physics::disabledCollisionPairsProperty ), pairs ) )
-                { error = "The collision matrix contains an invalid layer pair."; return false; }
+                {
+                    error = "The collision matrix contains an invalid layer pair.";
+                    return false;
+                }
             }
             return true;
         }
-    }
+    }  // namespace
 
     void describeProjectSettingsInteractionCapabilities( SmartPtr<Properties> response )
     {
-        if( !response ) return;
+        if( !response )
+        {
+            return;
+        }
         const auto describe = [&]( const char *key, const char *availability ) {
             response->setProperty( "capability." + String( key ), true );
             response->setProperty( "availability." + String( key ), String( availability ) );
         };
-        for( const auto key : physicsKeys ) describe( key,
-            "Native scene simulation: iterative solver, fixed or adaptive substeps, SAP/DBVT, parallel integration and named collision masks." );
+        for( const auto key : physicsKeys )
+        {
+            describe( key,
+                      "Native scene simulation: iterative solver, fixed or adaptive substeps, SAP/DBVT, "
+                      "parallel integration and named collision masks." );
+        }
         const String matrixKey( physics::disabledCollisionPairsProperty );
         response->setProperty( "capability." + matrixKey, supportsCollisionMatrix );
         if( !supportsCollisionMatrix )
+        {
             response->setProperty( "unavailable." + matrixKey,
                                    "The collision matrix requires the native 3D physics backend." );
+        }
         response->setProperty( "capability.physics.broadphase.gpu", hasPhysicsBroadphaseProvider() );
-        for( const auto key : audioKeys ) describe( key,
-            "Native mixer and XAudio2 endpoint; category gain, positional attenuation/pan, raycast occlusion and voice admission. Device/rate apply at audio startup; streaming/buffer settings on new voices." );
-        for( const auto key : inputKeys ) describe( key,
-            "Native input event routing, gamepad discovery, touch/gesture registration, mouse capture, action rebinding and XInput vibration." );
+        for( const auto key : audioKeys )
+        {
+            describe( key,
+                      "Native mixer and XAudio2 endpoint; category gain, positional attenuation/pan, "
+                      "raycast occlusion and voice admission. Device/rate apply at audio startup; "
+                      "streaming/buffer settings on new voices." );
+        }
+        for( const auto key : inputKeys )
+        {
+            describe( key,
+                      "Native input event routing, gamepad discovery, touch/gesture registration, mouse "
+                      "capture, action rebinding and XInput vibration." );
+        }
     }
 
     SmartPtr<Properties> validateProjectSettingsInteraction( SmartPtr<Properties> settings )
@@ -145,23 +212,33 @@ namespace workphone::editor
         String error;
         const bool success = settings && validate( *settings, error );
         result->setProperty( "success", success );
-        result->setProperty( "status", success ? String( "Interaction settings validated." ) :
-                             settings ? error : String( "Interaction settings are unavailable." ) );
+        result->setProperty( "status", success    ? String( "Interaction settings validated." )
+                                       : settings ? error
+                                                  : String( "Interaction settings are unavailable." ) );
         return result;
     }
 
     SmartPtr<Properties> applyProjectSettingsInteraction( SmartPtr<Properties> settings )
     {
         auto result = validateProjectSettingsInteraction( settings );
-        if( !result->getPropertyAsBool( "success" ) ) return result;
+        if( !result->getPropertyAsBool( "success" ) )
+        {
+            return result;
+        }
         String handled, applied, pending;
         auto app = core::IApplicationManager::instancePtr();
         const auto record = [&]( const char *key, bool active ) {
             if( settings->hasProperty( key ) )
             {
                 handled = appendKey( handled, key );
-                if( active ) applied = appendKey( applied, key );
-                else pending = appendKey( pending, key );
+                if( active )
+                {
+                    applied = appendKey( applied, key );
+                }
+                else
+                {
+                    pending = appendKey( pending, key );
+                }
             }
         };
         auto physics = app ? app->getPhysicsManager() : nullptr;
@@ -174,14 +251,22 @@ namespace workphone::editor
                 const auto current = scene->getProperties();
                 auto game = app->getGameManager();
                 if( game && ( !current || current->getProperty( "physics.collisionLayers" ) !=
-                                           settings->getProperty( "physics.collisionLayers" ) ) )
+                                              settings->getProperty( "physics.collisionLayers" ) ) )
                 {
                     for( const auto &actor : game->getActors() )
                     {
-                        if( !actor ) continue;
+                        if( !actor )
+                        {
+                            continue;
+                        }
                         for( const auto &component : actor->getComponents() )
+                        {
                             if( component && component->isDerived<scene::Rigidbody>() )
-                                bodies.push_back( workphone::static_pointer_cast<scene::Rigidbody>( component ) );
+                            {
+                                bodies.push_back(
+                                    workphone::static_pointer_cast<scene::Rigidbody>( component ) );
+                            }
+                        }
                     }
                 }
             }
@@ -189,48 +274,78 @@ namespace workphone::editor
             {
                 ScopedLock lock( scene.get() );
                 scene->setProperties( settings );
-                if( !bodies.empty() ) layers = scene->getProperties();
+                if( !bodies.empty() )
+                {
+                    layers = scene->getProperties();
+                }
                 f32 gravity = 0;
                 if( settings->getPropertyValue( "physics.gravity", gravity ) )
                 {
-                    auto vector = scene->getGravity(); vector.Y() = gravity; scene->setGravity( vector );
+                    auto vector = scene->getGravity();
+                    vector.Y() = gravity;
+                    scene->setGravity( vector );
                 }
             }
-            for( auto &body : bodies ) body->refreshCollisionLayer( layers.get() );
+            for( auto &body : bodies )
+            {
+                body->refreshCollisionLayer( layers.get() );
+            }
         }
         if( physics && settings->hasProperty( "physics.debugDraw" ) )
+        {
             physics->setEnableDebugDraw( settings->getPropertyAsBool( "physics.debugDraw" ) );
-        for( const auto key : physicsKeys ) record( key, scene != nullptr );
+        }
+        for( const auto key : physicsKeys )
+        {
+            record( key, scene != nullptr );
+        }
         record( workphone::physics::disabledCollisionPairsProperty,
                 supportsCollisionMatrix && scene != nullptr );
         auto audio = app ? app->getSoundManager() : nullptr;
-        if( audio ) audio->setProperties( settings );
+        if( audio )
+        {
+            audio->setProperties( settings );
+        }
         auto actualAudio = audio ? audio->getProperties() : nullptr;
         auto factories = app ? app->getFactoryManager() : nullptr;
-        const bool audioBackendActive = matchesProjectSoundBackend( factories, audio,
-            settings->getPropertyAsInt( "sound.backend", 0 ) );
+        const bool audioBackendActive = matchesProjectSoundBackend(
+            factories, audio, settings->getPropertyAsInt( "sound.backend", 0 ) );
         for( const auto key : audioKeys )
         {
             bool active = audio && audio->isLoaded() && audioBackendActive;
             const String name( key );
             if( name == "sound.sampleRate" || name == "sound.outputDevice" )
+            {
                 active = active && actualAudio && actualAudio->hasProperty( "active." + name ) &&
-                    actualAudio->getProperty( "active." + name ) == settings->getProperty( key );
+                         actualAudio->getProperty( "active." + name ) == settings->getProperty( key );
+            }
             // Existing source voices retain their transport buffers. The new
             // policy is consumed when a source voice is created or reloaded.
-            if( name == "sound.bufferSize" || name == "sound.streaming" ) active = false;
+            if( name == "sound.bufferSize" || name == "sound.streaming" )
+            {
+                active = false;
+            }
             record( key, active );
         }
         auto input = app ? app->getInputDeviceManager() : nullptr;
-        if( input ) input->setProperties( settings );
-        const bool inputBackendActive = matchesProjectInputBackend( factories, input,
-            settings->getPropertyAsInt( "input.system", 0 ) );
-        for( const auto key : inputKeys ) record( key, input && input->isLoaded() && inputBackendActive );
+        if( input )
+        {
+            input->setProperties( settings );
+        }
+        const bool inputBackendActive = matchesProjectInputBackend(
+            factories, input, settings->getPropertyAsInt( "input.system", 0 ) );
+        for( const auto key : inputKeys )
+        {
+            record( key, input && input->isLoaded() && inputBackendActive );
+        }
         result->setProperty( "handledKeys", handled );
         result->setProperty( "appliedKeys", applied );
         result->setProperty( "pendingKeys", pending );
-        result->setProperty( "status", pending.empty() ? String( "Interaction settings applied." ) :
-            String( "Interaction settings applied; absent subsystems and audio device/voice changes take effect when they start." ) );
+        result->setProperty( "status",
+                             pending.empty()
+                                 ? String( "Interaction settings applied." )
+                                 : String( "Interaction settings applied; absent subsystems and audio "
+                                           "device/voice changes take effect when they start." ) );
         return result;
     }
-}
+}  // namespace workphone::editor

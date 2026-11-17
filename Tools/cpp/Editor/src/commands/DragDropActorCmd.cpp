@@ -9,8 +9,8 @@ namespace workphone::editor
 {
     namespace
     {
-        void moveRootActorToIndex( SmartPtr<scene::IGameScene> scene,
-                                   SmartPtr<scene::IGameActor> actor, s32 index )
+        void moveRootActorToIndex( SmartPtr<scene::IGameScene> scene, SmartPtr<scene::IGameActor> actor,
+                                   s32 index )
         {
             auto actors = scene->getActors();
             auto it = std::find( actors.begin(), actors.end(), actor );
@@ -124,8 +124,7 @@ namespace workphone::editor
                 }
                 return std::find( roots.begin(), roots.end(), actor ) != roots.end();
             };
-            if( !isInScene( m_dragActor ) ||
-                ( destinationActor && !isInScene( destinationActor ) ) )
+            if( !isInScene( m_dragActor ) || ( destinationActor && !isInScene( destinationActor ) ) )
             {
                 return;
             }
@@ -190,8 +189,8 @@ namespace workphone::editor
                     auto children = destinationActor->getChildren();
                     if( !children.empty() )
                     {
-                        auto targetIndex = std::min( static_cast<size_t>( siblingIndex ),
-                                                     children.size() - 1 );
+                        auto targetIndex =
+                            std::min( static_cast<size_t>( siblingIndex ), children.size() - 1 );
                         m_dragActor->setSiblingIndex( static_cast<s32>( targetIndex ) );
                     }
                 }
@@ -215,7 +214,6 @@ namespace workphone::editor
             }
             return;
         }
-
     }
 
     Vector2I DragDropActorCmd::getPosition() const

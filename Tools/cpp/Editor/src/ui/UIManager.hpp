@@ -876,8 +876,8 @@ namespace workphone
             SmartPtr<TextToImageWindow> m_textToImageWindow;
             SmartPtr<ImageToMeshWindow> m_imageToMeshWindow;
             SmartPtr<EditorWindow> m_luaDebuggerWindow;
-            SmartPtr<EditorWindow> m_inputManagerWindow;                ///< Input management window.
-            SmartPtr<LayerManager> m_layerManager;                      ///< Central actor layer list.
+            SmartPtr<EditorWindow> m_inputManagerWindow;            ///< Input management window.
+            SmartPtr<LayerManager> m_layerManager;                  ///< Central actor layer list.
             SmartPtr<LayerDialog> m_layerDialog;                    ///< Actor layer management dialog.
             SmartPtr<CollisionMaskManager> m_collisionMaskManager;  ///< Central collision mask options.
             SmartPtr<CollisionMaskDialog> m_collisionMaskDialog;    ///< Collision mask dialog.
@@ -896,8 +896,8 @@ namespace workphone
             SmartPtr<EditorWindow> m_projectSettingsWindow;        ///< Project settings window.
             SmartPtr<EditorWindow> m_proceduralModelEditorWindow;  ///< Procedural model editor window.
 
-            SmartPtr<IEventListener> m_menubarListener;             ///< Menu bar event listener.
-            SmartPtr<ui::IUIToolbar> m_toolbar;                     ///< Main toolbar interface.
+            SmartPtr<IEventListener> m_menubarListener;  ///< Menu bar event listener.
+            SmartPtr<ui::IUIToolbar> m_toolbar;          ///< Main toolbar interface.
             SmartPtr<ui::IUIButton> m_toolbarStatsButton;
             SmartPtr<ui::IUIButton> m_toolbarReloadButton;
             SmartPtr<ui::IUIButton> m_savePrefabButton;

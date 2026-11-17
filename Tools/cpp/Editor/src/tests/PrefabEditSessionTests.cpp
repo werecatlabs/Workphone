@@ -35,7 +35,10 @@ namespace
         {
             std::error_code ignored;
             std::filesystem::current_path( previous, ignored );
-            if( !ignored ) std::filesystem::remove_all( path, ignored );
+            if( !ignored )
+            {
+                std::filesystem::remove_all( path, ignored );
+            }
         }
     };
 
@@ -43,8 +46,16 @@ namespace
     {
     public:
         String pluginConfiguration, mediaDirectory, mediaCatalog;
-        String getMediaPath() const override { return mediaDirectory; }
-        String getMediaCatalogPath( const String & ) const override { return mediaCatalog; }
+
+        String getMediaPath() const override
+        {
+            return mediaDirectory;
+        }
+
+        String getMediaCatalogPath( const String & ) const override
+        {
+            return mediaCatalog;
+        }
 
     private:
         void createPlugins() override
@@ -56,7 +67,8 @@ namespace
 
     struct PrefabEditorFixture
     {
-        std::filesystem::path directory = std::filesystem::temp_directory_path() /
+        std::filesystem::path directory =
+            std::filesystem::temp_directory_path() /
             std::string( ( "workphone-prefab-editor-" + StringUtil::getUUID() ).c_str() );
         PrefabTestDirectory isolatedDirectory{ directory };
         PrefabTestApplication application;
@@ -82,7 +94,9 @@ namespace
             BOOST_REQUIRE( config.good() );
             auto media = isolatedDirectory.previous;
             while( !std::filesystem::is_directory( media / "Media" ) && media != media.root_path() )
+            {
                 media = media.parent_path();
+            }
             BOOST_REQUIRE( std::filesystem::is_directory( media / "Media" ) );
             application.pluginConfiguration = configPath.generic_u8string().c_str();
             application.mediaDirectory = ( media / "Media" ).generic_u8string().c_str();
@@ -106,7 +120,10 @@ namespace
             app->setEditor( true );
             app->setPlaying( false );
             auto jobs = app->getJobQueue();
-            for( unsigned i = 0; jobs && jobs->hasJobs() && i < 100; ++i ) jobs->update();
+            for( unsigned i = 0; jobs && jobs->hasJobs() && i < 100; ++i )
+            {
+                jobs->update();
+            }
             BOOST_REQUIRE( !jobs || !jobs->hasJobs() );
             app->getCommandManager()->clearAll();
         }
@@ -166,13 +183,25 @@ namespace
     public:
         SmartPtr<scene::IGameActor> actor;
         String before, after;
-        void execute() override { actor->setName( after ); setState( State::Finished ); }
-        void undo() override { actor->setName( before ); }
-        void redo() override { actor->setName( after ); }
+
+        void execute() override
+        {
+            actor->setName( after );
+            setState( State::Finished );
+        }
+
+        void undo() override
+        {
+            actor->setName( before );
+        }
+
+        void redo() override
+        {
+            actor->setName( after );
+        }
     };
 
-    SmartPtr<PrefabRenameCommand> renameCommand( SmartPtr<scene::IGameActor> actor,
-                                                const String &name )
+    SmartPtr<PrefabRenameCommand> renameCommand( SmartPtr<scene::IGameActor> actor, const String &name )
     {
         auto command = make_ptr<PrefabRenameCommand>();
         command->actor = actor;
@@ -191,7 +220,7 @@ namespace
         BOOST_CHECK_SMALL( actual.y - expected.y, 0.0002f );
         BOOST_CHECK_SMALL( actual.z - expected.z, 0.0002f );
     }
-}
+}  // namespace
 
 BOOST_AUTO_TEST_CASE( prefab_edit_open_discard_and_undo_preserve_authoring_objects )
 {
@@ -271,7 +300,8 @@ BOOST_AUTO_TEST_CASE( prefab_edit_save_updates_instances_and_marks_original_scen
     second->setPosition( Vector3F( -15, 5, 80 ) );
     first->setLocalScale( Vector3F( 20, 20, 20 ) );
     first->setLocalOrientation( QuaternionF::eulerDegrees( 20, 30, 40 ) );
-    first->updateTransform();second->updateTransform();
+    first->updateTransform();
+    second->updateTransform();
     const auto firstPosition = first->getPosition(), secondPosition = second->getPosition();
     auto child = first->findChildByName( "SourceChild" );
     auto component = child->getComponent<scene::CameraTarget>();
@@ -323,7 +353,8 @@ BOOST_AUTO_TEST_CASE( prefab_edit_failed_open_preserves_scene_selection_and_hist
     app->getSelectionManager()->addSelectedObject( actor );
     editor->setFileSaved( false );
     String error;
-    BOOST_CHECK( !editor->openPrefab( String( ( fixture.directory / "Assets/Missing.prefab" ).generic_u8string().c_str() ), error ) );
+    BOOST_CHECK( !editor->openPrefab(
+        String( ( fixture.directory / "Assets/Missing.prefab" ).generic_u8string().c_str() ), error ) );
     BOOST_CHECK( !error.empty() );
     BOOST_CHECK( !editor->isEditingPrefab() );
     BOOST_CHECK( app->getGameManager()->getCurrentScene() == scene );

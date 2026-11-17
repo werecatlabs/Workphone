@@ -325,7 +325,7 @@ namespace workphone::editor
         WP_ASSERT( gameScene );
 
         auto createFoliageActor = [&gameManager]( const String &name,
-                                                 ProceduralFoliage::Preset preset ) {
+                                                  ProceduralFoliage::Preset preset ) {
             auto actor = gameManager->createActor();
             if( actor )
             {

@@ -5,10 +5,41 @@
 #include "WPLuabind/ParamConverter.hpp"
 #include <Workphone/Workphone.hpp>
 #include <Workphone/Interface/Vehicle/IESController.hpp>
+#include <Workphone/Interface/System/ITask.hpp>
+#include <stdexcept>
 #include "luabind/operator.hpp"
 
 namespace workphone
 {
+    namespace
+    {
+        SmartPtr<ITask> driveTrainPhysicsTask()
+        {
+            auto app = core::IApplicationManager::instancePtr();
+            auto tasks = app ? app->getTaskManager() : nullptr;
+            return tasks && Thread::getCurrentTask() != TaskId::Physics
+                       ? tasks->getTask( TaskId::Physics )
+                       : nullptr;
+        }
+
+        s32 getDriveTrainGear( const vehicle::IDriveTrain *driveTrain )
+        {
+            ScopedLock physicsLock( driveTrainPhysicsTask() );
+            return driveTrain->getGear();
+        }
+
+        void setDriveTrainGear( vehicle::IDriveTrain *driveTrain, lua_Integer gear )
+        {
+            ScopedLock physicsLock( driveTrainPhysicsTask() );
+            const auto gearCount = driveTrain->getGearRatios().size();
+            if( gear < 0 || static_cast<u64>( gear ) >= gearCount )
+            {
+                throw std::out_of_range( "Gear index is outside this vehicle's configured transmission" );
+            }
+            driveTrain->setGear( static_cast<s32>( gear ) );
+        }
+    }
+
     void _setVehicleState( vehicle::IVehicle *vehicle, lua_Integer state )
     {
         vehicle->setState( static_cast<vehicle::IVehicle::State>( state ) );
@@ -288,6 +319,8 @@ namespace workphone
         module( L )[class_<IDriveTrain, IVehicleComponent, SmartPtr<IDriveTrain>>( "IDriveTrain" )
                         .def( "getWheels", &IDriveTrain::getWheels )
                         .def( "setWheels", &IDriveTrain::setWheels )
+                        .def( "getGear", getDriveTrainGear )
+                        .def( "setGear", setDriveTrainGear )
                         .def( "getGearBox", &IDriveTrain::getGearBox )
                         .def( "setGearBox", &IDriveTrain::setGearBox )
                         .def( "getDifferential", &IDriveTrain::getDifferential )

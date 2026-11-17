@@ -20,7 +20,10 @@ namespace workphone::editor
 
     void ImageToMeshWindow::load( SmartPtr<ISharedObject> data )
     {
-        if( getParentWindow() ) return;
+        if( getParentWindow() )
+        {
+            return;
+        }
         EditorWindow::load( data );
         auto app = core::IApplicationManager::instance();
         auto ui = app->getUI();
@@ -98,11 +101,20 @@ namespace workphone::editor
     {
         std::lock_guard<std::mutex> lock( m_mutex );
         setLoadingState( LoadingState::Unloading );
-        if( m_listener ) m_listener->owner = nullptr;
+        if( m_listener )
+        {
+            m_listener->owner = nullptr;
+        }
         // The worker owns no window, project, engine service or UI references.
         // Stop local polling/download and join before DLL/allocator teardown.
-        if( m_result ) m_result->cancel.store( true, std::memory_order_release );
-        if( m_worker.joinable() ) m_worker.join();
+        if( m_result )
+        {
+            m_result->cancel.store( true, std::memory_order_release );
+        }
+        if( m_worker.joinable() )
+        {
+            m_worker.join();
+        }
         m_result.reset();
         m_action = None;
         m_session.clear();
@@ -113,7 +125,10 @@ namespace workphone::editor
             {
                 for( auto child : window->getChildren() )
                 {
-                    if( m_listener ) child->removeObjectListener( m_listener );
+                    if( m_listener )
+                    {
+                        child->removeObjectListener( m_listener );
+                    }
                     ui->removeElement( child );
                 }
                 ui->removeElement( window );
@@ -136,15 +151,19 @@ namespace workphone::editor
     {
         auto app = core::IApplicationManager::instancePtr();
         auto resources = app ? app->getResourceDatabase() : nullptr;
-        auto catalog = resources ? dynamic_pointer_cast<AssetDatabaseManager>( resources->getDatabaseManager() )
-                                 : nullptr;
+        auto catalog =
+            resources ? dynamic_pointer_cast<AssetDatabaseManager>( resources->getDatabaseManager() )
+                      : nullptr;
         return app && app->getProjectPath() == m_projectPath && catalog && !catalog->isReadOnly() &&
                catalog->getProjectRoot() == m_projectRoot && m_session.isCurrent( catalog );
     }
 
     void ImageToMeshWindow::discardPending( const String &message )
     {
-        if( !m_result ) return;
+        if( !m_result )
+        {
+            return;
+        }
         m_discard = true;
         m_result->cancel.store( true, std::memory_order_release );
         m_message = message;
@@ -153,9 +172,15 @@ namespace workphone::editor
     void ImageToMeshWindow::update()
     {
         std::lock_guard<std::mutex> lock( m_mutex );
-        if( !m_imagePath ) return;
+        if( !m_imagePath )
+        {
+            return;
+        }
         auto app = core::IApplicationManager::instancePtr();
-        if( !app ) return;
+        if( !app )
+        {
+            return;
+        }
         const bool wasBusy = m_result != nullptr;
         const auto action = static_cast<Action>( m_action.exchange( None ) );
         try
@@ -167,8 +192,11 @@ namespace workphone::editor
                 m_imagePath->setText( "" );
                 m_name->setText( "generated-mesh" );
                 if( m_result )
+                {
                     discardPending( String( "Project changed. Discarding the mesh locally; the " ) +
-                        providerName( m_jobProvider ) + " task may still run and use credits." );
+                                    providerName( m_jobProvider ) +
+                                    " task may still run and use credits." );
+                }
                 else
                 {
                     m_message.clear();
@@ -180,19 +208,34 @@ namespace workphone::editor
             {
                 m_nextSessionCheck = now + std::chrono::seconds( 1 );
                 if( !sessionCurrent() )
-                    discardPending( String( "Project catalog changed. Discarding the mesh locally; the " ) +
+                {
+                    discardPending(
+                        String( "Project catalog changed. Discarding the mesh locally; the " ) +
                         providerName( m_jobProvider ) + " task may still run and use credits." );
+                }
             }
             if( action == Cancel && m_result )
-                discardPending( String( "Stopping local processing. The " ) + providerName( m_jobProvider ) +
-                    " task may still run and use credits; no mesh will be saved." );
-            if( m_result && m_result->ready.load( std::memory_order_acquire ) ) finishGeneration();
+            {
+                discardPending( String( "Stopping local processing. The " ) +
+                                providerName( m_jobProvider ) +
+                                " task may still run and use credits; no mesh will be saved." );
+            }
+            if( m_result && m_result->ready.load( std::memory_order_acquire ) )
+            {
+                finishGeneration();
+            }
             // Ignore a second click queued while controls were becoming disabled,
             // even if a very fast request completed before this tick.
             if( !wasBusy && !m_result )
             {
-                if( action == Browse ) browseImage();
-                else if( action == Generate ) startGeneration();
+                if( action == Browse )
+                {
+                    browseImage();
+                }
+                else if( action == Generate )
+                {
+                    startGeneration();
+                }
             }
         }
         catch( const std::exception & )
@@ -216,7 +259,10 @@ namespace workphone::editor
         dialog->setFileExtension( ".png,.jpg,.jpeg" );
         dialog->setFilePath( app->getProjectPath() );
         const auto selected = dialog->openDialog();
-        if( selected == INativeFileDialog::Result::Dialog_Cancel ) return;
+        if( selected == INativeFileDialog::Result::Dialog_Cancel )
+        {
+            return;
+        }
         if( selected != INativeFileDialog::Result::Dialog_Okay )
         {
             m_message = "Could not open the image picker. Enter a PNG or JPEG path in Source image.";
@@ -240,8 +286,9 @@ namespace workphone::editor
         auto editor = EditorManager::getSingletonPtr();
         auto project = editor ? editor->getProject() : nullptr;
         auto resources = app->getResourceDatabase();
-        auto catalog = resources ? dynamic_pointer_cast<AssetDatabaseManager>( resources->getDatabaseManager() )
-                                 : nullptr;
+        auto catalog =
+            resources ? dynamic_pointer_cast<AssetDatabaseManager>( resources->getDatabaseManager() )
+                      : nullptr;
         String error;
         m_projectPath = app->getProjectPath();
         if( !project || project->getFilePath().empty() || m_projectPath.empty() || !catalog ||
@@ -258,7 +305,10 @@ namespace workphone::editor
             return;
         }
         auto source = std::filesystem::u8path( input.c_str() );
-        if( source.is_relative() ) source = std::filesystem::u8path( m_projectRoot.c_str() ) / source;
+        if( source.is_relative() )
+        {
+            source = std::filesystem::u8path( m_projectRoot.c_str() ) / source;
+        }
         mesh_generation::Request request;
         const auto provider = m_selectedProvider;
         const std::uint32_t counts[] = { 10000, 30000, 100000 };
@@ -268,17 +318,23 @@ namespace workphone::editor
         const auto resolution = resolutions[std::min<u32>( m_resolution->getSelectedOption(), 2 )];
         m_basename = mesh_assets::sanitizeBasename( m_name->getText().c_str() ).c_str();
         m_name->setText( m_basename );
-        if( m_worker.joinable() ) m_worker.join();
+        if( m_worker.joinable() )
+        {
+            m_worker.join();
+        }
         auto result = std::make_shared<ResultState>();
         result->progress.stage = "Reading source image";
-        std::thread worker( [source = std::move( source ), request = std::move( request ),
-                             provider, resolution, result]() mutable {
+        std::thread worker( [source = std::move( source ), request = std::move( request ), provider,
+                             resolution, result]() mutable {
             Thread::setCurrentTask( TaskId::None );
             try
             {
-                if( result->cancel.load( std::memory_order_acquire ) ) result->result.cancelled = true;
+                if( result->cancel.load( std::memory_order_acquire ) )
+                {
+                    result->result.cancelled = true;
+                }
                 else if( mesh_assets::readImage( source, request.imageBytes, request.mimeType,
-                                                result->result.error ) )
+                                                 result->result.error ) )
                 {
                     const auto progress = [result]( const mesh_generation::Progress &value ) {
                         std::lock_guard<std::mutex> lock( result->progressMutex );
@@ -287,7 +343,8 @@ namespace workphone::editor
                     if( provider == Provider::Trellis2 )
                     {
                         mesh_generation::Trellis2Client client;
-                        result->result = client.generate( request, resolution, result->cancel, progress );
+                        result->result =
+                            client.generate( request, resolution, result->cancel, progress );
                     }
                     else
                     {
@@ -298,8 +355,9 @@ namespace workphone::editor
             }
             catch( ... )
             {
-                result->result.error = std::string( "Mesh generation failed. Check the image, network and " ) +
-                                       providerName( provider ) + " configuration.";
+                result->result.error =
+                    std::string( "Mesh generation failed. Check the image, network and " ) +
+                    providerName( provider ) + " configuration.";
             }
             result->ready.store( true, std::memory_order_release );
         } );
@@ -315,7 +373,10 @@ namespace workphone::editor
 
     void ImageToMeshWindow::finishGeneration()
     {
-        if( m_worker.joinable() ) m_worker.join();
+        if( m_worker.joinable() )
+        {
+            m_worker.join();
+        }
         auto pending = std::move( m_result );
         auto &result = pending->result;
         m_taskId = result.taskId.c_str();
@@ -338,16 +399,19 @@ namespace workphone::editor
         std::filesystem::path output;
         std::string error;
         if( !mesh_assets::saveGlb( std::filesystem::u8path( m_projectRoot.c_str() ), m_basename.c_str(),
-                                  result.glbBytes.data(), result.glbBytes.size(), output, error ) )
+                                   result.glbBytes.data(), result.glbBytes.size(), output, error ) )
         {
             m_message = error.c_str();
             return;
         }
-        const String relativePath = "Assets/Generated/" + String( output.filename().generic_u8string().c_str() );
+        const String relativePath =
+            "Assets/Generated/" + String( output.filename().generic_u8string().c_str() );
         m_message = "Saved " + relativePath;
         if( !sessionCurrent() )
         {
-            m_message += "\nThe project changed during saving. The GLB remains in the previous project; import was skipped.";
+            m_message +=
+                "\nThe project changed during saving. The GLB remains in the previous project; import "
+                "was skipped.";
             return;
         }
         auto app = core::IApplicationManager::instance();
@@ -371,10 +435,14 @@ namespace workphone::editor
                 // Source identity must match the project-relative path used by
                 // Project Assets and the prefab loader when the mesh is dragged.
                 resources->importFile( relativePath );
-                m_message += "\nImport requested. When ready, drag the mesh from Project Assets into the scene.";
+                m_message +=
+                    "\nImport requested. When ready, drag the mesh from Project Assets into the scene.";
             }
             else
-                m_message += "\nImport the saved GLB from Project Assets when the resource service is available.";
+            {
+                m_message +=
+                    "\nImport the saved GLB from Project Assets when the resource service is available.";
+            }
         }
         catch( const std::exception & )
         {
@@ -390,14 +458,21 @@ namespace workphone::editor
     void ImageToMeshWindow::refreshProvider()
     {
         const auto selected = m_provider->getSelectedOption() == static_cast<u32>( Provider::Trellis2 )
-                                  ? Provider::Trellis2 : Provider::Meshy;
+                                  ? Provider::Trellis2
+                                  : Provider::Meshy;
         const auto provider = m_result ? m_jobProvider : selected;
         // Keep an active job's options and status tied to the captured provider,
         // including a selection queued just before the controls were disabled.
-        if( m_result ) m_provider->setSelectedOption( static_cast<u32>( provider ) );
+        if( m_result )
+        {
+            m_provider->setSelectedOption( static_cast<u32>( provider ) );
+        }
         if( provider != m_selectedProvider )
         {
-            if( m_selectedProvider == Provider::Meshy ) m_meshyTextured = m_textured->getValue();
+            if( m_selectedProvider == Provider::Meshy )
+            {
+                m_meshyTextured = m_textured->getValue();
+            }
             m_selectedProvider = provider;
             m_textured->setValue( provider == Provider::Trellis2 || m_meshyTextured );
             if( !m_result )
@@ -406,18 +481,26 @@ namespace workphone::editor
                 m_taskId.clear();
             }
         }
-        const String countLabel = provider == Provider::Trellis2 ? "Target vertex count" : "Target polygon count";
-        if( m_polycount->getLabel() != countLabel ) m_polycount->setLabel( countLabel );
-        const String hint = provider == Provider::Trellis2
-            ? "Generate a textured 3D object with TRELLIS 2 hosted by fal.ai.\n"
-              "Set a separate fal.ai API key in File > Settings > Editor > TRELLIS 2 (fal.ai).\n"
-              "Generate Mesh uploads the image to fal.ai and uses your fal.ai credits.\n"
-              "GLB assets are saved in Assets/Generated without replacing existing files."
-            : "Generate a 3D object from a PNG or JPEG with Meshy.\n"
-              "Set a separate Meshy API key in File > Settings > Editor > Meshy.\n"
-              "Generate Mesh uploads the image to Meshy and uses your Meshy credits.\n"
-              "GLB assets are saved in Assets/Generated without replacing existing files.";
-        if( m_hint->getText() != hint ) m_hint->setText( hint );
+        const String countLabel =
+            provider == Provider::Trellis2 ? "Target vertex count" : "Target polygon count";
+        if( m_polycount->getLabel() != countLabel )
+        {
+            m_polycount->setLabel( countLabel );
+        }
+        const String hint =
+            provider == Provider::Trellis2
+                ? "Generate a textured 3D object with TRELLIS 2 hosted by fal.ai.\n"
+                  "Set a separate fal.ai API key in File > Settings > Editor > TRELLIS 2 (fal.ai).\n"
+                  "Generate Mesh uploads the image to fal.ai and uses your fal.ai credits.\n"
+                  "GLB assets are saved in Assets/Generated without replacing existing files."
+                : "Generate a 3D object from a PNG or JPEG with Meshy.\n"
+                  "Set a separate Meshy API key in File > Settings > Editor > Meshy.\n"
+                  "Generate Mesh uploads the image to Meshy and uses your Meshy credits.\n"
+                  "GLB assets are saved in Assets/Generated without replacing existing files.";
+        if( m_hint->getText() != hint )
+        {
+            m_hint->setText( hint );
+        }
     }
 
     void ImageToMeshWindow::refreshControls()
@@ -435,33 +518,49 @@ namespace workphone::editor
         m_textured->setEnabled( !busy && m_selectedProvider == Provider::Meshy );
         m_browse->setEnabled( !busy );
         m_generate->setEnabled( !busy && hasProject &&
-            m_imagePath->getText().find_first_not_of( " \t\r\n" ) != String::npos );
+                                m_imagePath->getText().find_first_not_of( " \t\r\n" ) != String::npos );
         m_cancel->setEnabled( busy && !m_discard );
         auto message = m_message;
         if( busy )
         {
             std::lock_guard<std::mutex> lock( m_result->progressMutex );
             const auto &progress = m_result->progress;
-            if( !progress.taskId.empty() ) m_taskId = progress.taskId.c_str();
+            if( !progress.taskId.empty() )
+            {
+                m_taskId = progress.taskId.c_str();
+            }
             if( !m_discard && !progress.stage.empty() )
             {
                 message = progress.stage.c_str();
                 if( !progress.taskId.empty() && m_jobProvider == Provider::Meshy )
-                    message += " (" + StringUtil::toString( std::min<std::uint32_t>( progress.percent, 100 ) ) + "%)";
+                {
+                    message += " (" +
+                               StringUtil::toString( std::min<std::uint32_t>( progress.percent, 100 ) ) +
+                               "%)";
+                }
                 message += String( "\nYou can continue editing while " ) +
                            providerName( m_jobProvider ) + " processes the image.";
             }
         }
-        if( message.empty() ) message = hasProject ? "Choose an image and click Generate Mesh."
-                                                  : "Open a saved project to generate meshes.";
-        if( !m_taskId.empty() ) message += String( "\n" ) + providerName( m_jobProvider ) + " task: " + m_taskId;
-        if( m_status->getText() != message ) m_status->setText( message );
+        if( message.empty() )
+        {
+            message = hasProject ? "Choose an image and click Generate Mesh."
+                                 : "Open a saved project to generate meshes.";
+        }
+        if( !m_taskId.empty() )
+        {
+            message += String( "\n" ) + providerName( m_jobProvider ) + " task: " + m_taskId;
+        }
+        if( m_status->getText() != message )
+        {
+            m_status->setText( message );
+        }
     }
 
     Parameter ImageToMeshWindow::Listener::handleEvent( EventType, hash_type eventValue,
-                                                       const Array<Parameter> &,
-                                                       SmartPtr<ISharedObject> sender,
-                                                       SmartPtr<ISharedObject>, SmartPtr<IEvent> )
+                                                        const Array<Parameter> &,
+                                                        SmartPtr<ISharedObject> sender,
+                                                        SmartPtr<ISharedObject>, SmartPtr<IEvent> )
     {
         if( eventValue == IEvent::handleSelection )
         {
@@ -470,7 +569,10 @@ namespace workphone::editor
             if( window && button && window->isLoaded() && button->isEnabled() )
             {
                 const auto action = button->getElementId();
-                if( action < Browse || action > Cancel ) return {};
+                if( action < Browse || action > Cancel )
+                {
+                    return {};
+                }
                 // Discard must supersede a queued click from before Generate was
                 // disabled; otherwise the user's cancellation could be lost.
                 if( action == Cancel )
@@ -484,4 +586,4 @@ namespace workphone::editor
         }
         return {};
     }
-}
+}  // namespace workphone::editor

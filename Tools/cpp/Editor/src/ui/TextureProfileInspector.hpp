@@ -17,8 +17,8 @@ namespace workphone::editor
 
         bool update( SmartPtr<ISharedObject> selection );
         bool ownsEvent( SmartPtr<ISharedObject> sender ) const;
-        bool handle( SmartPtr<ISharedObject> sender, SmartPtr<Properties> displayed,
-                     const String &name, const String &value, bool isButton );
+        bool handle( SmartPtr<ISharedObject> sender, SmartPtr<Properties> displayed, const String &name,
+                     const String &value, bool isButton );
         static bool isTextureDescriptor( SmartPtr<ISharedObject> selection );
 
     private:
@@ -41,5 +41,5 @@ namespace workphone::editor
         s32 m_target = 0, m_mip = 0, m_channel = 0;
         u64 m_pending = 0, m_next = 0, m_documentGeneration = 0;
     };
-}
+}  // namespace workphone::editor
 #endif

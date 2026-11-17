@@ -9,6 +9,7 @@ namespace workphone::editor
     /** Refresh service/network adapters after the active immutable profile is published. */
     void updateProjectSettingsProjectBackend();
     /** Materializes an executable CMake profile and checked staging manifest, without running tools. */
-    Array<String> prepareProjectSettingsBuild( SmartPtr<Project> project, SmartPtr<Properties> settings );
+    Array<String> prepareProjectSettingsBuild( SmartPtr<Project> project,
+                                               SmartPtr<Properties> settings );
     SmartPtr<Properties> buildProjectSettingsProjectBackend( SmartPtr<Properties> settings );
-}
+}  // namespace workphone::editor

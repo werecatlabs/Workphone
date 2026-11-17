@@ -894,11 +894,12 @@ namespace workphone::editor
                     auto authorityName = authorityIndex < scene::NetworkView::authorityModeNames.size()
                                              ? scene::NetworkView::authorityModeNames[authorityIndex]
                                              : String( "Unknown" );
-                    const auto deliveryName = networkView->getDeliveryMode() ==
-                                                      scene::NetworkView::DeliveryMode::Reliable
-                                                  ? "Reliable"
-                                                  : "Unreliable";
-                    auto summary = "Networking: View " + StringUtil::toString( networkView->getViewId() ) +
+                    const auto deliveryName =
+                        networkView->getDeliveryMode() == scene::NetworkView::DeliveryMode::Reliable
+                            ? "Reliable"
+                            : "Unreliable";
+                    auto summary =
+                        "Networking: View " + StringUtil::toString( networkView->getViewId() ) +
                         " | Owner " + StringUtil::toString( networkView->getOwnerId() ) + " | " +
                         authorityName + " @ " + StringUtil::toString( networkView->getSendRate() ) +
                         " Hz | " + deliveryName;
@@ -909,15 +910,16 @@ namespace workphone::editor
                     }
                     if( auto gameManager = applicationManager->getGameManager() )
                     {
-                        const auto validation = scene::validateNetworkScene(
-                            gameManager->getCurrentScene(), manager );
+                        const auto validation =
+                            scene::validateNetworkScene( gameManager->getCurrentScene(), manager );
                         for( const auto &issue : validation.issues )
                         {
                             if( validation.actors[issue.viewIndex] == actor ||
                                 ( issue.relatedViewIndex != network::NetworkSceneIssue::NoRelatedView &&
                                   validation.actors[issue.relatedViewIndex] == actor ) )
                             {
-                                summary += String( " | Fix: " ) + network::networkSceneIssueMessage( issue.code );
+                                summary += String( " | Fix: " ) +
+                                           network::networkSceneIssueMessage( issue.code );
                                 break;
                             }
                         }
@@ -1039,10 +1041,22 @@ namespace workphone::editor
             }
             m_propertiesWindow->setWindowVisible( false );
         }
-        if( m_eventsWindow ) m_eventsWindow->setWindowVisible( false );
-        if( m_materialWindow ) m_materialWindow->setWindowVisible( false );
-        if( m_terrainWindow ) m_terrainWindow->setWindowVisible( false );
-        if( m_particleSystemWindow ) m_particleSystemWindow->setWindowVisible( false );
+        if( m_eventsWindow )
+        {
+            m_eventsWindow->setWindowVisible( false );
+        }
+        if( m_materialWindow )
+        {
+            m_materialWindow->setWindowVisible( false );
+        }
+        if( m_terrainWindow )
+        {
+            m_terrainWindow->setWindowVisible( false );
+        }
+        if( m_particleSystemWindow )
+        {
+            m_particleSystemWindow->setWindowVisible( false );
+        }
 
         if( m_transformWindow )
         {
@@ -1370,7 +1384,9 @@ namespace workphone::editor
     void ActorWindow::updateMaterialEditorStatus()
     {
         if( isLoaded() && isWindowVisible() )
+        {
             ScriptWindow::updateMaterialEditorStatus( m_materialWindow.get() );
+        }
     }
 
     void ActorWindow::updateSelection()
@@ -1405,7 +1421,10 @@ namespace workphone::editor
 
             auto object = selection.front();
             auto actor = getActorFromSelection( object );
-            if( !actor ) return; // buildTree has cleared the previous actor Inspector.
+            if( !actor )
+            {
+                return;  // buildTree has cleared the previous actor Inspector.
+            }
             if( actor && m_transformWindow )
             {
                 m_transformWindow->setTransform( actor->getTransform() );

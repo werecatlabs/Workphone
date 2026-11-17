@@ -11,6 +11,6 @@ namespace workphone::editor
      * and mastering rate are consumed on audio startup; reports pendingKeys when
      * a subsystem or endpoint is absent. Validation never mutates managers. */
     SmartPtr<Properties> applyProjectSettingsInteraction( SmartPtr<Properties> settings );
-}
+}  // namespace workphone::editor
 
 #endif

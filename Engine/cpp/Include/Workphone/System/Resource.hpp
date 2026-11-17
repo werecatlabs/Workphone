@@ -11,11 +11,58 @@
 #include <Workphone/Interface/System/IStateManager.hpp>
 #include <Workphone/Interface/UI/IUIManager.hpp>
 #include <Workphone/System/Prototype.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 #include <Workphone/Core/FixedString.hpp>
 #include <Workphone/Core/Properties.hpp>
 
 namespace workphone
 {
+    namespace resource_detail
+    {
+        // Actors rarely have an asset path. Keep their empty representation small
+        // without changing Resource's reflected type or the fixed-string contract.
+        class ActorFilePath
+        {
+            struct Value final : SourceBudgetObject
+            {
+                explicit Value( const FixedString<1024> &value ) : path( value ) {}
+                FixedString<1024> path;
+            };
+
+        public:
+            FixedString<1024> load() const
+            {
+                ScopedLock lock( &m_mutex, false );
+                return m_value ? m_value->path : FixedString<1024>();
+            }
+
+            ActorFilePath &operator=( const FixedString<1024> &value )
+            {
+                std::unique_ptr<Value> retired;
+                {
+                    ScopedLock lock( &m_mutex );
+                    if( value.empty() )
+                    {
+                        retired = std::move( m_value );
+                    }
+                    else if( m_value )
+                    {
+                        m_value->path = value;
+                    }
+                    else
+                    {
+                        // Admission failure leaves the previously empty value intact.
+                        m_value.reset( new Value( value ) );
+                    }
+                }
+                return *this;
+            }
+
+        private:
+            mutable RecursiveSpinMutex m_mutex;
+            std::unique_ptr<Value> m_value;
+        };
+    }
 
     /** Resource class. A template class to provide the basic functionality of a resource. */
     template <class T>
@@ -114,7 +161,8 @@ namespace workphone
         AtomicSmartPtr<IResourceManager> m_resourceManager;
         AtomicObject<UUID> m_fileSystemId;
         AtomicObject<UUID> m_settingsFileSystemId;
-        AtomicObject<FixedString<1024>> m_filePath;
+        std::conditional_t<std::is_same_v<T, scene::IGameActor>, resource_detail::ActorFilePath,
+                           AtomicObject<FixedString<1024>>> m_filePath;
     };
 
     WP_CLASS_REGISTER_DERIVED_TEMPLATE( workphone, Resource, T, core::Prototype<T> );

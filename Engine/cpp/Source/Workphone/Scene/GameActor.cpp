@@ -1,5 +1,6 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Scene/GameActor.hpp>
+#include <Workphone/Scene/GameActorSystem.hpp>
 #include <Workphone/Scene/UIHierarchyUpdate.hpp>
 #include <Workphone/Scene/GameActorUtil.hpp>
 #include <Workphone/Scene/GameManager.hpp>
@@ -7,7 +8,6 @@
 #include <Workphone/Scene/Components/CharacterController.hpp>
 #include <Workphone/Scene/Components/Collision.hpp>
 #include <Workphone/Scene/Components/Component.hpp>
-#include <Workphone/Scene/Components/RenderTexture.hpp>
 #include <Workphone/Scene/Components/Rigidbody.hpp>
 #include <Workphone/Interface/Physics/IPhysicsShape3.hpp>
 #include <Workphone/Interface/Physics/IRigidDynamic3.hpp>
@@ -20,6 +20,7 @@
 #include <Workphone/Core/BitUtil.hpp>
 #include <Workphone/Core/Util.hpp>
 #include <Workphone/Core/Properties.hpp>
+#include <Workphone/System/SourceBudgetAllocator.hpp>
 #include <Workphone/ApplicationUtil.hpp>
 #include <array>
 #include <cstdint>
@@ -28,6 +29,12 @@
 
 namespace workphone::scene
 {
+    struct GameActor::Metadata : SourceBudgetObject
+    {
+        Array<FixedString<128>> tags{ Allocator<FixedString<128>>( sourceBudget ) };
+        FixedString<128> layer;
+    };
+
     namespace
     {
         std::mutex &transformLifetimeMutex( const GameActor *actor )
@@ -99,6 +106,7 @@ namespace workphone::scene
     void GameActor::clearComponentNodes()
     {
         ScopedLock lock( &m_componentsMutex );
+        m_componentUpdates.reset();
 
         auto component = m_componentsHead;
         m_componentsHead = nullptr;
@@ -116,6 +124,7 @@ namespace workphone::scene
     void GameActor::reorderComponentNodes( const Array<SmartPtr<IComponent>> &components )
     {
         ScopedLock lock( &m_componentsMutex );
+        m_componentUpdates.reset();
 
         m_componentsHead = nullptr;
         m_componentsTail = nullptr;
@@ -589,17 +598,7 @@ namespace workphone::scene
 
     void GameActor::preUpdate()
     {
-        // Script/component callbacks can acquire the graphics lock. Render-side
-        // UI traversal takes that lock before reading an ancestor's components,
-        // so never retain the membership mutex while crossing this boundary.
-        auto components = snapshotComponents();
-        for( auto &component : components )
-        {
-            if( component->getActorPtr() == this )
-            {
-                component->preUpdate();
-            }
-        }
+        GameActorSystem::dispatch( *this, GameActorSystem::Phase::PreUpdate );
     }
 
     void GameActor::updateDirty( u32 flags, u32 oldFlags )
@@ -634,27 +633,12 @@ namespace workphone::scene
 
     void GameActor::update()
     {
-        auto components = snapshotComponents();
-        for( auto &component : components )
-        {
-            // RenderTexture::update is an explicit refresh, not a scene tick.
-            if( component->getActorPtr() == this && !component->isDerived<RenderTexture>() )
-            {
-                component->update();
-            }
-        }
+        GameActorSystem::dispatch( *this, GameActorSystem::Phase::Update );
     }
 
     void GameActor::postUpdate()
     {
-        auto components = snapshotComponents();
-        for( auto &component : components )
-        {
-            if( component->getActorPtr() == this )
-            {
-                component->postUpdate();
-            }
-        }
+        GameActorSystem::dispatch( *this, GameActorSystem::Phase::PostUpdate );
 
         if( isDebugDrawEnabled() )
         {
@@ -736,6 +720,7 @@ namespace workphone::scene
             }
 
             m_componentsTail = component.get();
+            m_componentUpdates.reset();
 
             applyCollisionMaskToComponent( component, false );
             updateBounds();
@@ -784,6 +769,7 @@ namespace workphone::scene
                     }
 
                     current->m_next = nullptr;
+                    m_componentUpdates.reset();
                     current->removeReference();
                     removed = true;
                     break;
@@ -1272,13 +1258,7 @@ namespace workphone::scene
 
     auto GameActor::compareTag( const String &tag ) const -> bool
     {
-        auto it = std::find( m_tags.begin(), m_tags.end(), tag );
-        if( it != m_tags.end() )
-        {
-            return true;
-        }
-
-        return false;
+        return GameActor::hasTag( tag );
     }
 
     auto GameActor::getSceneRoot() const -> SmartPtr<IGameActor>
@@ -1559,6 +1539,7 @@ namespace workphone::scene
                     }
                     component = raw;
                     m_componentsHead = raw->m_next.load();
+                    m_componentUpdates.reset();
                     raw->m_next = nullptr;
                     if( !m_componentsHead )
                     {
@@ -2770,64 +2751,101 @@ namespace workphone::scene
 
     void GameActor::clearTags()
     {
-        ScopedLock lock( this, false );
-        m_tags.clear();
+        ScopedLock lock( &m_metadataMutex );
+        if( !m_metadata ) return;
+        m_metadata->tags.clear();
+        if( m_metadata->layer.empty() ) m_metadata.reset();
     }
 
     bool GameActor::hasTag( const String &tag ) const
     {
-        ScopedLock lock( this );
-        return std::find( m_tags.begin(), m_tags.end(), tag ) != m_tags.end();
+        ScopedLock lock( &m_metadataMutex, false );
+        if( !m_metadata ) return false;
+        const auto &tags = m_metadata->tags;
+        return std::find( tags.begin(), tags.end(), tag ) != tags.end();
     }
 
     void GameActor::removeTag( const String &tag )
     {
-        ScopedLock lock( this );
-        m_tags.erase( std::remove( m_tags.begin(), m_tags.end(), tag ), m_tags.end() );
+        ScopedLock lock( &m_metadataMutex );
+        if( !m_metadata ) return;
+        auto &tags = m_metadata->tags;
+        tags.erase( std::remove( tags.begin(), tags.end(), tag ), tags.end() );
+        if( tags.empty() && m_metadata->layer.empty() ) m_metadata.reset();
     }
 
     void GameActor::addTag( const String &tag )
     {
-        ScopedLock lock( this );
-
-        if( std::find( m_tags.begin(), m_tags.end(), tag ) == m_tags.end() )
+        ScopedLock lock( &m_metadataMutex );
+        if( m_metadata )
         {
-            m_tags.push_back( tag );
+            auto &tags = m_metadata->tags;
+            if( std::find( tags.begin(), tags.end(), tag ) == tags.end() ) tags.push_back( tag );
+            return;
         }
+        // Unlike setTags, addTag retains whitespace and permits an empty tag.
+        // Publish only after both the sparse record and its payload are admitted.
+        auto metadata = std::make_unique<Metadata>();
+        metadata->tags.push_back( tag );
+        m_metadata = std::move( metadata );
     }
 
     void GameActor::setTags( const Array<String> &tags )
     {
-        ScopedLock lock( this );
-
-        m_tags.clear();
-        m_tags.reserve( tags.size() );
-
+        Array<FixedString<128>> replacement{ Allocator<FixedString<128>>( sourceBudget ) };
         for( const auto &tag : tags )
         {
             auto trimmedTag = StringUtil::trim( tag );
             if( !StringUtil::isNullOrEmpty( trimmedTag ) &&
-                std::find( m_tags.begin(), m_tags.end(), trimmedTag ) == m_tags.end() )
+                std::find( replacement.begin(), replacement.end(), trimmedTag ) == replacement.end() )
             {
-                m_tags.push_back( trimmedTag );
+                replacement.push_back( trimmedTag );
             }
         }
+        ScopedLock lock( &m_metadataMutex );
+        if( replacement.empty() )
+        {
+            if( !m_metadata ) return;
+            m_metadata->tags = std::move( replacement );
+            if( m_metadata->layer.empty() ) m_metadata.reset();
+            return;
+        }
+        if( !m_metadata ) m_metadata = std::make_unique<Metadata>();
+        m_metadata->tags = std::move( replacement );
     }
 
     Array<String> GameActor::getTags() const
     {
-        return { m_tags.begin(), m_tags.end() };
+        ScopedLock lock( &m_metadataMutex, false );
+        Array<String> tags{ Allocator<String>( sourceBudget ) };
+        if( m_metadata )
+        {
+            tags.reserve( m_metadata->tags.size() );
+            for( const auto &tag : m_metadata->tags ) tags.push_back( tag );
+        }
+        return tags;
     }
 
     String GameActor::getLayer() const
     {
-        auto s = m_layer.load();
-        return s.str();
+        ScopedLock lock( &m_metadataMutex, false );
+        if( !m_metadata ) return {};
+        return m_metadata->layer.str();
     }
 
     void GameActor::setLayer( const String &layer )
     {
-        m_layer = StringUtil::trim( layer );
+        const FixedString<128> replacement( StringUtil::trim( layer ) );
+        ScopedLock lock( &m_metadataMutex );
+        if( replacement.empty() )
+        {
+            if( !m_metadata ) return;
+            m_metadata->layer = replacement;
+            if( m_metadata->tags.empty() ) m_metadata.reset();
+            return;
+        }
+        if( !m_metadata ) m_metadata = std::make_unique<Metadata>();
+        m_metadata->layer = replacement;
     }
 
     ITransform *GameActor::getTransformPtr() const

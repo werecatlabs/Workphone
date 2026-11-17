@@ -9,7 +9,13 @@
 #include <Workphone/Interface/UI/IUIText.hpp>
 #include <Workphone/System/Job.hpp>
 
-namespace workphone::scene { class CityRoadAuthoring; class TerrainSystem; struct CityRoadTerrainGradeData; }
+namespace workphone::scene
+{
+    class CityRoadAuthoring;
+    class TerrainSystem;
+    struct CityRoadTerrainGradeData;
+}  // namespace workphone::scene
+
 namespace workphone::editor
 {
     // One source transaction per completed draw/drag. History never stores preview actors.
@@ -17,27 +23,41 @@ namespace workphone::editor
     {
     public:
         CityRoadEditCommand();
-        bool configure(SmartPtr<scene::CityRoadAuthoring>, const String &after, String &error,
-                       bool gradeTerrain = true);
+        bool configure( SmartPtr<scene::CityRoadAuthoring>, const String &after, String &error,
+                        bool gradeTerrain = true );
         void execute() override;
         void undo() override;
         void redo() override;
-        bool applied() const { return m_applied; }
-        bool gradedTerrain() const { return bool(m_terrainAfter); }
-        const String &error() const { return m_error; }
-        static bool dispatchHistory(SmartPtr<ICommandManager>,bool redo,String &error);
+
+        bool applied() const
+        {
+            return m_applied;
+        }
+
+        bool gradedTerrain() const
+        {
+            return bool( m_terrainAfter );
+        }
+
+        const String &error() const
+        {
+            return m_error;
+        }
+
+        static bool dispatchHistory( SmartPtr<ICommandManager>, bool redo, String &error );
         WP_CLASS_REGISTER_DECL;
+
     private:
-        bool apply(bool forward);
+        bool apply( bool forward );
         AtomicWeakPtr<scene::CityRoadAuthoring> m_target;
         AtomicWeakPtr<scene::IGameScene> m_scene;
-        SourceBudgetText m_before,m_after;
-        render::TerrainSnapshot m_terrainBefore,m_terrainAfter;
-        std::shared_ptr<const scene::CityRoadTerrainGradeData> m_gradingBefore,m_gradingAfter;
+        SourceBudgetText m_before, m_after;
+        render::TerrainSnapshot m_terrainBefore, m_terrainAfter;
+        std::shared_ptr<const scene::CityRoadTerrainGradeData> m_gradingBefore, m_gradingAfter;
         Transform3<real_Num> m_placement;
         StreamBudget m_terrainHistoryBudget;
-        String m_project,m_error;
-        bool m_applied=false,m_committed=false,m_gradeTerrain=true,m_hasGradingHistory=false;
+        String m_project, m_error;
+        bool m_applied = false, m_committed = false, m_gradeTerrain = true, m_hasGradingHistory = false;
     };
 
     class CityRoadWindow : public EditorWindow
@@ -46,72 +66,131 @@ namespace workphone::editor
         class Listener : public IEventListener
         {
         public:
-            Parameter handleEvent(EventType,hash_type,const Array<Parameter>&,SmartPtr<ISharedObject>,SmartPtr<ISharedObject>,SmartPtr<IEvent>) override;
-            void setOwner(SmartPtr<CityRoadWindow> owner) { m_owner=owner; }
+            Parameter handleEvent( EventType, hash_type, const Array<Parameter> &,
+                                   SmartPtr<ISharedObject>, SmartPtr<ISharedObject>,
+                                   SmartPtr<IEvent> ) override;
+
+            void setOwner( SmartPtr<CityRoadWindow> owner )
+            {
+                m_owner = owner;
+            }
+
             WP_CLASS_REGISTER_DECL;
-        private: AtomicWeakPtr<CityRoadWindow> m_owner;
+
+        private:
+            AtomicWeakPtr<CityRoadWindow> m_owner;
         };
+
         class ViewportJob : public Job
         {
         public:
             void execute() override;
-            void setOwner(SmartPtr<CityRoadWindow> owner){m_owner=owner;}
+
+            void setOwner( SmartPtr<CityRoadWindow> owner )
+            {
+                m_owner = owner;
+            }
+
             WP_CLASS_REGISTER_DECL;
-        private: AtomicWeakPtr<CityRoadWindow> m_owner;
+
+        private:
+            AtomicWeakPtr<CityRoadWindow> m_owner;
         };
+
         CityRoadWindow();
         ~CityRoadWindow() override;
-        void load(SmartPtr<ISharedObject>) override;
-        void unload(SmartPtr<ISharedObject>) override;
-        void setWindowVisible(bool) override;
+        void load( SmartPtr<ISharedObject> ) override;
+        void unload( SmartPtr<ISharedObject> ) override;
+        void setWindowVisible( bool ) override;
         void updateSelection() override;
-        Parameter handleViewport(const Array<Parameter>&);
+        Parameter handleViewport( const Array<Parameter> & );
         WP_CLASS_REGISTER_DECL;
+
     private:
-        enum Widget { Bind=43001,Draw,Move,InHandle,OutHandle,Finish,Cancel,ApplyFields,RemoveRoad,Undo,Redo,Save,Width,Grade,Closed,Roundabout,OuterRadius,IslandRadius,RemoveRoundabout,SelectRoad,InsertKnot };
-        enum class Mode { Draw,Move,InHandle,OutHandle,Roundabout,SelectRoad,InsertKnot };
+        enum Widget
+        {
+            Bind = 43001,
+            Draw,
+            Move,
+            InHandle,
+            OutHandle,
+            Finish,
+            Cancel,
+            ApplyFields,
+            RemoveRoad,
+            Undo,
+            Redo,
+            Save,
+            Width,
+            Grade,
+            Closed,
+            Roundabout,
+            OuterRadius,
+            IslandRadius,
+            RemoveRoundabout,
+            SelectRoad,
+            InsertKnot
+        };
+        enum class Mode
+        {
+            Draw,
+            Move,
+            InHandle,
+            OutHandle,
+            Roundabout,
+            SelectRoad,
+            InsertKnot
+        };
         void attachViewport();
-        void action(Widget,bool invalidateInput=true);
-        void status(const String &);
+        void action( Widget, bool invalidateInput = true );
+        void status( const String & );
         void cancelDraft();
         bool beginDraft();
         bool beginDraw();
-        void selectRoad(const procedural::CityRoadSpline &);
-        void editRoadAt(const Vector3F &terrainHit);
-        Vector3F controlPoint(Vector3F,const procedural::CityRoadSpline &) const;
-        bool fields(procedural::CityRoadSpline &);
+        void selectRoad( const procedural::CityRoadSpline & );
+        void editRoadAt( const Vector3F &terrainHit );
+        Vector3F controlPoint( Vector3F, const procedural::CityRoadSpline & ) const;
+        bool fields( procedural::CityRoadSpline & );
         bool commitDraft();
         bool bindSelection();
-        bool addRoundabout(Vector3F center);
-        void history(bool redo);
+        bool addRoundabout( Vector3F center );
+        void history( bool redo );
         void drainViewport();
-        Parameter processViewport(const Array<Parameter>&,bool queued=false);
+        Parameter processViewport( const Array<Parameter> &, bool queued = false );
         Parameter preview() const;
         SmartPtr<scene::CityRoadAuthoring> current() const;
         SmartPtr<Listener> m_listener;
         AtomicWeakPtr<ui::IUIRenderWindow> m_viewport;
         AtomicWeakPtr<scene::CityRoadAuthoring> m_authoring;
         AtomicWeakPtr<scene::IGameScene> m_scene;
-        SmartPtr<ui::IUILabelTextInputPair> m_width,m_grade;
-        SmartPtr<ui::IUILabelTextInputPair> m_outerRadius,m_islandRadius;
-        SmartPtr<ui::IUILabelTogglePair> m_closed,m_clockwise,m_gradeTerrain;
+        SmartPtr<ui::IUILabelTextInputPair> m_width, m_grade;
+        SmartPtr<ui::IUILabelTextInputPair> m_outerRadius, m_islandRadius;
+        SmartPtr<ui::IUILabelTogglePair> m_closed, m_clockwise, m_gradeTerrain;
         SmartPtr<ui::IUIText> m_status;
         procedural::CityRoadSplineSource m_draft;
-        SourceBudgetText m_selectedRoadId,m_selectedKnotId;
+        SourceBudgetText m_selectedRoadId, m_selectedKnotId;
         SourceBudgetSet<SourceBudgetText> m_manualHandles;
-        u64 m_draftRevision=0;
+        u64 m_draftRevision = 0;
         render::TerrainSnapshot m_draftTerrain;
         Transform3<real_Num> m_draftTerrainPlacement;
-        size_t m_road=0,m_knot=0;
-        Mode m_mode=Mode::Move;
-        bool m_enabled=false,m_drafting=false,m_dragging=false,m_selected=false,m_portHandleDrag=false;
-        struct Input { SourceBudgetText phase; Vector3F origin{},direction{};u64 epoch=0; };
+        size_t m_road = 0, m_knot = 0;
+        Mode m_mode = Mode::Move;
+        bool m_enabled = false, m_drafting = false, m_dragging = false, m_selected = false,
+             m_portHandleDrag = false;
+
+        struct Input
+        {
+            SourceBudgetText phase;
+            Vector3F origin{}, direction{};
+            u64 epoch = 0;
+        };
+
         mutable RecursiveMutex m_toolMutex;
         SourceBudgetVector<Input> m_inputs;
         Parameter m_cachedPreview;
-        u64 m_toolEpoch=0;
-        bool m_dispatchPending=false,m_cachedEnabled=false;
-        u64 m_selectionSignature=0;
-        bool m_hasSelectionSignature=false;
+        u64 m_toolEpoch = 0;
+        bool m_dispatchPending = false, m_cachedEnabled = false;
+        u64 m_selectionSignature = 0;
+        bool m_hasSelectionSignature = false;
     };
-}
+}  // namespace workphone::editor
