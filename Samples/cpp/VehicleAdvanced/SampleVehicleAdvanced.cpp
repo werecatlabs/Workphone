@@ -24,6 +24,7 @@
 #include <Workphone/Scene/Components/CityRoadJunctions.hpp>
 #include <Workphone/Scene/Components/CityRoadTerrainFit.hpp>
 #include <Workphone/Scene/Components/CityRoadTerrainMesh.hpp>
+#include <Workphone/Scene/Components/CityTrafficSimulation.hpp>
 #include <Workphone/Scene/Components/CityBuildingStyles.hpp>
 #include <Workphone/Scene/Components/LODGroup.hpp>
 #include <Workphone/Scene/Components/MeshImposter.hpp>
@@ -3592,6 +3593,101 @@ namespace workphone
                                  << ",\"crownMetres\":" << crown
                                  << ",\"crossSlope\":" << crossSlope << '}';
                     }
+                    if( m_assets.cityTerrainRoads && !m_assets.cityRoadShowcase )
+                    {
+                        const auto traffic = m_assets.cityTraffic;
+                        const s32 expectedDensity = m_cityTrafficDensity >= 0 ? m_cityTrafficDensity : 35;
+                        u32 active = 0, moving = 0, yielding = 0, intersectionTransfers = 0,
+                            roundaboutTransfers = 0;
+                        f32 travelledMetres = 0, minimumSeparation = 0;
+                        f32 minimumFollowingHeadwaySeconds = std::numeric_limits<f32>::max();
+                        u32 followingHeadwaySamples = 0;
+                        bool simulationValid = expectedDensity == 0 && !traffic;
+                        if( traffic )
+                        {
+                            const auto stats = traffic->stats();
+                            active = stats.active; moving = stats.moving; yielding = stats.yielding;
+                            intersectionTransfers = stats.intersectionTransfers;
+                            roundaboutTransfers = stats.roundaboutTransfers;
+                            travelledMetres = stats.travelledMetres;
+                            minimumSeparation = std::isfinite( stats.minimumSeparation ) ? stats.minimumSeparation : 0.f;
+                            simulationValid = stats.valid;
+                            const auto &vehicles = traffic->vehicles();
+                            for( const auto &follower : vehicles )
+                            {
+                                Vector3F forward = follower.forward; forward.y = 0;
+                                if( follower.speed <= .1f || forward.lengthSquared() < .5f ) continue;
+                                forward.normalise();
+                                for( const auto &leader : vehicles )
+                                {
+                                    if( follower.id == leader.id ||
+                                        follower.forward.dotProduct( leader.forward ) < .97f ) continue;
+                                    Vector3F offset = leader.position - follower.position;
+                                    offset.y = 0;
+                                    const f32 along = offset.dotProduct( forward );
+                                    if( along <= 0 || along > 70.f ||
+                                        ( offset - forward * along ).lengthSquared() > 12.25f ) continue;
+                                    ++followingHeadwaySamples;
+                                    minimumFollowingHeadwaySeconds = std::min( minimumFollowingHeadwaySeconds,
+                                        std::max( 0.f, along - 4.2f ) / follower.speed );
+                                }
+                            }
+                        }
+                        const u64 sourceRevision = traffic ? traffic->sourceRevision() :
+                            ( m_assets.roadAuthoring ? m_assets.roadAuthoring->getActiveRevision() : 0 );
+                        const bool sourceRevisionMatches = m_assets.roadAuthoring && sourceRevision ==
+                            m_assets.roadAuthoring->getActiveRevision();
+                        const bool valid = simulationValid && sourceRevisionMatches &&
+                            m_assets.cityTrafficDensity == expectedDensity &&
+                            m_assets.cityTrafficDriveOnLeft == m_cityTrafficDriveOnLeft &&
+                            ( expectedDensity == 0 ? active == 0 : traffic && active > 0 );
+                        cityValid = cityValid && valid;
+                        evidence << ",\n  \"cityTraffic\":{\"valid\":" << ( valid ? "true" : "false" )
+                                 << ",\"densityPercent\":" << m_assets.cityTrafficDensity
+                                 << ",\"driveOnLeft\":" << ( m_assets.cityTrafficDriveOnLeft ? "true" : "false" )
+                                 << ",\"sourceRevision\":" << sourceRevision
+                                 << ",\"sourceRevisionMatches\":" << ( sourceRevisionMatches ? "true" : "false" )
+                                 << ",\"active\":" << active << ",\"moving\":" << moving
+                                 << ",\"yielding\":" << yielding
+                                 << ",\"intersectionTransfers\":" << intersectionTransfers
+                                 << ",\"roundaboutTransfers\":" << roundaboutTransfers
+                                 << ",\"travelledMetres\":" << travelledMetres
+                                 << ",\"minimumSeparationMetres\":" << minimumSeparation
+                                 << ",\"followingHeadwaySamples\":" << followingHeadwaySamples
+                                 << ",\"minimumFollowingHeadwaySeconds\":";
+                        if( followingHeadwaySamples ) evidence << minimumFollowingHeadwaySeconds;
+                        else evidence << "null";
+                        evidence << '}';
+                        if( m_captureView == "traffic" )
+                        {
+                            bool focusPresent = false;
+                            Vector3F focusPosition{};
+                            if( traffic ) for( const auto &vehicle : traffic->vehicles() )
+                                if( vehicle.id == m_cityTrafficFocusId )
+                                { focusPosition = vehicle.position; focusPresent = true; break; }
+                            const float displacement = focusPresent ?
+                                std::hypot( focusPosition.x - m_cityTrafficFocusInitial.x,
+                                            focusPosition.z - m_cityTrafficFocusInitial.z ) : 0.f;
+                            const auto eye = m_cameraActor->getWorldTransform().getPosition();
+                            const bool cameraValid = m_cityTrafficFocusReady && focusPresent &&
+                                displacement > .5f && moving > 0 && travelledMetres > 0 &&
+                                ( eye - m_cityTrafficEye ).lengthSquared() < .0001f;
+                            cityValid = cityValid && cameraValid;
+                            const auto vector = [&]( Vector3F p ) {
+                                evidence << '[' << p.x << ',' << p.y << ',' << p.z << ']';
+                            };
+                            evidence << ",\n  \"cityTrafficCamera\":{\"valid\":"
+                                     << ( cameraValid ? "true" : "false" )
+                                     << ",\"focusId\":" << m_cityTrafficFocusId
+                                     << ",\"focusPresent\":" << ( focusPresent ? "true" : "false" )
+                                     << ",\"focusDisplacementMetres\":" << displacement
+                                     << ",\"eye\":";
+                            vector( eye ); evidence << ",\"target\":"; vector( m_cityTrafficTarget );
+                            evidence << ",\"focusInitial\":"; vector( m_cityTrafficFocusInitial );
+                            evidence << ",\"focusCurrent\":"; vector( focusPosition );
+                            evidence << '}';
+                        }
+                    }
                     const auto expectedDetail = m_cityStreetDetail >= 0 ? m_cityStreetDetail : 100;
                     const auto expectedPropDensity = m_cityStreetPropDensity >= 0 ? m_cityStreetPropDensity : 150;
                     const bool expectStreetDetail = m_cityStreetDetail == 100 && expectedPropDensity > 0 && m_seed == 42 &&
@@ -5561,6 +5657,10 @@ namespace workphone
                 properties->setProperty( "City Street Detail", m_cityStreetDetail );
             if( m_cityStreetPropDensity >= 0 )
                 properties->setProperty( "City Street Prop Density", m_cityStreetPropDensity );
+            if( m_cityTrafficDensity >= 0 )
+                properties->setProperty( "City Traffic Density", m_cityTrafficDensity );
+            if( m_cityTrafficDriveOnLeft )
+                properties->setProperty( "Traffic Drive On Left", true );
             properties->setProperty( "City Debug Blocks", m_cityDebugBlocks );
             properties->setProperty( "City Debug Lots", m_cityDebugLots );
             if( m_cityBuildingStyle >= 0 )
@@ -5911,6 +6011,31 @@ namespace workphone
                 m_cityRoadProfileCandidates = view.candidates;
                 m_cityRoadProfileWidth = view.width;
                 m_cityRoadProfileStation = view.station;
+            }
+            if( m_captureView == "traffic" )
+            {
+                m_cityTrafficFocusReady = false;
+                if( !m_assets.cityTraffic )
+                    throw std::runtime_error( "Traffic view requires an initialized city traffic simulation." );
+                float best = std::numeric_limits<float>::max();
+                for( const auto &vehicle : m_assets.cityTraffic->vehicles() )
+                {
+                    auto forward = vehicle.forward; forward.y = 0;
+                    if( !vehicle.position.isFinite() || forward.lengthSquared() < .5f ) continue;
+                    const float score = std::hypot( vehicle.position.x, vehicle.position.z ) +
+                        ( vehicle.yielding ? 30.f : 0.f );
+                    if( score >= best ) continue;
+                    best = score;
+                    forward.normalise();
+                    const Vector3F side( -forward.z, 0, forward.x );
+                    m_cityTrafficEye = vehicle.position - forward * 6.f - side * 3.f + Vector3F( 0, 3.6f, 0 );
+                    m_cityTrafficTarget = vehicle.position + forward * 13.f + Vector3F( 0, 1.6f, 0 );
+                    m_cityTrafficFocusInitial = vehicle.position;
+                    m_cityTrafficFocusId = vehicle.id;
+                    m_cityTrafficFocusReady = true;
+                }
+                if( !m_cityTrafficFocusReady )
+                    throw std::runtime_error( "Traffic view requires a fitted, finite moving-vehicle candidate." );
             }
             if( m_captureView == "junction" )
             {
@@ -6356,6 +6481,11 @@ namespace workphone
                         m_cameraActor->setPosition( m_cityRoadProfileEye );
                         m_cameraActor->lookAt( m_cityRoadProfileTarget, Vector3F::unitY() );
                     }
+                    else if( m_captureView == "traffic" )
+                    {
+                        m_cameraActor->setPosition( m_cityTrafficEye );
+                        m_cameraActor->lookAt( m_cityTrafficTarget, Vector3F::unitY() );
+                    }
                     else if( isRoadTerrainEditView( m_captureView ) && m_roadTerrainEditPrepared )
                     {
                         m_cameraActor->setPosition( m_roadTerrainEditEye );
@@ -6573,7 +6703,7 @@ int main( int argc, char **argv )
                    "  --track-smoke-test            Drive one full lap through the physics controller\n"
                    "  --collision-smoke-test        Verify native boxes; circuit garage impact or city road/sidewalk grades\n"
                    "  --validate-circuit           Validate 100 generated closed circuits\n"
-                   "  --capture PATH.bmp --view follow|car|track|corner|junction|hillside|street|boulevard|frontage|facade|building|utilities|road-profile|park|shopfront|entry-route|rooftop|pitched-roof   Save a rendered view and "
+                   "  --capture PATH.bmp --view follow|car|track|corner|junction|hillside|street|boulevard|traffic|frontage|facade|building|utilities|road-profile|park|shopfront|entry-route|rooftop|pitched-roof   Save a rendered view and "
                    "exit\n"
                    "  --view imposter-front|imposter-diagonal|imposter-back|imposter-high  Same city patch from four angles, with exported sprite sheet\n"
                    "  --no-hud --force-lod auto|0|1  Clean captures and tree LOD comparisons\n"
@@ -6596,6 +6726,8 @@ int main( int argc, char **argv )
                    "  --city-terrain-relief 0..2      Initial city terrain relief multiplier (default 1; retained terrain is preserved)\n"
                    "  --city-street-detail 0..100     Roadside detail density (requires --city-terrain-roads, default 100)\n"
                    "  --city-street-prop-density 0..200  Optional street furniture density (default 150)\n"
+                   "  --city-traffic-density 0..100  Traffic population on editable terrain roads (default 35)\n"
+                   "  --city-traffic-drive-on-left   Use left-hand traffic (default right-hand)\n"
                    "  --city-debug-blocks            Show generated block boundary overlays\n"
                    "  --city-debug-lots              Show parcel and building footprint overlays\n"
                    "  --city-streaming on|off        Stream building mesh tiers; keep skyline imposters resident\n"
@@ -6608,6 +6740,7 @@ int main( int argc, char **argv )
                    "  --view frontage               Close sidewalk inspection (requires --city-terrain-roads)\n"
                    "  --view utilities              Close inspection of a fitted carriageway cover and nearby grate\n"
                    "  --view road-profile           Low view across a fitted road and both pavements\n"
+                   "  --view traffic                Fixed view of simulated vehicles on a terrain city road\n"
                    "  --view park                   Inspect a generated park parcel from street level\n"
                    "  --view shopfront              Inspect a commercial entrance from street level\n"
                    "  --view entry-route            Inspect the space between a commercial entrance and its street\n"
@@ -6666,6 +6799,8 @@ int main( int argc, char **argv )
     s32 cityBlocks = 8, cityRoute = 0;
     s32 cityStreetDetail = -1;
     s32 cityStreetPropDensity = -1;
+    s32 cityTrafficDensity = -1;
+    bool cityTrafficDriveOnLeft = false;
     bool cityDebugBlocks = false, cityDebugLots = false;
     s32 cityBuildingStyle = -1;
     std::array<String, 5> cityBuildingMeshes;
@@ -6766,6 +6901,20 @@ int main( int argc, char **argv )
                 const auto parsed = std::from_chars( value.data(), end, cityStreetPropDensity );
                 if( parsed.ec != std::errc{} || parsed.ptr != end || cityStreetPropDensity < 0 || cityStreetPropDensity > 200 )
                     throw std::runtime_error( "City street prop density must be an integer from 0 to 200." );
+            }
+            else if( String( argv[i] ) == "--city-traffic-density" && i + 1 < argc )
+            {
+                const std::string_view value = argv[++i];
+                const auto end = value.data() + value.size();
+                const auto parsed = std::from_chars( value.data(), end, cityTrafficDensity );
+                if( parsed.ec != std::errc{} || parsed.ptr != end || cityTrafficDensity < 0 || cityTrafficDensity > 100 )
+                    throw std::runtime_error( "City traffic density must be an integer from 0 to 100." );
+                cityOptionsExplicit = true;
+            }
+            else if( String( argv[i] ) == "--city-traffic-drive-on-left" )
+            {
+                cityTrafficDriveOnLeft = true;
+                cityOptionsExplicit = true;
             }
             else if( String( argv[i] ) == "--city-debug-blocks" )
             {
@@ -6978,7 +7127,7 @@ int main( int argc, char **argv )
             { audioEnabled = false; hud = false; }
         }
         if( captureView != "follow" && captureView != "car" && captureView != "track" &&
-            captureView != "corner" && captureView != "junction" && captureView != "hillside" && captureView != "verge" && captureView != "street" && captureView != "boulevard" &&
+            captureView != "corner" && captureView != "junction" && captureView != "hillside" && captureView != "verge" && captureView != "street" && captureView != "boulevard" && captureView != "traffic" &&
             captureView != "frontage" && captureView != "facade" && captureView != "building" && captureView != "utilities" && captureView != "road-profile" && captureView != "park" && captureView != "shopfront" && captureView != "entry-route" && captureView != "rooftop" && captureView != "pitched-roof" &&
             !isRoadTerrainEditView( captureView ) && !isCityImposterView( captureView ) )
             throw std::runtime_error( "Unknown capture view; use --help for scene and directional imposter review views." );
@@ -6992,6 +7141,8 @@ int main( int argc, char **argv )
         if(roadAuthoringShowcase && cityTerrainRoads)throw std::runtime_error("Choose road-authoring-showcase or city-terrain-roads.");
         if( cityStreetDetail >= 0 && !cityTerrainRoads )
             throw std::runtime_error( "--city-street-detail requires --city-terrain-roads." );
+        if( ( cityTrafficDensity >= 0 || cityTrafficDriveOnLeft ) && !cityTerrainRoads )
+            throw std::runtime_error( "City traffic options require --city-terrain-roads." );
         if( cityTerrainReliefExplicit && !cityTerrainRoads )
             throw std::runtime_error( "--city-terrain-relief requires --city-terrain-roads." );
         if( captureView == "frontage" && !cityTerrainRoads )
@@ -7000,6 +7151,8 @@ int main( int argc, char **argv )
             throw std::runtime_error( "--view utilities requires --city-terrain-roads and a fixed camera." );
         if( captureView == "road-profile" && ( !cityTerrainRoads || orbit ) )
             throw std::runtime_error( "--view road-profile requires --city-terrain-roads and a fixed camera." );
+        if( captureView == "traffic" && ( !cityTerrainRoads || orbit || roadAuthoringShowcase || cityTrafficDensity == 0 ) )
+            throw std::runtime_error( "--view traffic requires a generated terrain city, nonzero traffic density and a fixed camera." );
         if( captureView == "park" && ( !cityTerrainRoads || orbit ) )
             throw std::runtime_error( "--view park requires --city-terrain-roads and a fixed camera." );
         if( captureView == "shopfront" && ( !cityTerrainRoads || orbit ) )
@@ -7147,6 +7300,7 @@ int main( int argc, char **argv )
         app->setCityTerrainRelief( cityTerrainRelief );
         app->setCityStreetDetail( cityStreetDetail );
         app->setCityStreetPropDensity( cityStreetPropDensity );
+        app->setCityTrafficOptions( cityTrafficDensity, cityTrafficDriveOnLeft );
         app->setCityLayoutDebug( cityDebugBlocks, cityDebugLots );
         app->setCityStreaming( cityStreaming );
         app->setCityStreamingSmokeTest( cityStreamingSmokeTest );

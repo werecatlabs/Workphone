@@ -12,7 +12,7 @@ param(
     [ValidatePattern('^\d+x\d+$')][string]$Resolution = '1280x720',
     [ValidateSet('auto', 'none', 'msaa2', 'msaa4')][string]$SceneAA = 'auto',
     [ValidateRange(0.1, 3600)][double]$Seconds = 10,
-    [ValidateSet('follow', 'car', 'track', 'corner', 'junction', 'hillside', 'verge', 'street', 'boulevard', 'frontage', 'facade', 'building', 'utilities', 'road-profile', 'park', 'shopfront', 'entry-route', 'rooftop', 'pitched-roof', 'road-edit-before', 'road-edit-after', 'imposter-front', 'imposter-diagonal', 'imposter-back', 'imposter-high')][string[]]$Views = @('car', 'track', 'corner', 'follow'),
+    [ValidateSet('follow', 'car', 'track', 'corner', 'junction', 'hillside', 'verge', 'street', 'boulevard', 'traffic', 'frontage', 'facade', 'building', 'utilities', 'road-profile', 'park', 'shopfront', 'entry-route', 'rooftop', 'pitched-roof', 'road-edit-before', 'road-edit-after', 'imposter-front', 'imposter-diagonal', 'imposter-back', 'imposter-high')][string[]]$Views = @('car', 'track', 'corner', 'follow'),
     [string]$Replay,
     [switch]$NoEffects,
     [switch]$FoliageWorld,
@@ -26,6 +26,8 @@ param(
     [ValidateRange(30, 7200)][int]$TimeoutSeconds = 600,
     [ValidateRange(0, 100)][int]$CityStreetDetail = 100,
     [ValidateRange(0, 200)][int]$CityStreetPropDensity = 150,
+    [ValidateRange(0, 100)][int]$CityTrafficDensity = 35,
+    [switch]$CityTrafficDriveOnLeft,
     [switch]$CityDebugBlocks,
     [switch]$CityDebugLots,
     [ValidateSet('on', 'off')][string]$CityStreaming = 'off',
@@ -50,6 +52,11 @@ if ($imposterViews.Count -and ($Scene -ne 'city' -or $RoadAuthoringShowcase -or 
 }
 if ($streetDetailExplicit -and !$CityTerrainRoads) { throw '-CityStreetDetail requires -CityTerrainRoads.' }
 if ($streetPropDensityExplicit -and !$CityTerrainRoads) { throw '-CityStreetPropDensity requires -CityTerrainRoads for capture validation.' }
+if ($PSBoundParameters.ContainsKey('CityTrafficDensity') -and !$CityTerrainRoads) { throw '-CityTrafficDensity requires -CityTerrainRoads.' }
+if ($CityTrafficDriveOnLeft -and !$CityTerrainRoads) { throw '-CityTrafficDriveOnLeft requires -CityTerrainRoads.' }
+if ($Views -contains 'traffic' -and (!$CityTerrainRoads -or $CityTrafficDensity -eq 0 -or $Seconds -lt 2)) {
+    throw '-Views traffic requires -CityTerrainRoads, nonzero -CityTrafficDensity and at least two benchmark seconds.'
+}
 if (($CityDebugBlocks -or $CityDebugLots) -and !$CityTerrainRoads) { throw 'City debug overlay capture requires -CityTerrainRoads.' }
 if ($Views -contains 'frontage' -and !$CityTerrainRoads) { throw '-Views frontage requires -CityTerrainRoads.' }
 if ($Views -contains 'utilities' -and !$CityTerrainRoads) { throw '-Views utilities requires -CityTerrainRoads.' }
@@ -154,6 +161,8 @@ $manifest = [ordered]@{
     cityTerrainRelief = $(if ($CityTerrainRoads) { $CityTerrainRelief } else { $null })
     cityStreetDetail = $(if ($streetDetailExplicit) { $CityStreetDetail } else { $null })
     cityStreetPropDensity = $(if ($streetPropDensityExplicit) { $CityStreetPropDensity } else { $null })
+    cityTrafficDensity = $(if ($CityTerrainRoads) { $CityTrafficDensity } else { $null })
+    cityTrafficDriveOnLeft = [bool]$CityTrafficDriveOnLeft
     cityDebugBlocks = [bool]$CityDebugBlocks
     cityDebugLots = [bool]$CityDebugLots
     cityStreaming = $(if ($Scene -eq 'city') { $CityStreaming } else { $null })
@@ -188,6 +197,8 @@ try {
         if ($CityTerrainRoads) { $arguments += @('--city-terrain-roads', '--city-terrain-relief', $CityTerrainRelief.ToString([Globalization.CultureInfo]::InvariantCulture)) }
         if ($streetDetailExplicit) { $arguments += @('--city-street-detail', "$CityStreetDetail") }
         if ($streetPropDensityExplicit) { $arguments += @('--city-street-prop-density', "$CityStreetPropDensity") }
+        if ($CityTerrainRoads) { $arguments += @('--city-traffic-density', "$CityTrafficDensity") }
+        if ($CityTrafficDriveOnLeft) { $arguments += '--city-traffic-drive-on-left' }
         if ($CityDebugBlocks) { $arguments += '--city-debug-blocks' }
         if ($CityDebugLots) { $arguments += '--city-debug-lots' }
         if ($CityBuildingStyle) { $arguments += @('--city-building-style', $CityBuildingStyle.ToLowerInvariant()) }
@@ -345,6 +356,22 @@ try {
             if ($streetPropDensityExplicit) {
                 $street = $run.evidence.terrainCity
                 $run.passed = $run.passed -and $null -ne $street -and $street.cityStreetPropDensity -eq $CityStreetPropDensity
+            }
+            if ($Scene -eq 'city' -and $CityTerrainRoads -and !$RoadAuthoringShowcase) {
+                $traffic = $run.evidence.cityTraffic
+                $run.passed = $run.passed -and $null -ne $traffic -and $traffic.valid -eq $true -and
+                    $traffic.densityPercent -eq $CityTrafficDensity -and
+                    $traffic.driveOnLeft -eq [bool]$CityTrafficDriveOnLeft -and
+                    $traffic.sourceRevisionMatches -eq $true -and
+                    $(if ($CityTrafficDensity -eq 0) { $traffic.active -eq 0 } else { $traffic.active -gt 0 })
+            }
+            if ($view -eq 'traffic') {
+                $traffic = $run.evidence.cityTraffic
+                $camera = $run.evidence.cityTrafficCamera
+                $run.passed = $run.passed -and $null -ne $camera -and $camera.valid -eq $true -and
+                    $camera.focusDisplacementMetres -gt 0.5 -and
+                    $traffic.moving -gt 0 -and $traffic.travelledMetres -gt 0 -and
+                    @($camera.eye).Count -eq 3 -and @($camera.target).Count -eq 3
             }
             if ($CityDebugBlocks -or $CityDebugLots) {
                 $debug = $run.evidence.terrainCity

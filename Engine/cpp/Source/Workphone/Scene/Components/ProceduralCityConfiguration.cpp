@@ -168,6 +168,8 @@ namespace workphone::scene
         assets.cityStreetDetail = m_streetDetail;
         assets.cityStreetPropDensity = m_streetPropDensity;
         assets.cityBuildingDensity = m_buildingDensity;
+        assets.cityTrafficDensity = u32( m_trafficDensity );
+        assets.cityTrafficDriveOnLeft = m_trafficDriveOnLeft;
         assets.cityDebugBlocks = m_debugBlocks;
         assets.cityDebugLots = m_debugLots;
         assets.cityFoliageLODDistances = m_foliageLODDistances;
@@ -314,6 +316,14 @@ namespace workphone::scene
         density.setAttribute( "min", "0" );
         density.setAttribute( "max", "200" );
         density.setAttribute( "description", "100 keeps the existing city. Lower values landscape vacant lots; higher values split suitable street-facing parcels for extra buildings." );
+        properties.setProperty( "City Traffic Density", m_trafficDensity );
+        auto &trafficDensity = properties.getPropertyObject( "City Traffic Density" );
+        trafficDensity.setAttribute( "min", "0" );
+        trafficDensity.setAttribute( "max", "100" );
+        trafficDensity.setAttribute( "description", "Share of the bounded city traffic fleet to spawn. Zero disables traffic. Press Regenerate to apply." );
+        properties.setProperty( "Traffic Drive On Left", m_trafficDriveOnLeft );
+        properties.getPropertyObject( "Traffic Drive On Left" ).setAttribute( "description",
+            "Use the left lane for city traffic. Press Regenerate to apply." );
         properties.setProperty( "City Debug Blocks", m_debugBlocks );
         properties.getPropertyObject( "City Debug Blocks" ).setAttribute( "description",
             "Show generated road-enclosed blocks, or planning cells on a grid city. Press Regenerate." );
@@ -439,6 +449,13 @@ namespace workphone::scene
             if( buildingDensity >= 0 && buildingDensity <= 200 ) m_buildingDensity = buildingDensity;
             else if( error.empty() ) error = "City Building Density must be between 0 and 200.";
         }
+        s32 trafficDensity = m_trafficDensity;
+        if( properties.getPropertyValue( "City Traffic Density", trafficDensity ) )
+        {
+            if( trafficDensity >= 0 && trafficDensity <= 100 ) m_trafficDensity = trafficDensity;
+            else if( error.empty() ) error = "City Traffic Density must be between 0 and 100.";
+        }
+        properties.getPropertyValue( "Traffic Drive On Left", m_trafficDriveOnLeft );
         properties.getPropertyValue( "City Debug Blocks", m_debugBlocks );
         properties.getPropertyValue( "City Debug Lots", m_debugLots );
         auto distances = m_foliageLODDistances;

@@ -4,6 +4,7 @@
 #include <Workphone/Scene/Components/LODGroup.hpp>
 #include <Workphone/Scene/Components/CityRoadAuthoring.hpp>
 #include <Workphone/Scene/Components/CityRoadTerrainFit.hpp>
+#include <Workphone/Scene/Components/CityTrafficSimulation.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
 #include <Workphone/Graphics/Terrain.hpp>
 #include <Workphone/System/SourceBudgetVector.hpp>
@@ -13,6 +14,11 @@
 namespace workphone::scene::race
 {
     class CityStreaming;
+    struct CityTrafficActor
+    {
+        u32 id = 0;
+        SmartPtr<IGameActor> actor;
+    };
 
     inline constexpr float defaultCityStreamLoadRadius = 300.f;
     inline constexpr float defaultCityStreamRetainRadius = 420.f;
@@ -112,6 +118,12 @@ namespace workphone::scene::race
         int cityStreetDetail = 100;
         int cityStreetPropDensity = 150;
         int cityBuildingDensity = 150;
+        u32 cityTrafficDensity = 35;
+        bool cityTrafficDriveOnLeft = false;
+        std::shared_ptr<scene::CityTrafficSimulation> cityTraffic;
+        SourceBudgetVector<CityTrafficActor> cityTrafficActors;
+        f32 cityTrafficAccumulator = 0;
+        u32 cityTrafficLastTick = ~0u;
         bool cityDebugBlocks = false, cityDebugLots = false;
         u32 cityDebugBlockCount = 0, cityDebugLotCount = 0;
         // LOD0->1 and LOD1->2 distances for trees, shrubs and grass (metres).

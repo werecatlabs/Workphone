@@ -5,7 +5,9 @@
 #include <Workphone/Interface/System/ITaskManager.hpp>
 #include <Workphone/System/TaskLock.hpp>
 #include <Workphone/Workphone.hpp>
+#include "CityTrafficAppearance.hpp"
 #include <algorithm>
+#include <cmath>
 #include <stdexcept>
 #include <filesystem>
 
@@ -79,6 +81,59 @@ namespace workphone::scene
         }
 
         if( !m_generated ) return;
+        {
+            std::unique_lock<std::recursive_mutex> lock( m_generationMutex, std::try_to_lock );
+            if( !lock.owns_lock() || !m_generated || m_activationPending ) return;
+            if( auto traffic = m_assets.cityTraffic )
+            {
+                // This component is reachable through both its owning actor and
+                // its explicit manager registration. Advance only once per task tick.
+                const auto tick = app->getTimer()->getTickCount( TaskId::Application );
+                if( tick != m_assets.cityTrafficLastTick )
+                {
+                    m_assets.cityTrafficLastTick = tick;
+                    const bool sourceCurrent = !m_assets.roadAuthoring ||
+                        ( traffic->sourceRevision() == m_assets.roadAuthoring->getSourceRevision() &&
+                          traffic->sourceRevision() == m_assets.roadAuthoring->getActiveRevision() );
+                    if( !sourceCurrent )
+                    {
+                        // An authored edit invalidates cached lanes immediately. The city
+                        // component rebuilds the graph and actors on its next refresh.
+                        m_assets.cityTrafficAccumulator = 0;
+                    }
+                    else if( app->isPlaying() && !app->isPaused() )
+                    {
+                        const auto player = m_assets.body ? getActor() : nullptr;
+                        if( player ) traffic->setExternalObstacle( player->getPosition(), 2.2f );
+                        else traffic->setExternalObstacle( {}, 0, false );
+                        const f32 frame = std::clamp( f32( app->getTimer()->getDeltaTime() ), 0.f, .12f );
+                        m_assets.cityTrafficAccumulator =
+                            std::min( m_assets.cityTrafficAccumulator + frame, .15f );
+                        constexpr f32 fixedStep = 1.f / 30.f;
+                        for( u32 step = 0; step < 4 &&
+                             m_assets.cityTrafficAccumulator >= fixedStep; ++step )
+                        {
+                            traffic->step( fixedStep );
+                            m_assets.cityTrafficAccumulator -= fixedStep;
+                        }
+                        const auto &poses = traffic->vehicles();
+                        const auto count = std::min( poses.size(), m_assets.cityTrafficActors.size() );
+                        for( size_t index = 0; index < count; ++index )
+                        {
+                            auto &entry = m_assets.cityTrafficActors[index];
+                            const auto &pose = poses[index];
+                            if( !entry.actor || entry.id != pose.id ||
+                                pose.forward.lengthSquared() < .0001f ) continue;
+                            entry.actor->setPosition( pose.position +
+                                Vector3F( 0, race::cityTrafficAppearance::chassisLift, 0 ) );
+                            entry.actor->setOrientation(
+                                race::cityTrafficAppearance::roadOrientation( pose.forward ) );
+                            entry.actor->updateTransform();
+                        }
+                    }
+                }
+            }
+        }
         std::shared_ptr<race::CityStreaming> streaming;
         {
             std::unique_lock<std::recursive_mutex> lock( m_generationMutex, std::try_to_lock );
@@ -174,6 +229,9 @@ namespace workphone::scene
         m_assets.swap( retired );
         if( retired.cityStreaming ) retired.cityStreaming->close();
         retired.cityStreaming.reset();
+        if( retired.cityTraffic ) retired.cityTraffic->clear();
+        retired.cityTraffic.reset();
+        retired.cityTrafficActors.clear();
         // Release producer storage before callbacks can allocate during retirement.
         retired.vehicle = {};
         retired.circuit = {};

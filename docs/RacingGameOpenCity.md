@@ -32,8 +32,9 @@ Revision 4 gives the city four direct main approaches into its centre at the
 origin. The 12 m main roads connect the outskirts to the centre; 9 m district
 roads distribute traffic around the neighbourhoods, and 7 m local streets fill
 the blocks. New local junctions on main roads require more spacing. Their outer
-ends are intentional gateways for future expansion. This is a geometry and
-connectivity hierarchy; it does not add traffic simulation or enforced speed limits.
+ends are intentional gateways for future expansion. This layout establishes the
+geometry and connectivity used by terrain-city traffic; speed limits are not
+authorable in this generator.
 
 Central building plots receive priority, producing a developed commercial core
 before the remaining building budget fills the surrounding neighbourhoods.
@@ -135,6 +136,31 @@ build a city without a race vehicle. Set **City Terrain Roads** to create an
 editable road source and terrain, or enter an existing **City Road Authoring
 UUID** to reuse its bound terrain. The standalone city uses the same district,
 building style, mesh slot, street detail, and route settings as the racing city.
+
+For a terrain city, **City Traffic Density** sets the share of a bounded traffic
+fleet from 0 to 100 (default 35; 0 disables it). **Traffic Drive On Left** switches
+the travel side from the default right-hand side. Press **Regenerate** after changing
+either setting. Traffic follows the fitted road source and is rebuilt from the
+current road revision; it is not a lap opponent or a physical driving controller.
+The same settings are available on **ProceduralRaceScene**. This native component
+setting is separate from the `RacingGameOpenCity` Lua Inspector options above.
+
+The native sample accepts `--city-traffic-density 0..100` and
+`--city-traffic-drive-on-left` with `--city-terrain-roads`. For a fixed view of
+moving traffic and structured evidence, run:
+
+```powershell
+& .\Tools\powershell\CaptureProceduralRacing.ps1 -Configuration Debug -Scene city `
+    -CityTerrainRoads -CityLayout lsystem -CityBlocks 6 -CityTrafficDensity 50 `
+    -Views traffic -Seconds 4
+```
+
+The evidence records active, moving and yielding counts, completed junction and
+roundabout transfers, travel distance, nearest separation, sampled following
+headway, and the road source revision. The traffic camera targets a simulated
+vehicle and records its displacement during the capture. `-CityTrafficDriveOnLeft`
+selects the other travel side. A density of 0 can be checked with a `street` view;
+the `traffic` view requires a nonzero density.
 
 Add **ProceduralCircuitScene** for a seeded circuit with scenery and collision.
 The city and circuit components share seed, appearance quality, foliage, and
@@ -261,7 +287,8 @@ session-only records because their geometry can change during editing.
 City size and route are Inspector/session options; seed, quality and laps persist.
 
 This implementation is a bounded procedural city with solo racing and exploration.
-Traffic, opponents, interiors and streamed world sectors are not implemented.
+Generated terrain cities have a bounded traffic simulation. Opponents, interiors
+and streamed world sectors are not implemented.
 
 ## Editable splines, terrain and connected transport
 
