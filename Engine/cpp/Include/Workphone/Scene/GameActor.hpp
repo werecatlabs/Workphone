@@ -15,11 +15,15 @@
 #include <Workphone/Core/ConcurrentFixedArrayGrowable.hpp>
 #include <Workphone/System/FSMListener.hpp>
 #include <Workphone/Thread/RecursiveSpinMutex.hpp>
+#include <memory>
 
 namespace workphone
 {
     namespace scene
     {
+        class GameActorSystem;
+        struct GameActorComponentUpdates;
+
         /**
          * @class GameActor
          * @brief Concrete implementation of the IGameActor interface.
@@ -35,8 +39,9 @@ namespace workphone
          *  - Participate in scene graph operations: parenting, child management and cascading state.
          *
          * Concurrency:
-         *  - Components and children use intrusive lists protected by the actor mutex; tags use
-         *    a concurrent container.
+         *  - Membership locks protect the component and child lists. Component callbacks run
+         *    from a pinned update list after releasing the membership lock.
+         *  - Optional metadata has an independent actor-local lock.
          *  - A mutex API (lock/try_lock/unlock and shared variants) is provided for callers that
          *    require stronger external synchronization for multi-step operations.
          *
@@ -610,6 +615,7 @@ namespace workphone
             WP_CLASS_REGISTER_DECL;
 
         protected:
+            friend class GameActorSystem;
             /**
              * @brief Internal handler for actor FSM events.
              * @param state Current state id.
@@ -674,9 +680,6 @@ namespace workphone
             AtomicSmartPtr<ITransform> m_transform;
             u64 m_staticWorldRevision = 0;
 
-            //! Factory manager used to create components and subobjects (weak reference).
-            AtomicWeakPtr<IFactoryManager> m_factoryManager;
-
             //! Local axis-aligned bounding box of the actor.
             AABB3<real_Num> m_localAABB;
 
@@ -699,6 +702,8 @@ namespace workphone
             IComponent *m_componentsHead = nullptr;
             IComponent *m_componentsTail = nullptr;
             mutable RecursiveSpinMutex m_componentsMutex;
+            //! Immutable callback list rebuilt on demand after membership changes.
+            std::shared_ptr<const GameActorComponentUpdates> m_componentUpdates;
 
             //! Null-terminated, C-style linked list of direct child actors.
             IGameActor *m_childrenHead = nullptr;
@@ -706,11 +711,11 @@ namespace workphone
             u32 m_numChildren = 0;
             mutable RecursiveSpinMutex m_childrenMutex;
 
-            //! Arbitrary string tags attached to the actor for lookup and filtering.
-            ConcurrentArray<FixedString<128>> m_tags;
-
-            //! Name of the layer this actor belongs to. Used for rendering and visibility groups.
-            AtomicObject<FixedString<128>> m_layer;
+            //! Optional authoring/filter metadata. Empty actors allocate no tag/layer storage.
+            struct Metadata;
+            std::unique_ptr<Metadata> m_metadata;
+            //! Independent of the scene-manager lock so metadata reads can run on render workers.
+            mutable RecursiveSpinMutex m_metadataMutex;
 
             //! Static extension used to generate unique ids for newly created actors.
             static u32 m_idExt;

@@ -1,6 +1,7 @@
 #include "UnitTests.hpp"
 #include "TestGuard.hpp"
 #include <Workphone/Workphone.hpp>
+#include <Workphone/System/WorldStreamingScheduler.hpp>
 #include <boost/test/unit_test.hpp>
 #include <chrono>
 #include <condition_variable>
@@ -2687,6 +2688,256 @@ BOOST_AUTO_TEST_CASE( actor_streaming )
     }
 }
 
+// Contiguous component dispatch contracts. Membership stays actor-owned while
+// callbacks run against a pinned immutable view outside the membership lock.
+namespace
+{
+    struct ActorSourceBudget
+    {
+        std::shared_ptr<WorldStreamingScheduler> scheduler = WorldStreamingScheduler::shared();
+        u64 original = scheduler->stats().limits[size_t( StreamMemoryClass::SourceCpu )];
+        ~ActorSourceBudget()
+        {
+            String error;
+            scheduler->setBudget( StreamMemoryClass::SourceCpu, original, error );
+        }
+        u64 used() const { return scheduler->stats().used[size_t( StreamMemoryClass::SourceCpu )]; }
+        void set( u64 bytes )
+        {
+            String error;
+            BOOST_REQUIRE_MESSAGE( scheduler->setBudget( StreamMemoryClass::SourceCpu, bytes, error ), error );
+        }
+        void restore() { set( original ); }
+    };
+
+    void attachDispatchComponent( SmartPtr<IGameActor> actor, SmartPtr<IComponent> component )
+    {
+        actor->addComponentInstance( component );
+        // These CPU-only callback probes have no graphics or FSM resources to
+        // load, but exercise the same unload/ownership path as loaded components.
+        component->setLoadingState( LoadingState::Loaded );
+    }
+
+    void dispatchActorPhase( SmartPtr<IGameActor> actor, unsigned phase )
+    {
+        if( phase == 0 ) actor->preUpdate();
+        else if( phase == 1 ) actor->update();
+        else actor->postUpdate();
+    }
+
+    class DispatchLifetimeComponent : public UpdateCallbackComponent
+    {
+    public:
+        std::shared_ptr<bool> destroyed;
+        ~DispatchLifetimeComponent() override { if( destroyed ) *destroyed = true; }
+    };
+
+    class DispatchRenderTexture : public RenderTexture
+    {
+    public:
+        unsigned preCalls = 0, updateCalls = 0, postCalls = 0;
+        void preUpdate() override { ++preCalls; }
+        void update() override { ++updateCalls; }
+        void postUpdate() override { ++postCalls; }
+    };
+}
+
+BOOST_AUTO_TEST_CASE( actor_dispatch_warm_and_empty_views_run_at_the_source_budget_cap )
+{
+    TestGuard guard;
+    ActorSourceBudget budget;
+    auto actor = guard.createBasicActor();
+    auto empty = guard.createBasicActor();
+    auto first = make_ptr<UpdateCallbackComponent>();
+    auto second = make_ptr<UpdateCallbackComponent>();
+    unsigned firstCalls = 0, secondCalls = 0;
+    first->callback = [&]() { ++firstCalls; };
+    second->callback = [&]() { ++secondCalls; };
+    attachDispatchComponent( actor, first );
+    attachDispatchComponent( actor, second );
+    actor->preUpdate();
+    const auto retained = budget.used();
+    budget.set( retained );
+    for( unsigned repetition = 0; repetition < 16; ++repetition )
+        for( unsigned phase = 0; phase < 3; ++phase )
+        {
+            BOOST_CHECK_NO_THROW( dispatchActorPhase( actor, phase ) );
+            BOOST_CHECK_NO_THROW( dispatchActorPhase( empty, phase ) );
+        }
+    BOOST_CHECK_EQUAL( budget.used(), retained );
+    budget.restore();
+    BOOST_CHECK_EQUAL( firstCalls, 49u );
+    BOOST_CHECK_EQUAL( secondCalls, 49u );
+    first->callback = second->callback = nullptr;
+    BOOST_TEST_MESSAGE( "Actor object bytes: " << sizeof( GameActor ) );
+}
+
+BOOST_AUTO_TEST_CASE( actor_dispatch_cold_admission_failure_preserves_membership_and_retries )
+{
+    TestGuard guard;
+    ActorSourceBudget budget;
+    auto actor = guard.createBasicActor();
+    auto component = make_ptr<UpdateCallbackComponent>();
+    unsigned calls = 0;
+    component->callback = [&]() { ++calls; };
+    attachDispatchComponent( actor, component );
+    const auto before = budget.used();
+    budget.set( before );
+    BOOST_CHECK_THROW( actor->preUpdate(), std::bad_alloc );
+    BOOST_CHECK_EQUAL( calls, 0u );
+    BOOST_CHECK_EQUAL( budget.used(), before );
+    BOOST_CHECK( component->getActorPtr() == actor.get() );
+    budget.restore();
+    for( unsigned phase = 0; phase < 3; ++phase ) dispatchActorPhase( actor, phase );
+    BOOST_CHECK_EQUAL( calls, 3u );
+    BOOST_CHECK_EQUAL( actor->getComponents().size(), 1u );
+    component->callback = nullptr;
+}
+
+BOOST_AUTO_TEST_CASE( actor_dispatch_membership_changes_preserve_order_and_defer_new_callbacks )
+{
+    TestGuard guard;
+    for( unsigned phase = 0; phase < 3; ++phase )
+    {
+        auto actor = guard.createBasicActor();
+        auto first = make_ptr<UpdateCallbackComponent>();
+        auto second = make_ptr<UpdateCallbackComponent>();
+        auto added = make_ptr<UpdateCallbackComponent>();
+        std::vector<unsigned> order;
+        bool addDuringCallback = true;
+        first->callback = [&]() {
+            order.push_back( 1 );
+            if( addDuringCallback )
+            {
+                addDuringCallback = false;
+                attachDispatchComponent( actor, added );
+            }
+        };
+        second->callback = [&]() { order.push_back( 2 ); };
+        added->callback = [&]() { order.push_back( 3 ); };
+        attachDispatchComponent( actor, first );
+        attachDispatchComponent( actor, second );
+        dispatchActorPhase( actor, phase );
+        BOOST_CHECK( order == std::vector<unsigned>( { 1, 2 } ) );
+        order.clear();
+        dispatchActorPhase( actor, phase );
+        BOOST_CHECK( order == std::vector<unsigned>( { 1, 2, 3 } ) );
+        actor->removeComponentInstance( second );
+        order.clear();
+        dispatchActorPhase( actor, phase );
+        BOOST_CHECK( order == std::vector<unsigned>( { 1, 3 } ) );
+        attachDispatchComponent( actor, second );
+        order.clear();
+        dispatchActorPhase( actor, phase );
+        BOOST_CHECK( order == std::vector<unsigned>( { 1, 3, 2 } ) );
+        first->callback = second->callback = added->callback = nullptr;
+        guard.sceneManager->destroyActor( actor );
+    }
+}
+
+BOOST_AUTO_TEST_CASE( actor_dispatch_reparented_component_is_skipped_by_the_old_owner )
+{
+    TestGuard guard;
+    for( unsigned phase = 0; phase < 3; ++phase )
+    {
+        auto original = guard.createBasicActor();
+        auto destination = guard.createBasicActor();
+        auto first = make_ptr<UpdateCallbackComponent>();
+        auto moved = make_ptr<UpdateCallbackComponent>();
+        auto last = make_ptr<UpdateCallbackComponent>();
+        std::vector<unsigned> order;
+        bool moveDuringCallback = true;
+        first->callback = [&]() {
+            order.push_back( 1 );
+            if( moveDuringCallback )
+            {
+                moveDuringCallback = false;
+                original->removeComponentInstance( moved );
+                attachDispatchComponent( destination, moved );
+            }
+        };
+        moved->callback = [&]() { order.push_back( 2 ); };
+        last->callback = [&]() { order.push_back( 3 ); };
+        attachDispatchComponent( original, first );
+        attachDispatchComponent( original, moved );
+        attachDispatchComponent( original, last );
+        dispatchActorPhase( original, phase );
+        BOOST_CHECK( order == std::vector<unsigned>( { 1, 3 } ) );
+        BOOST_CHECK( moved->getActorPtr() == destination.get() );
+        order.clear();
+        dispatchActorPhase( destination, phase );
+        BOOST_CHECK( order == std::vector<unsigned>( { 2 } ) );
+        order.clear();
+        dispatchActorPhase( original, phase );
+        BOOST_CHECK( order == std::vector<unsigned>( { 1, 3 } ) );
+        first->callback = moved->callback = last->callback = nullptr;
+        guard.sceneManager->destroyActor( original );
+        guard.sceneManager->destroyActor( destination );
+    }
+}
+
+BOOST_AUTO_TEST_CASE( actor_dispatch_removal_pins_current_callback_lifetimes )
+{
+    TestGuard guard;
+    auto actor = guard.createBasicActor();
+    auto first = make_ptr<UpdateCallbackComponent>();
+    auto removed = make_ptr<DispatchLifetimeComponent>();
+    auto destroyed = std::make_shared<bool>( false );
+    bool aliveAfterRemoval = false;
+    unsigned removedCalls = 0;
+    removed->destroyed = destroyed;
+    removed->setObjectFlag( OBJECT_FLAG_GARBAGE_COLLECTED, false );
+    removed->callback = [&]() { ++removedCalls; };
+    first->callback = [&]() {
+        actor->removeComponentInstance( removed );
+        removed = nullptr;
+        aliveAfterRemoval = !*destroyed;
+    };
+    attachDispatchComponent( actor, first );
+    attachDispatchComponent( actor, removed );
+    actor->update();
+    first->callback = nullptr;
+    BOOST_CHECK( aliveAfterRemoval );
+    BOOST_CHECK( *destroyed );
+    BOOST_CHECK_EQUAL( removedCalls, 0u );
+}
+
+BOOST_AUTO_TEST_CASE( actor_dispatch_render_texture_refresh_remains_explicit )
+{
+    TestGuard guard;
+    auto actor = guard.createBasicActor();
+    auto texture = make_ptr<DispatchRenderTexture>();
+    actor->addComponentInstance( texture );
+    actor->preUpdate();
+    actor->update();
+    actor->postUpdate();
+    BOOST_CHECK_EQUAL( texture->preCalls, 1u );
+    BOOST_CHECK_EQUAL( texture->updateCalls, 0u );
+    BOOST_CHECK_EQUAL( texture->postCalls, 1u );
+    texture->update();
+    BOOST_CHECK_EQUAL( texture->updateCalls, 1u );
+}
+
+BOOST_AUTO_TEST_CASE( actor_dispatch_cached_teardown_releases_membership_at_the_source_budget_cap )
+{
+    TestGuard guard;
+    ActorSourceBudget budget;
+    auto actor = guard.createBasicActor();
+    auto component = make_ptr<UpdateCallbackComponent>();
+    attachDispatchComponent( actor, component );
+    actor->update();
+    const auto retained = budget.used();
+    budget.set( retained );
+    BOOST_CHECK_NO_THROW( actor->unload( nullptr ) );
+    BOOST_CHECK_LE( budget.used(), retained );
+    budget.restore();
+    BOOST_CHECK( actor->getLoadingState() == LoadingState::Unloaded );
+    BOOST_CHECK( !actor->getTransform() );
+    BOOST_CHECK( component->getActorPtr() == nullptr );
+    BOOST_CHECK( actor->getComponents().empty() );
+    guard.sceneManager->destroyActor( actor );
+}
+
 BOOST_AUTO_TEST_CASE( actor_detached_unload_does_not_require_game_manager )
 {
     TestGuard guard;
@@ -2714,6 +2965,127 @@ BOOST_AUTO_TEST_CASE( actor_detached_unload_does_not_require_game_manager )
     actor = nullptr; // Factory finalization must also tolerate the repeated unload.
 }
 
+// Resource file-path storage contracts. Actor metadata has an optional payload;
+// other Resource specializations retain their existing inline atomic value.
+namespace
+{
+    class ActorFilePathStorageProbe : public GameActor
+    {
+    public:
+        using Storage = decltype( m_filePath );
+    };
+
+    class ComponentFilePathStorageProbe : public Component
+    {
+    public:
+        using Storage = decltype( m_filePath );
+    };
+
+    static_assert( std::is_same_v<ComponentFilePathStorageProbe::Storage,
+                                  AtomicObject<FixedString<1024>>> );
+    static_assert( sizeof( ActorFilePathStorageProbe::Storage ) + 1024 <=
+                   sizeof( ComponentFilePathStorageProbe::Storage ) );
+
+}
+
+BOOST_AUTO_TEST_CASE( actor_resource_file_path_preserves_interface_and_fixed_capacity )
+{
+    TestGuard guard;
+    auto actor = guard.sceneManager->createActor();
+    auto other = guard.sceneManager->createActor();
+    BOOST_REQUIRE( actor );
+    BOOST_REQUIRE( other );
+    BOOST_CHECK_EQUAL( actor->getTypeInfo(), GameActor::typeInfo() );
+    auto resource = workphone::dynamic_pointer_cast<IResource>( actor );
+    BOOST_REQUIRE( resource );
+    BOOST_CHECK( resource->getFilePath().empty() );
+    resource->setFilePath( "Assets/Prefabs/Actor.prefab" );
+    BOOST_CHECK_EQUAL( actor->getFilePath(), "Assets/Prefabs/Actor.prefab" );
+    BOOST_CHECK( other->getFilePath().empty() );
+
+    const String maximum( 1024, 'p' );
+    actor->setFilePath( maximum );
+    BOOST_CHECK_EQUAL( resource->getFilePath(), maximum );
+#if !WP_ENABLE_ASSERTS
+    const String overlong( 1025, 'q' );
+    BOOST_CHECK_THROW( resource->setFilePath( overlong ), std::length_error );
+    BOOST_CHECK_EQUAL( resource->getFilePath(), maximum );
+#endif
+    resource->setFilePath( String() );
+    BOOST_CHECK( actor->getFilePath().empty() );
+}
+
+BOOST_AUTO_TEST_CASE( actor_resource_file_path_admission_reuse_clear_and_release )
+{
+    TestGuard guard;
+    auto actor = guard.sceneManager->createActor();
+    auto component = make_ptr<Component>();
+    const String first( "Assets/First.prefab" ), second( "Assets/Second.prefab" ), empty;
+    ActorSourceBudget budget;
+    const auto baseline = budget.used();
+    budget.set( baseline );
+    BOOST_CHECK_NO_THROW( actor->setFilePath( empty ) );
+    BOOST_CHECK_EQUAL( budget.used(), baseline );
+    BOOST_CHECK_THROW( actor->setFilePath( first ), std::bad_alloc );
+    BOOST_CHECK( actor->getFilePath().empty() );
+    BOOST_CHECK_EQUAL( budget.used(), baseline );
+    BOOST_CHECK_NO_THROW( component->setFilePath( first ) );
+    BOOST_CHECK_EQUAL( component->getFilePath(), first );
+    BOOST_CHECK_EQUAL( budget.used(), baseline );
+
+    budget.restore();
+    actor->setFilePath( first );
+    const auto retained = budget.used();
+    BOOST_CHECK_GT( retained, baseline );
+    budget.set( retained );
+    BOOST_CHECK_NO_THROW( actor->setFilePath( second ) );
+    BOOST_CHECK_EQUAL( actor->getFilePath(), second );
+    BOOST_CHECK_EQUAL( budget.used(), retained );
+    BOOST_CHECK_NO_THROW( actor->setFilePath( empty ) );
+    BOOST_CHECK_EQUAL( budget.used(), baseline );
+    budget.set( baseline );
+    BOOST_CHECK_THROW( actor->setFilePath( first ), std::bad_alloc );
+    BOOST_CHECK( actor->getFilePath().empty() );
+    budget.restore();
+
+    // A standalone optional payload releases its retained SourceCpu bytes on destruction.
+    const auto beforePayload = budget.used();
+    {
+        resource_detail::ActorFilePath value;
+        BOOST_CHECK_EQUAL( budget.used(), beforePayload );
+        value = FixedString<1024>( first.begin(), first.end() );
+        BOOST_CHECK_GT( budget.used(), beforePayload );
+    }
+    BOOST_CHECK_EQUAL( budget.used(), beforePayload );
+}
+
+BOOST_AUTO_TEST_CASE( actor_resource_file_path_reads_are_atomic_during_replacement )
+{
+    TestGuard guard;
+    auto actor = guard.sceneManager->createActor();
+    const String first( 901, 'a' ), second( 973, 'b' ), empty;
+    actor->setFilePath( first );
+    std::atomic<bool> start{ false }, invalid{ false };
+    std::thread writer( [&]() {
+        while( !start.load() ) std::this_thread::yield();
+        for( u32 i = 0; i < 6000; ++i )
+            actor->setFilePath( i % 3 == 0 ? empty : ( i % 3 == 1 ? first : second ) );
+    } );
+    std::thread reader( [&]() {
+        while( !start.load() ) std::this_thread::yield();
+        for( u32 i = 0; i < 10000; ++i )
+        {
+            const auto value = actor->getFilePath();
+            if( value != first && value != second && !value.empty() ) invalid.store( true );
+        }
+    } );
+    start.store( true );
+    writer.join();
+    reader.join();
+    BOOST_CHECK( !invalid.load() );
+    BOOST_CHECK_EQUAL( actor->getFilePath(), second );
+}
+
 BOOST_AUTO_TEST_CASE( camera_detached_unload_does_not_require_game_manager )
 {
     TestGuard guard;
@@ -2732,4 +3104,128 @@ BOOST_AUTO_TEST_CASE( camera_detached_unload_does_not_require_game_manager )
     camera->unload(nullptr);
     BOOST_CHECK(camera->getLoadingState() == LoadingState::Unloaded);
     camera = nullptr;
+}
+
+// Sparse actor metadata contracts: independent of component dispatch snapshots.
+namespace
+{
+    class ActorMetadataProbe : public GameActor
+    {
+    public:
+        bool hasMetadataStorage() const { return bool( m_metadata ); }
+    };
+
+}
+
+BOOST_AUTO_TEST_CASE( actor_sparse_metadata_preserves_tag_order_exact_add_and_layer_limits )
+{
+    TestGuard guard;
+    auto actor = make_ptr<ActorMetadataProbe>();
+    BOOST_CHECK( !actor->hasMetadataStorage() );
+    actor->setTags( { " beta ", "alpha", "beta", "", "  ", " alpha " } );
+    auto tags = actor->getTags();
+    BOOST_REQUIRE_EQUAL( tags.size(), 2u );
+    BOOST_CHECK_EQUAL( tags[0], "beta" );
+    BOOST_CHECK_EQUAL( tags[1], "alpha" );
+    BOOST_CHECK( tags.get_allocator().isSourceBudgeted() );
+    actor->addTag( " beta " );
+    actor->addTag( " beta " );
+    actor->addTag( "" );
+    tags = actor->getTags();
+    BOOST_REQUIRE_EQUAL( tags.size(), 4u );
+    BOOST_CHECK_EQUAL( tags[2], " beta " );
+    BOOST_CHECK_EQUAL( tags[3], "" );
+    BOOST_CHECK( actor->compareTag( "beta" ) && actor->hasTag( " beta " ) );
+    BOOST_CHECK( actor->hasTag( "" ) );
+    actor->removeTag( "beta" );
+    tags = actor->getTags();
+    BOOST_REQUIRE_EQUAL( tags.size(), 3u );
+    BOOST_CHECK_EQUAL( tags[0], "alpha" );
+    BOOST_CHECK_EQUAL( tags[1], " beta " );
+    actor->setLayer( "  gameplay  " );
+    actor->clearTags();
+    BOOST_CHECK_EQUAL( actor->getLayer(), "gameplay" );
+    BOOST_CHECK( actor->hasMetadataStorage() );
+    // The string assignment used by tags and layers requires count < capacity.
+    const String maximum( 127, 'x' );
+    actor->setLayer( maximum );
+    BOOST_CHECK_EQUAL( actor->getLayer(), maximum );
+    actor->addTag( maximum );
+    BOOST_REQUIRE_EQUAL( actor->getTags().size(), 1u );
+    BOOST_CHECK( actor->hasTag( maximum ) );
+    actor->setTags( {} );
+    actor->setLayer( " \t " );
+    BOOST_CHECK( !actor->hasMetadataStorage() );
+}
+
+BOOST_AUTO_TEST_CASE( actor_sparse_metadata_is_lazy_budgeted_and_failure_atomic )
+{
+    TestGuard guard;
+    auto actor = make_ptr<ActorMetadataProbe>();
+    ActorSourceBudget budget;
+    const auto baseline = budget.used();
+    budget.set( baseline );
+    BOOST_CHECK( actor->getTags().empty() );
+    BOOST_CHECK( actor->getLayer().empty() );
+    BOOST_CHECK( !actor->hasTag( "missing" ) && !actor->compareTag( "missing" ) );
+    actor->clearTags();
+    actor->removeTag( "missing" );
+    actor->setTags( { "", "  " } );
+    actor->setLayer( " \t " );
+    BOOST_CHECK( !actor->hasMetadataStorage() );
+    BOOST_CHECK_EQUAL( budget.used(), baseline );
+    BOOST_CHECK_THROW( actor->addTag( "first" ), std::bad_alloc );
+    BOOST_CHECK_THROW( actor->setLayer( "first" ), std::bad_alloc );
+    BOOST_CHECK( !actor->hasMetadataStorage() );
+    BOOST_CHECK_EQUAL( budget.used(), baseline );
+    budget.restore();
+    actor->addTag( "stable" );
+    const auto admitted = budget.used();
+    BOOST_CHECK_GT( admitted, baseline );
+    budget.set( admitted );
+    actor->addTag( "stable" ); // Exact duplicate is allocation-free.
+    actor->setLayer( "layer" ); // The admitted sparse record already has a layer slot.
+    BOOST_CHECK_THROW( actor->setTags( { "replacement" } ), std::bad_alloc );
+    BOOST_CHECK_THROW( actor->getTags(), std::bad_alloc );
+    BOOST_CHECK( actor->hasTag( "stable" ) && !actor->hasTag( "replacement" ) );
+    BOOST_CHECK_EQUAL( actor->getLayer(), "layer" );
+    BOOST_CHECK_EQUAL( budget.used(), admitted );
+    budget.restore();
+    actor->clearTags();
+    actor->setLayer( "" );
+    BOOST_CHECK( !actor->hasMetadataStorage() );
+    BOOST_CHECK_EQUAL( budget.used(), baseline );
+}
+
+BOOST_AUTO_TEST_CASE( actor_sparse_metadata_reads_do_not_take_scene_manager_lock )
+{
+    TestGuard guard;
+    auto actor = make_ptr<GameActor>();
+    actor->addTag( "worker" );
+    actor->setLayer( "render" );
+    std::mutex gate;
+    std::condition_variable completed;
+    bool done = false, correct = false, finishedWhileManagerLocked = false;
+    guard.sceneManager->lock();
+    std::thread reader( [&]() {
+        try
+        {
+            auto tags = actor->getTags();
+            correct = tags.size() == 1 && tags[0] == "worker" &&
+                      actor->hasTag( "worker" ) && actor->compareTag( "worker" ) &&
+                      actor->getLayer() == "render";
+        }
+        catch( ... ) {}
+        { std::lock_guard<std::mutex> lock( gate ); done = true; }
+        completed.notify_one();
+    } );
+    {
+        std::unique_lock<std::mutex> lock( gate );
+        finishedWhileManagerLocked = completed.wait_for(
+            lock, std::chrono::seconds( 2 ), [&]() { return done; } );
+    }
+    guard.sceneManager->unlock();
+    reader.join();
+    BOOST_CHECK( finishedWhileManagerLocked );
+    BOOST_CHECK( correct );
 }
