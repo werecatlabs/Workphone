@@ -75,6 +75,7 @@ namespace workphone
         void setCityTerrainRelief( f32 relief ) { m_cityTerrainRelief = relief; }
         void setCityStreetDetail( s32 detail ) { m_cityStreetDetail = detail; }
         void setCityStreetPropDensity( s32 density ) { m_cityStreetPropDensity = density; }
+        void setCityLayoutDebug( bool blocks, bool lots ) { m_cityDebugBlocks = blocks; m_cityDebugLots = lots; }
         void setCityStreaming( bool enabled ) { m_cityStreaming = enabled; }
         void setCityStreamingSmokeTest( bool enabled ) { m_cityStreamingSmokeTest = enabled; }
         void setCitySourceMemoryMiB( s32 value ) { m_citySourceMemoryMiB = value; }
@@ -239,6 +240,7 @@ namespace workphone
         s32 m_cityBlocks = 8, m_cityRoute = 0;
         s32 m_cityStreetDetail = -1;
         s32 m_cityStreetPropDensity = -1;
+        bool m_cityDebugBlocks = false, m_cityDebugLots = false;
         bool m_cityStreaming = true;
         bool m_cityStreamingSmokeTest = false;
         enum class CitySmokePhase { Startup, ColdAway, Near, Away, Return, Automatic, VehicleHold, CameraColdAway, CameraNear, CameraAway, CameraReturn, VehicleRelease, Passed, Failed };

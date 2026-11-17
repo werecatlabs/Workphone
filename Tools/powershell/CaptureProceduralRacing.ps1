@@ -26,6 +26,8 @@ param(
     [ValidateRange(30, 7200)][int]$TimeoutSeconds = 600,
     [ValidateRange(0, 100)][int]$CityStreetDetail = 100,
     [ValidateRange(0, 200)][int]$CityStreetPropDensity = 150,
+    [switch]$CityDebugBlocks,
+    [switch]$CityDebugLots,
     [ValidateSet('on', 'off')][string]$CityStreaming = 'off',
     [ValidateRange(128, 4096)][int]$CitySourceMemoryMiB = 1024,
     [switch]$CityStreamingSmokeTest,
@@ -48,6 +50,7 @@ if ($imposterViews.Count -and ($Scene -ne 'city' -or $RoadAuthoringShowcase -or 
 }
 if ($streetDetailExplicit -and !$CityTerrainRoads) { throw '-CityStreetDetail requires -CityTerrainRoads.' }
 if ($streetPropDensityExplicit -and !$CityTerrainRoads) { throw '-CityStreetPropDensity requires -CityTerrainRoads for capture validation.' }
+if (($CityDebugBlocks -or $CityDebugLots) -and !$CityTerrainRoads) { throw 'City debug overlay capture requires -CityTerrainRoads.' }
 if ($Views -contains 'frontage' -and !$CityTerrainRoads) { throw '-Views frontage requires -CityTerrainRoads.' }
 if ($Views -contains 'utilities' -and !$CityTerrainRoads) { throw '-Views utilities requires -CityTerrainRoads.' }
 if ($Views -contains 'park' -and !$CityTerrainRoads) { throw '-Views park requires -CityTerrainRoads.' }
@@ -150,6 +153,8 @@ $manifest = [ordered]@{
     cityTerrainRelief = $(if ($CityTerrainRoads) { $CityTerrainRelief } else { $null })
     cityStreetDetail = $(if ($streetDetailExplicit) { $CityStreetDetail } else { $null })
     cityStreetPropDensity = $(if ($streetPropDensityExplicit) { $CityStreetPropDensity } else { $null })
+    cityDebugBlocks = [bool]$CityDebugBlocks
+    cityDebugLots = [bool]$CityDebugLots
     cityStreaming = $(if ($Scene -eq 'city') { $CityStreaming } else { $null })
     citySourceMemoryMiB = $(if ($Scene -eq 'city') { $CitySourceMemoryMiB } else { $null })
     cityStreamingSmokeTest = [bool]$CityStreamingSmokeTest
@@ -182,6 +187,8 @@ try {
         if ($CityTerrainRoads) { $arguments += @('--city-terrain-roads', '--city-terrain-relief', $CityTerrainRelief.ToString([Globalization.CultureInfo]::InvariantCulture)) }
         if ($streetDetailExplicit) { $arguments += @('--city-street-detail', "$CityStreetDetail") }
         if ($streetPropDensityExplicit) { $arguments += @('--city-street-prop-density', "$CityStreetPropDensity") }
+        if ($CityDebugBlocks) { $arguments += '--city-debug-blocks' }
+        if ($CityDebugLots) { $arguments += '--city-debug-lots' }
         if ($CityBuildingStyle) { $arguments += @('--city-building-style', $CityBuildingStyle.ToLowerInvariant()) }
         foreach ($role in $buildingMeshRoles) {
             if ($buildingMeshPaths.Contains($role)) {
@@ -319,6 +326,11 @@ try {
             if ($streetPropDensityExplicit) {
                 $street = $run.evidence.terrainCity
                 $run.passed = $run.passed -and $null -ne $street -and $street.cityStreetPropDensity -eq $CityStreetPropDensity
+            }
+            if ($CityDebugBlocks -or $CityDebugLots) {
+                $debug = $run.evidence.terrainCity
+                $run.passed = $run.passed -and $null -ne $debug -and $debug.cityDebugValid -eq $true -and
+                    $debug.cityDebugBlocks -eq [bool]$CityDebugBlocks -and $debug.cityDebugLots -eq [bool]$CityDebugLots
             }
             if ($view -eq 'utilities') {
                 $utility = $run.evidence.cityUtilitiesCamera
