@@ -165,6 +165,7 @@ namespace workphone
                 {
                     return;
                 }
+
                 struct GroundPoint
                 {
                     real_Num x, z;
@@ -174,11 +175,13 @@ namespace workphone
                         return std::tie( x, z ) < std::tie( other.x, other.z );
                     }
                 };
+
                 struct RoadBounds
                 {
                     GroundPoint min, max;
                     Edge endpoints;
                 };
+
                 SourceBudgetVector<std::pair<GroundPoint, u32>> points;
                 points.reserve( input.positions.size() );
                 for( u32 i = 0; i < input.positions.size(); ++i )
@@ -194,7 +197,8 @@ namespace workphone
                 {
                     const auto &a = input.positions[edge.first], &b = input.positions[edge.second];
                     roads.push_back( { { std::min( a.X(), b.X() ), std::min( a.Z(), b.Z() ) },
-                                       { std::max( a.X(), b.X() ), std::max( a.Z(), b.Z() ) }, edge } );
+                                       { std::max( a.X(), b.X() ), std::max( a.Z(), b.Z() ) },
+                                       edge } );
                 }
                 std::sort( roads.begin(), roads.end(),
                            []( const auto &a, const auto &b ) { return a.min < b.min; } );
@@ -225,8 +229,8 @@ namespace workphone
                          ++other )
                     {
                         const auto [cId, dId] = other->endpoints;
-                        if( other->max.z < road->min.z || other->min.z > road->max.z ||
-                            start == cId || start == dId || end == cId || end == dId )
+                        if( other->max.z < road->min.z || other->min.z > road->max.z || start == cId ||
+                            start == dId || end == cId || end == dId )
                         {
                             continue;
                         }
