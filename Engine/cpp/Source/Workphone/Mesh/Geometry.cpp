@@ -3,9 +3,8 @@
 
 namespace workphone
 {
- 
 
-void Geometry::quad( Vector3F a, Vector3F b, Vector3F c, Vector3F d, Vector3F normal,
+    void Geometry::quad( Vector3F a, Vector3F b, Vector3F c, Vector3F d, Vector3F normal,
                          float u0 /*= 0*/, float u1 /*= 1*/, float v0 /*= 0*/, float v1 /*= 1 */ )
     {
         const auto base = static_cast<u32>( positions.size() );
