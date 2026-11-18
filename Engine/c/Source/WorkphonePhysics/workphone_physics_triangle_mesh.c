@@ -542,7 +542,7 @@ static unsigned query_four( const wp_triangle_mesh_query *q,
         SPHERE_AXIS( y )
         SPHERE_AXIS( z )
 #    undef SPHERE_AXIS
-            mask = _mm_cmple_ps( distance, _mm_set1_ps( q->radius * q->radius ) );
+        mask = _mm_cmple_ps( distance, _mm_set1_ps( q->radius * q->radius ) );
     }
     else
     {
@@ -756,8 +756,7 @@ static wp_s32 ray_aabb( wp_vec3f origin, wp_vec3f direction, wp_f32 max_distance
 static wp_s32 ray_triangle_distance( wp_vec3f origin, wp_vec3f direction, wp_f32 max_distance,
                                      wp_vec3f a, wp_vec3f b, wp_vec3f c, wp_f32 *out_distance )
 {
-    return wp_ray_triangle_distance_exact( origin, direction, max_distance,
-                                          a, b, c, out_distance );
+    return wp_ray_triangle_distance_exact( origin, direction, max_distance, a, b, c, out_distance );
 }
 
 static void raycast_bvh_node( const wp_triangle_mesh *mesh, wp_u32 node_index, wp_vec3f origin,

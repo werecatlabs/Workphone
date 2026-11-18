@@ -534,7 +534,7 @@ wp_s32 wp_triangle_box_overlaps( wp_vec3f a, wp_vec3f b, wp_vec3f c, wp_vec3f ha
     TRI_FACE( y )
     TRI_FACE( z )
 #undef TRI_FACE
-        if( !np_triangle_box_axis_overlaps( triangle_normal, a, b, c, half_extents, tolerance ) )
+    if( !np_triangle_box_axis_overlaps( triangle_normal, a, b, c, half_extents, tolerance ) )
     {
         return 0;
     }
