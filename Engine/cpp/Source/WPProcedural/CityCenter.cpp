@@ -80,7 +80,10 @@ namespace workphone
         void CityCenter::removeRoad( Handle handle )
         {
             const auto it = std::find( m_roads.begin(), m_roads.end(), handle );
-            if( it == m_roads.end() ) return;
+            if( it == m_roads.end() )
+            {
+                return;
+            }
 
             // Handle keeps its existing hash-only equality. Remove the first
             // matching entry and retain spare capacity, staging before mutation.
@@ -88,7 +91,10 @@ namespace workphone
             candidate.reserve( m_roads.capacity() );
             for( auto current = m_roads.begin(); current != m_roads.end(); ++current )
             {
-                if( current != it ) candidate.push_back( *current );
+                if( current != it )
+                {
+                    candidate.push_back( *current );
+                }
             }
             m_roads.swap( candidate );
         }

@@ -432,12 +432,9 @@ namespace workphone
             const auto derived = calculateMassProperties( c );
             const double massTolerance = std::max( 0.001, derived.massKg * 1.0e-6 );
             if( std::abs( derived.massKg - c.massProperties.massKg ) > massTolerance ||
-                std::abs( derived.centreOfMass.x - c.massProperties.centreOfMass.x ) >
-                    1.0e-6 ||
-                std::abs( derived.centreOfMass.y - c.massProperties.centreOfMass.y ) >
-                    1.0e-6 ||
-                std::abs( derived.centreOfMass.z - c.massProperties.centreOfMass.z ) >
-                    1.0e-6 )
+                std::abs( derived.centreOfMass.x - c.massProperties.centreOfMass.x ) > 1.0e-6 ||
+                std::abs( derived.centreOfMass.y - c.massProperties.centreOfMass.y ) > 1.0e-6 ||
+                std::abs( derived.centreOfMass.z - c.massProperties.centreOfMass.z ) > 1.0e-6 )
             {
                 addError( result, "derived mass properties are stale; call recomputeDerivedProperties" );
             }
@@ -517,14 +514,18 @@ namespace workphone
                 if( naturalHz < 1.0 || naturalHz > 6.5 )
                 {
                     char frequency[64];
-                    const auto formatted = std::to_chars( frequency, frequency + sizeof(frequency),
+                    const auto formatted = std::to_chars( frequency, frequency + sizeof( frequency ),
                                                           naturalHz, std::chars_format::general, 6 );
                     auto message = prefix;
                     message += "ride frequency ";
                     if( formatted.ec == std::errc() )
+                    {
                         message.append( frequency, size_t( formatted.ptr - frequency ) );
+                    }
                     else
+                    {
                         message += "unrepresentable";
+                    }
                     message += " Hz is outside the 1.0-6.5 Hz supported envelope";
                     result.warnings.push_back( std::move( message ) );
                 }

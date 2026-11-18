@@ -156,7 +156,8 @@ namespace workphone
             terrainData->setSize( Vector3F( static_cast<f32>( width ), static_cast<f32>( depth ),
                                             static_cast<f32>( height ) ) );
 
-            Array<Array<real_Num>> falloff{ typename Array<Array<real_Num>>::allocator_type( sourceBudget ) };
+            Array<Array<real_Num>> falloff{ typename Array<Array<real_Num>>::allocator_type(
+                sourceBudget ) };
             if( m_options.useFalloffMap )
             {
                 FalloffGenerator<real_Num> falloffGenerator;
@@ -191,7 +192,6 @@ namespace workphone
             const auto width = m_options.width;
             const auto height = m_options.height;
             const auto size = std::max( width, height );
-
 
             real_Num maxLocalNoiseHeight = 1000.0f;
             real_Num minLocalNoiseHeight = 0.0f;

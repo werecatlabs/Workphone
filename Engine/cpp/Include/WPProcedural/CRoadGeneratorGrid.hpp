@@ -29,8 +29,7 @@ namespace workphone
             void generateGrid();
             void generateGrid2();
             void generateGrid3();
-            void buildNetwork( SmartPtr<IRoadNetwork> target,
-                               SmartPtr<IRoadNetwork> source ) override;
+            void buildNetwork( SmartPtr<IRoadNetwork> target, SmartPtr<IRoadNetwork> source ) override;
             void generateGridAAA( SmartPtr<IRoadNetwork> roadNetwork );
 
             SmartPtr<ISharedObject> m_selectedLayer;
@@ -47,7 +46,8 @@ namespace workphone
             real_Num roadDistance = static_cast<real_Num>( 20.0 );
             real_Num roadLength = static_cast<real_Num>( 200.0 );
 
-            Array<SmartPtr<IProceduralCity>> m_cities{ Allocator<SmartPtr<IProceduralCity>>( sourceBudget ) };
+            Array<SmartPtr<IProceduralCity>> m_cities{ Allocator<SmartPtr<IProceduralCity>>(
+                sourceBudget ) };
         };
     }  // end namespace procedural
 }  // namespace workphone

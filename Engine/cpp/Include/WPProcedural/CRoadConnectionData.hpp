@@ -23,7 +23,8 @@ namespace workphone
          * world-space transform of the attachment point).  All fields are
          * accessible via the property system for game-editor inspection.
          */
-        class WPProcedural_API CRoadConnectionData : public IRoadConnectionData, public SourceBudgetObject
+        class WPProcedural_API CRoadConnectionData : public IRoadConnectionData,
+                                                     public SourceBudgetObject
         {
         public:
             using SourceBudgetObject::operator new;

@@ -262,7 +262,14 @@ namespace workphone
         private:
             struct Step
             {
-                enum class Kind { Terrain, TerrainMesh, Road, Block, CityMesh };
+                enum class Kind
+                {
+                    Terrain,
+                    TerrainMesh,
+                    Road,
+                    Block,
+                    CityMesh
+                };
                 Kind kind;
                 SmartPtr<IProceduralGenerator> generator;
                 SmartPtr<IProceduralScene> scene;
@@ -302,12 +309,12 @@ namespace workphone
             SmartPtr<IRoadGenerator> m_roadGenerator;
 
             /** @brief Array of procedural scenes managed by this generator. */
-            Array<SmartPtr<IProceduralScene>> m_scenes{
-                Allocator<SmartPtr<IProceduralScene>>( sourceBudget ) };
+            Array<SmartPtr<IProceduralScene>> m_scenes{ Allocator<SmartPtr<IProceduralScene>>(
+                sourceBudget ) };
 
             /** @brief Array of procedural cities managed by this generator. */
-            Array<SmartPtr<IProceduralCity>> m_cities{
-                Allocator<SmartPtr<IProceduralCity>>( sourceBudget ) };
+            Array<SmartPtr<IProceduralCity>> m_cities{ Allocator<SmartPtr<IProceduralCity>>(
+                sourceBudget ) };
 
             /** @brief Mutex for thread-safe access to generator data. */
             mutable RecursiveMutex m_mutex;

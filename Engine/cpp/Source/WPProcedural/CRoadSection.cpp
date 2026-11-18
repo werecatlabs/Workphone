@@ -51,8 +51,14 @@ namespace workphone
                 {
                     if( sidewalk )
                     {
-                        try { sidewalk->unload( nullptr ); }
-                        catch( const std::exception &e ) { WP_LOG_EXCEPTION( e ); }
+                        try
+                        {
+                            sidewalk->unload( nullptr );
+                        }
+                        catch( const std::exception &e )
+                        {
+                            WP_LOG_EXCEPTION( e );
+                        }
                     }
                 }
 
@@ -62,8 +68,14 @@ namespace workphone
                     {
                         if( roadElement )
                         {
-                            try { roadElement->unload( nullptr ); }
-                            catch( const std::exception &e ) { WP_LOG_EXCEPTION( e ); }
+                            try
+                            {
+                                roadElement->unload( nullptr );
+                            }
+                            catch( const std::exception &e )
+                            {
+                                WP_LOG_EXCEPTION( e );
+                            }
                         }
                     }
                 }
@@ -72,11 +84,16 @@ namespace workphone
                 {
                     if( roadElement )
                     {
-                        try { roadElement->unload( nullptr ); }
-                        catch( const std::exception &e ) { WP_LOG_EXCEPTION( e ); }
+                        try
+                        {
+                            roadElement->unload( nullptr );
+                        }
+                        catch( const std::exception &e )
+                        {
+                            WP_LOG_EXCEPTION( e );
+                        }
                     }
                 }
-
             }
             catch( std::exception &e )
             {
@@ -220,7 +237,8 @@ namespace workphone
         {
             auto nodes = getNodes();
 
-            auto roadNodes = Array<SmartPtr<IRoadNode>>( typename Array<SmartPtr<IRoadNode>>::allocator_type( sourceBudget ) );
+            auto roadNodes = Array<SmartPtr<IRoadNode>>(
+                typename Array<SmartPtr<IRoadNode>>::allocator_type( sourceBudget ) );
             roadNodes.reserve( nodes.size() );
 
             for( auto &node : nodes )
@@ -327,7 +345,8 @@ namespace workphone
 
         Array<SmartPtr<IRoadElement>> CRoadSection::splitRoadByConnection()
         {
-            auto result = Array<SmartPtr<IRoadElement>>( typename Array<SmartPtr<IRoadElement>>::allocator_type( sourceBudget ) );
+            auto result = Array<SmartPtr<IRoadElement>>(
+                typename Array<SmartPtr<IRoadElement>>::allocator_type( sourceBudget ) );
 
             try
             {
@@ -415,7 +434,10 @@ namespace workphone
                     {
                         roadElement->build();
                     }
-                    catch( const std::bad_alloc & ) { throw; }
+                    catch( const std::bad_alloc & )
+                    {
+                        throw;
+                    }
                     catch( std::exception &e )
                     {
                         WP_LOG_EXCEPTION( e );
@@ -424,7 +446,10 @@ namespace workphone
                     result.push_back( roadElement );
                 }
             }
-            catch( const std::bad_alloc & ) { throw; }
+            catch( const std::bad_alloc & )
+            {
+                throw;
+            }
             catch( std::exception &e )
             {
                 WP_LOG_EXCEPTION( e );
@@ -435,7 +460,8 @@ namespace workphone
 
         Array<Array<SmartPtr<IRoadNode>>> CRoadSection::getRoadNodesByConnections() const
         {
-            auto nodesByConnections = Array<Array<SmartPtr<IRoadNode>>>( typename Array<Array<SmartPtr<IRoadNode>>>::allocator_type( sourceBudget ) );
+            auto nodesByConnections = Array<Array<SmartPtr<IRoadNode>>>(
+                typename Array<Array<SmartPtr<IRoadNode>>>::allocator_type( sourceBudget ) );
 
             try
             {
@@ -456,7 +482,8 @@ namespace workphone
                 // current group and the first node of the next group so that
                 // adjacent segments share their junction point.
 
-                auto currentGroup = Array<SmartPtr<IRoadNode>>( typename Array<SmartPtr<IRoadNode>>::allocator_type( sourceBudget ) );
+                auto currentGroup = Array<SmartPtr<IRoadNode>>(
+                    typename Array<SmartPtr<IRoadNode>>::allocator_type( sourceBudget ) );
                 auto lastIndex = static_cast<s32>( nodes.size() ) - 1;
 
                 for( s32 i = 0; i <= lastIndex; ++i )
@@ -510,7 +537,10 @@ namespace workphone
                     nodesByConnections.push_back( currentGroup );
                 }
             }
-            catch( const std::bad_alloc & ) { throw; }
+            catch( const std::bad_alloc & )
+            {
+                throw;
+            }
             catch( std::exception &e )
             {
                 WP_LOG_EXCEPTION( e );

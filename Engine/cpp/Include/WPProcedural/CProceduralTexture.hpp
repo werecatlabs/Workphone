@@ -39,7 +39,7 @@ namespace workphone
             int m_height = 0;
             Array<ColourF> m_data{ Allocator<ColourF>( sourceBudget ) };
         };
-    }
-}
+    }  // namespace procedural
+}  // namespace workphone
 
 #endif

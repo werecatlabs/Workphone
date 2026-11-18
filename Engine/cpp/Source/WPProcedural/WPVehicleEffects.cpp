@@ -76,16 +76,32 @@ namespace workphone
                 std::array<VehicleEffectEvent, inlineCount> m_inline;
                 Array<VehicleEffectEvent> m_overflow{ Allocator<VehicleEffectEvent>( sourceBudget ) };
                 std::size_t m_size = 0;
+
             public:
-                std::size_t size() const noexcept { return m_size; }
+                std::size_t size() const noexcept
+                {
+                    return m_size;
+                }
+
                 const VehicleEffectEvent &operator[]( std::size_t index ) const
-                { return index < inlineCount ? m_inline[index] : m_overflow[index - inlineCount]; }
+                {
+                    return index < inlineCount ? m_inline[index] : m_overflow[index - inlineCount];
+                }
+
                 void push_back( const VehicleEffectEvent &event )
                 {
                     if( m_size == std::numeric_limits<std::size_t>::max() )
+                    {
                         throw std::length_error( "Vehicle effect count overflow" );
-                    if( m_size < inlineCount ) m_inline[m_size] = event;
-                    else m_overflow.push_back( event );
+                    }
+                    if( m_size < inlineCount )
+                    {
+                        m_inline[m_size] = event;
+                    }
+                    else
+                    {
+                        m_overflow.push_back( event );
+                    }
                     ++m_size;
                 }
             };
@@ -112,14 +128,13 @@ namespace workphone
             return state;
         }
 
-        static bool emitStaged( const VehicleEffectConfig &config,
-                                     const VehiclePhysicsConfig &physics,
-                                     const VehicleDynamicsState &dynamics,
-                                     const VehicleDynamicsTelemetry &telemetry,
-                                     const VehiclePresentationState &presentation,
-                                     const VehicleDamageTelemetry &damage,
-                                     const VehicleEffectEnvironment &environment, double dt,
-                                     VehicleEffectsState &state, StagedEvents &events )
+        static bool emitStaged( const VehicleEffectConfig &config, const VehiclePhysicsConfig &physics,
+                                const VehicleDynamicsState &dynamics,
+                                const VehicleDynamicsTelemetry &telemetry,
+                                const VehiclePresentationState &presentation,
+                                const VehicleDamageTelemetry &damage,
+                                const VehicleEffectEnvironment &environment, double dt,
+                                VehicleEffectsState &state, StagedEvents &events )
         {
             if( !std::isfinite( dt ) || dt <= 0.0 || dt > 0.25 ||
                 !std::isfinite( environment.wetness ) ||
@@ -334,27 +349,38 @@ namespace workphone
                                      VehicleEffectsState &state, Array<VehicleEffectEvent> &events )
         {
             static_assert( std::is_nothrow_copy_constructible_v<VehicleEffectEvent> &&
-                           std::is_nothrow_copy_assignable_v<VehicleEffectsState>,
+                               std::is_nothrow_copy_assignable_v<VehicleEffectsState>,
                            "Effect output/state commit must remain nonthrowing" );
             auto nextState = state;
             StagedEvents staged;
-            if( !emitStaged( config, physics, dynamics, telemetry, presentation, damage,
-                             environment, dt, nextState, staged ) ) return false;
+            if( !emitStaged( config, physics, dynamics, telemetry, presentation, damage, environment, dt,
+                             nextState, staged ) )
+            {
+                return false;
+            }
             if( staged.size() > events.max_size() - events.size() )
+            {
                 throw std::length_error( "Vehicle effect output capacity overflow" );
+            }
             const auto required = events.size() + staged.size();
             if( events.get_allocator().isSourceBudgeted() )
             {
                 // Event copies are POD and reserve is the final throwing stage.
                 // Existing Source storage can satisfy warm appends at the cap.
                 events.reserve( required );
-                for( std::size_t i = 0; i < staged.size(); ++i ) events.push_back( staged[i] );
+                for( std::size_t i = 0; i < staged.size(); ++i )
+                {
+                    events.push_back( staged[i] );
+                }
             }
             else
             {
                 auto nextEvents = makeSourceBudgetSnapshot( events );
                 nextEvents.reserve( required );
-                for( std::size_t i = 0; i < staged.size(); ++i ) nextEvents.push_back( staged[i] );
+                for( std::size_t i = 0; i < staged.size(); ++i )
+                {
+                    nextEvents.push_back( staged[i] );
+                }
                 events.swap( nextEvents );
             }
             state = nextState;

@@ -132,8 +132,7 @@ namespace workphone
             void generateRoads();
             void generateRoads8();
             void createIntersections();
-            virtual void buildNetwork( SmartPtr<IRoadNetwork> target,
-                                       SmartPtr<IRoadNetwork> source );
+            virtual void buildNetwork( SmartPtr<IRoadNetwork> target, SmartPtr<IRoadNetwork> source );
             void generateRoadsAAA( SmartPtr<IRoadNetwork> roadNetwork );
             void createIntersectionsAAA( SmartPtr<IRoadNetwork> roadNetwork,
                                          SmartPtr<IRoadNetwork> source );
@@ -155,8 +154,8 @@ namespace workphone
             SmartPtr<IProceduralCity> m_city;
             SmartPtr<IRoadNetwork> m_roadNetwork;
             SmartPtr<ICityGenerator> m_cityGenerator;
-            Array<SmartPtr<IProceduralCity>> m_cities{
-                Allocator<SmartPtr<IProceduralCity>>( sourceBudget ) };
+            Array<SmartPtr<IProceduralCity>> m_cities{ Allocator<SmartPtr<IProceduralCity>>(
+                sourceBudget ) };
 
             SRoadGeneratorOptions m_options;
             bool m_finished = false;

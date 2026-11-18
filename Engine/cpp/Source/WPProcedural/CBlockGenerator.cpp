@@ -43,7 +43,9 @@ namespace workphone
             {
                 RoadGraph result;
                 // Include ordinary nodes: merged lists can contain only junctions.
-                Array<SmartPtr<IProceduralNode>> nodes{ typename Array<SmartPtr<IProceduralNode>>::allocator_type( sourceBudget ) };
+                Array<SmartPtr<IProceduralNode>> nodes{
+                    typename Array<SmartPtr<IProceduralNode>>::allocator_type( sourceBudget )
+                };
                 for( auto node : network->getMergedNodes() )
                 {
                     nodes.push_back( node );
@@ -207,7 +209,8 @@ namespace workphone
             {
                 auto input = buildRoadGraph( network );
                 validateEmbedding( input );
-                Array<Graph::Primitive *> primitives{ typename Array<Graph::Primitive *>::allocator_type( sourceBudget ) };
+                Array<Graph::Primitive *> primitives{ typename Array<Graph::Primitive *>::allocator_type(
+                    sourceBudget ) };
 
                 struct Cleanup
                 {
@@ -223,7 +226,8 @@ namespace workphone
                 } cleanup{ primitives };
 
                 input.graph.ExtractPrimitives( primitives );
-                Array<SmartPtr<ICityBlock>> blocks{ typename Array<SmartPtr<ICityBlock>>::allocator_type( sourceBudget ) };
+                Array<SmartPtr<ICityBlock>> blocks{ typename Array<SmartPtr<ICityBlock>>::allocator_type(
+                    sourceBudget ) };
                 for( const auto primitive : primitives )
                 {
                     const auto &sequence = primitive->Sequence;
@@ -285,7 +289,7 @@ namespace workphone
             auto blocks = buildBlocks( network );
             auto entries = makeSourceBudgetSnapshot( m_generatedBlocks );
             auto previous = std::find_if( entries.begin(), entries.end(),
-                [&]( const auto &entry ) { return entry.city == m_city; } );
+                                          [&]( const auto &entry ) { return entry.city == m_city; } );
             if( previous == entries.end() )
             {
                 entries.push_back( CityBlocks{ m_city } );
@@ -295,10 +299,16 @@ namespace workphone
             for( const auto &block : previous->blocks )
             {
                 auto found = std::find( combined.begin(), combined.end(), block );
-                if( found != combined.end() ) combined.erase( found );
+                if( found != combined.end() )
+                {
+                    combined.erase( found );
+                }
             }
             combined.reserve( combined.size() + blocks.size() );
-            for( const auto &block : blocks ) combined.push_back( block );
+            for( const auto &block : blocks )
+            {
+                combined.push_back( block );
+            }
             previous->blocks = std::move( blocks );
             m_city->setBlocks( combined );
             m_generatedBlocks.swap( entries );

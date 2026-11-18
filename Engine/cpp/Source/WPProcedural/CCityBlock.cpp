@@ -55,7 +55,8 @@ namespace workphone
 
         Array<Vector3<real_Num>> CCityBlock::getPoints() const
         {
-            Array<Vector3<real_Num>> points{ typename Array<Vector3<real_Num>>::allocator_type( sourceBudget ) };
+            Array<Vector3<real_Num>> points{ typename Array<Vector3<real_Num>>::allocator_type(
+                sourceBudget ) };
             points.reserve( m_nodes.size() );
             for( const auto &node : m_nodes )
             {
@@ -121,7 +122,9 @@ namespace workphone
             {
                 return false;
             }
+
             auto a = getPoints(), b = other->getPoints();
+
             // Accept an optional repeated closing point, rotations and either winding.
             if( a.size() > 1 && a.front() == a.back() )
             {
@@ -159,12 +162,15 @@ namespace workphone
         SmartPtr<ISharedObject> CCityBlock::clone()
         {
             auto block = workphone::make_ptr<CCityBlock>();
+
             block->setName( getName() );
             block->setWorldTransform( getWorldTransform() );
+
             if( m_properties )
             {
                 *block->m_properties = *m_properties;
             }
+
             for( const auto &node : m_nodes )
             {
                 if( node )
@@ -201,5 +207,6 @@ namespace workphone
             m_bounds.setNull();
             m_boundingSphere = Sphere3<real_Num>( Vector3<real_Num>::zero(), 0 );
         }
+
     }  // namespace procedural
 }  // namespace workphone

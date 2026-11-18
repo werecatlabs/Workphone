@@ -67,7 +67,6 @@ namespace workphone
 
                 CProceduralObject<IRoadMeshElement>::unload( data );
 
-
                 TangentA = Vector3F( 0.0f, 0.0f, 0.0f );
                 TangentB = Vector3F( 0.0f, 0.0f, 0.0f );
                 CenterLine = Line3F();
@@ -78,7 +77,6 @@ namespace workphone
                 PavementWidth = 0.5f;
 
                 m_isBuilt = false;
-
             }
             catch( std::exception &e )
             {
@@ -486,7 +484,9 @@ namespace workphone
                 }
 
                 if( Points.size() > std::numeric_limits<u32>::max() / 6 )
+                {
                     throw std::length_error( "Road mesh exceeds index range" );
+                }
                 m_vertices.reserve( Points.size() * 2 );
                 m_indices.reserve( ( Points.size() - 1 ) * 6 );
                 updateCenterLine();
@@ -583,7 +583,9 @@ namespace workphone
         void CRoadMeshElement::generateVertices()
         {
             if( Points.size() > std::numeric_limits<u32>::max() / 2 )
+            {
                 throw std::length_error( "Road mesh exceeds vertex range" );
+            }
             m_vertices.reserve( Points.size() * 2 );
             m_vertices.clear();
 
@@ -665,7 +667,9 @@ namespace workphone
         void CRoadMeshElement::generateIndices()
         {
             if( Points.size() >= kMinPointsForBuild )
+            {
                 m_indices.reserve( ( Points.size() - 1 ) * 6 );
+            }
             m_indices.clear();
 
             const auto vertexPairCount = Points.size();

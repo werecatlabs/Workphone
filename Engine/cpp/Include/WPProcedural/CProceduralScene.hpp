@@ -31,8 +31,10 @@ namespace workphone
             void setTerrains( Array<SmartPtr<IProceduralTerrain>> terrains ) override;
 
         private:
-            Array<SmartPtr<IProceduralCity>> m_cities{ Allocator<SmartPtr<IProceduralCity>>( sourceBudget ) };
-            Array<SmartPtr<IProceduralTerrain>> m_terrains{ Allocator<SmartPtr<IProceduralTerrain>>( sourceBudget ) };
+            Array<SmartPtr<IProceduralCity>> m_cities{ Allocator<SmartPtr<IProceduralCity>>(
+                sourceBudget ) };
+            Array<SmartPtr<IProceduralTerrain>> m_terrains{ Allocator<SmartPtr<IProceduralTerrain>>(
+                sourceBudget ) };
         };
     }  // end namespace procedural
 }  // namespace workphone

@@ -16,14 +16,23 @@ namespace workphone
     {
         bool MeshGeneratorDefault::beginGeneration( u64 token )
         {
-            if( token != m_generation ) return false;
+            if( token != m_generation )
+            {
+                return false;
+            }
             validateParameters();
-            if( token != m_generation ) return false;
+            if( token != m_generation )
+            {
+                return false;
+            }
             m_progress = 0;
             m_status = "Generating";
             const auto app = core::IApplicationManager::instancePtr();
             const auto meshManager = app ? app->getMeshManager() : nullptr;
-            if( token != m_generation ) return false;
+            if( token != m_generation )
+            {
+                return false;
+            }
             if( !meshManager )
             {
                 failGeneration( "Mesh manager is unavailable", token );
@@ -34,40 +43,62 @@ namespace workphone
             {
                 failGeneration(
                     "Unsupported options: LOD, simplification, tangents, optimization, vertex merging "
-                    "or collision", token );
+                    "or collision",
+                    token );
                 return false;
             }
             if( m_generatedMeshes.size() == m_generatedMeshes.max_size() )
+            {
                 throw std::length_error( "Generated mesh inventory overflow" );
+            }
             m_generatedMeshes.reserve( m_generatedMeshes.size() + 1 );
             return true;
         }
 
         SmartPtr<IMesh> MeshGeneratorDefault::failGeneration( const String &message, u64 token )
         {
-            if( token != m_generation ) return nullptr;
+            if( token != m_generation )
+            {
+                return nullptr;
+            }
             m_status = "Failed: " + message;
             m_progress = 0;
             return nullptr;
         }
 
-        SmartPtr<IMesh> MeshGeneratorDefault::finishGeneration( SmartPtr<IMesh> mesh, u64 token, u64 denials )
+        SmartPtr<IMesh> MeshGeneratorDefault::finishGeneration( SmartPtr<IMesh> mesh, u64 token,
+                                                                u64 denials )
         {
-            if( token != m_generation ) return nullptr;
+            if( token != m_generation )
+            {
+                return nullptr;
+            }
             if( sourceBudgetDenialCount() != denials )
+            {
                 return failGeneration( "SourceCpu admission denied", token );
+            }
             if( !mesh )
+            {
                 return failGeneration( "No geometry", token );
+            }
             const auto subMeshCount = mesh->getNumSubMeshes();
-            if( token != m_generation ) return nullptr;
+            if( token != m_generation )
+            {
+                return nullptr;
+            }
             if( subMeshCount == 0 )
             {
                 return failGeneration( "No geometry", token );
             }
             mesh->updateAABB( true );
-            if( token != m_generation ) return nullptr;
+            if( token != m_generation )
+            {
+                return nullptr;
+            }
             if( sourceBudgetDenialCount() != denials )
+            {
                 return failGeneration( "SourceCpu admission denied", token );
+            }
             m_generatedMeshes.push_back( mesh );
             m_progress = 1;
             m_status = "Complete";
@@ -88,25 +119,41 @@ namespace workphone
                 {
                     return failGeneration( "Null road network", token );
                 }
-                Array<SmartPtr<IProceduralObject>> objects{ Allocator<SmartPtr<IProceduralObject>>( sourceBudget ) };
+                Array<SmartPtr<IProceduralObject>> objects{ Allocator<SmartPtr<IProceduralObject>>(
+                    sourceBudget ) };
                 const auto roads = roadNetwork->getRoads();
-                if( token != m_generation ) return nullptr;
+                if( token != m_generation )
+                {
+                    return nullptr;
+                }
                 for( const auto &road : roads )
                 {
                     objects.push_back( road );
                 }
-                if( token != m_generation ) return nullptr;
-                if( sourceBudgetDenialCount() != denials ) throw std::bad_alloc();
+                if( token != m_generation )
+                {
+                    return nullptr;
+                }
+                if( sourceBudgetDenialCount() != denials )
+                {
+                    throw std::bad_alloc();
+                }
                 return generateFromObjects( objects );
             }
             catch( const std::exception &e )
             {
-                if( token != m_generation ) return nullptr;
+                if( token != m_generation )
+                {
+                    return nullptr;
+                }
                 return failGeneration( String( "Generation exception: " ) + e.what(), token );
             }
             catch( ... )
             {
-                if( token != m_generation ) return nullptr;
+                if( token != m_generation )
+                {
+                    return nullptr;
+                }
                 return failGeneration( "Unknown generation exception", token );
             }
         }
@@ -126,18 +173,28 @@ namespace workphone
                     return failGeneration( "Null terrain", token );
                 }
                 const auto resolution = terrain->getHeightmapResolution();
-                if( token != m_generation ) return nullptr;
+                if( token != m_generation )
+                {
+                    return nullptr;
+                }
                 const auto size = terrain->getSize();
-                if( token != m_generation ) return nullptr;
+                if( token != m_generation )
+                {
+                    return nullptr;
+                }
                 const auto heights = terrain->getHeightData();
-                if( token != m_generation ) return nullptr;
+                if( token != m_generation )
+                {
+                    return nullptr;
+                }
                 if( resolution.x < 2 || resolution.y < 2 || !std::isfinite( size.x ) ||
                     !std::isfinite( size.y ) || !std::isfinite( size.z ) || size.x <= 0 || size.z <= 0 )
                 {
                     return failGeneration( "Invalid terrain dimensions", token );
                 }
                 const auto vertexCount = uint64_t( resolution.x ) * uint64_t( resolution.y );
-                const auto triangleCount = uint64_t( resolution.x - 1 ) * uint64_t( resolution.y - 1 ) * 2;
+                const auto triangleCount =
+                    uint64_t( resolution.x - 1 ) * uint64_t( resolution.y - 1 ) * 2;
                 if( vertexCount != heights.size() || vertexCount > m_maxVertexCount ||
                     triangleCount > m_maxTriangleCount )
                 {
@@ -149,7 +206,10 @@ namespace workphone
                 Array<Vector2<real_Num>> uvs{ Allocator<Vector2<real_Num>>( sourceBudget ) };
                 Array<u32> indices{ Allocator<u32>( sourceBudget ) };
                 const auto transform = terrain->getWorldTransform();
-                if( token != m_generation ) return nullptr;
+                if( token != m_generation )
+                {
+                    return nullptr;
+                }
                 for( int z = 0; z < resolution.y; ++z )
                 {
                     for( int x = 0; x < resolution.x; ++x )
@@ -205,12 +265,18 @@ namespace workphone
             }
             catch( const std::exception &e )
             {
-                if( token != m_generation ) return nullptr;
+                if( token != m_generation )
+                {
+                    return nullptr;
+                }
                 return failGeneration( String( "Generation exception: " ) + e.what(), token );
             }
             catch( ... )
             {
-                if( token != m_generation ) return nullptr;
+                if( token != m_generation )
+                {
+                    return nullptr;
+                }
                 return failGeneration( "Unknown generation exception", token );
             }
         }
@@ -232,9 +298,13 @@ namespace workphone
                 }
                 if( objects.size() == 1 )
                 {
-                    if( auto terrain = workphone::dynamic_pointer_cast<IProceduralTerrain>( objects[0] ) )
+                    if( auto terrain =
+                            workphone::dynamic_pointer_cast<IProceduralTerrain>( objects[0] ) )
                     {
-                        if( token != m_generation ) return nullptr;
+                        if( token != m_generation )
+                        {
+                            return nullptr;
+                        }
                         return generateFromTerrain( terrain );
                     }
                 }
@@ -250,13 +320,19 @@ namespace workphone
                         return failGeneration( "Object has no supported mesh adapter", token );
                     }
                     auto segments = makeSourceBudgetSnapshot( road->getRoadSegments() );
-                    if( token != m_generation ) return nullptr;
+                    if( token != m_generation )
+                    {
+                        return nullptr;
+                    }
                     if( segments.empty() )
                     {
                         // CRoad::getRoadNodes traverses sections, while addNode stores
                         // the authored spine separately. Accept both existing paths.
                         auto nodes = road->getRoadNodes();
-                        if( token != m_generation ) return nullptr;
+                        if( token != m_generation )
+                        {
+                            return nullptr;
+                        }
                         if( nodes.empty() )
                         {
                             nodes = makeSourceBudgetSnapshot( road->getRoadNodeObjects() );
@@ -267,13 +343,20 @@ namespace workphone
                             {
                                 return failGeneration( "Null road node", token );
                             }
-                            const Vector3F a( nodes[i - 1]->getPosition() ), b( nodes[i]->getPosition() );
-                            if( token != m_generation ) return nullptr;
+                            const Vector3F a( nodes[i - 1]->getPosition() ),
+                                b( nodes[i]->getPosition() );
+                            if( token != m_generation )
+                            {
+                                return nullptr;
+                            }
                             const auto delta = b - a;
                             const Vector3F tangent( -delta.z, 0, delta.x );
                             auto segment =
                                 RoadGeneratorUtil::createRoadSegment( a, b, tangent, tangent, 7, 7 );
-                            if( token != m_generation ) return nullptr;
+                            if( token != m_generation )
+                            {
+                                return nullptr;
+                            }
                             if( !segment )
                             {
                                 return failGeneration( "Invalid road spine", token );
@@ -288,7 +371,10 @@ namespace workphone
                             return failGeneration( "Null road segment", token );
                         }
                         const auto nodes = segment->getRoadNodes();
-                        if( token != m_generation ) return nullptr;
+                        if( token != m_generation )
+                        {
+                            return nullptr;
+                        }
                         if( nodes.size() < 2 )
                         {
                             return failGeneration( "Road segment needs two nodes", token );
@@ -298,7 +384,10 @@ namespace workphone
                         {
                             width = concrete->getRoadWidth() * 0.5f;
                         }
-                        if( token != m_generation ) return nullptr;
+                        if( token != m_generation )
+                        {
+                            return nullptr;
+                        }
                         if( !std::isfinite( width ) || width <= 0 )
                         {
                             return failGeneration( "Invalid road width", token );
@@ -314,14 +403,21 @@ namespace workphone
                             {
                                 return failGeneration( "Road geometry budget exceeded", token );
                             }
-                            const Vector3F a( nodes[i - 1]->getPosition() ), b( nodes[i]->getPosition() );
-                            if( token != m_generation ) return nullptr;
+                            const Vector3F a( nodes[i - 1]->getPosition() ),
+                                b( nodes[i]->getPosition() );
+                            if( token != m_generation )
+                            {
+                                return nullptr;
+                            }
                             const auto delta = b - a;
                             const Vector3F tangent( -delta.z, 0, delta.x );
                             const auto previousCount = positions.size();
                             RoadGeneratorUtil::createMeshSegment( a, b, tangent, tangent, width, width,
                                                                   positions, uvs );
-                            if( token != m_generation ) return nullptr;
+                            if( token != m_generation )
+                            {
+                                return nullptr;
+                            }
                             if( positions.size() != previousCount + 6 || positions.size() != uvs.size() )
                             {
                                 return failGeneration( "Invalid road segment geometry", token );
@@ -330,13 +426,15 @@ namespace workphone
                                 !std::isfinite( delta.z ) ||
                                 ( std::abs( delta.x ) < 0.000001f && std::abs( delta.z ) < 0.000001f ) )
                             {
-                                return failGeneration( "Road segment has invalid horizontal extent", token );
+                                return failGeneration( "Road segment has invalid horizontal extent",
+                                                       token );
                             }
                             for( size_t vertexIndex = previousCount; vertexIndex < positions.size();
                                  ++vertexIndex )
                             {
                                 const auto &p = positions[vertexIndex];
-                                if( !std::isfinite( p.x ) || !std::isfinite( p.y ) || !std::isfinite( p.z ) )
+                                if( !std::isfinite( p.x ) || !std::isfinite( p.y ) ||
+                                    !std::isfinite( p.z ) )
                                 {
                                     return failGeneration( "Road position is non-finite", token );
                                 }
@@ -348,7 +446,8 @@ namespace workphone
                 {
                     return failGeneration( "No road geometry", token );
                 }
-                Array<Vector3<real_Num>> outputPositions( positions.begin(), positions.end(), Allocator<Vector3<real_Num>>( sourceBudget ) );
+                Array<Vector3<real_Num>> outputPositions( positions.begin(), positions.end(),
+                                                          Allocator<Vector3<real_Num>>( sourceBudget ) );
                 Array<Vector3<real_Num>> normals{ Allocator<Vector3<real_Num>>( sourceBudget ) };
                 Array<Vector2<real_Num>> outputUvs{ Allocator<Vector2<real_Num>>( sourceBudget ) };
                 Array<u32> indices{ Allocator<u32>( sourceBudget ) };
@@ -382,12 +481,18 @@ namespace workphone
             }
             catch( const std::exception &e )
             {
-                if( token != m_generation ) return nullptr;
+                if( token != m_generation )
+                {
+                    return nullptr;
+                }
                 return failGeneration( String( "Generation exception: " ) + e.what(), token );
             }
             catch( ... )
             {
-                if( token != m_generation ) return nullptr;
+                if( token != m_generation )
+                {
+                    return nullptr;
+                }
                 return failGeneration( "Unknown generation exception", token );
             }
         }

@@ -117,9 +117,15 @@ namespace workphone
                 return;
             }
 
-            if( indices.size() > indices.max_size() - 3 ) throw std::length_error( "Procedural index overflow" );
+            if( indices.size() > indices.max_size() - 3 )
+            {
+                throw std::length_error( "Procedural index overflow" );
+            }
             if( indices.capacity() - indices.size() < 3 )
-                indices.reserve( std::max( indices.size() + 3, indices.capacity() + indices.capacity() / 2 ) );
+            {
+                indices.reserve(
+                    std::max( indices.size() + 3, indices.capacity() + indices.capacity() / 2 ) );
+            }
             indices.push_back( a );
             indices.push_back( b );
             indices.push_back( c );
@@ -127,12 +133,17 @@ namespace workphone
 
         void ProceduralMesh::append( const ProceduralMesh &other, const Vector3F &offset )
         {
-            if( other.vertices.empty() ) return;
+            if( other.vertices.empty() )
+            {
+                return;
+            }
             const auto vertexCount = other.vertices.size(), indexCount = other.indices.size();
             if( vertices.size() > std::numeric_limits<u32>::max() ||
                 vertexCount > std::numeric_limits<u32>::max() - vertices.size() ||
                 indexCount > indices.max_size() - indices.size() )
+            {
                 throw std::length_error( "Procedural mesh append overflow" );
+            }
             if( !std::isfinite( offset.x ) || !std::isfinite( offset.y ) || !std::isfinite( offset.z ) ||
                 !other.hasGeometry() )
             {
@@ -142,21 +153,36 @@ namespace workphone
             for( const auto &vertex : other.vertices )
             {
                 const auto position = vertex.position + offset;
-                if( !std::isfinite( position.x ) || !std::isfinite( position.y ) || !std::isfinite( position.z ) )
-                { WP_LOG_ERROR( "ProceduralMesh::append - non-finite transformed position." ); return; }
+                if( !std::isfinite( position.x ) || !std::isfinite( position.y ) ||
+                    !std::isfinite( position.z ) )
+                {
+                    WP_LOG_ERROR( "ProceduralMesh::append - non-finite transformed position." );
+                    return;
+                }
             }
             const auto base = static_cast<u32>( vertices.size() );
             if( vertices.capacity() < vertices.size() + vertexCount )
-                vertices.reserve( std::max( vertices.size() + vertexCount, vertices.capacity() + vertices.capacity() / 2 ) );
+            {
+                vertices.reserve( std::max( vertices.size() + vertexCount,
+                                            vertices.capacity() + vertices.capacity() / 2 ) );
+            }
             if( indices.capacity() < indices.size() + indexCount )
-                indices.reserve( std::max( indices.size() + indexCount, indices.capacity() + indices.capacity() / 2 ) );
+            {
+                indices.reserve( std::max( indices.size() + indexCount,
+                                           indices.capacity() + indices.capacity() / 2 ) );
+            }
             boundsValid = false;
             // Indexed prefix reads remain valid for self-append after either buffer relocates.
             for( size_t i = 0; i < vertexCount; ++i )
             {
-                auto vertex = other.vertices[i]; vertex.position += offset; vertices.push_back( vertex );
+                auto vertex = other.vertices[i];
+                vertex.position += offset;
+                vertices.push_back( vertex );
             }
-            for( size_t i = 0; i < indexCount; ++i ) indices.push_back( base + other.indices[i] );
+            for( size_t i = 0; i < indexCount; ++i )
+            {
+                indices.push_back( base + other.indices[i] );
+            }
         }
 
         void ProceduralMesh::computeNormals()
@@ -258,7 +284,9 @@ namespace workphone
                 const float hz = sz * 0.5f;
 
                 if( outMesh.vertices.size() > std::numeric_limits<u32>::max() - 8 )
+                {
                     throw std::length_error( "Box vertex overflow" );
+                }
                 outMesh.vertices.reserve( outMesh.vertices.size() + 8 );
                 outMesh.indices.reserve( outMesh.indices.size() + 36 );
                 const uint32_t v0 = outMesh.addVertex( offset + Vector3F{ -hx, -hy, -hz } );
@@ -298,7 +326,10 @@ namespace workphone
                 outMesh.addTriangle( v3, v7, v6 );
                 outMesh.addTriangle( v3, v6, v2 );
             }
-            catch( const std::bad_alloc & ) { throw; }
+            catch( const std::bad_alloc & )
+            {
+                throw;
+            }
             catch( std::exception &e )
             {
                 WP_LOG_EXCEPTION( e );
@@ -403,7 +434,9 @@ namespace workphone
                 const auto addedIndices = size_t( s ) * 12;
                 if( addedVertices > std::numeric_limits<u32>::max() - outMesh.vertices.size() ||
                     addedIndices > outMesh.indices.max_size() - outMesh.indices.size() )
+                {
                     throw std::length_error( "Cylinder geometry overflow" );
+                }
                 outMesh.vertices.reserve( outMesh.vertices.size() + addedVertices );
                 outMesh.indices.reserve( outMesh.indices.size() + addedIndices );
                 const uint32_t topCenter = outMesh.addVertex( offset + Vector3F{ 0.0f, halfH, 0.0f } );
@@ -450,7 +483,10 @@ namespace workphone
                     outMesh.addTriangle( bottomCenter, bottom[n], bottom[i] );
                 }
             }
-            catch( const std::bad_alloc & ) { throw; }
+            catch( const std::bad_alloc & )
+            {
+                throw;
+            }
             catch( std::exception &e )
             {
                 WP_LOG_EXCEPTION( e );
@@ -556,12 +592,21 @@ namespace workphone
                 for( int i = 0; i < count; ++i )
                 {
                     batch.append( childMesh, step * static_cast<float>( i ) );
-                    if( sourceBudgetDenialCount() != denials ) return;
+                    if( sourceBudgetDenialCount() != denials )
+                    {
+                        return;
+                    }
                 }
-                if( sourceBudgetDenialCount() != denials ) return;
+                if( sourceBudgetDenialCount() != denials )
+                {
+                    return;
+                }
                 outMesh.append( batch );
             }
-            catch( const std::bad_alloc & ) { throw; }
+            catch( const std::bad_alloc & )
+            {
+                throw;
+            }
             catch( std::exception &e )
             {
                 WP_LOG_EXCEPTION( e );
@@ -653,9 +698,15 @@ namespace workphone
                 try
                 {
                     rule->build( batch );
-                    if( sourceBudgetDenialCount() != denials ) return;
+                    if( sourceBudgetDenialCount() != denials )
+                    {
+                        return;
+                    }
                 }
-                catch( const std::bad_alloc & ) { throw; }
+                catch( const std::bad_alloc & )
+                {
+                    throw;
+                }
                 catch( std::exception &e )
                 {
                     WP_LOG_EXCEPTION( e );
@@ -664,11 +715,23 @@ namespace workphone
             }
             try
             {
-                if( sourceBudgetDenialCount() != denials ) return;
-                if( batch.hasGeometry() ) outMesh.append( batch );
+                if( sourceBudgetDenialCount() != denials )
+                {
+                    return;
+                }
+                if( batch.hasGeometry() )
+                {
+                    outMesh.append( batch );
+                }
             }
-            catch( const std::bad_alloc & ) { throw; }
-            catch( std::exception &e ) { WP_LOG_EXCEPTION( e ); }
+            catch( const std::bad_alloc & )
+            {
+                throw;
+            }
+            catch( std::exception &e )
+            {
+                WP_LOG_EXCEPTION( e );
+            }
         }
 
         SmartPtr<Properties> CompositeRule::getProperties() const
@@ -802,7 +865,10 @@ namespace workphone
                 const auto denials = sourceBudgetDenialCount();
                 ProceduralMesh staged;
                 component.rootRule->build( staged );
-                if( sourceBudgetDenialCount() != denials ) throw std::bad_alloc();
+                if( sourceBudgetDenialCount() != denials )
+                {
+                    throw std::bad_alloc();
+                }
 
                 if( staged.hasGeometry() )
                 {

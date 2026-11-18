@@ -25,8 +25,8 @@ namespace workphone
             void setScenes( const Array<SmartPtr<IProceduralScene>> &scenes ) override;
 
         protected:
-            Array<SmartPtr<IProceduralScene>> m_scenes{
-                Allocator<SmartPtr<IProceduralScene>>( sourceBudget ) };
+            Array<SmartPtr<IProceduralScene>> m_scenes{ Allocator<SmartPtr<IProceduralScene>>(
+                sourceBudget ) };
         };
     }  // namespace procedural
 }  // namespace workphone

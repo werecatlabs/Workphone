@@ -82,16 +82,25 @@ namespace workphone
             SourceBudgetStdString wallKey;
 
             BuildingSpec() = default;
+
             BuildingSpec( const BuildingSpec &other ) :
-                seed( other.seed ), floors( other.floors ), width( other.width ), depth( other.depth ),
-                floorH( other.floorH ), wallThick( other.wallThick ), type( other.type ),
+                seed( other.seed ),
+                floors( other.floors ),
+                width( other.width ),
+                depth( other.depth ),
+                floorH( other.floorH ),
+                wallThick( other.wallThick ),
+                type( other.type ),
                 setbacks( makeSourceBudgetSnapshot( other.setbacks ) ),
-                generateInterior( other.generateInterior ), generateDamage( other.generateDamage ),
+                generateInterior( other.generateInterior ),
+                generateDamage( other.generateDamage ),
                 wallKey( other.wallKey )
             {
             }
+
             BuildingSpec( BuildingSpec && ) noexcept = default;
             BuildingSpec &operator=( BuildingSpec && ) noexcept = default;
+
             BuildingSpec &operator=( const BuildingSpec &other )
             {
                 if( this != &other )
@@ -101,15 +110,21 @@ namespace workphone
                 }
                 return *this;
             }
+
             void swap( BuildingSpec &other ) noexcept
             {
                 using std::swap;
-                swap( seed, other.seed ); swap( floors, other.floors );
-                swap( width, other.width ); swap( depth, other.depth );
-                swap( floorH, other.floorH ); swap( wallThick, other.wallThick );
-                swap( type, other.type ); setbacks.swap( other.setbacks );
+                swap( seed, other.seed );
+                swap( floors, other.floors );
+                swap( width, other.width );
+                swap( depth, other.depth );
+                swap( floorH, other.floorH );
+                swap( wallThick, other.wallThick );
+                swap( type, other.type );
+                setbacks.swap( other.setbacks );
                 swap( generateInterior, other.generateInterior );
-                swap( generateDamage, other.generateDamage ); wallKey.swap( other.wallKey );
+                swap( generateDamage, other.generateDamage );
+                wallKey.swap( other.wallKey );
             }
         };
 
@@ -118,7 +133,8 @@ namespace workphone
         {
             ProceduralMesh body;
             Array<ProceduralMesh> windows{ Allocator<ProceduralMesh>( sourceBudget ) };
-            Array<ProceduralMesh> details{ Allocator<ProceduralMesh>( sourceBudget ) };  // AC units, antennas, etc.
+            Array<ProceduralMesh> details{ Allocator<ProceduralMesh>(
+                sourceBudget ) };  // AC units, antennas, etc.
             ProceduralMesh roof;
             ProceduralMesh parapet;
             Array<ProceduralMesh> interiors{ Allocator<ProceduralMesh>( sourceBudget ) };
@@ -126,15 +142,22 @@ namespace workphone
             real_Num wallKeyVariant = 0.0f;  // [0,1] tint choice
 
             BuildingResult() = default;
+
             BuildingResult( const BuildingResult &other ) :
-                body( other.body ), windows( makeSourceBudgetSnapshot( other.windows ) ),
-                details( makeSourceBudgetSnapshot( other.details ) ), roof( other.roof ),
-                parapet( other.parapet ), interiors( makeSourceBudgetSnapshot( other.interiors ) ),
-                position( other.position ), wallKeyVariant( other.wallKeyVariant )
+                body( other.body ),
+                windows( makeSourceBudgetSnapshot( other.windows ) ),
+                details( makeSourceBudgetSnapshot( other.details ) ),
+                roof( other.roof ),
+                parapet( other.parapet ),
+                interiors( makeSourceBudgetSnapshot( other.interiors ) ),
+                position( other.position ),
+                wallKeyVariant( other.wallKeyVariant )
             {
             }
+
             BuildingResult( BuildingResult && ) noexcept = default;
             BuildingResult &operator=( BuildingResult && ) noexcept = default;
+
             BuildingResult &operator=( const BuildingResult &other )
             {
                 if( this != &other )
@@ -144,13 +167,18 @@ namespace workphone
                 }
                 return *this;
             }
+
             void swap( BuildingResult &other ) noexcept
             {
-                body.swap( other.body ); windows.swap( other.windows );
-                details.swap( other.details ); roof.swap( other.roof );
-                parapet.swap( other.parapet ); interiors.swap( other.interiors );
+                body.swap( other.body );
+                windows.swap( other.windows );
+                details.swap( other.details );
+                roof.swap( other.roof );
+                parapet.swap( other.parapet );
+                interiors.swap( other.interiors );
                 using std::swap;
-                swap( position, other.position ); swap( wallKeyVariant, other.wallKeyVariant );
+                swap( position, other.position );
+                swap( wallKeyVariant, other.wallKeyVariant );
             }
         };
 

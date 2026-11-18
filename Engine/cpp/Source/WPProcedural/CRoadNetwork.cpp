@@ -70,31 +70,46 @@ namespace workphone
             };
             const bool appendRoads = hasNew( m_roads, roads );
             const bool appendConnections = hasNew( m_roadConnections, connections );
-            if( !appendRoads && !appendConnections ) return;
+            if( !appendRoads && !appendConnections )
+            {
+                return;
+            }
 
             const auto prepare = []( const auto &current, const auto &incoming ) {
                 using Items = std::decay_t<decltype( current )>;
                 Items candidate{ typename Items::allocator_type( sourceBudget ) };
                 if( current.size() > candidate.max_size() ||
                     incoming.size() > candidate.max_size() - current.size() )
+                {
                     throw std::length_error( "Generated road inventory capacity overflow" );
+                }
                 candidate.reserve( std::max( current.capacity(), current.size() + incoming.size() ) );
                 candidate.insert( candidate.end(), current.begin(), current.end() );
                 for( const auto &item : incoming )
                 {
-                    if( item && std::find( candidate.begin(), candidate.end(), item ) == candidate.end() )
+                    if( item &&
+                        std::find( candidate.begin(), candidate.end(), item ) == candidate.end() )
+                    {
                         candidate.push_back( item );
+                    }
                 }
                 return candidate;
             };
             // Prepare both inventories before either becomes visible. Existing nodes,
             // adjacency and cache entries are deliberately untouched by publication.
-            auto pendingRoads = appendRoads ? prepare( m_roads, roads ) :
-                makeSourceBudgetSnapshot<SmartPtr<IRoad>>();
-            auto pendingConnections = appendConnections ? prepare( m_roadConnections, connections ) :
-                makeSourceBudgetSnapshot<SmartPtr<IRoadConnection>>();
-            if( appendRoads ) m_roads.swap( pendingRoads );
-            if( appendConnections ) m_roadConnections.swap( pendingConnections );
+            auto pendingRoads =
+                appendRoads ? prepare( m_roads, roads ) : makeSourceBudgetSnapshot<SmartPtr<IRoad>>();
+            auto pendingConnections = appendConnections
+                                          ? prepare( m_roadConnections, connections )
+                                          : makeSourceBudgetSnapshot<SmartPtr<IRoadConnection>>();
+            if( appendRoads )
+            {
+                m_roads.swap( pendingRoads );
+            }
+            if( appendConnections )
+            {
+                m_roadConnections.swap( pendingConnections );
+            }
         }
 
         void CRoadNetwork::unload( SmartPtr<ISharedObject> data )
@@ -112,9 +127,18 @@ namespace workphone
             const auto retire = [&]( auto &items ) {
                 for( auto &item : items )
                 {
-                    if( !item ) continue;
-                    try { item->unload( data ); }
-                    catch( const std::exception &e ) { WP_LOG_EXCEPTION( e ); }
+                    if( !item )
+                    {
+                        continue;
+                    }
+                    try
+                    {
+                        item->unload( data );
+                    }
+                    catch( const std::exception &e )
+                    {
+                        WP_LOG_EXCEPTION( e );
+                    }
                 }
             };
             retire( nodes );
@@ -223,7 +247,10 @@ namespace workphone
                     m_roads.erase( it );
 
                     // Clean up cached data
-                    if( m_cachedSegmentResults ) m_cachedSegmentResults->erase( road.get() );
+                    if( m_cachedSegmentResults )
+                    {
+                        m_cachedSegmentResults->erase( road.get() );
+                    }
                 }
             }
             catch( std::exception &e )
@@ -252,7 +279,10 @@ namespace workphone
 
                 // Result caches are populated only when an actual result exists.
             }
-            catch( const std::bad_alloc & ) { throw; }
+            catch( const std::bad_alloc & )
+            {
+                throw;
+            }
             catch( std::exception &e )
             {
                 WP_LOG_EXCEPTION( e );
@@ -268,7 +298,10 @@ namespace workphone
                     addRoad( road );
                 }
             }
-            catch( const std::bad_alloc & ) { throw; }
+            catch( const std::bad_alloc & )
+            {
+                throw;
+            }
             catch( std::exception &e )
             {
                 WP_LOG_EXCEPTION( e );
@@ -317,7 +350,10 @@ namespace workphone
                     m_roadConnections.erase( it );
 
                     // Clean up cached data
-                    if( m_cachedIntersectionResults ) m_cachedIntersectionResults->erase( roadConnection.get() );
+                    if( m_cachedIntersectionResults )
+                    {
+                        m_cachedIntersectionResults->erase( roadConnection.get() );
+                    }
                 }
             }
             catch( std::exception &e )
@@ -347,7 +383,10 @@ namespace workphone
 
                 // Avoid a second allocation after publishing the inventory entry.
             }
-            catch( const std::bad_alloc & ) { throw; }
+            catch( const std::bad_alloc & )
+            {
+                throw;
+            }
             catch( std::exception &e )
             {
                 WP_LOG_EXCEPTION( e );
@@ -596,7 +635,10 @@ namespace workphone
                 if( m_cachedSegmentResults )
                 {
                     auto it = m_cachedSegmentResults->find( road.get() );
-                    if( it != m_cachedSegmentResults->end() ) return &it->second;
+                    if( it != m_cachedSegmentResults->end() )
+                    {
+                        return &it->second;
+                    }
                 }
 
                 // Try to get from user data
@@ -606,13 +648,17 @@ namespace workphone
                     if( !m_cachedSegmentResults )
                     {
                         auto candidate = makeSourceBudgetUnique<SegmentCache>();
-                        auto entry = candidate->try_emplace(
-                            road.get(), *static_cast<RoadSegmentResult *>( userData ) ).first;
+                        auto entry = candidate
+                                         ->try_emplace( road.get(),
+                                                        *static_cast<RoadSegmentResult *>( userData ) )
+                                         .first;
                         m_cachedSegmentResults = std::move( candidate );
                         return &entry->second;
                     }
-                    return &m_cachedSegmentResults->try_emplace(
-                        road.get(), *static_cast<RoadSegmentResult *>( userData ) ).first->second;
+                    return &m_cachedSegmentResults
+                                ->try_emplace( road.get(),
+                                               *static_cast<RoadSegmentResult *>( userData ) )
+                                .first->second;
                 }
 
                 return nullptr;
@@ -642,7 +688,10 @@ namespace workphone
                 if( m_cachedIntersectionResults )
                 {
                     auto it = m_cachedIntersectionResults->find( connection.get() );
-                    if( it != m_cachedIntersectionResults->end() ) return &it->second;
+                    if( it != m_cachedIntersectionResults->end() )
+                    {
+                        return &it->second;
+                    }
                 }
 
                 // Try to get from user data
@@ -652,13 +701,17 @@ namespace workphone
                     if( !m_cachedIntersectionResults )
                     {
                         auto candidate = makeSourceBudgetUnique<IntersectionCache>();
-                        auto entry = candidate->try_emplace(
-                            connection.get(), *static_cast<IntersectionResult *>( userData ) ).first;
+                        auto entry = candidate
+                                         ->try_emplace( connection.get(),
+                                                        *static_cast<IntersectionResult *>( userData ) )
+                                         .first;
                         m_cachedIntersectionResults = std::move( candidate );
                         return &entry->second;
                     }
-                    return &m_cachedIntersectionResults->try_emplace(
-                        connection.get(), *static_cast<IntersectionResult *>( userData ) ).first->second;
+                    return &m_cachedIntersectionResults
+                                ->try_emplace( connection.get(),
+                                               *static_cast<IntersectionResult *>( userData ) )
+                                .first->second;
                 }
 
                 return nullptr;
@@ -687,8 +740,8 @@ namespace workphone
 
                 auto owned = std::make_unique<RoadSegmentResult>( result );
                 RoadSegmentResult candidate( result );
-                auto pendingCache = m_cachedSegmentResults ? SourceBudgetUnique<SegmentCache>{} :
-                    makeSourceBudgetUnique<SegmentCache>();
+                auto pendingCache = m_cachedSegmentResults ? SourceBudgetUnique<SegmentCache>{}
+                                                           : makeSourceBudgetUnique<SegmentCache>();
                 auto &cache = m_cachedSegmentResults ? *m_cachedSegmentResults : *pendingCache;
                 auto entry = cache.find( road.get() );
                 const bool inserted = entry == cache.end();
@@ -704,11 +757,20 @@ namespace workphone
                 }
                 catch( ... )
                 {
-                    if( inserted ) cache.erase( entry );
+                    if( inserted )
+                    {
+                        cache.erase( entry );
+                    }
                     throw;
                 }
-                if( !inserted ) entry->second.swap( candidate );
-                if( pendingCache ) m_cachedSegmentResults = std::move( pendingCache );
+                if( !inserted )
+                {
+                    entry->second.swap( candidate );
+                }
+                if( pendingCache )
+                {
+                    m_cachedSegmentResults = std::move( pendingCache );
+                }
             }
             catch( std::exception &e )
             {
@@ -735,8 +797,9 @@ namespace workphone
 
                 auto owned = std::make_unique<IntersectionResult>( result );
                 IntersectionResult candidate( result );
-                auto pendingCache = m_cachedIntersectionResults ? SourceBudgetUnique<IntersectionCache>{} :
-                    makeSourceBudgetUnique<IntersectionCache>();
+                auto pendingCache = m_cachedIntersectionResults
+                                        ? SourceBudgetUnique<IntersectionCache>{}
+                                        : makeSourceBudgetUnique<IntersectionCache>();
                 auto &cache = m_cachedIntersectionResults ? *m_cachedIntersectionResults : *pendingCache;
                 auto entry = cache.find( connection.get() );
                 const bool inserted = entry == cache.end();
@@ -747,16 +810,26 @@ namespace workphone
                 try
                 {
                     // Ownership transfers only after successful metadata publication.
-                    connection->setUserData( StringUtil::getHash( "WPIntersectionResult" ), owned.get() );
+                    connection->setUserData( StringUtil::getHash( "WPIntersectionResult" ),
+                                             owned.get() );
                     owned.release();
                 }
                 catch( ... )
                 {
-                    if( inserted ) cache.erase( entry );
+                    if( inserted )
+                    {
+                        cache.erase( entry );
+                    }
                     throw;
                 }
-                if( !inserted ) entry->second.swap( candidate );
-                if( pendingCache ) m_cachedIntersectionResults = std::move( pendingCache );
+                if( !inserted )
+                {
+                    entry->second.swap( candidate );
+                }
+                if( pendingCache )
+                {
+                    m_cachedIntersectionResults = std::move( pendingCache );
+                }
             }
             catch( std::exception &e )
             {

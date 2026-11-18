@@ -43,8 +43,14 @@ namespace workphone
                 {
                     if( node )
                     {
-                        try { node->unload( nullptr ); }
-                        catch( const std::exception &e ) { WP_LOG_EXCEPTION( e ); }
+                        try
+                        {
+                            node->unload( nullptr );
+                        }
+                        catch( const std::exception &e )
+                        {
+                            WP_LOG_EXCEPTION( e );
+                        }
                     }
                 }
             }
@@ -193,7 +199,8 @@ namespace workphone
             SmartPtr<IProceduralScene> m_scene;
 
             /// nodes
-            Array<SmartPtr<IProceduralNode>> m_nodes{ Allocator<SmartPtr<IProceduralNode>>( sourceBudget ) };
+            Array<SmartPtr<IProceduralNode>> m_nodes{ Allocator<SmartPtr<IProceduralNode>>(
+                sourceBudget ) };
 
             /// polygon
             Polygon2<real_Num> m_polygon;

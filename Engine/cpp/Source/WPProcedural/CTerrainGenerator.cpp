@@ -266,8 +266,16 @@ namespace workphone
         {
             const auto previous = m_options;
             m_options = options;
-            try { validate(); onOptionChanged(); }
-            catch( ... ) { m_options = previous; throw; }
+            try
+            {
+                validate();
+                onOptionChanged();
+            }
+            catch( ... )
+            {
+                m_options = previous;
+                throw;
+            }
         }
 
         void CTerrainGenerator::resetToDefaults()
@@ -350,10 +358,15 @@ namespace workphone
                          end = curveString.find( ';', first ) )
                     {
                         SourceBudgetText token( curveString.data() + first, end - first );
-                        std::basic_istringstream<char, std::char_traits<char>, SourceBudgetAllocator<char>> input( token );
+                        std::basic_istringstream<char, std::char_traits<char>,
+                                                 SourceBudgetAllocator<char>>
+                            input( token );
                         input.exceptions( std::ios_base::badbit );
                         f32 value = 0;
-                        if( !( input >> value ) || !std::isfinite( value ) ) value = 0;
+                        if( !( input >> value ) || !std::isfinite( value ) )
+                        {
+                            value = 0;
+                        }
                         curveValues.push_back( value );
                         first = end + 1;
                     }
@@ -366,18 +379,27 @@ namespace workphone
                             points.push_back( static_cast<real_Num>( value ) );
                         }
                         options.heightCurve = workphone::make_ptr<LinearSpline1<real_Num>>();
-                        if( !options.heightCurve ) throw std::bad_alloc();
+                        if( !options.heightCurve )
+                        {
+                            throw std::bad_alloc();
+                        }
                         options.heightCurve->setPoints( points );
                     }
                 }
             }
-            catch( const std::bad_alloc & ) { throw; }
+            catch( const std::bad_alloc & )
+            {
+                throw;
+            }
             catch( std::exception &e )
             {
                 WP_LOG_EXCEPTION( e );
             }
 
-            if( sourceBudgetDenialCount() != denials ) throw std::bad_alloc();
+            if( sourceBudgetDenialCount() != denials )
+            {
+                throw std::bad_alloc();
+            }
             setOptions( options );
         }
 
@@ -398,14 +420,19 @@ namespace workphone
 
                 for( u32 i = 0; i < pointCount; ++i )
                 {
-                    const auto t = pointCount == 1 ? real_Num( 0 ) :
-                        static_cast<real_Num>( i ) / static_cast<real_Num>( pointCount - 1 );
+                    const auto t = pointCount == 1 ? real_Num( 0 )
+                                                   : static_cast<real_Num>( i ) /
+                                                         static_cast<real_Num>( pointCount - 1 );
                     curveValues.push_back( static_cast<f32>( curve->interpolate( t ) ) );
                 }
 
-                std::basic_ostringstream<char, std::char_traits<char>, SourceBudgetAllocator<char>> stream;
+                std::basic_ostringstream<char, std::char_traits<char>, SourceBudgetAllocator<char>>
+                    stream;
                 stream.exceptions( std::ios_base::badbit | std::ios_base::failbit );
-                for( const auto value : curveValues ) stream << value << ';';
+                for( const auto value : curveValues )
+                {
+                    stream << value << ';';
+                }
                 const auto text = stream.str();
                 encodedCurve = String( text.data(), text.size() );
             }
@@ -427,7 +454,10 @@ namespace workphone
             properties->setProperty( "AutoUpdate", m_options.autoUpdate );
             properties->setProperty( "Normalize", m_options.normalize );
 
-            if( pointCount > 0 ) properties->setProperty( "HeightCurve", encodedCurve );
+            if( pointCount > 0 )
+            {
+                properties->setProperty( "HeightCurve", encodedCurve );
+            }
         }
 
         void CTerrainGenerator::generateRandom()

@@ -40,7 +40,7 @@ namespace workphone
             WP_CLASS_REGISTER_DECL;
 
         protected:
-            FSMReturnType handleComponentEvent(u32 state, FSMEvent eventType);
+            FSMReturnType handleComponentEvent( u32 state, FSMEvent eventType );
 
             atomic_s64 m_objectType = 0;
             AtomicSmartPtr<ISharedObject> m_object;

@@ -140,8 +140,8 @@ namespace workphone
 
             SWorldGeneratorOptions m_options;
             SmartPtr<IProceduralWorld> m_world;
-            Array<SmartPtr<IProceduralScene>> m_scenes{
-                Allocator<SmartPtr<IProceduralScene>>( sourceBudget ) };
+            Array<SmartPtr<IProceduralScene>> m_scenes{ Allocator<SmartPtr<IProceduralScene>>(
+                sourceBudget ) };
 
             bool m_finished = false;
             bool m_isGenerating = false;

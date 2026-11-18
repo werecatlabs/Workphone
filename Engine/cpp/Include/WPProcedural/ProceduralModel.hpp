@@ -44,32 +44,50 @@ namespace workphone
          */
         struct WPProcedural_API ProceduralMesh : SourceBudgetObject
         {
-            Array<ProceduralVertex> vertices{ Allocator<ProceduralVertex>( sourceBudget ) };  ///< Ordered vertex data.
-            Array<uint32_t> indices{ Allocator<uint32_t>( sourceBudget ) };           ///< Triangle index list (groups of 3).
+            Array<ProceduralVertex> vertices{ Allocator<ProceduralVertex>(
+                sourceBudget ) };  ///< Ordered vertex data.
+            Array<uint32_t> indices{ Allocator<uint32_t>(
+                sourceBudget ) };  ///< Triangle index list (groups of 3).
             AABB3F bounds;
             bool boundsValid = false;
 
             ProceduralMesh() = default;
+
             ProceduralMesh( const ProceduralMesh &other ) :
                 vertices( makeSourceBudgetSnapshot( other.vertices ) ),
                 indices( makeSourceBudgetSnapshot( other.indices ) ),
-                bounds( other.bounds ), boundsValid( other.boundsValid ) {}
+                bounds( other.bounds ),
+                boundsValid( other.boundsValid )
+            {
+            }
+
             ProceduralMesh( ProceduralMesh && ) noexcept = default;
             ProceduralMesh &operator=( ProceduralMesh && ) noexcept = default;
+
             ProceduralMesh &operator=( const ProceduralMesh &other )
             {
-                if( this != &other ) { ProceduralMesh candidate( other ); swap( candidate ); }
+                if( this != &other )
+                {
+                    ProceduralMesh candidate( other );
+                    swap( candidate );
+                }
                 return *this;
             }
+
             void swap( ProceduralMesh &other ) noexcept
             {
-                vertices.swap( other.vertices ); indices.swap( other.indices );
-                std::swap( bounds, other.bounds ); std::swap( boundsValid, other.boundsValid );
+                vertices.swap( other.vertices );
+                indices.swap( other.indices );
+                std::swap( bounds, other.bounds );
+                std::swap( boundsValid, other.boundsValid );
             }
+
             void releaseStorage()
             {
-                auto oldVertices = std::move( vertices ); auto oldIndices = std::move( indices );
-                bounds = AABB3F(); boundsValid = false;
+                auto oldVertices = std::move( vertices );
+                auto oldIndices = std::move( indices );
+                bounds = AABB3F();
+                boundsValid = false;
             }
 
             /** Remove all vertices and indices, resetting to an empty state. */
@@ -208,13 +226,23 @@ namespace workphone
         class WPProcedural_API CompositeRule final : public ModelRule
         {
         public:
-            Array<std::shared_ptr<ModelRule>> children{ Allocator<std::shared_ptr<ModelRule>>( sourceBudget ) };  ///< Ordered child rules.
+            Array<std::shared_ptr<ModelRule>> children{ Allocator<std::shared_ptr<ModelRule>>(
+                sourceBudget ) };  ///< Ordered child rules.
 
             CompositeRule() = default;
-            CompositeRule( const CompositeRule &other ) : children( makeSourceBudgetSnapshot( other.children ) ) {}
+
+            CompositeRule( const CompositeRule &other ) :
+                children( makeSourceBudgetSnapshot( other.children ) )
+            {
+            }
+
             CompositeRule &operator=( const CompositeRule &other )
             {
-                if( this != &other ) { auto candidate = makeSourceBudgetSnapshot( other.children ); children.swap( candidate ); }
+                if( this != &other )
+                {
+                    auto candidate = makeSourceBudgetSnapshot( other.children );
+                    children.swap( candidate );
+                }
                 return *this;
             }
 
@@ -243,21 +271,33 @@ namespace workphone
             bool dirty = true;                    ///< True when the mesh needs to be rebuilt.
 
             ProceduralModelComponent() = default;
+
             ProceduralModelComponent( std::shared_ptr<ModelRule> rootRule_,
                                       ProceduralMesh bakedMesh_ = {}, bool dirty_ = true ) :
-                rootRule( std::move( rootRule_ ) ), bakedMesh( std::move( bakedMesh_ ) ),
-                dirty( dirty_ ) {}
+                rootRule( std::move( rootRule_ ) ),
+                bakedMesh( std::move( bakedMesh_ ) ),
+                dirty( dirty_ )
+            {
+            }
+
             ProceduralModelComponent( const ProceduralModelComponent & ) = default;
             ProceduralModelComponent( ProceduralModelComponent && ) noexcept = default;
             ProceduralModelComponent &operator=( ProceduralModelComponent && ) noexcept = default;
+
             ProceduralModelComponent &operator=( const ProceduralModelComponent &other )
             {
-                if( this != &other ) { ProceduralModelComponent candidate( other ); swap( candidate ); }
+                if( this != &other )
+                {
+                    ProceduralModelComponent candidate( other );
+                    swap( candidate );
+                }
                 return *this;
             }
+
             void swap( ProceduralModelComponent &other ) noexcept
             {
-                rootRule.swap( other.rootRule ); bakedMesh.swap( other.bakedMesh );
+                rootRule.swap( other.rootRule );
+                bakedMesh.swap( other.bakedMesh );
                 std::swap( dirty, other.dirty );
             }
 

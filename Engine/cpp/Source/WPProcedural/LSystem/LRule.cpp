@@ -8,8 +8,7 @@ namespace workphone
     {
         LRule::LRule() = default;
 
-        LRule::LRule( const String &pre, const String &succ ) :
-            m_predecessor( pre ), m_successor( succ )
+        LRule::LRule( const String &pre, const String &succ ) : m_predecessor( pre ), m_successor( succ )
         {
         }
 

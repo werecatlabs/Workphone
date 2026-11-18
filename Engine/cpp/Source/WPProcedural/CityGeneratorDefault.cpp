@@ -200,14 +200,24 @@ namespace workphone
             auto cities = m_cities;
             auto appendUnique = []( auto &items, const auto &item ) {
                 if( item && std::find( items.begin(), items.end(), item ) == items.end() )
+                {
                     items.push_back( item );
+                }
             };
             if( m_proceduralWorld )
-                for( auto scene : m_proceduralWorld->getScenes() ) appendUnique( scenes, scene );
+            {
+                for( auto scene : m_proceduralWorld->getScenes() )
+                {
+                    appendUnique( scenes, scene );
+                }
+            }
             size_t outputSlots = 0;
             for( auto scene : scenes )
             {
-                for( auto city : scene->getCities() ) appendUnique( cities, city );
+                for( auto city : scene->getCities() )
+                {
+                    appendUnique( cities, city );
+                }
                 if( auto terrain = m_terrainGenerator )
                 {
                     steps.push_back( { Step::Kind::Terrain, terrain, scene, nullptr, nullptr } );
@@ -221,14 +231,20 @@ namespace workphone
             for( auto city : cities )
             {
                 if( auto road = m_roadGenerator )
+                {
                     steps.push_back( { Step::Kind::Road, road, nullptr, city, nullptr } );
+                }
                 if( auto block = m_blockGenerator )
+                {
                     steps.push_back( { Step::Kind::Block, block, nullptr, city, nullptr } );
+                }
                 if( auto mesh = m_meshGenerator )
                 {
                     steps.push_back( { Step::Kind::CityMesh, mesh, nullptr, city, nullptr } );
                     if( outputSlots > std::numeric_limits<size_t>::max() - 2 )
+                    {
                         throw std::length_error( "City mesh inventory overflow" );
+                    }
                     outputSlots += 2;
                 }
             }
@@ -272,7 +288,10 @@ namespace workphone
                     {
                         return;
                     }
-                    if( generation != m_generation ) continue;
+                    if( generation != m_generation )
+                    {
+                        continue;
+                    }
                     m_active = nullptr;
                     if( m_nextStep == m_steps.size() )
                     {
@@ -301,8 +320,15 @@ namespace workphone
                         if( auto data = step.terrain->getTerrain() )
                         {
                             auto result = mesh->generateFromTerrain( data );
-                            if( generation != m_generation || !m_running ) break;
-                            if( !result ) throw std::runtime_error( "CityGeneratorDefault: terrain mesh generation failed" );
+                            if( generation != m_generation || !m_running )
+                            {
+                                break;
+                            }
+                            if( !result )
+                            {
+                                throw std::runtime_error(
+                                    "CityGeneratorDefault: terrain mesh generation failed" );
+                            }
                             m_generatedMeshes.push_back( result );
                         }
                         break;
@@ -329,19 +355,38 @@ namespace workphone
                             if( !network->getRoads().empty() )
                             {
                                 auto result = mesh->generate( network );
-                                if( generation != m_generation || !m_running ) break;
-                                if( !result ) throw std::runtime_error( "CityGeneratorDefault: road mesh generation failed" );
+                                if( generation != m_generation || !m_running )
+                                {
+                                    break;
+                                }
+                                if( !result )
+                                {
+                                    throw std::runtime_error(
+                                        "CityGeneratorDefault: road mesh generation failed" );
+                                }
                                 m_generatedMeshes.push_back( result );
                             }
                         }
                         auto objects = makeSourceBudgetSnapshot<SmartPtr<IProceduralObject>>();
                         for( auto block : step.city->getBlocks() )
-                            if( block ) objects.push_back( block );
+                        {
+                            if( block )
+                            {
+                                objects.push_back( block );
+                            }
+                        }
                         if( !objects.empty() )
                         {
                             auto result = mesh->generateFromObjects( objects );
-                            if( generation != m_generation || !m_running ) break;
-                            if( !result ) throw std::runtime_error( "CityGeneratorDefault: block mesh generation failed" );
+                            if( generation != m_generation || !m_running )
+                            {
+                                break;
+                            }
+                            if( !result )
+                            {
+                                throw std::runtime_error(
+                                    "CityGeneratorDefault: block mesh generation failed" );
+                            }
                             m_generatedMeshes.push_back( result );
                         }
                         break;

@@ -332,40 +332,74 @@ namespace workphone
 
         void CRoadGenerator::generate()
         {
-            if( m_isGenerating ) throw std::logic_error( "Road generation is already active" );
+            if( m_isGenerating )
+            {
+                throw std::logic_error( "Road generation is already active" );
+            }
             const auto city = getCity();
             auto owner = city ? city->getRoadNetwork() : nullptr;
-            if( !owner ) { m_finished = true; return; }
+            if( !owner )
+            {
+                m_finished = true;
+                return;
+            }
             const auto token = ++m_generation;
             const bool wasFinished = m_finished;
             const auto previousSeed = m_options.seed;
             m_finished = false;
             m_isGenerating = true;
+
             struct RetireStage
             {
                 SmartPtr<CRoadNetwork> network;
-                ~RetireStage() { if( network ) network->unload( nullptr ); }
+
+                ~RetireStage()
+                {
+                    if( network )
+                    {
+                        network->unload( nullptr );
+                    }
+                }
             } staged;
+
             try
             {
                 validate();
                 if( m_options.randomizeSeed )
-                    m_options.seed = static_cast<int>( Math<real_Num>::RangedRandom( 0.0, s_randomSeedMax ) );
+                {
+                    m_options.seed =
+                        static_cast<int>( Math<real_Num>::RangedRandom( 0.0, s_randomSeedMax ) );
+                }
                 const auto denials = sourceBudgetDenialCount();
                 staged.network = workphone::make_ptr<CRoadNetwork>();
-                if( !staged.network ) throw std::bad_alloc();
+                if( !staged.network )
+                {
+                    throw std::bad_alloc();
+                }
                 buildNetwork( staged.network, owner );
                 // Legacy void/null adapters can swallow a rejected reservation.
-                if( sourceBudgetDenialCount() != denials ) throw std::bad_alloc();
+                if( sourceBudgetDenialCount() != denials )
+                {
+                    throw std::bad_alloc();
+                }
                 if( token != m_generation || getCity() != city || city->getRoadNetwork() != owner )
                 {
-                    if( token == m_generation ) { m_isGenerating = false; m_finished = false; }
+                    if( token == m_generation )
+                    {
+                        m_isGenerating = false;
+                        m_finished = false;
+                    }
                     return;
                 }
-                owner->appendGenerated( staged.network->getRoads(), staged.network->getRoadConnections() );
+                owner->appendGenerated( staged.network->getRoads(),
+                                        staged.network->getRoadConnections() );
                 // The live owner now retains these objects. Never unload committed children.
                 staged.network->releaseGenerationReferences();
-                if( token == m_generation ) { m_isGenerating = false; m_finished = true; }
+                if( token == m_generation )
+                {
+                    m_isGenerating = false;
+                    m_finished = true;
+                }
             }
             catch( ... )
             {
@@ -379,11 +413,13 @@ namespace workphone
             }
         }
 
-        void CRoadGenerator::buildNetwork( SmartPtr<IRoadNetwork> target,
-                                          SmartPtr<IRoadNetwork> source )
+        void CRoadGenerator::buildNetwork( SmartPtr<IRoadNetwork> target, SmartPtr<IRoadNetwork> source )
         {
             generateRoadsAAA( target );
-            if( m_options.generateIntersections ) createIntersectionsAAA( target, source );
+            if( m_options.generateIntersections )
+            {
+                createIntersectionsAAA( target, source );
+            }
         }
 
         // ===================================================================
@@ -392,13 +428,18 @@ namespace workphone
 
         void CRoadGenerator::generateRoadsAAA( SmartPtr<IRoadNetwork> roadNetwork )
         {
-            if( !roadNetwork ) return;
+            if( !roadNetwork )
+            {
+                return;
+            }
 
             // Create the AAA road system
             WPRoadSystem roadSystem( static_cast<u32>( m_options.seed ) );
 
-            Array<SmartPtr<IRoad>> majorRoads{ typename Array<SmartPtr<IRoad>>::allocator_type( sourceBudget ) };
-            Array<SmartPtr<IRoad>> minorRoads{ typename Array<SmartPtr<IRoad>>::allocator_type( sourceBudget ) };
+            Array<SmartPtr<IRoad>> majorRoads{ typename Array<SmartPtr<IRoad>>::allocator_type(
+                sourceBudget ) };
+            Array<SmartPtr<IRoad>> minorRoads{ typename Array<SmartPtr<IRoad>>::allocator_type(
+                sourceBudget ) };
 
             // Generate major roads (radial highways)
             for( s32 majorIdx = 0; majorIdx < m_options.numMajorRoads; ++majorIdx )
@@ -431,7 +472,10 @@ namespace workphone
 
                 // Create the IRoad object
                 SmartPtr<CRoad> majorRd = workphone::make_ptr<CRoad>();
-                if( !majorRd ) throw std::bad_alloc();
+                if( !majorRd )
+                {
+                    throw std::bad_alloc();
+                }
                 if( majorRd )
                 {
                     roadNetwork->addRoad( majorRd );
@@ -441,7 +485,10 @@ namespace workphone
                     // Add start and end nodes
                     SmartPtr<CRoadNode> startNode = workphone::make_ptr<CRoadNode>();
                     SmartPtr<CRoadNode> endNode = workphone::make_ptr<CRoadNode>();
-                    if( !startNode || !endNode ) throw std::bad_alloc();
+                    if( !startNode || !endNode )
+                    {
+                        throw std::bad_alloc();
+                    }
                     if( startNode )
                     {
                         startNode->setPosition( startPos );
@@ -481,7 +528,9 @@ namespace workphone
 
                 for( s32 minorIdx = 0; minorIdx < clampedMinor; ++minorIdx )
                 {
-                    Array<SmartPtr<IRoadNode>> pointNodes{ typename Array<SmartPtr<IRoadNode>>::allocator_type( sourceBudget ) };
+                    Array<SmartPtr<IRoadNode>> pointNodes{
+                        typename Array<SmartPtr<IRoadNode>>::allocator_type( sourceBudget )
+                    };
                     const auto distance =
                         m_options.roadOffset + m_options.roadDistance * static_cast<f32>( minorIdx );
                     const auto startPos = static_cast<CRoad *>( majorRoadCr.get() )
@@ -514,7 +563,10 @@ namespace workphone
                     RoadSegmentResult minorSegResult = roadSystem.generateSegment( minorSpec );
 
                     auto minorRd = workphone::make_ptr<CRoad>();
-                    if( !minorRd ) throw std::bad_alloc();
+                    if( !minorRd )
+                    {
+                        throw std::bad_alloc();
+                    }
                     if( minorRd )
                     {
                         roadNetwork->addRoad( minorRd );
@@ -525,7 +577,10 @@ namespace workphone
                         // Add start and end nodes
                         SmartPtr<CRoadNode> startNode = workphone::make_ptr<CRoadNode>();
                         SmartPtr<CRoadNode> endNode = workphone::make_ptr<CRoadNode>();
-                        if( !startNode || !endNode ) throw std::bad_alloc();
+                        if( !startNode || !endNode )
+                        {
+                            throw std::bad_alloc();
+                        }
                         if( startNode )
                         {
                             startNode->setPosition( startPos );
@@ -544,7 +599,8 @@ namespace workphone
 
                         // Store the AAA mesh result
                         auto payload = std::make_unique<RoadSegmentResult>( minorSegResult );
-                        minorRd->setUserData( StringUtil::getHash( "WPRoadSegmentResult" ), payload.get() );
+                        minorRd->setUserData( StringUtil::getHash( "WPRoadSegmentResult" ),
+                                              payload.get() );
                         payload.release();
 
                         minorRoads.push_back( minorRd );
@@ -561,9 +617,12 @@ namespace workphone
         // ===================================================================
 
         void CRoadGenerator::createIntersectionsAAA( SmartPtr<IRoadNetwork> roadNetwork,
-                                                      SmartPtr<IRoadNetwork> source )
+                                                     SmartPtr<IRoadNetwork> source )
         {
-            if( !roadNetwork ) return;
+            if( !roadNetwork )
+            {
+                return;
+            }
 
             size_t connectionCount = 0;
 
@@ -690,7 +749,8 @@ namespace workphone
 
                     // Store the AAA intersection result
                     auto payload = std::make_unique<IntersectionResult>( intResult );
-                    roadConnection->setUserData( StringUtil::getHash( "WPIntersectionResult" ), payload.get() );
+                    roadConnection->setUserData( StringUtil::getHash( "WPIntersectionResult" ),
+                                                 payload.get() );
                     payload.release();
 
                     roadNetwork->addRoadConnection( roadConnection );

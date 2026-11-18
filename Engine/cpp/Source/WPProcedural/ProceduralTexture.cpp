@@ -122,7 +122,10 @@ namespace workphone
 
         bool Texture2D::isValid() const
         {
-            if( width <= 0 || height <= 0 ) return false;
+            if( width <= 0 || height <= 0 )
+            {
+                return false;
+            }
             const auto w = static_cast<size_t>( width ), h = static_cast<size_t>( height );
             return w <= pixels.max_size() / h && pixels.size() == w * h;
         }
@@ -687,9 +690,10 @@ namespace workphone
             try
             {
                 const auto w = static_cast<size_t>( width ), h = static_cast<size_t>( height );
-                if( w > std::numeric_limits<size_t>::max() / h ||
-                    w * h > texture.pixels.max_size() )
+                if( w > std::numeric_limits<size_t>::max() / h || w * h > texture.pixels.max_size() )
+                {
                     throw std::length_error( "TextureBaker pixel capacity overflow" );
+                }
                 const auto denials = sourceBudgetDenialCount();
                 texture.pixels.resize( w * h );
                 texture.width = width;
@@ -714,7 +718,10 @@ namespace workphone
                             texture.pixels[static_cast<size_t>( y ) * w + static_cast<size_t>( x )] =
                                 rule.sample( u, v );
                         }
-                        catch( const std::bad_alloc & ) { throw; }
+                        catch( const std::bad_alloc & )
+                        {
+                            throw;
+                        }
                         catch( std::exception &e )
                         {
                             WP_LOG_EXCEPTION( e );
@@ -722,9 +729,15 @@ namespace workphone
                         }
                     }
                 }
-                if( sourceBudgetDenialCount() != denials ) throw std::bad_alloc();
+                if( sourceBudgetDenialCount() != denials )
+                {
+                    throw std::bad_alloc();
+                }
             }
-            catch( const std::bad_alloc & ) { throw; }
+            catch( const std::bad_alloc & )
+            {
+                throw;
+            }
             catch( std::exception &e )
             {
                 WP_LOG_EXCEPTION( e );

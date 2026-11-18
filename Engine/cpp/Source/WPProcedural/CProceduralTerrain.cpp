@@ -9,6 +9,7 @@ namespace workphone
         CProceduralTerrain::CProceduralTerrain() = default;
 
         CProceduralTerrain::~CProceduralTerrain() = default;
+
         void CProceduralTerrain::unload( SmartPtr<ISharedObject> data )
         {
             auto height = std::move( m_heightData );

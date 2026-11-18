@@ -148,12 +148,16 @@ namespace workphone
                 {
                     if( node )
                     {
-                        try { node->unload( nullptr ); }
-                        catch( const std::exception &e ) { WP_LOG_EXCEPTION( e ); }
+                        try
+                        {
+                            node->unload( nullptr );
+                        }
+                        catch( const std::exception &e )
+                        {
+                            WP_LOG_EXCEPTION( e );
+                        }
                     }
                 }
-
-
             }
             catch( std::exception &e )
             {
@@ -243,7 +247,8 @@ namespace workphone
         {
             auto nodes = getNodes();
 
-            auto roadNodes = Array<SmartPtr<IRoadNode>>( typename Array<SmartPtr<IRoadNode>>::allocator_type( sourceBudget ) );
+            auto roadNodes = Array<SmartPtr<IRoadNode>>(
+                typename Array<SmartPtr<IRoadNode>>::allocator_type( sourceBudget ) );
             roadNodes.reserve( nodes.size() );
 
             for( auto &node : nodes )

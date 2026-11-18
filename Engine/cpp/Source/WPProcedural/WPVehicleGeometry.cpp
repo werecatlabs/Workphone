@@ -177,8 +177,9 @@ namespace workphone
             };
 
             template <class Station>
-            SourceBudgetVector<Station> refineStations( const SourceBudgetVector<Station> &stations, std::uint32_t steps,
-                                           std::initializer_list<float Station::*> fields )
+            SourceBudgetVector<Station> refineStations( const SourceBudgetVector<Station> &stations,
+                                                        std::uint32_t steps,
+                                                        std::initializer_list<float Station::*> fields )
             {
                 if( steps <= 1 || stations.size() < 2 )
                 {
@@ -236,7 +237,8 @@ namespace workphone
                 return refined;
             }
 
-            void loftBody( Builder &b, const SourceBudgetVector<BodyStation> &stations, std::uint32_t radial )
+            void loftBody( Builder &b, const SourceBudgetVector<BodyStation> &stations,
+                           std::uint32_t radial )
             {
                 radial = std::max<std::uint32_t>( 8u, radial );
                 const std::uint32_t cols = radial + 1u;
@@ -351,8 +353,8 @@ namespace workphone
                 }
             }
 
-            void loftPod( Builder &b, const SourceBudgetVector<PodStation> &stations, std::uint32_t radial,
-                          bool closeFront = true )
+            void loftPod( Builder &b, const SourceBudgetVector<PodStation> &stations,
+                          std::uint32_t radial, bool closeFront = true )
             {
                 const auto base = static_cast<std::uint32_t>( b.mesh.vertices.size() );
                 const std::uint32_t cols = radial + 1u;
@@ -671,11 +673,13 @@ namespace workphone
                 for( int side : { -1, 1 } )
                 {
                     const float sign = static_cast<float>( side );
-                    const SourceBudgetVector<PodStation> pods = { { 0.03f, sign * 0.59f, 0.205f, 0.51f, 0.65f },
-                                                     { 0.26f, sign * 0.60f, 0.27f, 0.25f, 0.70f },
-                                                     { 0.62f, sign * 0.55f, 0.30f, 0.13f, 0.66f },
-                                                     { 1.03f, sign * 0.50f, 0.27f, 0.13f, 0.59f },
-                                                     { 1.44f, sign * 0.39f, 0.19f, 0.14f, 0.52f } };
+                    const SourceBudgetVector<PodStation> pods = {
+                        { 0.03f, sign * 0.59f, 0.205f, 0.51f, 0.65f },
+                        { 0.26f, sign * 0.60f, 0.27f, 0.25f, 0.70f },
+                        { 0.62f, sign * 0.55f, 0.30f, 0.13f, 0.66f },
+                        { 1.03f, sign * 0.50f, 0.27f, 0.13f, 0.59f },
+                        { 1.44f, sign * 0.39f, 0.19f, 0.14f, 0.52f }
+                    };
                     const auto podRadial = std::max<std::uint32_t>( 12u, bodyRadial * 3u / 4u );
                     loftPod( paint,
                              refineStations( pods, loftSteps,
@@ -684,12 +688,13 @@ namespace workphone
                              podRadial, false );
                     inletLip( paint, carbonMatte, pods.front(), podRadial, .16f );
                 }
-                const SourceBudgetVector<PodStation> airbox = { { 0.39f, 0.0f, 0.11f, 0.79f, 1.16f },
-                                                   { 0.54f, 0.0f, 0.14f, 0.80f, 1.22f },
-                                                   { 0.83f, 0.0f, 0.13f, 0.79f, 1.16f },
-                                                   { .83f + ( rearZ - .17f - .83f ) * .65f, 0.0f, 0.07f,
-                                                     0.65f, 0.99f },
-                                                   { rearZ - 0.17f, 0.0f, 0.025f, 0.57f, 0.74f } };
+                const SourceBudgetVector<PodStation> airbox = {
+                    { 0.39f, 0.0f, 0.11f, 0.79f, 1.16f },
+                    { 0.54f, 0.0f, 0.14f, 0.80f, 1.22f },
+                    { 0.83f, 0.0f, 0.13f, 0.79f, 1.16f },
+                    { .83f + ( rearZ - .17f - .83f ) * .65f, 0.0f, 0.07f, 0.65f, 0.99f },
+                    { rearZ - 0.17f, 0.0f, 0.025f, 0.57f, 0.74f }
+                };
                 loftPod( paint,
                          refineStations( airbox, loftSteps,
                                          { &PodStation::centreX, &PodStation::halfWidth,
@@ -993,8 +998,8 @@ namespace workphone
                     return Vector3F( u * s.halfWidth, y, depth );
                 };
                 // Share surface vertices so normals flow across the curved panels.
-                auto surface = [&]( Builder &builder, const SourceBudgetVector<float> &rows, unsigned cols,
-                                    auto point, Vector3F outward ) {
+                auto surface = [&]( Builder &builder, const SourceBudgetVector<float> &rows,
+                                    unsigned cols, auto point, Vector3F outward ) {
                     const auto base = static_cast<std::uint32_t>( builder.mesh.vertices.size() );
                     for( float row : rows )
                     {
@@ -1298,7 +1303,8 @@ namespace workphone
                         face( trim, lightPoint( a, 0 ), lightPoint( a, 2.8f ), lightPoint( b, 2.8f ),
                               lightPoint( b, 0 ), { 0, 1, 0 } );
                         const SourceBudgetVector<float> blades =
-                            gt ? SourceBudgetVector<float>{ .3f, 1.2f, 2.1f } : SourceBudgetVector<float>{ .4f, 1.7f };
+                            gt ? SourceBudgetVector<float>{ .3f, 1.2f, 2.1f }
+                               : SourceBudgetVector<float>{ .4f, 1.7f };
                         for( float blade : blades )
                         {
                             face( lamps, lightPoint( a, blade ) + Vector3F( 0, .004f, 0 ),

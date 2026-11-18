@@ -15,12 +15,18 @@ namespace workphone
             template <class T>
             bool removeValues( Array<T> &values, const T &value )
             {
-                if( std::find( values.begin(), values.end(), value ) == values.end() ) return false;
+                if( std::find( values.begin(), values.end(), value ) == values.end() )
+                {
+                    return false;
+                }
                 auto candidate = makeSourceBudgetSnapshot<T>();
                 candidate.reserve( values.capacity() );
                 for( const auto &entry : values )
                 {
-                    if( !( entry == value ) ) candidate.push_back( entry );
+                    if( !( entry == value ) )
+                    {
+                        candidate.push_back( entry );
+                    }
                 }
                 values.swap( candidate );
                 return true;
@@ -29,9 +35,13 @@ namespace workphone
             struct RewriteGuard
             {
                 bool &active;
-                ~RewriteGuard() { active = false; }
+
+                ~RewriteGuard()
+                {
+                    active = false;
+                }
             };
-        }
+        }  // namespace
 
         LSystem::LSystem() = default;
 
@@ -72,13 +82,19 @@ namespace workphone
 
         void LSystem::removeVariable( const String &var )
         {
-            if( removeValues( variables, var ) ) ++m_generation;
+            if( removeValues( variables, var ) )
+            {
+                ++m_generation;
+            }
         }
 
         void LSystem::printVariables()
         {
             std::cout << "LSys variables:" << std::endl;
-            for( const auto &value : variables ) std::cout << "\t\t\t\t" << value << std::endl;
+            for( const auto &value : variables )
+            {
+                std::cout << "\t\t\t\t" << value << std::endl;
+            }
         }
 
         void LSystem::addConstant( const String &cons )
@@ -89,13 +105,19 @@ namespace workphone
 
         void LSystem::removeConstant( const String &cons )
         {
-            if( removeValues( constants, cons ) ) ++m_generation;
+            if( removeValues( constants, cons ) )
+            {
+                ++m_generation;
+            }
         }
 
         void LSystem::printConstants()
         {
             std::cout << "LSys constants:" << std::endl;
-            for( const auto &value : constants ) std::cout << "\t\t\t\t" << value << std::endl;
+            for( const auto &value : constants )
+            {
+                std::cout << "\t\t\t\t" << value << std::endl;
+            }
         }
 
         void LSystem::addRule( SmartPtr<ILSystemRule> rule )
@@ -106,7 +128,10 @@ namespace workphone
 
         void LSystem::removeRule( SmartPtr<ILSystemRule> rule )
         {
-            if( removeValues( rules, rule ) ) ++m_generation;
+            if( removeValues( rules, rule ) )
+            {
+                ++m_generation;
+            }
         }
 
         void LSystem::printRules()
@@ -126,7 +151,10 @@ namespace workphone
             {
                 // Null entries retain their legacy inventory identity but do
                 // not participate in rewriting or debugging callbacks.
-                if( rule ) rule->print();
+                if( rule )
+                {
+                    rule->print();
+                }
                 checkEvaluation( generation, denialEpoch );
             }
         }
@@ -150,8 +178,13 @@ namespace workphone
         void LSystem::checkEvaluation( u64 generation, u64 denialEpoch ) const
         {
             if( generation != m_generation )
+            {
                 throw std::logic_error( "LSystem changed during a rule callback" );
-            if( sourceBudgetDenialCount() != denialEpoch ) throw std::bad_alloc();
+            }
+            if( sourceBudgetDenialCount() != denialEpoch )
+            {
+                throw std::bad_alloc();
+            }
         }
 
         String LSystem::rewrite( const String &input, const Array<SmartPtr<ILSystemRule>> &owners,
@@ -166,7 +199,10 @@ namespace workphone
                 String replacement( input.data() + i, 1 );
                 for( const auto &rule : owners )
                 {
-                    if( !rule ) continue;
+                    if( !rule )
+                    {
+                        continue;
+                    }
                     auto predecessor = rule->getPredecessor();
                     checkEvaluation( generation, denialEpoch );
                     // This is the existing byte-per-symbol dialect: a rule
@@ -179,12 +215,17 @@ namespace workphone
                     }
                 }
                 if( replacement.size() > result.max_size() - resultLength )
+                {
                     throw std::length_error( "LSystem rewritten string exceeds max_size" );
+                }
                 resultLength += replacement.size();
                 pieces.push_back( std::move( replacement ) );
             }
             result.reserve( resultLength );
-            for( const auto &piece : pieces ) result.append( piece.data(), piece.size() );
+            for( const auto &piece : pieces )
+            {
+                result.append( piece.data(), piece.size() );
+            }
             return result;
         }
 
@@ -204,7 +245,10 @@ namespace workphone
             String candidate( fromStart ? start : curString );
             const s32 firstLevel = fromStart ? 0 : level;
             auto owners = makeSourceBudgetSnapshot<SmartPtr<ILSystemRule>>();
-            if( firstLevel < targetLevel && !candidate.empty() ) owners = makeSourceBudgetSnapshot( rules );
+            if( firstLevel < targetLevel && !candidate.empty() )
+            {
+                owners = makeSourceBudgetSnapshot( rules );
+            }
             for( s32 current = firstLevel; current < targetLevel; ++current )
             {
                 candidate = rewrite( candidate, owners, generation, denialEpoch );
@@ -223,13 +267,18 @@ namespace workphone
         String LSystem::getNextLevel()
         {
             if( level < 0 || level == std::numeric_limits<s32>::max() )
+            {
                 throw std::overflow_error( "LSystem level cannot advance beyond s32 range" );
+            }
             return evaluate( level + 1, false );
         }
 
         String LSystem::getLevel( s32 targetLevel )
         {
-            if( targetLevel < 0 ) throw std::invalid_argument( "LSystem level must be non-negative" );
+            if( targetLevel < 0 )
+            {
+                throw std::invalid_argument( "LSystem level must be non-negative" );
+            }
             return evaluate( targetLevel, true );
         }
     }  // namespace procedural

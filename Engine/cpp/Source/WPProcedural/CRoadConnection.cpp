@@ -122,12 +122,16 @@ namespace workphone
                 {
                     if( connData )
                     {
-                        try { connData->unload( nullptr ); }
-                        catch( const std::exception &e ) { WP_LOG_EXCEPTION( e ); }
+                        try
+                        {
+                            connData->unload( nullptr );
+                        }
+                        catch( const std::exception &e )
+                        {
+                            WP_LOG_EXCEPTION( e );
+                        }
                     }
                 }
-
-
             }
             catch( std::exception &e )
             {
@@ -213,7 +217,8 @@ namespace workphone
         void CRoadConnection::setConnectionData( Array<SmartPtr<IRoadConnectionData>> connectionData )
         {
             // Filter out any null entries defensively.
-            Array<SmartPtr<IRoadConnectionData>> candidate{ Allocator<SmartPtr<IRoadConnectionData>>( sourceBudget ) };
+            Array<SmartPtr<IRoadConnectionData>> candidate{ Allocator<SmartPtr<IRoadConnectionData>>(
+                sourceBudget ) };
             candidate.reserve( connectionData.capacity() );
 
             for( auto &entry : connectionData )

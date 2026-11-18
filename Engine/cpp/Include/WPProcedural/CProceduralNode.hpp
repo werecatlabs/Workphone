@@ -80,7 +80,10 @@ namespace workphone
                 WP_ASSERT( node );
                 // WP_ASSERT(node != getSharedFromThis<IProceduralNode>());
 
-                if( !node || isConnected( node ) ) return;
+                if( !node || isConnected( node ) )
+                {
+                    return;
+                }
                 auto candidate = makeSourceBudgetSnapshot( m_connectedNodes );
                 candidate.push_back( node );
                 std::sort( candidate.begin(), candidate.end() );
@@ -251,13 +254,17 @@ namespace workphone
             SmartPtr<IProceduralNode> m_networkNode;
 
             /// The objects connected to this node.
-            Array<SmartPtr<IProceduralObject>> m_connectedObjects{ Allocator<SmartPtr<IProceduralObject>>( sourceBudget ) };
+            Array<SmartPtr<IProceduralObject>> m_connectedObjects{
+                Allocator<SmartPtr<IProceduralObject>>( sourceBudget )
+            };
 
             /// The nodes connected to this node.
-            Array<SmartPtr<IProceduralNode>> m_connectedNodes{ Allocator<SmartPtr<IProceduralNode>>( sourceBudget ) };
+            Array<SmartPtr<IProceduralNode>> m_connectedNodes{ Allocator<SmartPtr<IProceduralNode>>(
+                sourceBudget ) };
 
             /// The merged node.
-            Array<SmartPtr<IProceduralNode>> m_mergedNodes{ Allocator<SmartPtr<IProceduralNode>>( sourceBudget ) };
+            Array<SmartPtr<IProceduralNode>> m_mergedNodes{ Allocator<SmartPtr<IProceduralNode>>(
+                sourceBudget ) };
 
             /// An id to make this node unique.
             String m_uniqueId = "";

@@ -148,8 +148,8 @@ namespace workphone
             BuiltRoad buildRoadSegment( WPRoadSystem &roadSystem, const WPNoise &noise,
                                         const Vector3<real_Num> &start, const Vector3<real_Num> &end,
                                         RoadClass roadClass, u32 seed, Array<SmartPtr<IRoad>> &roads,
-                                        SmartPtr<IRoadNetwork> roadNetwork,
-                                        const char *namePrefix, s32 index )
+                                        SmartPtr<IRoadNetwork> roadNetwork, const char *namePrefix,
+                                        s32 index )
             {
                 BuiltRoad br;
                 br.roadClass = roadClass;
@@ -170,7 +170,10 @@ namespace workphone
                 RoadSegmentResult segResult = roadSystem.generateSegment( spec );
 
                 SmartPtr<CRoad> road = workphone::make_ptr<CRoad>();
-                if( !road ) throw std::bad_alloc();
+                if( !road )
+                {
+                    throw std::bad_alloc();
+                }
                 roadNetwork->addRoad( road );
 
                 String name = String( namePrefix ) + std::to_string( index );
@@ -183,7 +186,10 @@ namespace workphone
 
                 SmartPtr<CRoadNode> startNode = workphone::make_ptr<CRoadNode>();
                 SmartPtr<CRoadNode> endNode = workphone::make_ptr<CRoadNode>();
-                if( !startNode || !endNode ) throw std::bad_alloc();
+                if( !startNode || !endNode )
+                {
+                    throw std::bad_alloc();
+                }
                 if( startNode )
                 {
                     startNode->setPosition( start );
@@ -222,7 +228,8 @@ namespace workphone
                 Vector3<real_Num> center;
                 IntersectionType type;
                 RoadClass roadClass;
-                Array<Vector3<real_Num>> approaches{ typename Array<Vector3<real_Num>>::allocator_type( sourceBudget ) };
+                Array<Vector3<real_Num>> approaches{ typename Array<Vector3<real_Num>>::allocator_type(
+                    sourceBudget ) };
             };
 
             IntersectionInfo planIntersection( const WPNoise &noise, s32 col, s32 row, s32 gridX,
@@ -447,8 +454,7 @@ namespace workphone
             CRoadGenerator::generate();
         }
 
-        void CRoadGeneratorCity::buildNetwork( SmartPtr<IRoadNetwork> target,
-                                  SmartPtr<IRoadNetwork> )
+        void CRoadGeneratorCity::buildNetwork( SmartPtr<IRoadNetwork> target, SmartPtr<IRoadNetwork> )
         {
             generateCityRoadsAAA( target );
         }
@@ -459,7 +465,10 @@ namespace workphone
 
         void CRoadGeneratorCity::generateCityRoadsAAA( SmartPtr<IRoadNetwork> roadNetwork )
         {
-            if( !roadNetwork ) return;
+            if( !roadNetwork )
+            {
+                return;
+            }
 
             // ---------------------------------------------------------------
             // Layout noise - deterministic, seeded.
@@ -487,7 +496,9 @@ namespace workphone
             // ---------------------------------------------------------------
             // Pre-compute intersection centres.
             // intersections[col][row]
-            Array<Array<Vector3<real_Num>>> intersections{ typename Array<Array<Vector3<real_Num>>>::allocator_type( sourceBudget ) };
+            Array<Array<Vector3<real_Num>>> intersections{
+                typename Array<Array<Vector3<real_Num>>>::allocator_type( sourceBudget )
+            };
             intersections.resize( kGridSizeX );
             for( auto &col : intersections )
             {
@@ -522,8 +533,11 @@ namespace workphone
             // Build the AAA road system.
             WPRoadSystem roadSystem( kBaseSeed );
 
-            Array<SmartPtr<IRoad>> roads{ typename Array<SmartPtr<IRoad>>::allocator_type( sourceBudget ) };
-            Array<SmartPtr<IRoadConnection>> connections{ typename Array<SmartPtr<IRoadConnection>>::allocator_type( sourceBudget ) };
+            Array<SmartPtr<IRoad>> roads{ typename Array<SmartPtr<IRoad>>::allocator_type(
+                sourceBudget ) };
+            Array<SmartPtr<IRoadConnection>> connections{
+                typename Array<SmartPtr<IRoadConnection>>::allocator_type( sourceBudget )
+            };
 
             // ---------------------------------------------------------------
             // Build horizontal roads (running along X, at each row).
@@ -534,7 +548,8 @@ namespace workphone
                 RoadClass rc = hClasses[row];
 
                 buildRoadSegment( roadSystem, layoutNoise, start, end, rc,
-                                  kBaseSeed + static_cast<u32>( row * 1000 ), roads, roadNetwork, "CityRoadH_", row );
+                                  kBaseSeed + static_cast<u32>( row * 1000 ), roads, roadNetwork,
+                                  "CityRoadH_", row );
             }
 
             // ---------------------------------------------------------------
@@ -546,8 +561,8 @@ namespace workphone
                 RoadClass rc = vClasses[col];
 
                 buildRoadSegment( roadSystem, layoutNoise, start, end, rc,
-                                  kBaseSeed + static_cast<u32>( col * 2000 + 500 ), roads, roadNetwork, "CityRoadV_",
-                                  col );
+                                  kBaseSeed + static_cast<u32>( col * 2000 + 500 ), roads, roadNetwork,
+                                  "CityRoadV_", col );
             }
 
             // ---------------------------------------------------------------

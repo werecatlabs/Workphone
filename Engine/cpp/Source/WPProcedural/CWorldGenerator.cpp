@@ -58,7 +58,10 @@ namespace workphone
 
         void CWorldGenerator::addScene( SmartPtr<IProceduralScene> scene )
         {
-            if( !scene ) return;
+            if( !scene )
+            {
+                return;
+            }
             auto candidate = makeSourceBudgetSnapshot( m_scenes );
             candidate.push_back( scene );
             auto world = m_world;
@@ -69,7 +72,10 @@ namespace workphone
                 worldScenes.push_back( scene );
                 world->setScenes( worldScenes );
             }
-            if( token != m_generation || world != m_world ) return;
+            if( token != m_generation || world != m_world )
+            {
+                return;
+            }
             m_scenes.swap( candidate );
             ++m_generation;
             m_isGenerating = false;
@@ -79,15 +85,27 @@ namespace workphone
 
         void CWorldGenerator::removeScene( SmartPtr<IProceduralScene> scene )
         {
-            if( !scene ) return;
+            if( !scene )
+            {
+                return;
+            }
             auto world = m_world;
             const auto token = m_generation;
             // Concrete removal needs no admission. Custom owners retain the same
             // callback responsibility as their existing removeScene contract.
-            if( world ) world->removeScene( scene );
-            if( token != m_generation || world != m_world ) return;
+            if( world )
+            {
+                world->removeScene( scene );
+            }
+            if( token != m_generation || world != m_world )
+            {
+                return;
+            }
             auto it = std::find( m_scenes.begin(), m_scenes.end(), scene );
-            if( it != m_scenes.end() ) m_scenes.erase( it );
+            if( it != m_scenes.end() )
+            {
+                m_scenes.erase( it );
+            }
             ++m_generation;
             m_isGenerating = false;
             m_finished = false;
@@ -95,8 +113,9 @@ namespace workphone
 
         void CWorldGenerator::setScenes( Array<SmartPtr<IProceduralScene>> scenes )
         {
-            auto candidate = scenes.get_allocator().isSourceBudgeted() ? std::move( scenes ) :
-                makeSourceBudgetSnapshot( scenes );
+            auto candidate = scenes.get_allocator().isSourceBudgeted()
+                                 ? std::move( scenes )
+                                 : makeSourceBudgetSnapshot( scenes );
             auto world = m_world;
             const auto token = m_generation;
             if( world )
@@ -104,12 +123,20 @@ namespace workphone
                 // Preserve the legacy append-to-world behavior, including order.
                 auto worldScenes = world->getScenes();
                 if( candidate.size() > worldScenes.max_size() - worldScenes.size() )
+                {
                     throw std::length_error( "World scene inventory capacity overflow" );
+                }
                 worldScenes.reserve( worldScenes.size() + candidate.size() );
-                for( const auto &scene : candidate ) worldScenes.push_back( scene );
+                for( const auto &scene : candidate )
+                {
+                    worldScenes.push_back( scene );
+                }
                 world->setScenes( worldScenes );
             }
-            if( token != m_generation || world != m_world ) return;
+            if( token != m_generation || world != m_world )
+            {
+                return;
+            }
             m_scenes.swap( candidate );
             ++m_generation;
             m_isGenerating = false;
@@ -118,7 +145,10 @@ namespace workphone
 
         void CWorldGenerator::generate()
         {
-            if( m_isGenerating ) throw std::logic_error( "World generation is already active" );
+            if( m_isGenerating )
+            {
+                throw std::logic_error( "World generation is already active" );
+            }
             const bool wasFinished = m_finished;
             const auto previousSeed = m_options.seed;
             const auto token = ++m_generation;
@@ -128,7 +158,10 @@ namespace workphone
             {
                 validate();
                 if( m_options.randomizeSeed )
-                    m_options.seed = static_cast<int>( Math<real_Num>::RangedRandom( 0.0, s_randomSeedMax ) );
+                {
+                    m_options.seed =
+                        static_cast<int>( Math<real_Num>::RangedRandom( 0.0, s_randomSeedMax ) );
+                }
                 generateWorld();
             }
             catch( ... )
@@ -141,7 +174,11 @@ namespace workphone
                 }
                 throw;
             }
-            if( token == m_generation ) { m_isGenerating = false; m_finished = true; }
+            if( token == m_generation )
+            {
+                m_isGenerating = false;
+                m_finished = true;
+            }
         }
 
         void CWorldGenerator::validate()
@@ -189,8 +226,16 @@ namespace workphone
         {
             const auto previous = m_options;
             m_options = options;
-            try { validate(); onOptionChanged(); }
-            catch( ... ) { m_options = previous; throw; }
+            try
+            {
+                validate();
+                onOptionChanged();
+            }
+            catch( ... )
+            {
+                m_options = previous;
+                throw;
+            }
         }
 
         void CWorldGenerator::resetToDefaults()
@@ -466,18 +511,30 @@ namespace workphone
             auto world = m_world;
             const bool newWorld = !world;
             const auto denials = sourceBudgetDenialCount();
-            if( !world ) world = workphone::make_ptr<CProceduralWorld>();
-            if( !world ) throw std::bad_alloc();
+            if( !world )
+            {
+                world = workphone::make_ptr<CProceduralWorld>();
+            }
+            if( !world )
+            {
+                throw std::bad_alloc();
+            }
             auto scenes = makeSourceBudgetSnapshot( m_scenes );
             const bool defaultScene = scenes.empty();
             if( defaultScene )
             {
                 auto scene = createDefaultScene();
-                if( !scene ) throw std::bad_alloc();
+                if( !scene )
+                {
+                    throw std::bad_alloc();
+                }
                 scenes.push_back( scene );
             }
             auto worldScenes = makeSourceBudgetSnapshot<SmartPtr<IProceduralScene>>();
-            if( newWorld ) worldScenes = makeSourceBudgetSnapshot( scenes );
+            if( newWorld )
+            {
+                worldScenes = makeSourceBudgetSnapshot( scenes );
+            }
             else if( defaultScene )
             {
                 worldScenes = world->getScenes();
@@ -486,12 +543,27 @@ namespace workphone
             // Default objects remain private until all terrain work and final
             // world-inventory admission succeeds. External scene callbacks can
             // still mutate their own contents and retain their existing contract.
-            if( token != m_generation || previousWorld != m_world ) return;
+            if( token != m_generation || previousWorld != m_world )
+            {
+                return;
+            }
             generateScenes( scenes );
-            if( sourceBudgetDenialCount() != denials ) throw std::bad_alloc();
-            if( token != m_generation || previousWorld != m_world ) return;
-            if( newWorld || defaultScene ) world->setScenes( worldScenes );
-            if( token != m_generation || previousWorld != m_world ) return;
+            if( sourceBudgetDenialCount() != denials )
+            {
+                throw std::bad_alloc();
+            }
+            if( token != m_generation || previousWorld != m_world )
+            {
+                return;
+            }
+            if( newWorld || defaultScene )
+            {
+                world->setScenes( worldScenes );
+            }
+            if( token != m_generation || previousWorld != m_world )
+            {
+                return;
+            }
             m_scenes.swap( scenes );
             m_world = world;
         }
@@ -527,9 +599,15 @@ namespace workphone
                 {
                     for( int cx = 0; cx < chunksX; ++cx )
                     {
-                        if( token != m_generation ) return;
+                        if( token != m_generation )
+                        {
+                            return;
+                        }
                         auto terrainGenerator = workphone::make_ptr<CTerrainGenerator>();
-                        if( !terrainGenerator ) throw std::bad_alloc();
+                        if( !terrainGenerator )
+                        {
+                            throw std::bad_alloc();
+                        }
                         terrainGenerator->setProceduralScene( scene );
                         terrainGenerator->setWidth( chunkWidth );
                         terrainGenerator->setHeight( chunkHeight );
@@ -542,7 +620,10 @@ namespace workphone
                         terrainGenerator->setSeed( options.seed + cx + cy * chunksX );
                         terrainGenerator->setRandomize( false );
                         terrainGenerator->generate();
-                        if( token != m_generation ) return;
+                        if( token != m_generation )
+                        {
+                            return;
+                        }
                     }
                 }
             }

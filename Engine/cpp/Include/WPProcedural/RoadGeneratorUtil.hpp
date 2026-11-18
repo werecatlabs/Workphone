@@ -66,6 +66,7 @@ namespace workphone
         public:
             using SourceBudgetObject::operator new;
             using SourceBudgetObject::operator delete;
+
             StraightRoadInfo() : MinRoadDistance( 50.0f )
             {
             }
@@ -84,6 +85,7 @@ namespace workphone
         public:
             using SourceBudgetObject::operator new;
             using SourceBudgetObject::operator delete;
+
             RoadFinishedInfo() : IsInCityBoundaries( true ), CollidesWithTerrain( false )
             {
             }

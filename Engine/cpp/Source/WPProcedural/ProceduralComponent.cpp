@@ -63,9 +63,8 @@ namespace workphone
                 case State::Edit:
                 case State::Play:
                 {
-                    if (m_objectType == 0)
+                    if( m_objectType == 0 )
                     {
-
                     }
                 }
                 break;

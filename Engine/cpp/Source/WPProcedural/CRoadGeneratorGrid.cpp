@@ -65,8 +65,7 @@ namespace workphone
             CRoadGenerator::generate();
         }
 
-        void CRoadGeneratorGrid::buildNetwork( SmartPtr<IRoadNetwork> target,
-                                  SmartPtr<IRoadNetwork> )
+        void CRoadGeneratorGrid::buildNetwork( SmartPtr<IRoadNetwork> target, SmartPtr<IRoadNetwork> )
         {
             generateGridAAA( target );
         }
@@ -76,7 +75,10 @@ namespace workphone
         // ===================================================================
         void CRoadGeneratorGrid::generateGridAAA( SmartPtr<IRoadNetwork> roadNetwork )
         {
-            if( !roadNetwork ) return;
+            if( !roadNetwork )
+            {
+                return;
+            }
 
             // Grid parameters
             const s32 gridX = m_gridSize.X();
@@ -88,8 +90,11 @@ namespace workphone
             // Create the AAA road system
             WPRoadSystem roadSystem( seed );
 
-            Array<SmartPtr<IRoad>> roads{ typename Array<SmartPtr<IRoad>>::allocator_type( sourceBudget ) };
-            Array<SmartPtr<IRoadConnection>> connections{ typename Array<SmartPtr<IRoadConnection>>::allocator_type( sourceBudget ) };
+            Array<SmartPtr<IRoad>> roads{ typename Array<SmartPtr<IRoad>>::allocator_type(
+                sourceBudget ) };
+            Array<SmartPtr<IRoadConnection>> connections{
+                typename Array<SmartPtr<IRoadConnection>>::allocator_type( sourceBudget )
+            };
 
             // --- Build horizontal roads (along X axis) ---
             for( s32 row = 0; row < gridY; ++row )
@@ -113,7 +118,10 @@ namespace workphone
 
                 // Create the IRoad object
                 SmartPtr<CRoad> road = workphone::make_ptr<CRoad>();
-                if( !road ) throw std::bad_alloc();
+                if( !road )
+                {
+                    throw std::bad_alloc();
+                }
                 if( road )
                 {
                     roadNetwork->addRoad( road );
@@ -124,7 +132,10 @@ namespace workphone
                     // Add start and end nodes
                     SmartPtr<CRoadNode> startNode = workphone::make_ptr<CRoadNode>();
                     SmartPtr<CRoadNode> endNode = workphone::make_ptr<CRoadNode>();
-                    if( !startNode || !endNode ) throw std::bad_alloc();
+                    if( !startNode || !endNode )
+                    {
+                        throw std::bad_alloc();
+                    }
                     if( startNode )
                     {
                         startNode->setPosition( start );
@@ -174,7 +185,10 @@ namespace workphone
                 RoadSegmentResult segResult = roadSystem.generateSegment( spec );
 
                 SmartPtr<CRoad> road = workphone::make_ptr<CRoad>();
-                if( !road ) throw std::bad_alloc();
+                if( !road )
+                {
+                    throw std::bad_alloc();
+                }
                 if( road )
                 {
                     roadNetwork->addRoad( road );
@@ -184,7 +198,10 @@ namespace workphone
 
                     SmartPtr<CRoadNode> startNode = workphone::make_ptr<CRoadNode>();
                     SmartPtr<CRoadNode> endNode = workphone::make_ptr<CRoadNode>();
-                    if( !startNode || !endNode ) throw std::bad_alloc();
+                    if( !startNode || !endNode )
+                    {
+                        throw std::bad_alloc();
+                    }
                     if( startNode )
                     {
                         startNode->setPosition( start );
@@ -237,7 +254,8 @@ namespace workphone
                         conn->setType( IRoadConnection::EType::X_Crossing );
                         conn->setPosition( center );
                         auto payload = std::make_unique<IntersectionResult>( intResult );
-                        conn->setUserData( StringUtil::getHash( "WPIntersectionResult" ), payload.get() );
+                        conn->setUserData( StringUtil::getHash( "WPIntersectionResult" ),
+                                           payload.get() );
                         payload.release();
                         connections.push_back( conn );
                     }

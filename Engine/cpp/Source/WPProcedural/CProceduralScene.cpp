@@ -9,6 +9,7 @@ namespace workphone
         CProceduralScene::CProceduralScene() = default;
 
         CProceduralScene::~CProceduralScene() = default;
+
         void CProceduralScene::unload( SmartPtr<ISharedObject> )
         {
             auto cities = std::move( m_cities );

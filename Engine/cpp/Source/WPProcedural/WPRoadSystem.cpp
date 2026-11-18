@@ -49,13 +49,18 @@ namespace workphone
         // WPRoadSystem - constructor / destructor
         // ===================================================================
         WPRoadSystem::WPRoadSystem( u32 seed ) :
-            mSeed( seed ), mNoise( std::make_unique<WPNoise>( seed ) )
+            mSeed( seed ),
+            mNoise( std::make_unique<WPNoise>( seed ) )
         {
         }
 
         WPRoadSystem::WPRoadSystem( const WPRoadSystem &other ) :
-            oldTarmac( other.oldTarmac ), potholes( other.potholes ), manholes( other.manholes ),
-            gullyGrates( other.gullyGrates ), arrows( other.arrows ), pedXing( other.pedXing ),
+            oldTarmac( other.oldTarmac ),
+            potholes( other.potholes ),
+            manholes( other.manholes ),
+            gullyGrates( other.gullyGrates ),
+            arrows( other.arrows ),
+            pedXing( other.pedXing ),
             mSeed( other.mSeed ),
             mNoise( other.mNoise ? std::make_unique<WPNoise>( *other.mNoise ) : nullptr )
         {
@@ -63,23 +68,34 @@ namespace workphone
 
         WPRoadSystem &WPRoadSystem::operator=( const WPRoadSystem &other )
         {
-            if( this != &other ) { WPRoadSystem candidate( other ); swap( candidate ); }
+            if( this != &other )
+            {
+                WPRoadSystem candidate( other );
+                swap( candidate );
+            }
             return *this;
         }
 
         void WPRoadSystem::swap( WPRoadSystem &other ) noexcept
         {
-            oldTarmac.swap( other.oldTarmac ); potholes.swap( other.potholes );
-            manholes.swap( other.manholes ); gullyGrates.swap( other.gullyGrates );
-            arrows.swap( other.arrows ); pedXing.swap( other.pedXing );
-            std::swap( mSeed, other.mSeed ); mNoise.swap( other.mNoise );
+            oldTarmac.swap( other.oldTarmac );
+            potholes.swap( other.potholes );
+            manholes.swap( other.manholes );
+            gullyGrates.swap( other.gullyGrates );
+            arrows.swap( other.arrows );
+            pedXing.swap( other.pedXing );
+            std::swap( mSeed, other.mSeed );
+            mNoise.swap( other.mNoise );
         }
 
         WPRoadSystem::~WPRoadSystem() = default;
 
         void WPRoadSystem::setSeed( u32 seed )
         {
-            if( mNoise && mSeed == seed ) return;
+            if( mNoise && mSeed == seed )
+            {
+                return;
+            }
             auto candidate = std::make_unique<WPNoise>( seed );
             mNoise.swap( candidate );
             mSeed = seed;
@@ -87,7 +103,11 @@ namespace workphone
 
         const WPNoise &WPRoadSystem::noise() const
         {
-            if( !mNoise ) throw std::logic_error( "A moved-from road system must be reseeded before noise-dependent generation" );
+            if( !mNoise )
+            {
+                throw std::logic_error(
+                    "A moved-from road system must be reseeded before noise-dependent generation" );
+            }
             return *mNoise;
         }
 

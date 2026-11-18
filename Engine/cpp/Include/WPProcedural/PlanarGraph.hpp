@@ -108,7 +108,9 @@ namespace workphone
                 SourceBudgetVector<Index> discovery( count, none ), low( count ), parent( count, none );
                 SourceBudgetVector<Index> next( count, 0 ), stack;
                 SourceBudgetMap<std::pair<Index, Index>, bool> bridges;
-                auto edgeKey = []( Index a, Index b ) { return std::make_pair( std::min( a, b ), std::max( a, b ) ); };
+                auto edgeKey = []( Index a, Index b ) {
+                    return std::make_pair( std::min( a, b ), std::max( a, b ) );
+                };
                 Index time = 0;
                 for( Index root = 0; root < count; ++root )
                 {
@@ -156,7 +158,8 @@ namespace workphone
                     auto primitive = std::make_unique<Primitive>();
                     for( auto index : sequence )
                     {
-                        primitive->Sequence.push_back( { m_vertices[index].Position, m_vertices[index].Id } );
+                        primitive->Sequence.push_back(
+                            { m_vertices[index].Position, m_vertices[index].Id } );
                     }
                     results.push_back( std::move( primitive ) );
                 };
@@ -167,8 +170,7 @@ namespace workphone
                         emit( { v } );
                     }
                     // A bridge chain stops at a branch or a vertex belonging to a cycle.
-                    if( adjacency[v].size() == 2 &&
-                        bridges.count( edgeKey( v, adjacency[v][0] ) ) &&
+                    if( adjacency[v].size() == 2 && bridges.count( edgeKey( v, adjacency[v][0] ) ) &&
                         bridges.count( edgeKey( v, adjacency[v][1] ) ) )
                     {
                         continue;
@@ -191,7 +193,9 @@ namespace workphone
                             {
                                 break;
                             }
-                            const auto candidate = adjacency[current][0] == previous ? adjacency[current][1] : adjacency[current][0];
+                            const auto candidate = adjacency[current][0] == previous
+                                                       ? adjacency[current][1]
+                                                       : adjacency[current][0];
                             if( !bridges.count( edgeKey( current, candidate ) ) )
                             {
                                 break;
@@ -208,10 +212,15 @@ namespace workphone
                 {
                     auto &neighbors = adjacency[v];
                     neighbors.erase( std::remove_if( neighbors.begin(), neighbors.end(),
-                        [&]( Index w ) { return bridges.count( edgeKey( v, w ) ) != 0; } ), neighbors.end() );
+                                                     [&]( Index w ) {
+                                                         return bridges.count( edgeKey( v, w ) ) != 0;
+                                                     } ),
+                                     neighbors.end() );
                     auto angle = [&]( Index w ) {
-                        return std::atan2( static_cast<long double>( m_vertices[w].Position.Y() ) - m_vertices[v].Position.Y(),
-                                           static_cast<long double>( m_vertices[w].Position.X() ) - m_vertices[v].Position.X() );
+                        return std::atan2( static_cast<long double>( m_vertices[w].Position.Y() ) -
+                                               m_vertices[v].Position.Y(),
+                                           static_cast<long double>( m_vertices[w].Position.X() ) -
+                                               m_vertices[v].Position.X() );
                     };
                     std::sort( neighbors.begin(), neighbors.end(), [&]( Index a, Index b ) {
                         const auto aa = angle( a ), ab = angle( b );
@@ -239,9 +248,9 @@ namespace workphone
                             const auto &p = m_vertices[a].Position;
                             const auto &q = m_vertices[b].Position;
                             area += ( static_cast<long double>( p.X() ) - origin.X() ) *
-                                    ( static_cast<long double>( q.Y() ) - origin.Y() ) -
+                                        ( static_cast<long double>( q.Y() ) - origin.Y() ) -
                                     ( static_cast<long double>( p.Y() ) - origin.Y() ) *
-                                    ( static_cast<long double>( q.X() ) - origin.X() );
+                                        ( static_cast<long double>( q.X() ) - origin.X() );
                             const auto &neighbors = adjacency[b];
                             const auto incoming = std::find( neighbors.begin(), neighbors.end(), a );
                             const auto offset = static_cast<Index>( incoming - neighbors.begin() );
@@ -256,9 +265,15 @@ namespace workphone
                 }
                 auto output = makeSourceBudgetSnapshot( primitives );
                 output.reserve( output.size() + results.size() );
-                for( auto &result : results ) output.push_back( result.get() );
+                for( auto &result : results )
+                {
+                    output.push_back( result.get() );
+                }
                 primitives.swap( output );
-                for( auto &result : results ) result.release();
+                for( auto &result : results )
+                {
+                    result.release();
+                }
             }
 
         private:

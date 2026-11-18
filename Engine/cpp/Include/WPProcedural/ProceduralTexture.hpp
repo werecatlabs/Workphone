@@ -51,28 +51,46 @@ namespace workphone
          */
         struct WPProcedural_API Texture2D : SourceBudgetObject
         {
-            int width = 0;         ///< Horizontal resolution in pixels.
-            int height = 0;        ///< Vertical resolution in pixels.
+            int width = 0;   ///< Horizontal resolution in pixels.
+            int height = 0;  ///< Vertical resolution in pixels.
             Array<Color4> pixels{ Allocator<Color4>( sourceBudget ) };  ///< Admitted row-major store.
 
             Texture2D() = default;
+
             Texture2D( int w, int h, const Array<Color4> &data = {} ) :
-                width( w ), height( h ), pixels( makeSourceBudgetSnapshot( data ) ) {}
+                width( w ),
+                height( h ),
+                pixels( makeSourceBudgetSnapshot( data ) )
+            {
+            }
+
             Texture2D( const Texture2D &other ) :
-                width( other.width ), height( other.height ),
-                pixels( makeSourceBudgetSnapshot( other.pixels ) ) {}
+                width( other.width ),
+                height( other.height ),
+                pixels( makeSourceBudgetSnapshot( other.pixels ) )
+            {
+            }
+
             Texture2D( Texture2D && ) noexcept = default;
             Texture2D &operator=( Texture2D && ) noexcept = default;
+
             Texture2D &operator=( const Texture2D &other )
             {
-                if( this != &other ) { Texture2D candidate( other ); swap( candidate ); }
+                if( this != &other )
+                {
+                    Texture2D candidate( other );
+                    swap( candidate );
+                }
                 return *this;
             }
+
             void swap( Texture2D &other ) noexcept
             {
-                std::swap( width, other.width ); std::swap( height, other.height );
+                std::swap( width, other.width );
+                std::swap( height, other.height );
                 pixels.swap( other.pixels );
             }
+
             void clear() noexcept
             {
                 auto retired = std::move( pixels );

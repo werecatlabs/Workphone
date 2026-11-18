@@ -232,7 +232,8 @@ namespace workphone
             // Node storage
             Array<SmartPtr<IRoadNode>> m_nodes{ Allocator<SmartPtr<IRoadNode>>( sourceBudget ) };
             Array<SmartPtr<IRoadNode>> m_mergedNodes{ Allocator<SmartPtr<IRoadNode>>( sourceBudget ) };
-            Array<SmartPtr<IRoadNode>> m_mergedNetworkNodes{ Allocator<SmartPtr<IRoadNode>>( sourceBudget ) };
+            Array<SmartPtr<IRoadNode>> m_mergedNetworkNodes{ Allocator<SmartPtr<IRoadNode>>(
+                sourceBudget ) };
 
             // Road storage
             Array<SmartPtr<IRoad>> m_roads{ Allocator<SmartPtr<IRoad>>( sourceBudget ) };
@@ -240,8 +241,8 @@ namespace workphone
             Array<SmartPtr<IRoad>> m_minorRoads{ Allocator<SmartPtr<IRoad>>( sourceBudget ) };
 
             // Connection storage
-            Array<SmartPtr<IRoadConnection>> m_roadConnections{
-                Allocator<SmartPtr<IRoadConnection>>( sourceBudget ) };
+            Array<SmartPtr<IRoadConnection>> m_roadConnections{ Allocator<SmartPtr<IRoadConnection>>(
+                sourceBudget ) };
 
             // Cached mesh data for AAA quality rendering
             using SegmentCache = SourceBudgetMap<IRoad *, RoadSegmentResult>;
