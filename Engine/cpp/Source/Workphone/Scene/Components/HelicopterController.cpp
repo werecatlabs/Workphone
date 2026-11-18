@@ -5,7 +5,7 @@
 #include <Workphone/Interface/System/ITimer.hpp>
 #include <Workphone/Scene/Components/Rigidbody.hpp>
 #include <Workphone/Interface/Physics/IRigidDynamic3.hpp>
-#include "AircraftControllerInput.hpp"
+#include "Workphone/Scene/Components/AircraftControllerInput.hpp"
 #include <cmath>
 
 namespace workphone::scene

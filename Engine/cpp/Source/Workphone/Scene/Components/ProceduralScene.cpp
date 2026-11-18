@@ -5,7 +5,7 @@
 #include <Workphone/Interface/System/ITaskManager.hpp>
 #include <Workphone/System/TaskLock.hpp>
 #include <Workphone/Workphone.hpp>
-#include "CityTrafficAppearance.hpp"
+#include "Workphone/Scene/Components/CityTrafficAppearance.hpp"
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>

@@ -252,7 +252,7 @@
 #include <Workphone/Scene/Directors/UiDirector.hpp>
 #include <Workphone/Scene/Directors/UiElementDirector.hpp>
 
-#include <Workphone/Scene/Systems/UI/LayoutTransformSystem.hpp>
+#include <Workphone/Scene/Systems/LayoutTransformSystem.hpp>
 #include <Workphone/Scene/Systems/LODSystem.hpp>
 
 #include <Workphone/Scene/GameActor.hpp>

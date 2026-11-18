@@ -15,7 +15,7 @@
 #include <Workphone/Core/Handle.hpp>
 #include <Workphone/System/TaskLock.hpp>
 #include <Workphone/Thread/Thread.hpp>
-#include "../RuntimeSceneMembership.hpp"
+#include "Workphone/Scene/RuntimeSceneMembership.hpp"
 #include <algorithm>
 #include <cmath>
 #include <limits>

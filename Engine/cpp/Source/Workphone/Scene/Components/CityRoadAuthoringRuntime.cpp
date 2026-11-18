@@ -3,10 +3,10 @@
 #include <Workphone/Scene/Components/CityRoadTerrainMesh.hpp>
 #include <Workphone/Scene/Components/CityRoadJunctions.hpp>
 #include <Workphone/Scene/Components/CityRoadFootways.hpp>
-#include "CityRoadCrossings.hpp"
-#include "CityRoadTerminals.hpp"
+#include "Workphone/Scene/Components/CityRoadCrossings.hpp"
+#include "Workphone/Scene/Components/CityRoadTerminals.hpp"
 #include <Workphone/Scene/Components/CitySurfaceLibrary.hpp>
-#include "CitySurfaceScalar.hpp"
+#include "Workphone/Scene/Components/CitySurfaceScalar.hpp"
 #include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
 #include <Workphone/Scene/Components/Mesh.hpp>
 #include <Workphone/Scene/Components/MeshRenderer.hpp>
@@ -37,7 +37,7 @@
 #include <Workphone/ApplicationUtil.hpp>
 #include <Workphone/System/TaskLock.hpp>
 #include <Workphone/Thread/Thread.hpp>
-#include "../RuntimeSceneMembership.hpp"
+#include "Workphone/Scene/RuntimeSceneMembership.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>

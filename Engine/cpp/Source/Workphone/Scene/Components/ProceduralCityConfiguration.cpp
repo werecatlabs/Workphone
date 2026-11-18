@@ -1,15 +1,12 @@
 #include <Workphone/WorkphonePCH.hpp>
-
-#include "ProceduralCityConfiguration.hpp"
-#include "../RuntimeSceneMembership.hpp"
-
+#include "Workphone/Scene/Components/ProceduralCityConfiguration.hpp"
+#include "Workphone/Scene/RuntimeSceneMembership.hpp"
 #include <Workphone/Core/Properties.hpp>
 #include <Workphone/Core/StringUtil.hpp>
 #include <Workphone/Interface/Scene/IGameManager.hpp>
 #include <Workphone/Scene/Components/CityBuildingStyles.hpp>
 #include <Workphone/Scene/Components/ProceduralSceneGeneration.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
-
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>

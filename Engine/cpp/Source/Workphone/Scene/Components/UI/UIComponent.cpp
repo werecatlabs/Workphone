@@ -3,7 +3,7 @@
 #include <Workphone/Scene/Components/UI/Slider.hpp>
 #include <Workphone/Scene/Components/UI/Dropdown.hpp>
 #include <Workphone/Scene/Components/UI/UIComponent.hpp>
-#include "../../RuntimeSceneMembership.hpp"
+#include "Workphone/Scene/RuntimeSceneMembership.hpp"
 #include "Workphone/Scene/UIHierarchyUpdate.hpp"
 #include <Workphone/Jobs/EventJob.hpp>
 #include <Workphone/System/TaskLock.hpp>

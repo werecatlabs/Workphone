@@ -1,7 +1,7 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Scene/Components/Terrain/CollisionTerrain.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
-#include "../../RuntimeSceneMembership.hpp"
+#include "Workphone/Scene/RuntimeSceneMembership.hpp"
 #include <Workphone/Scene/Components/Terrain/TerrainEditing.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainIntegration.hpp>
 #include <Workphone/Scene/Components/Terrain/FoliageAuthoring.hpp>

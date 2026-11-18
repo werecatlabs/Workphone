@@ -1,5 +1,5 @@
 #include <Workphone/WorkphonePCH.hpp>
-#include "ProceduralProperties.hpp"
+#include "Workphone/Scene/Components/ProceduralProperties.hpp"
 #include <Workphone/Core/Properties.hpp>
 #include <Workphone/Interface/IApplicationManager.hpp>
 #include <Workphone/Interface/System/IFactoryManager.hpp>

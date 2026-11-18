@@ -24,7 +24,7 @@
 #include <Workphone/Interface/Vehicle/IWheelComponent.hpp>
 #include <Workphone/Core/LogManager.hpp>
 #include <Workphone/Thread/ScopedLock.hpp>
-#include "FourWheelVehicleInput.hpp"
+#include "Workphone/Scene/Components/FourWheelVehicleInput.hpp"
 
 namespace workphone::scene
 {

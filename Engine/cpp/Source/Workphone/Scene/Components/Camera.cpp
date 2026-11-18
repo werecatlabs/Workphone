@@ -1,6 +1,6 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Scene/Components/Camera.hpp>
-#include "../RuntimeSceneMembership.hpp"
+#include "Workphone/Scene/RuntimeSceneMembership.hpp"
 #include <Workphone/Interface/Graphics/IGraphicsCamera.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsSystem.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsScene.hpp>

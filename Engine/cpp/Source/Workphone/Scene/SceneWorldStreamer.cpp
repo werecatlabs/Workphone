@@ -1,6 +1,6 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Scene/SceneWorldStreamer.hpp>
-#include "SceneWorldIndex.hpp"
+#include "Workphone/Scene/SceneWorldIndex.hpp"
 #include <Workphone/Scene/GameActorUtil.hpp>
 #include <Workphone/Scene/GameScene.hpp>
 #include <Workphone/Scene/Components/Renderer.hpp>

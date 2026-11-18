@@ -3,7 +3,7 @@
 #include <Workphone/Scene/Systems/LODSystem.hpp>
 #include <Workphone/Scene/Components/CityBuildingStyles.hpp>
 #include <Workphone/Scene/Components/CitySurfaceLibrary.hpp>
-#include "CitySurfaceScalar.hpp"
+#include "Workphone/Scene/Components/CitySurfaceScalar.hpp"
 #include <Workphone/Scene/Components/Terrain/FoliagePlantGenerator.hpp>
 #include <Workphone/Workphone.hpp>
 #include <Workphone/Interface/Mesh/IMeshResource.hpp>
@@ -37,11 +37,10 @@
 #include <Workphone/Graphics/FoliageImpostorBaker.hpp>
 #include <Workphone/System/SourceBudgetContainers.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
-#include "CityBuildingKit.hpp"
-#include "CityTrafficAppearance.hpp"
-#include "CityRoadCrossings.hpp"
-#include "../RuntimeSceneMembership.hpp"
-
+#include "Workphone/Scene/Components/CityBuildingKit.hpp"
+#include "Workphone/Scene/Components/CityTrafficAppearance.hpp"
+#include "Workphone/Scene/Components/CityRoadCrossings.hpp"
+#include "Workphone/Scene/RuntimeSceneMembership.hpp"
 #include <algorithm>
 #include <optional>
 #include <cmath>
@@ -1603,12 +1602,12 @@ namespace workphone::scene::race
 
         float cityValueNoise( u32 seed, float x, float z );
 
-#include "CityFoliageLOD.hpp"
-#include "CityHillsideVegetation.hpp"
-#include "CityParkLayout.hpp"
-#include "CityParkPlanting.hpp"
-#include "CityReserveLayout.hpp"
-#include "CityReservePlanting.hpp"
+#include "Workphone/Scene/Components/CityFoliageLOD.hpp"
+#include "Workphone/Scene/Components/CityHillsideVegetation.hpp"
+#include "Workphone/Scene/Components/CityParkLayout.hpp"
+#include "Workphone/Scene/Components/CityParkPlanting.hpp"
+#include "Workphone/Scene/Components/CityReserveLayout.hpp"
+#include "Workphone/Scene/Components/CityReservePlanting.hpp"
 
         void buildFoliageWorld( SceneAssets &assets, u32 seed, VehicleAppearanceQuality quality,
                                 const OpenCityLayout *city, const CityRoadTerrainMesh *cityFootways,
@@ -2592,8 +2591,8 @@ namespace workphone::scene::race
             installed.swap( admitted );
         }
 
-#include "CityVergeTransitions.hpp"
-#include "CityRoundaboutLandscape.hpp"
+#include "Workphone/Scene/Components/CityVergeTransitions.hpp"
+#include "Workphone/Scene/Components/CityRoundaboutLandscape.hpp"
 
         void buildTerrainCityVerges( SceneAssets &assets, const CityRoadTerrainMesh &walks, u32 seed,
                                      VehicleAppearanceQuality quality )
@@ -3556,7 +3555,7 @@ namespace workphone::scene::race
             return a * ( 1 - v ) + b * v;
         }
 
-#include "CityGroundAppearance.hpp"
+#include "Workphone/Scene/Components/CityGroundAppearance.hpp"
 
         SourceBudgetVector<Vector3F> prepareTerrainCity( SceneAssets &assets, OpenCityLayout &city,
                                                          SmartPtr<IGameActor> sourceOwner,
@@ -3888,31 +3887,31 @@ namespace workphone::scene::race
             return route;
         }
 
-#include "CityCarriagewayUtilities.hpp"
-#include "CityRoadEdgeSurface.hpp"
-#include "CityRoadLaneWear.hpp"
-#include "CityBuildingGroundContact.hpp"
-#include "CityEntranceWayfinding.hpp"
-#include "CityRoundaboutSigns.hpp"
-#include "CityFootwayAppearance.hpp"
-#include "CityKerbCoping.hpp"
-#include "CityPavementRelief.hpp"
-#include "CityCrossingLandings.hpp"
-#include "CityCrossingBollards.hpp"
-#include "CityParkLandscape.hpp"
-#include "CityReserveLandscape.hpp"
-#include "CityParkAmenities.hpp"
-#include "CityStormDrains.hpp"
-#include "CityHinterland.hpp"
-#include "CityBuildingGlazing.hpp"
-#include "CityShopfront.hpp"
-#include "CityShopInterior.hpp"
-#include "CityFacadeDetail.hpp"
-#include "CityRoofDeck.hpp"
-#include "CityRoofEquipment.hpp"
-#include "CityPitchedRoofCladding.hpp"
-#include "CityRoofDrainage.hpp"
-#include "CityBuildingImposters.hpp"
+#include "Workphone/Scene/Components/CityCarriagewayUtilities.hpp"
+#include "Workphone/Scene/Components/CityRoadEdgeSurface.hpp"
+#include "Workphone/Scene/Components/CityRoadLaneWear.hpp"
+#include "Workphone/Scene/Components/CityBuildingGroundContact.hpp"
+#include "Workphone/Scene/Components/CityEntranceWayfinding.hpp"
+#include "Workphone/Scene/Components/CityRoundaboutSigns.hpp"
+#include "Workphone/Scene/Components/CityFootwayAppearance.hpp"
+#include "Workphone/Scene/Components/CityKerbCoping.hpp"
+#include "Workphone/Scene/Components/CityPavementRelief.hpp"
+#include "Workphone/Scene/Components/CityCrossingLandings.hpp"
+#include "Workphone/Scene/Components/CityCrossingBollards.hpp"
+#include "Workphone/Scene/Components/CityParkLandscape.hpp"
+#include "Workphone/Scene/Components/CityReserveLandscape.hpp"
+#include "Workphone/Scene/Components/CityParkAmenities.hpp"
+#include "Workphone/Scene/Components/CityStormDrains.hpp"
+#include "Workphone/Scene/Components/CityHinterland.hpp"
+#include "Workphone/Scene/Components/CityBuildingGlazing.hpp"
+#include "Workphone/Scene/Components/CityShopfront.hpp"
+#include "Workphone/Scene/Components/CityShopInterior.hpp"
+#include "Workphone/Scene/Components/CityFacadeDetail.hpp"
+#include "Workphone/Scene/Components/CityRoofDeck.hpp"
+#include "Workphone/Scene/Components/CityRoofEquipment.hpp"
+#include "Workphone/Scene/Components/CityPitchedRoofCladding.hpp"
+#include "Workphone/Scene/Components/CityRoofDrainage.hpp"
+#include "Workphone/Scene/Components/CityBuildingImposters.hpp"
 
         void buildCityLayoutDebug( SceneAssets &assets, const OpenCityLayout &city,
                                    const CityRoadBlockFaces *terrainBlocks = nullptr )
@@ -6815,7 +6814,7 @@ namespace workphone::scene::race
             }
         }
 
-#include "CityDaylightSky.hpp"
+#include "Workphone/Scene/Components/CityDaylightSky.hpp"
 
         void buildSky( SceneAssets &assets, SmartPtr<scene::IGameActor> vehicle, u32 seed )
         {

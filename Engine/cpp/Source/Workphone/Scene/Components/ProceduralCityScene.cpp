@@ -1,9 +1,6 @@
 #include <Workphone/WorkphonePCH.hpp>
-
 #include <Workphone/Scene/Components/ProceduralCityScene.hpp>
-
-#include "ProceduralCityConfiguration.hpp"
-
+#include "Workphone/Scene/Components/ProceduralCityConfiguration.hpp"
 #include <Workphone/Interface/IApplicationManager.hpp>
 #include <Workphone/Interface/Scene/IGameManager.hpp>
 

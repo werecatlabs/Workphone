@@ -5,7 +5,7 @@
 #include <Workphone/Mesh/MeshUtil.hpp>
 #include <Workphone/Graphics/TextureMipGenerator.hpp>
 #include <Workphone/System/SourceBudgetContainers.hpp>
-#include "ProceduralProperties.hpp"
+#include "Workphone/Scene/Components/ProceduralProperties.hpp"
 #include <algorithm>
 #include <cmath>
 #include <limits>

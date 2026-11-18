@@ -1,7 +1,7 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Physics/RaycastHit.hpp>
 #include <Workphone/Scene/Components/ProceduralRaceScene.hpp>
-#include "ProceduralCityConfiguration.hpp"
+#include "Workphone/Scene/Components/ProceduralCityConfiguration.hpp"
 #include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
 #include <Workphone/Scene/Components/Terrain/CollisionTerrain.hpp>
 #include <Workphone/Scene/Components/CityRoadAuthoring.hpp>

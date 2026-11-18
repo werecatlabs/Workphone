@@ -1,5 +1,5 @@
 #include <Workphone/WorkphonePCH.hpp>
-#include "ProceduralProperties.hpp"
+#include "Workphone/Scene/Components/ProceduralProperties.hpp"
 #include <Workphone/Scene/Components/ProceduralSky.hpp>
 #include <Workphone/Scene/Components/Light.hpp>
 #include <Workphone/Interface/Scene/IGameActor.hpp>

@@ -1,6 +1,6 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Scene/Components/Light.hpp>
-#include "../RuntimeSceneMembership.hpp"
+#include "Workphone/Scene/RuntimeSceneMembership.hpp"
 #include <Workphone/Scene/Transform.hpp>
 #include <Workphone/Interface/Graphics/IDebug.hpp>
 #include <Workphone/Interface/Graphics/IDebugLine.hpp>

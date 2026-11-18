@@ -23,7 +23,7 @@
 #include <Workphone/Interface/Vehicle/IVehicleManager.hpp>
 #include <Workphone/Interface/Vehicle/IWheelComponent.hpp>
 #include <Workphone/Core/LogManager.hpp>
-#include "AircraftControllerInput.hpp"
+#include "Workphone/Scene/Components/AircraftControllerInput.hpp"
 #include <stdexcept>
 
 namespace workphone::scene

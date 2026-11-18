@@ -1,6 +1,6 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Scene/Components/ParticleSystem.hpp>
-#include "../RuntimeSceneMembership.hpp"
+#include "Workphone/Scene/RuntimeSceneMembership.hpp"
 #include <Workphone/Interface/Graphics/IGraphicsSystem.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsScene.hpp>
 #include <Workphone/Interface/Graphics/IParticleSystem.hpp>

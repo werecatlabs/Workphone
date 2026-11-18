@@ -1,6 +1,6 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Scene/Components/Skybox.hpp>
-#include "../RuntimeSceneMembership.hpp"
+#include "Workphone/Scene/RuntimeSceneMembership.hpp"
 #include <Workphone/Scene/Components/Material.hpp>
 #include <Workphone/Interface/Database/IResourceDatabase.hpp>
 #include <Workphone/Database/ResourceDatabase.hpp>
