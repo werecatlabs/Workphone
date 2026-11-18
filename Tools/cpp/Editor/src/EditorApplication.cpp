@@ -3278,6 +3278,7 @@ namespace workphone::editor
             auto cameraMgr = factoryManager->make_ptr<scene::CameraManager>();
             cameraMgr->load( nullptr );
             applicationManager->setCameraManager( cameraMgr );
+            cameraMgr->setState( scene::CameraManager::State::Edit );
 
             m_cameraActor = sceneManager->createActor();
             m_cameraActor->setName( "EditorCamera" );

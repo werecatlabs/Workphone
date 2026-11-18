@@ -339,9 +339,6 @@ namespace workphone
 
         bool ClawSceneNode::handleStateChanged( SmartPtr<IState> &state )
         {
-            auto application = core::IApplicationManager::instancePtr();
-            auto graphics = application ? application->getGraphicsSystem() : nullptr;
-            ScopedLock graphicsLock( graphics );
             if( state && state->getOwnerPtr() == this )
             {
                 if( isLoaded() )

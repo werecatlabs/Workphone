@@ -37,7 +37,9 @@ namespace workphone::scene
 
     void LODSystem::unload( SmartPtr<ISharedObject> data )
     {
-        auto application=core::IApplicationManager::instancePtr();auto manager=application?application->getGameManagerPtr():nullptr;ScopedLock managerLock(manager);
+        auto application = core::IApplicationManager::instancePtr();
+        auto manager = application ? application->getGameManagerPtr() : nullptr;
+        ScopedLock managerLock( manager );
         if( ISharedObject::getLoadingState() == LoadingState::Unloaded )
         {
             return;
@@ -75,7 +77,9 @@ namespace workphone::scene
 
     void LODSystem::update()
     {
-        auto application=core::IApplicationManager::instancePtr();auto manager=application?application->getGameManagerPtr():nullptr;ScopedLock managerLock(manager);
+        auto application = core::IApplicationManager::instancePtr();
+        auto manager = application ? application->getGameManagerPtr() : nullptr;
+        ScopedLock managerLock( manager );
         if( !isLoaded() )
         {
             return;
@@ -85,8 +89,14 @@ namespace workphone::scene
         // same snapshot API with the game manager already held.
         View view;
         bool hasView;
-        try { hasView = getView( view ); }
-        catch( const std::bad_alloc & ) { return; }
+        try
+        {
+            hasView = getView( view );
+        }
+        catch( const std::bad_alloc & )
+        {
+            return;
+        }
 
         ScopedLock lock( this );
 
@@ -102,8 +112,17 @@ namespace workphone::scene
         }
 
         SharedPtr<LODBatch> batch;
-        try { if( hasView ) batch = buildBatch( view ); }
-        catch( const std::bad_alloc & ) { return; } // Keep the last applied visibility; retry next frame.
+        try
+        {
+            if( hasView )
+            {
+                batch = buildBatch( view );
+            }
+        }
+        catch( const std::bad_alloc & )
+        {
+            return;
+        }  // Keep the last applied visibility; retry next frame.
         if( !batch || batch->slots.empty() )
         {
             return;
@@ -138,8 +157,15 @@ namespace workphone::scene
         // Admit the lookup node before base storage can publish a component.
         auto entry = m_groupSlots.emplace( group.get(), 0 );
         u32 slot;
-        try { slot = ComponentSystem::addComponent( component ); }
-        catch( ... ) { m_groupSlots.erase( entry.first ); throw; }
+        try
+        {
+            slot = ComponentSystem::addComponent( component );
+        }
+        catch( ... )
+        {
+            m_groupSlots.erase( entry.first );
+            throw;
+        }
         if( slot == std::numeric_limits<u32>::max() )
         {
             m_groupSlots.erase( entry.first );
@@ -163,7 +189,9 @@ namespace workphone::scene
 
     void LODSystem::removeComponent( SmartPtr<IComponent> component )
     {
-        auto application=core::IApplicationManager::instancePtr();auto manager=application?application->getGameManagerPtr():nullptr;ScopedLock managerLock(manager);
+        auto application = core::IApplicationManager::instancePtr();
+        auto manager = application ? application->getGameManagerPtr() : nullptr;
+        ScopedLock managerLock( manager );
         if( !component || !component->isDerived<LODGroup>() )
         {
             return;
@@ -199,7 +227,9 @@ namespace workphone::scene
 
     void LODSystem::removeComponent( u32 id )
     {
-        auto application=core::IApplicationManager::instancePtr();auto manager=application?application->getGameManagerPtr():nullptr;ScopedLock managerLock(manager);
+        auto application = core::IApplicationManager::instancePtr();
+        auto manager = application ? application->getGameManagerPtr() : nullptr;
+        ScopedLock managerLock( manager );
         ScopedLock lock( this );
         if( id >= m_groups.size() || !m_groups[id] )
         {
@@ -248,14 +278,20 @@ namespace workphone::scene
             ScopedLock lock( this );
             if( m_hasViewOverride )
             {
-                if( !finitePosition( m_viewOverride.position ) ) return false;
+                if( !finitePosition( m_viewOverride.position ) )
+                {
+                    return false;
+                }
                 view = m_viewOverride;
                 return true;
             }
         }
 
         auto cameras = application ? application->getCameraManager() : nullptr;
-        if( !cameras ) return false;
+        if( !cameras )
+        {
+            return false;
+        }
 
         SmartPtr<Camera> selected;
         const auto eligible = []( const SmartPtr<Camera> &camera ) {
@@ -278,30 +314,43 @@ namespace workphone::scene
         {
             for( const auto &actor : cameras->getCameras() )
             {
-                if( !actor ) continue;
+                if( !actor )
+                {
+                    continue;
+                }
                 for( const auto &camera : actor->getComponentsByType<Camera>() )
                 {
                     // Keep registration order for equal Z, avoiding frame-to-frame
                     // changes when two viewports have the same priority.
                     if( eligible( camera ) &&
                         ( !selected || camera->getZOrder() > selected->getZOrder() ) )
+                    {
                         selected = camera;
+                    }
                 }
             }
         }
-        if( !selected ) return false;
+        if( !selected )
+        {
+            return false;
+        }
 
         View resolved;
         const auto cameraPose = selected->getActor()->getWorldTransform();
         resolved.position = cameraPose.getPosition();
         resolved.direction = cameraPose.getOrientation() * -Vector3<real_Num>::unitZ();
-        if( !finitePosition( resolved.position ) ) return false;
+        if( !finitePosition( resolved.position ) )
+        {
+            return false;
+        }
         resolved.verticalFovRadians = Math<f32>::DegToRad( std::max( selected->getFOV(), 0.001f ) );
         resolved.orthographicHeight = selected->getOrthoWindowHeight();
         resolved.nearClipDistance = std::max( selected->getNearClipDistance(), 0.001f );
         resolved.orthographic = resolved.orthographicHeight > 0.001f;
         if( auto renderCamera = selected->getCamera() )
+        {
             resolved.lodBias = std::max( renderCamera->getLodBias(), 0.01f );
+        }
         view = resolved;
         return true;
     }
@@ -368,16 +417,21 @@ namespace workphone::scene
         auto cameraLODBias = std::max( view.lodBias, 0.01f );
 
         if( auto app = core::IApplicationManager::instancePtr() )
+        {
             if( auto settings = app->getPlayerSettings() )
             {
                 f32 bias = 1.0f;
-                settings->getPropertyValue("quality.lodBias",bias);
+                settings->getPropertyValue( "quality.lodBias", bias );
                 s32 quality = 2;
-                settings->getPropertyValue("quality.mesh",quality);
-                constexpr f32 detailFactors[] = {0.5f,0.75f,1.0f,1.5f};
-                if(std::isfinite(bias) && bias > 0)
-                    cameraLODBias *= std::clamp(bias,0.1f,4.0f) * detailFactors[std::clamp(quality,0,3)];
+                settings->getPropertyValue( "quality.mesh", quality );
+                constexpr f32 detailFactors[] = { 0.5f, 0.75f, 1.0f, 1.5f };
+                if( std::isfinite( bias ) && bias > 0 )
+                {
+                    cameraLODBias *=
+                        std::clamp( bias, 0.1f, 4.0f ) * detailFactors[std::clamp( quality, 0, 3 )];
+                }
             }
+        }
         const auto groupCount = m_groupSlots.size();
         batch->worldReferencePoints.reserve( groupCount );
         batch->worldRadii.reserve( groupCount );
@@ -483,11 +537,16 @@ namespace workphone::scene
         {
             const auto end = std::min( begin + grainSize, itemCount );
             SmartPtr<IJob> job;
-            try { job = jobQueue->startJob( [batch, begin, end]() {
-                calculateRange( batch, begin, end );
-                batch->remainingJobs.fetch_sub( 1, memory_semantics::release );
-            } ); }
-            catch( const std::bad_alloc & ) { /* Calculate rejected ranges locally. */ }
+            try
+            {
+                job = jobQueue->startJob( [batch, begin, end]() {
+                    calculateRange( batch, begin, end );
+                    batch->remainingJobs.fetch_sub( 1, memory_semantics::release );
+                } );
+            }
+            catch( const std::bad_alloc & )
+            { /* Calculate rejected ranges locally. */
+            }
 
             if( !job )
             {
@@ -499,9 +558,10 @@ namespace workphone::scene
 
     void LODSystem::applyBatch( const SharedPtr<LODBatch> &batch )
     {
-        auto application=core::IApplicationManager::instancePtr();auto manager=application?application->getGameManagerPtr():nullptr;
-        auto graphics=application?application->getGraphicsSystemPtr():nullptr;
-        ScopedLock managerLock(manager);ScopedLock graphicsLock(graphics);
+        auto application = core::IApplicationManager::instancePtr();
+        auto manager = application->getGameManagerPtr();
+        auto graphics =  application->getGraphicsSystemPtr();
+
         for( size_t index = 0; index < batch->slots.size(); ++index )
         {
             const auto slot = batch->slots[index];
@@ -533,7 +593,11 @@ namespace workphone::scene
                 m_appliedRevisions[slot] = revision;
                 group->applyLOD( lodIndex );
             }
-            else group->applyLOD(lodIndex); // Poll native residency without changing selection/hysteresis.
+            else
+            {
+                group->applyLOD(
+                    lodIndex );  // Poll native residency without changing selection/hysteresis.
+            }
         }
     }
 

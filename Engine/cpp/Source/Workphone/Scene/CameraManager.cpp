@@ -105,34 +105,6 @@ namespace workphone::scene
                 break;
                 default:
                 {
-                    if( applicationManager->isEditorCamera() )
-                    {
-                        if( auto editorCamera = getEditorCameraPtr() )
-                        {
-                            editorCamera->update();
-                        }
-                    }
-
-                    auto sceneManager = applicationManager->getGameManagerPtr();
-                    if( !sceneManager )
-                    {
-                        break;
-                    }
-
-                    auto scene = sceneManager->getCurrentScenePtr();
-                    if( !scene )
-                    {
-                        break;
-                    }
-
-                    auto cameras = scene->getComponents<Camera>();
-                    for( auto &camera : cameras )
-                    {
-                        if( auto cameraActor = camera->getActorPtr() )
-                        {
-                            cameraActor->update();
-                        }
-                    }
                 }
                 break;
                 }
@@ -240,8 +212,8 @@ namespace workphone::scene
             // viewport rendering until an eligible game camera takes over. This
             // is a render fallback, not the user's Editor Camera override: leave
             // that flag and the editor camera controller's input routing alone.
-            const bool renderEditorCamera = useEditorCamera ||
-                ( applicationManager->isEditor() && !hasGameView );
+            const bool renderEditorCamera =
+                useEditorCamera || ( applicationManager->isEditor() && !hasGameView );
             auto components = editorCamera->getAllComponentsAndInChildren<Camera>();
             for( auto &camera : components )
             {
@@ -251,8 +223,8 @@ namespace workphone::scene
 
             if( useEditorCamera && applicationManager->isEditor() )
             {
-                const auto state = applicationManager->isPlaying() ? IGameActor::State::Play
-                                                                   : IGameActor::State::Edit;
+                const auto state =
+                    applicationManager->isPlaying() ? IGameActor::State::Play : IGameActor::State::Edit;
                 editorCamera->setState( state );
             }
         }
