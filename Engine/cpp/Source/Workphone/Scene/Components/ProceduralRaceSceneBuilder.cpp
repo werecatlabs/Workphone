@@ -43,6 +43,7 @@
 #include "CityTrafficVehicle.hpp"
 #include <Workphone/Scene/Components/WheelController.hpp>
 #include "Workphone/Scene/Components/CityRoadCrossings.hpp"
+#include "Workphone/Scene/Components/City/CityStreetFixture.hpp"
 #include "Workphone/Scene/RuntimeSceneMembership.hpp"
 #include <algorithm>
 #include <optional>
@@ -359,8 +360,6 @@ namespace workphone::scene::race
 
         using namespace procedural;
         constexpr float pi = 3.14159265358979323846f;
-
-        
 
         SmartPtr<render::IMaterial> material( SceneAssets &assets, ColourF colour, float roughness,
                                               float metalness = 0 )
@@ -2107,26 +2106,6 @@ namespace workphone::scene::race
             mesh( assets, "City ornamental planter grasses", planting,
                   material( assets, { .24f, .36f, .13f, 1 }, .92f ) );
         }
-
-        struct CityStreetFixture
-        {
-            enum Kind
-            {
-                Bench,
-                Planter,
-                Bin,
-                Lamp,
-                CycleRack,
-                UtilityCabinet
-            };
-
-            Vector3F position, along, outward;
-            Kind kind;
-            float halfLength, halfDepth;
-            float lowest = std::numeric_limits<float>::infinity();
-            float highest = -std::numeric_limits<float>::infinity();
-            double area = 0;
-        };
 
         void measureStreetFixtureSupport( CityStreetFixture &site, const Vector3F &a, const Vector3F &b,
                                           const Vector3F &c )
