@@ -3494,7 +3494,6 @@ namespace workphone::editor
             auto profiler = applicationManager->getProfilerPtr();
             WP_ASSERT( profiler );
 
-#if 1
             if( auto primaryTask = taskManager->getTaskPtr( TaskId::Primary ) )
             {
                 primaryTask->setTask( TaskId::Primary );
@@ -3584,6 +3583,22 @@ namespace workphone::editor
                 inputTask->setProfile( profile );
             }
 
+            if( auto lodTask = taskManager->getTaskPtr( TaskId::LOD  ) )
+            {
+                lodTask->setTask( TaskId::LOD );
+                lodTask->setThreadTaskFlags( Thread::LOD_Flag );
+
+                lodTask->setPrimary( false );
+                lodTask->setEnabled( true );
+                lodTask->setOwner( this );
+                lodTask->setTargetFPS( 10.0 );
+                lodTask->setAffinity( 5 );
+
+                auto profile = profiler->addProfile();
+                profile->setLabel( "LOD" );
+                lodTask->setProfile( profile );
+            }
+
             if( auto garbageCollectTask = taskManager->getTaskPtr( TaskId::GarbageCollect ) )
             {
                 garbageCollectTask->setTask( TaskId::GarbageCollect );
@@ -3599,111 +3614,6 @@ namespace workphone::editor
                 profile->setLabel( "Garbage Collect" );
                 garbageCollectTask->setProfile( profile );
             }
-#else
-            if( auto primaryTask = taskManager->getTaskPtr( TaskId::Primary ) )
-            {
-                primaryTask->setTask( TaskId::Primary );
-                primaryTask->setThreadTaskFlags( Thread::Primary_Flag );
-                primaryTask->setPrimary( true );
-                primaryTask->setEnabled( true );
-                primaryTask->setOwner( this );
-                primaryTask->setTargetFPS( 60.0 );
-
-                auto profile = profiler->addProfile();
-                profile->setLabel( "Primary" );
-                primaryTask->setProfile( profile );
-            }
-
-            if( auto applicationTask = taskManager->getTaskPtr( TaskId::Application ) )
-            {
-                applicationTask->setTask( TaskId::Application );
-                applicationTask->setThreadTaskFlags( Thread::Application_Flag );
-
-                applicationTask->setPrimary( false );
-                applicationTask->setEnabled( true );
-                applicationTask->setOwner( this );
-                applicationTask->setTargetFPS( 60.0 );
-                applicationTask->setAffinity( 1 );
-
-                auto profile = profiler->addProfile();
-                profile->setLabel( "Application" );
-                applicationTask->setProfile( profile );
-            }
-
-            if( auto renderTask = taskManager->getTaskPtr( TaskId::Render ) )
-            {
-                renderTask->setTask( TaskId::Render );
-                renderTask->setThreadTaskFlags( Thread::Render_Flag );
-
-#    if WP_GRAPHICS_SYSTEM_OGRENEXT
-#        ifdef WP_PLATFORM_WIN32
-                renderTask->setPrimary( false );
-                //renderTask->setPrimary( true );
-#        else
-                renderTask->setPrimary( true );
-#        endif
-#    elif WP_GRAPHICS_SYSTEM_OGRE
-                renderTask->setPrimary( true );
-#    endif
-
-                renderTask->setEnabled( true );
-                renderTask->setOwner( this );
-                renderTask->setTargetFPS( 60.0 );
-                renderTask->setAffinity( 1 );
-
-                auto profile = profiler->addProfile();
-                profile->setLabel( "Render" );
-                renderTask->setProfile( profile );
-            }
-
-            if( auto physicsTask = taskManager->getTaskPtr( TaskId::Physics ) )
-            {
-                physicsTask->setTask( TaskId::Physics );
-                physicsTask->setThreadTaskFlags( Thread::Physics_Flag );
-
-                physicsTask->setPrimary( false );
-                physicsTask->setEnabled( true );
-                physicsTask->setOwner( this );
-                physicsTask->setTargetFPS( 120.0 );
-                physicsTask->setAffinity( 1 );
-
-                auto profile = profiler->addProfile();
-                profile->setLabel( "Physics" );
-                physicsTask->setProfile( profile );
-            }
-
-            if( auto inputTask = taskManager->getTaskPtr( TaskId::Input ) )
-            {
-                inputTask->setTask( TaskId::Input );
-                inputTask->setThreadTaskFlags( Thread::Input_Flag );
-
-                inputTask->setPrimary( false );
-                inputTask->setEnabled( true );
-                inputTask->setOwner( this );
-                inputTask->setTargetFPS( 30.0 );
-                inputTask->setAffinity( 2 );
-
-                auto profile = profiler->addProfile();
-                profile->setLabel( "Input" );
-                inputTask->setProfile( profile );
-            }
-
-            if( auto garbageCollectTask = taskManager->getTaskPtr( TaskId::GarbageCollect ) )
-            {
-                garbageCollectTask->setTask( TaskId::GarbageCollect );
-                garbageCollectTask->setThreadTaskFlags( Thread::GarbageCollect_Flag );
-
-                garbageCollectTask->setPrimary( false );
-                garbageCollectTask->setEnabled( true );
-                garbageCollectTask->setOwner( this );
-                garbageCollectTask->setTargetFPS( 10.0 );
-                garbageCollectTask->setAffinity( 3 );
-
-                auto profile = profiler->addProfile();
-                profile->setLabel( "Garbage Collect" );
-                garbageCollectTask->setProfile( profile );
-            }
-#endif
         }
         catch( std::exception &e )
         {

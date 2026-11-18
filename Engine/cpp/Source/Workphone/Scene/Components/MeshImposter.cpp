@@ -76,9 +76,11 @@ namespace workphone::scene
         if( isLoaded() ) return;
         setLoadingState( LoadingState::Loading );
         Component::load( data );
-        if( auto app = core::IApplicationManager::instancePtr() )
-            if( auto manager = app->getGameManager() )
-                manager->registerComponentUpdate( TaskId::Application, Thread::UpdateState::Update, this );
+        // Actor reconstruction usually registers before load. Direct Editor
+        // unload/load cycles also need to rejoin the manager-owned roster.
+        if( !getComponentSystem() )
+            if( auto app = core::IApplicationManager::instancePtr() )
+                if( auto manager = app->getGameManager() ) manager->addComponent( this );
         {
             ImposterPublicationLock publication;
             auto state = MeshImposterSystem::instance().access( m_storage );
@@ -122,47 +124,6 @@ namespace workphone::scene
         state.selectedView = -1;
         state.selectionChanges = 0;
         applyView( 0 );
-    }
-
-    void MeshImposter::update()
-    {
-        if( Thread::getCurrentTask() != TaskId::Application || !isLoaded() || !isEnabled() ) return;
-        auto app = core::IApplicationManager::instancePtr();
-        auto timer = app->getTimer();
-        if( m_nextUpdate < timer->getTime() )
-        {
-            m_nextUpdate = timer->getTime() + (1.0 / 3.0);  
-
-            auto manager = app ? app->getGameManager() : nullptr;
-            if( !manager )
-            {
-                return;
-            }
-            ScopedLock managerLock( manager );
-            auto actor = getActor();
-            if( !actor || !actor->isEnabledInScene() )
-            {
-                return;
-            }
-            // Resolve the system owning this renderer's enclosing LOD group. This is
-            // also the instance receiving raw-render-camera overrides from samples.
-            for( auto owner = actor; owner; owner = owner->getParent() )
-            {
-                const auto group = owner->getComponent<LODGroup>();
-                const auto system =
-                    group ? dynamic_pointer_cast<LODSystem>( group->getComponentSystem() ) : nullptr;
-                if( !system )
-                {
-                    continue;
-                }
-                LODSystem::View view;
-                if( system->getView( view ) )
-                {
-                    updateForView( view );
-                }
-                return;
-            }
-        }
     }
 
     bool MeshImposter::updateForCamera( const Vector3<real_Num> &worldPosition )

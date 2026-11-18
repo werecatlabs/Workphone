@@ -8,4 +8,9 @@ namespace workphone::scene
 
     IComponentSystem::~IComponentSystem() = default;
 
+    TaskId IComponentSystem::getUpdateTask() const
+    {
+        return TaskId::None;
+    }
+
 }  // namespace workphone::scene

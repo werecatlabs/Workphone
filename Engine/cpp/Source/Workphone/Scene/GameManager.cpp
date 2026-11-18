@@ -969,12 +969,24 @@ namespace workphone::scene
             auto sceneTask = getStateTask();
             auto task = Thread::getCurrentTask();
 
-            if( task == sceneTask )
             {
                 TryLockGuard lock( this );
                 if( lock.locked() )
                 {
-                    for( auto &[key, system] : m_systems )
+                    Array<SmartPtr<IComponentSystem>> systems;
+                    {
+                        auto registered = m_systems.readLocked();
+                        for( auto &[key, system] : registered )
+                        {
+                            if( !system ) continue;
+                            const auto updateTask = system->getUpdateTask();
+                            if( task == ( updateTask == TaskId::None ? sceneTask : updateTask ) )
+                                systems.push_back( system );
+                        }
+                    }
+                    // Pin selected systems and release the registry view before
+                    // callbacks can register or remove another system.
+                    for( auto &system : systems )
                     {
                         system->update();
                     }
@@ -1619,6 +1631,11 @@ namespace workphone::scene
                 }
                 position = static_cast<size_t>( free - components.begin() );
             }
+            // A component reloaded into its system can acquire another slot.
+            // Retire its previous manager pin before publishing the new ID.
+            const auto previous = handle ? handle->getInstanceId() : std::numeric_limits<u32>::max();
+            if( previous != position && previous < components.size() && components[previous] == component )
+                components[previous] = nullptr;
             components[position] = component;
             if( handle )
             {

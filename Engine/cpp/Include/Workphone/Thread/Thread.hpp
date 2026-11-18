@@ -71,6 +71,7 @@ namespace workphone
         static const u32 Dynamics_Flag;
         static const u32 GarbageCollect_Flag;
         static const u32 Input_Flag;
+        static const u32 LOD_Flag;
         static const u32 Physics_Flag;
         static const u32 None_Flag;
         static const u32 Render_Flag;

@@ -22,7 +22,6 @@ namespace workphone::scene
 
         void load( SmartPtr<ISharedObject> data ) override;
         void unload( SmartPtr<ISharedObject> data ) override;
-        void update() override;
 
         /** Stages a SourceCpu-admitted metadata copy before publication. Material
          * must belong exclusively to this imposter; texture resources may be shared.
@@ -60,6 +59,5 @@ namespace workphone::scene
         bool updateFromCameraVector( const Vector3<real_Num> &worldVector, bool directionOnly );
 
         MeshImposterSystem::Handle m_storage;
-        time_interval m_nextUpdate = 0.0;
     };
 }

@@ -73,18 +73,81 @@ namespace workphone::scene
         // Keep indices stable for scenes. Legacy matches the untuned backend.
         // Road cars have a small rear grip reserve; the race car carries more
         // grip and spring rate at both axles. Use the same authored wheel geometry.
-        constexpr HandlingTune handlingTunes[] = {
-            { "Legacy", VehicleDriveType::AllWheelDrive, 1370, 1000, .50f, 50, 0, 0, 80000,
-              664, 317000, 4000, 5000, { 5000, 1.10f, 60000, 8000 }, { 5000, 1.10f, 60000, 8000 } },
-            { "FWD Hot Hatch", VehicleDriveType::FrontWheelDrive, 1200, 2600, .58f, 34, 105, 10, 75000,
-              205, 120000, 4300, 6300, { 29000, 1.00f, 75000, 1950 }, { 24000, 1.04f, 79000, 1150 } },
-            { "RWD Road Sport", VehicleDriveType::RearWheelDrive, 1370, 3200, .51f, 32, 120, 11.1f, 90000,
-              325, 205000, 4800, 6500, { 42000, 1.10f, 89000, 2300 }, { 38000, 1.13f, 93000, 1500 } },
-            { "AWD Performance", VehicleDriveType::AllWheelDrive, 1520, 3500, .55f, 32, 105, 11.2f, 100000,
-              425, 270000, 4500, 6500, { 47000, 1.13f, 92000, 2450 }, { 42000, 1.16f, 99000, 1600 } },
-            { "RWD GT Race", VehicleDriveType::RearWheelDrive, 1300, 4400, .50f, 29, 145, 13.3f, 130000,
-              520, 360000, 5500, 7200, { 86000, 1.35f, 130000, 3100 }, { 78000, 1.40f, 140000, 2100 } }
-        };
+        constexpr HandlingTune handlingTunes[] = { { "Legacy",
+                                                     VehicleDriveType::AllWheelDrive,
+                                                     1370,
+                                                     1000,
+                                                     .50f,
+                                                     50,
+                                                     0,
+                                                     0,
+                                                     80000,
+                                                     664,
+                                                     317000,
+                                                     4000,
+                                                     5000,
+                                                     { 5000, 1.10f, 60000, 8000 },
+                                                     { 5000, 1.10f, 60000, 8000 } },
+                                                   { "FWD Hot Hatch",
+                                                     VehicleDriveType::FrontWheelDrive,
+                                                     1200,
+                                                     2600,
+                                                     .58f,
+                                                     34,
+                                                     105,
+                                                     10,
+                                                     75000,
+                                                     205,
+                                                     120000,
+                                                     4300,
+                                                     6300,
+                                                     { 29000, 1.00f, 75000, 1950 },
+                                                     { 24000, 1.04f, 79000, 1150 } },
+                                                   { "RWD Road Sport",
+                                                     VehicleDriveType::RearWheelDrive,
+                                                     1370,
+                                                     3200,
+                                                     .51f,
+                                                     32,
+                                                     120,
+                                                     11.1f,
+                                                     90000,
+                                                     325,
+                                                     205000,
+                                                     4800,
+                                                     6500,
+                                                     { 42000, 1.10f, 89000, 2300 },
+                                                     { 38000, 1.13f, 93000, 1500 } },
+                                                   { "AWD Performance",
+                                                     VehicleDriveType::AllWheelDrive,
+                                                     1520,
+                                                     3500,
+                                                     .55f,
+                                                     32,
+                                                     105,
+                                                     11.2f,
+                                                     100000,
+                                                     425,
+                                                     270000,
+                                                     4500,
+                                                     6500,
+                                                     { 47000, 1.13f, 92000, 2450 },
+                                                     { 42000, 1.16f, 99000, 1600 } },
+                                                   { "RWD GT Race",
+                                                     VehicleDriveType::RearWheelDrive,
+                                                     1300,
+                                                     4400,
+                                                     .50f,
+                                                     29,
+                                                     145,
+                                                     13.3f,
+                                                     130000,
+                                                     520,
+                                                     360000,
+                                                     5500,
+                                                     7200,
+                                                     { 86000, 1.35f, 130000, 3100 },
+                                                     { 78000, 1.40f, 140000, 2100 } } };
 
         SmartPtr<ITask> handlingPhysicsTask()
         {
@@ -332,10 +395,11 @@ namespace workphone::scene
 
                         if( profile )
                         {
-                            const auto devices = input->getCreateJoysticks() ? input->getJoysticks() :
-                                Array<SmartPtr<IJoystick>>();
-                            const auto sample = controller_input::sample( profile, devices,
-                                { throttle, brake, left, right } );
+                            const auto devices = input->getCreateJoysticks()
+                                                     ? input->getJoysticks()
+                                                     : Array<SmartPtr<IJoystick>>();
+                            const auto sample = controller_input::sample(
+                                profile, devices, { throttle, brake, left, right } );
                             // This flag belongs to legacy event input. Keeping it
                             // clear also prevents a latched value if a profile is removed.
                             m_joystickActive = false;
@@ -554,10 +618,10 @@ namespace workphone::scene
                     auto frontLeftActor = frontLeft->getActor();
                     m_wheels.emplace_back( frontLeft );
 
-                    auto wheelPosition = m_useAuthoredGeometry
-                                             ? frontLeftActor->getLocalPosition()
-                                             : Vector3<real_Num>( -halfWidth, -m_wheelChassisOffset,
-                                                                  -halfWheelBase );
+                    auto wheelPosition =
+                        m_useAuthoredGeometry
+                            ? frontLeftActor->getLocalPosition()
+                            : Vector3<real_Num>( -halfWidth, -m_wheelChassisOffset, -halfWheelBase );
 
                     auto localWheelTransform = Transform3<real_Num>();
                     localWheelTransform.setPosition( wheelPosition );
@@ -598,10 +662,10 @@ namespace workphone::scene
                     auto frontRightActor = frontRight->getActor();
                     m_wheels.emplace_back( frontRight );
 
-                    auto wheelPosition = m_useAuthoredGeometry
-                                             ? frontRightActor->getLocalPosition()
-                                             : Vector3<real_Num>( halfWidth, -m_wheelChassisOffset,
-                                                                  -halfWheelBase );
+                    auto wheelPosition =
+                        m_useAuthoredGeometry
+                            ? frontRightActor->getLocalPosition()
+                            : Vector3<real_Num>( halfWidth, -m_wheelChassisOffset, -halfWheelBase );
 
                     auto localWheelTransform = Transform3<real_Num>();
                     localWheelTransform.setPosition( wheelPosition );
@@ -642,10 +706,10 @@ namespace workphone::scene
                     auto frontLeftActor = rearLeft->getActor();
                     m_wheels.emplace_back( rearLeft );
 
-                    auto wheelPosition = m_useAuthoredGeometry
-                                             ? frontLeftActor->getLocalPosition()
-                                             : Vector3<real_Num>( -halfWidth, -m_wheelChassisOffset,
-                                                                  halfWheelBase );
+                    auto wheelPosition =
+                        m_useAuthoredGeometry
+                            ? frontLeftActor->getLocalPosition()
+                            : Vector3<real_Num>( -halfWidth, -m_wheelChassisOffset, halfWheelBase );
 
                     auto localWheelTransform = Transform3<real_Num>();
                     localWheelTransform.setPosition( wheelPosition );
@@ -686,10 +750,10 @@ namespace workphone::scene
                     auto frontRightActor = rearRight->getActor();
                     m_wheels.emplace_back( rearRight );
 
-                    auto wheelPosition = m_useAuthoredGeometry
-                                             ? frontRightActor->getLocalPosition()
-                                             : Vector3<real_Num>( halfWidth, -m_wheelChassisOffset,
-                                                                  halfWheelBase );
+                    auto wheelPosition =
+                        m_useAuthoredGeometry
+                            ? frontRightActor->getLocalPosition()
+                            : Vector3<real_Num>( halfWidth, -m_wheelChassisOffset, halfWheelBase );
 
                     auto localWheelTransform = Transform3<real_Num>();
                     localWheelTransform.setPosition( wheelPosition );
@@ -727,7 +791,8 @@ namespace workphone::scene
         }
     }
 
-    FourWheelVehicle::VehicleCallback::VehicleCallback( FourWheelVehicle *controller ) : m_owner( controller )
+    FourWheelVehicle::VehicleCallback::VehicleCallback( FourWheelVehicle *controller ) :
+        m_owner( controller )
     {
     }
 
@@ -744,7 +809,7 @@ namespace workphone::scene
     }
 
     void FourWheelVehicle::VehicleCallback::addForce( s32 bodyId, const Vector3<real_Num> &force,
-                                                   const Vector3<real_Num> &pos )
+                                                      const Vector3<real_Num> &pos )
     {
         if( auto owner = getOwner() )
         {
@@ -767,7 +832,7 @@ namespace workphone::scene
     }
 
     void FourWheelVehicle::VehicleCallback::addLocalForce( s32 bodyId, const Vector3<real_Num> &force,
-                                                        const Vector3<real_Num> &pos )
+                                                           const Vector3<real_Num> &pos )
     {
     }
 
@@ -885,8 +950,8 @@ namespace workphone::scene
     }
 
     void FourWheelVehicle::VehicleCallback::displayLocalVector( s32 Bdy, const Vector3<real_Num> &V,
-                                                             const Vector3<real_Num> &Org,
-                                                             s32 colour ) const
+                                                                const Vector3<real_Num> &Org,
+                                                                s32 colour ) const
     {
         auto applicationManager = core::IApplicationManager::instance();
         WP_ASSERT( applicationManager );
@@ -900,9 +965,10 @@ namespace workphone::scene
         debug->drawLine( 0, V, Org, colour );
     }
 
-    void FourWheelVehicle::VehicleCallback::displayLocalVector( s32 Bdy, s32 id, const Vector3<real_Num> &V,
-                                                             const Vector3<real_Num> &Org,
-                                                             s32 colour ) const
+    void FourWheelVehicle::VehicleCallback::displayLocalVector( s32 Bdy, s32 id,
+                                                                const Vector3<real_Num> &V,
+                                                                const Vector3<real_Num> &Org,
+                                                                s32 colour ) const
     {
         auto applicationManager = core::IApplicationManager::instance();
         WP_ASSERT( applicationManager );
@@ -965,7 +1031,7 @@ namespace workphone::scene
     }
 
     auto FourWheelVehicle::VehicleCallback::castLocalRay( const Ray3<real_Num> &ray,
-                                                       SmartPtr<physics::IRaycastHit> &data ) -> bool
+                                                          SmartPtr<physics::IRaycastHit> &data ) -> bool
     {
         auto applicationManager = core::IApplicationManager::instancePtr();
         WP_ASSERT( applicationManager );
@@ -1001,7 +1067,7 @@ namespace workphone::scene
     }
 
     auto FourWheelVehicle::VehicleCallback::castWorldRay( const Ray3<real_Num> &ray,
-                                                       SmartPtr<physics::IRaycastHit> &data ) -> bool
+                                                          SmartPtr<physics::IRaycastHit> &data ) -> bool
     {
         auto applicationManager = core::IApplicationManager::instance();
         WP_ASSERT( applicationManager );
@@ -1030,7 +1096,8 @@ namespace workphone::scene
     }
 
     void FourWheelVehicle::VehicleCallback::displayVector( s32 Bdy, s32 id, const Vector3<real_Num> &V,
-                                                        const Vector3<real_Num> &Org, s32 colour ) const
+                                                           const Vector3<real_Num> &Org,
+                                                           s32 colour ) const
     {
         auto applicationManager = core::IApplicationManager::instance();
         WP_ASSERT( applicationManager );
@@ -1086,8 +1153,9 @@ namespace workphone::scene
         // Inspector changes seed defaults. Saved snapshots already contain the
         // resolved settings and may include manual overrides.
         const bool applyDefaults =
-            validPreset && properties->getPropertyObject( handlingPresetStr )
-                                   .getAttribute( "applyHandlingPreset" ) == "true";
+            validPreset &&
+            properties->getPropertyObject( handlingPresetStr ).getAttribute( "applyHandlingPreset" ) ==
+                "true";
         const bool wasPreset = hasHandlingPreset();
         const bool updatePhysics = wasPreset || ( validPreset && preset != 0 );
         auto authoredGeometry = m_useAuthoredGeometry;
@@ -1187,8 +1255,9 @@ namespace workphone::scene
         const auto rearWheel = vehicle->getWheelController( 2 );
         if( frontWheel && rearWheel )
         {
-            const auto distance = MathF::Abs( float( frontWheel->getLocalTransform().getPosition().Z() -
-                                                     rearWheel->getLocalTransform().getPosition().Z() ) );
+            const auto distance =
+                MathF::Abs( float( frontWheel->getLocalTransform().getPosition().Z() -
+                                   rearWheel->getLocalTransform().getPosition().Z() ) );
             if( distance > 0.f )
             {
                 wheelbase = distance;
@@ -1413,10 +1482,10 @@ namespace workphone::scene
     }
 
     auto FourWheelVehicle::InputListener::handleEvent( EventType eventType, hash_type eventValue,
-                                                    const Array<Parameter> &arguments,
-                                                    SmartPtr<ISharedObject> sender,
-                                                    SmartPtr<ISharedObject> object,
-                                                    SmartPtr<IEvent> event ) -> Parameter
+                                                       const Array<Parameter> &arguments,
+                                                       SmartPtr<ISharedObject> sender,
+                                                       SmartPtr<ISharedObject> object,
+                                                       SmartPtr<IEvent> event ) -> Parameter
     {
         if( eventValue == IEvent::inputEvent )
         {
@@ -1434,11 +1503,12 @@ namespace workphone::scene
         {
             return false;
         }
-        ScopedLock controlsLock( owner.get(), true );
+
         if( !owner->m_playerControls.load() )
         {
             return false;
         }
+
         if( event->getEventType() == IInputEvent::EventType::Key )
         {
             if( auto state = event->getKeyboardState() )
@@ -1458,8 +1528,12 @@ namespace workphone::scene
             if( const auto application = core::IApplicationManager::instancePtr() )
             {
                 const auto settings = application->getPlayerSettings();
-                if( settings && settings->getChild( "Vehicle Controller" ) ) return false;
+                if( settings && settings->getChild( "Vehicle Controller" ) )
+                {
+                    return false;
+                }
             }
+
             if( auto joystick = event->getJoystickState() )
             {
                 float throttle = 0, steering = owner->getSteering();
@@ -1474,6 +1548,7 @@ namespace workphone::scene
                                : joystick->isButtonPressed( 1 ) ? -1.f
                                                                 : 0.f;
                 }
+
                 owner->m_joystickActive = true;
                 owner->setThrottle( std::max( throttle, 0.f ) );
                 owner->setBrake( std::max( -throttle, 0.f ) );

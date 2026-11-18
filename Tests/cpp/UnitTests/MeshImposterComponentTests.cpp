@@ -5,9 +5,12 @@
 #include <Workphone/Scene/Components/LODGroup.hpp>
 #include <Workphone/Scene/Components/Camera.hpp>
 #include <Workphone/Scene/Systems/LODSystem.hpp>
+#include <Workphone/Scene/Systems/MeshImposterSystem.hpp>
 #include <Workphone/Scene/CameraManager.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
+#include <Workphone/System/Timer.hpp>
 #include <boost/test/unit_test.hpp>
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <stdexcept>
@@ -17,6 +20,22 @@ using namespace workphone::scene;
 
 namespace
 {
+    class ImposterTestTimer final : public Timer
+    {
+    public:
+        void advance( f64 delta ) { m_elapsed += delta; m_delta = delta; }
+        void update() override {}
+        f64 getTime() const override { return m_elapsed; }
+        f64 getTime( TaskId ) const override { return m_elapsed; }
+        f64 now() const override { return m_elapsed; }
+        f64 getDeltaTime() const override { return m_delta; }
+        f64 getDeltaTime( TaskId ) const override { return m_delta; }
+
+    private:
+        f64 m_elapsed = 0;
+        f64 m_delta = 0;
+    };
+
     template <class T, class U> void checkVector( const Vector3<T> &actual, const Vector3<U> &expected )
     {
         BOOST_CHECK_SMALL( double( actual.x - expected.x ), .0001 );
@@ -31,13 +50,17 @@ namespace
         const bool wasPlaying = applicationManager->isPlaying();
         const bool wasEditorCamera = applicationManager->isEditorCamera();
         const u32 previousTaskFlags = Thread::getTaskFlags();
+        const u32 previousLodTaskFlags = Thread::getTaskFlags( TaskId::LOD );
         SmartPtr<CameraManager> cameras = make_ptr<CameraManager>();
+        SmartPtr<ImposterTestTimer> testClock = make_ptr<ImposterTestTimer>();
         SmartPtr<IGameActor> parent, actor;
         SmartPtr<MeshRenderer> renderer;
         SmartPtr<render::Material> material;
         SmartPtr<MeshImposter> imposter;
         SmartPtr<LODGroup> group;
         SmartPtr<LODSystem> system;
+        SmartPtr<MeshImposterSystem> imposterSystem;
+        SmartPtr<IComponentSystem> previousImposterSystem;
         bool ownsSystem = false;
         MeshImposterSpriteSheet sheet;
         const Vector3F centre{ 3, 2, -4 };
@@ -47,6 +70,7 @@ namespace
         ImposterFixture()
         {
             scene->clear( true );
+            applicationManager->setTimer( testClock );
             // These are synchronous transform contracts. Creation-state actors
             // defer hierarchy updates, and must enter Play as production actors do.
             Thread::setTaskFlags( std::numeric_limits<u32>::max() );
@@ -54,6 +78,19 @@ namespace
             applicationManager->setCameraManager( cameras );
             applicationManager->setEditor( false );
             applicationManager->setEditorCamera( false );
+            // The lightweight unit-test application does not create scene
+            // systems through Application::load. Preserve an existing system
+            // if a fuller bootstrap supplied one, then install this fixture's
+            // roster before attaching the real component.
+            {
+                auto probe = make_ptr<MeshImposter>();
+                sceneManager->addComponent( probe );
+                previousImposterSystem = probe->getComponentSystem();
+                sceneManager->removeComponent( probe );
+            }
+            imposterSystem = make_ptr<MeshImposterSystem>();
+            imposterSystem->load( nullptr );
+            sceneManager->addSystem( MeshImposter::typeInfo(), imposterSystem );
             parent = createBasicActor();
             actor = createBasicActor();
             scene->addActor( parent );
@@ -109,13 +146,19 @@ namespace
             }
             imposter->unload( nullptr );
             scene->clear( true );
+            imposterSystem->unload( nullptr );
+            sceneManager->removeSystem( MeshImposter::typeInfo() );
+            if( previousImposterSystem )
+                sceneManager->addSystem( MeshImposter::typeInfo(), previousImposterSystem );
             material->unload( nullptr );
             cameras->unload( nullptr );
+            applicationManager->setTimer( timer );
             applicationManager->setCameraManager( previousCameras );
             applicationManager->setEditor( wasEditor );
             applicationManager->setPlaying( wasPlaying );
             applicationManager->setEditorCamera( wasEditorCamera );
             Thread::setTaskFlags( previousTaskFlags );
+            Thread::setTaskFlags( TaskId::LOD, previousLodTaskFlags );
         }
 
         Vector3<real_Num> cameraFor( size_t view ) const
@@ -157,10 +200,32 @@ namespace
 
         void updateActive()
         {
+            Thread::setCurrentTask( TaskId::LOD );
+            Thread::setTaskFlags( std::numeric_limits<u32>::max() );
+            // Automatic selection is throttled to about 3 Hz. Advance virtual
+            // LOD-task time instead of depending on wall-clock execution speed.
+            testClock->advance( .5 );
             LODSystem::View view;
             const bool hasView = system->getView( view );
-            imposter->update();
+            auto updates = dynamic_pointer_cast<MeshImposterSystem>( imposter->getComponentSystem() );
+            BOOST_REQUIRE( updates );
+            updates->update();
             if( hasView ) rememberView( view );
+        }
+
+        SmartPtr<MeshImposterSystem> getImposterSystem() const
+        {
+            auto updates = dynamic_pointer_cast<MeshImposterSystem>( imposter->getComponentSystem() );
+            BOOST_REQUIRE( updates );
+            return updates;
+        }
+
+        size_t registrationCount( const SmartPtr<MeshImposterSystem> &updates ) const
+        {
+            const auto components = updates->getComponents();
+            return std::count_if( components.begin(), components.end(), [&]( const auto &component ) {
+                return component.get() == imposter.get();
+            } );
         }
 
         void loadImposter()
@@ -286,7 +351,7 @@ BOOST_FIXTURE_TEST_CASE( camera_updates_hysteresis_and_invalid_views_preserve_th
 
     auto first = addCamera( 0, 1 );
     loadImposter();
-    Thread::setCurrentTask( TaskId::Application );
+    Thread::setCurrentTask( TaskId::LOD );
     updateActive();
     checkFrame( 0 );
     auto second = addCamera( 4, 2 );
@@ -367,6 +432,163 @@ BOOST_FIXTURE_TEST_CASE( configure_is_transactional_reload_preserves_views_and_d
     const auto beforeDestroy = scheduler->stats().used[source];
     detached = nullptr;
     BOOST_CHECK_LE( scheduler->stats().used[source] + retainedViews, beforeDestroy );
+}
+
+BOOST_FIXTURE_TEST_CASE( automatic_selection_is_owned_by_the_lod_task_and_scene_dispatch, ImposterFixture )
+{
+    loadImposter();
+    auto updates = getImposterSystem();
+    BOOST_CHECK( updates->isDerived<ComponentSystem>() );
+    BOOST_CHECK( updates->getUpdateTask() == TaskId::LOD );
+    BOOST_CHECK_EQUAL( registrationCount( updates ), 1u );
+
+    LODSystem::View view;
+    view.position = cameraFor( 4 );
+    system->setViewOverride( view );
+    for( const auto task : { TaskId::Application, TaskId::Render, TaskId::Primary } )
+    {
+        Thread::setCurrentTask( task );
+        updates->update();
+        checkFrame( 0 );
+    }
+    const auto applicationUpdates = sceneManager->getRegisteredComponents(
+        Thread::UpdateState::Update, TaskId::Application ).snapshot();
+    BOOST_CHECK( std::none_of( applicationUpdates.begin(), applicationUpdates.end(),
+                              [&]( const auto &component ) { return component.get() == imposter.get(); } ) );
+
+    Thread::setCurrentTask( TaskId::LOD );
+    Thread::setTaskFlags( std::numeric_limits<u32>::max() );
+    testClock->advance( .5 );
+    sceneManager->update();
+    rememberView( view );
+    checkFrame( 4 );
+    const auto changes = imposter->getSelectionChanges();
+    sceneManager->update();
+    BOOST_CHECK_EQUAL( imposter->getSelectionChanges(), changes );
+}
+
+BOOST_FIXTURE_TEST_CASE( system_cadence_skips_disabled_components_and_actors, ImposterFixture )
+{
+    loadImposter();
+    auto updates = getImposterSystem();
+    LODSystem::View view;
+    view.position = cameraFor( 4 );
+    system->setViewOverride( view );
+    updateActive();
+    checkFrame( 4 );
+
+    view.position = cameraFor( 2 );
+    system->setViewOverride( view );
+    updates->update();
+    testClock->advance( .1 );
+    updates->update();
+    checkFrame( 4 );
+    testClock->advance( .3 );
+    updates->update();
+    rememberView( view );
+    checkFrame( 2 );
+
+    view.position = cameraFor( 24 );
+    system->setViewOverride( view );
+    imposter->setEnabled( false );
+    testClock->advance( .5 );
+    updates->update();
+    checkFrame( 2 );
+    imposter->setEnabled( true );
+    actor->setEnabled( false );
+    testClock->advance( .5 );
+    updates->update();
+    checkFrame( 2 );
+    actor->setEnabled( true );
+    updateActive();
+    checkFrame( 24 );
+}
+
+BOOST_FIXTURE_TEST_CASE( system_registration_removal_reload_and_unload_preserve_metadata, ImposterFixture )
+{
+    loadImposter();
+    auto updates = getImposterSystem();
+    const auto managerRegistrationCount = [&]() {
+        const auto components = sceneManager->getComponents( MeshImposter::typeInfo() );
+        return std::count_if( components.begin(), components.end(), [&]( const auto &component ) {
+            return component.get() == imposter.get();
+        } );
+    };
+    const auto slot = updates->addComponent( imposter );
+    BOOST_REQUIRE_NE( slot, std::numeric_limits<u32>::max() );
+    imposter->load( nullptr );
+    BOOST_CHECK_EQUAL( updates->addComponent( imposter ), slot );
+    BOOST_CHECK_EQUAL( registrationCount( updates ), 1u );
+    BOOST_CHECK_EQUAL( managerRegistrationCount(), 1u );
+
+    updates->removeComponent( slot );
+    BOOST_CHECK_EQUAL( registrationCount( updates ), 0u );
+    BOOST_CHECK( !imposter->getComponentSystem() );
+    BOOST_CHECK_EQUAL( imposter->getViewCount(), sheet.views.size() );
+    // Direct component reload must reconnect the scene system and move the
+    // manager inventory entry when a different roster slot is assigned.
+    imposter->unload( nullptr );
+    imposter->setActor( actor );
+    loadImposter();
+    BOOST_CHECK( imposter->getComponentSystem() == updates );
+    BOOST_CHECK_EQUAL( registrationCount( updates ), 1u );
+    BOOST_CHECK_EQUAL( managerRegistrationCount(), 1u );
+    BOOST_REQUIRE( updateCamera( cameraFor( 4 ) ) );
+    for( unsigned reload = 0; reload < 4; ++reload )
+    {
+        imposter->unload( nullptr );
+        BOOST_CHECK_EQUAL( registrationCount( updates ), 0u );
+        BOOST_CHECK( !imposter->getComponentSystem() );
+        BOOST_CHECK_EQUAL( imposter->getViewCount(), sheet.views.size() );
+        imposter->setActor( actor );
+        loadImposter();
+        BOOST_CHECK( imposter->getComponentSystem() == updates );
+        BOOST_CHECK_EQUAL( registrationCount( updates ), 1u );
+        BOOST_CHECK_EQUAL( managerRegistrationCount(), 1u );
+        checkFrame( 4 );
+    }
+
+    const auto activeMetadata = MeshImposterSystem::instance().getActiveCount();
+    updates->unload( nullptr );
+    BOOST_CHECK( !imposter->getComponentSystem() );
+    BOOST_CHECK_EQUAL( registrationCount( updates ), 0u );
+    BOOST_CHECK_EQUAL( MeshImposterSystem::instance().getActiveCount(), activeMetadata );
+    BOOST_CHECK_EQUAL( imposter->getViewCount(), sheet.views.size() );
+    Thread::setCurrentTask( TaskId::LOD );
+    BOOST_CHECK_NO_THROW( updates->update() );
+    sceneManager->removeComponent( imposter );
+    updates->load( nullptr );
+    sceneManager->addComponent( imposter );
+    BOOST_CHECK_EQUAL( registrationCount( updates ), 1u );
+    BOOST_CHECK_EQUAL( managerRegistrationCount(), 1u );
+}
+
+BOOST_FIXTURE_TEST_CASE( missing_timer_preserves_the_last_frame_and_direct_views_remain_immediate, ImposterFixture )
+{
+    loadImposter();
+    auto updates = getImposterSystem();
+    LODSystem::View view;
+    view.position = cameraFor( 4 );
+    system->setViewOverride( view );
+    Thread::setCurrentTask( TaskId::LOD );
+    {
+        struct RestoreTimer
+        {
+            SmartPtr<core::IApplicationManager> application;
+            SmartPtr<ITimer> timer;
+            ~RestoreTimer() { application->setTimer( timer ); }
+        } restore{ applicationManager, applicationManager->getTimer() };
+        applicationManager->setTimer( nullptr );
+        BOOST_CHECK_NO_THROW( updates->update() );
+        checkFrame( 0 );
+    }
+    updateActive();
+    checkFrame( 4 );
+    // Tooling and deterministic camera helpers bypass the automatic cadence.
+    BOOST_REQUIRE( updateCamera( cameraFor( 2 ) ) );
+    checkFrame( 2 );
+    BOOST_REQUIRE( updateCamera( cameraFor( 24 ) ) );
+    checkFrame( 24 );
 }
 
 BOOST_FIXTURE_TEST_CASE( orthographic_rays_select_consistent_views_across_translated_and_transformed_patches, ImposterFixture )
@@ -451,7 +673,7 @@ BOOST_FIXTURE_TEST_CASE( managed_orthographic_camera_rotation_publishes_directio
     auto camera = addCamera( 0, 1 );
     camera->setOrthoWindowHeight( 100.f );
     loadImposter();
-    Thread::setCurrentTask( TaskId::Application );
+    Thread::setCurrentTask( TaskId::LOD );
     const auto checkManaged = [&]( const Vector3<real_Num> &rotation, size_t expected ) {
         const auto orientation = Quaternion<real_Num>::eulerDegrees( rotation.x, rotation.y, rotation.z );
         camera->getActor()->setOrientation( orientation );

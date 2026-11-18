@@ -38,10 +38,11 @@ namespace workphone
     const u32 Thread::Dynamics_Flag = 1 << 7;
     const u32 Thread::GarbageCollect_Flag = 1 << 8;
     const u32 Thread::Input_Flag = 1 << 9;
-    const u32 Thread::Physics_Flag = 1 << 10;
-    const u32 Thread::None_Flag = 1 << 11;
-    const u32 Thread::Render_Flag = 1 << 12;
-    const u32 Thread::Sound_Flag = 1 << 13;
+    const u32 Thread::LOD_Flag = 1 << 10;
+    const u32 Thread::Physics_Flag = 1 << 11;
+    const u32 Thread::None_Flag = 1 << 12;
+    const u32 Thread::Render_Flag = 1 << 13;
+    const u32 Thread::Sound_Flag = 1 << 14;
 
     FixedArray<u32, static_cast<u32>( TaskId::Count )> Thread::m_taskFlags;
     SpinRWMutex Thread::m_taskFlagsMutex;
@@ -291,6 +292,8 @@ namespace workphone
             return String( "FLUID" );
         case TaskId::Input:
             return String( "INPUT" );
+        case TaskId::LOD:
+            return String( "LOD" );
         case TaskId::None:
             return String( "NONE" );
         case TaskId::SoftBody:

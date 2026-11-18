@@ -176,6 +176,7 @@
 #include <Workphone/Scene/GameEditor.hpp>
 #include <Workphone/Scene/GamePrefab.hpp>
 #include <Workphone/Scene/Systems/ComponentSystem.hpp>
+#include <Workphone/Scene/Systems/MeshImposterSystem.hpp>
 #include <Workphone/Script/ScriptFile.hpp>
 #include <Workphone/Sound/Sound.hpp>
 #include <Workphone/Sound/SoundListener3.hpp>
@@ -941,6 +942,7 @@ namespace workphone
         scene::LightingDirector::setupTypeInfo();
         scene::LODGroup::setupTypeInfo();
         scene::LODSystem::setupTypeInfo();
+        scene::MeshImposterSystem::setupTypeInfo();
         scene::Material::setupTypeInfo();
         scene::Material::MaterialStateListener::setupTypeInfo();
         scene::Material::MaterialStateObjectListener::setupTypeInfo();

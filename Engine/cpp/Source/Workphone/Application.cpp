@@ -72,6 +72,8 @@
 #include <Workphone/Scene/Components/UI/LayoutTransform.hpp>
 #include <Workphone/Scene/Systems/UI/LayoutTransformSystem.hpp>
 #include <Workphone/Scene/Systems/LODSystem.hpp>
+#include <Workphone/Scene/Systems/MeshImposterSystem.hpp>
+#include <Workphone/Scene/Components/MeshImposter.hpp>
 #include <Workphone/Scene/Components/LODGroup.hpp>
 #include <Workphone/System/PluginManager.hpp>
 #include <Workphone/Workphone.hpp>
@@ -332,6 +334,11 @@ namespace workphone::core
                     system->load( nullptr );
 
                     sceneManager->addSystem( scene::LODGroup::typeInfo(), system );
+                }
+                {
+                    auto system = workphone::make_ptr<scene::MeshImposterSystem>();
+                    system->load( nullptr );
+                    sceneManager->addSystem( scene::MeshImposter::typeInfo(), system );
                 }
             }
 
@@ -2710,6 +2717,19 @@ namespace workphone::core
                 auto profile = profiler->addProfile();
                 profile->setLabel( "Input" );
                 inputTask->setProfile( profile );
+            }
+
+            if( auto lodTask = taskManager->getTask( TaskId::LOD ) )
+            {
+                lodTask->setTask( TaskId::LOD );
+                lodTask->setThreadTaskFlags( Thread::LOD_Flag );
+                lodTask->setPrimary( false );
+                lodTask->setEnabled( true );
+                lodTask->setOwner( this );
+                lodTask->setTargetFPS( 10.0 );
+                auto profile = profiler->addProfile();
+                profile->setLabel( "LOD" );
+                lodTask->setProfile( profile );
             }
 
             auto garbageCollectTask = taskManager->getTask( TaskId::GarbageCollect );

@@ -268,6 +268,7 @@ namespace workphone
         GarbageCollect,  ///< Garbage collection and memory cleanup.
         Fluid,           ///< Fluid simulation.
         Input,           ///< Input handling.
+        LOD,             ///< Level of detail (LOD) management. 
         Physics,         ///< General physics processing.
         None,            ///< No specific task assignment.
         Render,          ///< Rendering operations.

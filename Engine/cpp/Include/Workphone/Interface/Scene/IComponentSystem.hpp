@@ -2,6 +2,7 @@
 #define IComponentSystem_h__
 
 #include <Workphone/Interface/System/IEventListener.hpp>
+#include <Workphone/WorkphoneEnums.hpp>
 
 namespace workphone
 {
@@ -22,6 +23,10 @@ namespace workphone
              * Ensures proper cleanup of derived classes.
              */
             ~IComponentSystem() override;
+
+            /** Task that owns automatic updates. None follows GameManager's
+             * state task, preserving the default scene-system scheduling. */
+            virtual TaskId getUpdateTask() const;
 
             /**
              * @brief Adds a component to the system.
