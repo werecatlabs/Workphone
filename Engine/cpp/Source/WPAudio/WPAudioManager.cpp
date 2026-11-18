@@ -73,7 +73,7 @@ namespace workphone
 
     void WPAudioManager::load( SmartPtr<ISharedObject> data )
     {
-        ScopedLock lock(this);
+        ScopedLock lock( this );
         if( isLoaded() )
         {
             return;
@@ -92,19 +92,22 @@ namespace workphone
         }
 
         setLoadingState( LoadingState::Loaded );
-        m_controlOwner=std::this_thread::get_id();
+        m_controlOwner = std::this_thread::get_id();
     }
 
     void WPAudioManager::unload( SmartPtr<ISharedObject> data )
     {
-        ScopedLock lock(this);
+        ScopedLock lock( this );
         if( getLoadingState() == LoadingState::Unloaded )
         {
             return;
         }
 
         setLoadingState( LoadingState::Unloading );
-        if(m_platformAudioState&&m_platformAudioState->dispatch)m_platformAudioState->dispatch->cancel();
+        if( m_platformAudioState && m_platformAudioState->dispatch )
+        {
+            m_platformAudioState->dispatch->cancel();
+        }
 
         removeAll();
         SoundManager::unload( data );
@@ -128,8 +131,16 @@ namespace workphone
         {
             return false;
         }
-        try{state->dispatch=std::allocate_shared<audio::AudioOwnerDispatch>(SourceBudgetAllocator<audio::AudioOwnerDispatch>{});}
-        catch(const std::bad_alloc&){delete state;return false;}
+        try
+        {
+            state->dispatch = std::allocate_shared<audio::AudioOwnerDispatch>(
+                SourceBudgetAllocator<audio::AudioOwnerDispatch>{} );
+        }
+        catch( const std::bad_alloc & )
+        {
+            delete state;
+            return false;
+        }
 
         m_platformAudioState = state;
 
@@ -161,10 +172,11 @@ namespace workphone
             IMMDeviceEnumerator *enumerator = nullptr;
             IMMDeviceCollection *devices = nullptr;
             if( SUCCEEDED( CoCreateInstance( __uuidof( MMDeviceEnumerator ), nullptr, CLSCTX_ALL,
-                                            __uuidof( IMMDeviceEnumerator ),
-                                            reinterpret_cast<void **>( &enumerator ) ) ) )
+                                             __uuidof( IMMDeviceEnumerator ),
+                                             reinterpret_cast<void **>( &enumerator ) ) ) )
             {
-                if( SUCCEEDED( enumerator->EnumAudioEndpoints( eRender, DEVICE_STATE_ACTIVE, &devices ) ) )
+                if( SUCCEEDED(
+                        enumerator->EnumAudioEndpoints( eRender, DEVICE_STATE_ACTIVE, &devices ) ) )
                 {
                     UINT count = 0;
                     devices->GetCount( &count );
@@ -182,16 +194,23 @@ namespace workphone
                                     name.vt == VT_LPWSTR && name.pwszVal )
                                 {
                                     std::wstring label( name.pwszVal );
-                                    std::transform( label.begin(), label.end(), label.begin(),
-                                        []( wchar_t c ) { return static_cast<wchar_t>( std::towlower( c ) ); } );
-                                    const bool match = m_outputDevice == 1 ?
-                                        label.find( L"head" ) != std::wstring::npos : m_outputDevice == 2 ?
-                                        label.find( L"speaker" ) != std::wstring::npos : m_outputDevice == 3 ?
-                                        label.find( L"controller" ) != std::wstring::npos :
-                                        label.find( L"mobile" ) != std::wstring::npos ||
-                                            label.find( L"handset" ) != std::wstring::npos ||
-                                            label.find( L"phone speaker" ) != std::wstring::npos;
-                                    if( match ) device->GetId( &selectedDevice );
+                                    std::transform(
+                                        label.begin(), label.end(), label.begin(), []( wchar_t c ) {
+                                            return static_cast<wchar_t>( std::towlower( c ) );
+                                        } );
+                                    const bool match =
+                                        m_outputDevice == 1 ? label.find( L"head" ) != std::wstring::npos
+                                        : m_outputDevice == 2
+                                            ? label.find( L"speaker" ) != std::wstring::npos
+                                        : m_outputDevice == 3
+                                            ? label.find( L"controller" ) != std::wstring::npos
+                                            : label.find( L"mobile" ) != std::wstring::npos ||
+                                                  label.find( L"handset" ) != std::wstring::npos ||
+                                                  label.find( L"phone speaker" ) != std::wstring::npos;
+                                    if( match )
+                                    {
+                                        device->GetId( &selectedDevice );
+                                    }
                                 }
                                 PropVariantClear( &name );
                                 store->Release();
@@ -210,9 +229,12 @@ namespace workphone
                 return false;
             }
         }
-        result = state->xAudio2->CreateMasteringVoice( &state->masterVoice, 2,
-            m_playbackSampleRate, 0, selectedDevice );
-        if( selectedDevice ) CoTaskMemFree( selectedDevice );
+        result = state->xAudio2->CreateMasteringVoice( &state->masterVoice, 2, m_playbackSampleRate, 0,
+                                                       selectedDevice );
+        if( selectedDevice )
+        {
+            CoTaskMemFree( selectedDevice );
+        }
         if( FAILED( result ) )
         {
             WP_LOG_ERROR( "WPAudio: cannot open the output device: " + StringUtil::toString( result ) );
@@ -335,14 +357,18 @@ namespace workphone
 
     SmartPtr<Properties> WPAudioManager::getProperties() const
     {
-        ScopedLock lock(this);
+        ScopedLock lock( this );
         auto properties = SoundManager::getProperties();
         properties->setProperty( "active.sound.sampleRate", m_activeSampleRate );
         properties->setProperty( "active.sound.outputDevice", m_activeOutputDevice );
         properties->setProperty( "active.sound.backend", m_activeBackend );
-        if(m_platformAudioState&&m_platformAudioState->dispatch){auto &dispatch=*m_platformAudioState->dispatch;
-            properties->setProperty("active.sound.ownerUpdatePending",dispatch.pending());
-            properties->setProperty("active.sound.ownerUpdates",dispatch.executed());properties->setProperty("active.sound.ownerUpdateRefusals",dispatch.refused());}
+        if( m_platformAudioState && m_platformAudioState->dispatch )
+        {
+            auto &dispatch = *m_platformAudioState->dispatch;
+            properties->setProperty( "active.sound.ownerUpdatePending", dispatch.pending() );
+            properties->setProperty( "active.sound.ownerUpdates", dispatch.executed() );
+            properties->setProperty( "active.sound.ownerUpdateRefusals", dispatch.refused() );
+        }
         return properties;
     }
 
@@ -354,7 +380,10 @@ namespace workphone
         {
             return;
         }
-        if(state->dispatch)state->dispatch->cancel();
+        if( state->dispatch )
+        {
+            state->dispatch->cancel();
+        }
 
 #if defined WP_PLATFORM_WIN32
 #    if WP_USE_XAUDIO2
@@ -418,13 +447,31 @@ namespace workphone
 
     void WPAudioManager::update()
     {
-        ScopedLock lock(this);
-        if( m_debuggerSuspended ) return;
-        if(m_platformAudioState&&m_platformAudioState->dispatch&&!m_platformAudioState->dispatch->owner()){
-            auto app=core::IApplicationManager::instancePtr();auto tasks=app?app->getTaskManager():nullptr;
-            auto primary=tasks?tasks->getTask(TaskId::Primary):nullptr;
-            SmartPtr<WPAudioManager> self(this);auto gate=m_platformAudioState->dispatch;String error;
-            gate->request(primary,[self,gate]() mutable {ScopedLock lock(self);if(self->m_platformAudioState&&self->m_platformAudioState->dispatch==gate&&gate->owner())self->update();},error);
+        ScopedLock lock( this );
+        if( m_debuggerSuspended )
+        {
+            return;
+        }
+        if( m_platformAudioState && m_platformAudioState->dispatch &&
+            !m_platformAudioState->dispatch->owner() )
+        {
+            auto app = core::IApplicationManager::instancePtr();
+            auto tasks = app ? app->getTaskManager() : nullptr;
+            auto primary = tasks ? tasks->getTask( TaskId::Primary ) : nullptr;
+            SmartPtr<WPAudioManager> self( this );
+            auto gate = m_platformAudioState->dispatch;
+            String error;
+            gate->request(
+                primary,
+                [self, gate]() mutable {
+                    ScopedLock lock( self );
+                    if( self->m_platformAudioState && self->m_platformAudioState->dispatch == gate &&
+                        gate->owner() )
+                    {
+                        self->update();
+                    }
+                },
+                error );
             return;
         }
         SoundManager::update();
@@ -441,33 +488,70 @@ namespace workphone
     }
 
     SmartPtr<ISound> WPAudioManager::createRuntimeSound(
-        std::shared_ptr<const resource::RuntimeResource> resource,String &error,
-        std::shared_ptr<resource::ResourcePayloadMount> mount)
+        std::shared_ptr<const resource::RuntimeResource> resource, String &error,
+        std::shared_ptr<resource::ResourcePayloadMount> mount )
     {
-        ScopedLock lock(this);
+        ScopedLock lock( this );
         error.clear();
-        if(!isLoaded()||!m_platformAudioState){error="Runtime audio output device is unavailable";return nullptr;}
-        if(m_controlOwner!=std::this_thread::get_id()){error="Runtime audio installation requires the audio control owner";return nullptr;}
+        if( !isLoaded() || !m_platformAudioState )
+        {
+            error = "Runtime audio output device is unavailable";
+            return nullptr;
+        }
+        if( m_controlOwner != std::this_thread::get_id() )
+        {
+            error = "Runtime audio installation requires the audio control owner";
+            return nullptr;
+        }
         SmartPtr<WPAudioSound> candidate;
-        try {
-            candidate=make_ptr<WPAudioSound>();candidate->setOwner(this);candidate->setLoop(false);
-            if(!candidate->loadResource(std::move(resource),std::move(mount))){error="Cooked audio validation, residency admission or native voice creation failed";candidate->unload(nullptr);candidate->setOwner(nullptr);return nullptr;}
-            m_sounds.push_back(candidate);return candidate;
-        }catch(const std::exception &failure){
-            if(candidate){candidate->unload(nullptr);candidate->setOwner(nullptr);}error=failure.what();return nullptr;
+        try
+        {
+            candidate = make_ptr<WPAudioSound>();
+            candidate->setOwner( this );
+            candidate->setLoop( false );
+            if( !candidate->loadResource( std::move( resource ), std::move( mount ) ) )
+            {
+                error = "Cooked audio validation, residency admission or native voice creation failed";
+                candidate->unload( nullptr );
+                candidate->setOwner( nullptr );
+                return nullptr;
+            }
+            m_sounds.push_back( candidate );
+            return candidate;
+        }
+        catch( const std::exception &failure )
+        {
+            if( candidate )
+            {
+                candidate->unload( nullptr );
+                candidate->setOwner( nullptr );
+            }
+            error = failure.what();
+            return nullptr;
         }
     }
+
     std::shared_ptr<const resource::RuntimeResource> WPAudioManager::captureRuntimeResourceSnapshot(
         std::shared_ptr<const resource::RuntimeResource> resource,
-        std::shared_ptr<resource::ResourcePayloadMount> mount,String &error)
-    {return WPAudioSound::captureRuntimeResourceSnapshot(std::move(resource),std::move(mount),error);}
-    std::shared_ptr<resource::ResourceLeafProviderFactory> WPAudioManager::createRuntimeLeafProviderFactory(
-        std::shared_ptr<resource::ResourcePayloadMount> mount,String &error)
-    {return audio::AudioResourceStream::leafProviderFactory(std::move(mount),error);}
+        std::shared_ptr<resource::ResourcePayloadMount> mount, String &error )
+    {
+        return WPAudioSound::captureRuntimeResourceSnapshot( std::move( resource ), std::move( mount ),
+                                                             error );
+    }
+
+    std::shared_ptr<resource::ResourceLeafProviderFactory>
+    WPAudioManager::createRuntimeLeafProviderFactory(
+        std::shared_ptr<resource::ResourcePayloadMount> mount, String &error )
+    {
+        return audio::AudioResourceStream::leafProviderFactory( std::move( mount ), error );
+    }
 
     bool WPAudioManager::setDebuggerSuspended( bool suspended )
     {
-        if( m_debuggerSuspended == suspended ) return true;
+        if( m_debuggerSuspended == suspended )
+        {
+            return true;
+        }
         if( !m_platformAudioState )
         {
             m_debuggerSuspended = suspended;
@@ -506,7 +590,8 @@ namespace workphone
     void WPAudioManager::loadSoundMap( const Properties &soundMap )
     {
         (void)soundMap;
-        WP_LOG_ERROR( "WPAudio: legacy sound-name maps are unavailable; load a resource path or ResourceID." );
+        WP_LOG_ERROR(
+            "WPAudio: legacy sound-name maps are unavailable; load a resource path or ResourceID." );
     }
 
     bool WPAudioManager::loadSoundEvents( const String &filePath )
