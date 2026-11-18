@@ -1,8 +1,7 @@
 // ============================================================================
 // CRoadGeneratorCity.cpp - AAA City-Based Road Network Generator
 // ============================================================================
-// REWRITTEN for AAA-quality output inspired by Claude-of-Duty ground.js and
-// layout.js. The generator builds a city road network with:
+// The generator builds a city road network with:
 //   - Varied road classes: arterial avenues, residential streets, alleys
 //   - Non-uniform block sizes with organic jitter (no perfect grid)
 //   - Proper intersection types: 4-way X-crossings, T-junctions, roundabouts
@@ -586,6 +585,7 @@ namespace workphone
             // ---------------------------------------------------------------
             // Register everything with the road network.
             roadNetwork->addRoads( roads );
+
             for( auto &conn : connections )
             {
                 roadNetwork->addRoadConnection( conn );

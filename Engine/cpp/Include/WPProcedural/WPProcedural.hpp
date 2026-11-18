@@ -7,7 +7,6 @@
 #include <WPProcedural/BlockNode.hpp>
 #include <WPProcedural/CBlockGenerator.hpp>
 #include <WPProcedural/CCityBlock.hpp>
-#include <WPProcedural/CCollisionManager.hpp>
 #include <WPProcedural/CityCenter.hpp>
 #include <WPProcedural/CityGeneratorDefault.hpp>
 #include <WPProcedural/CProceduralCity.hpp>

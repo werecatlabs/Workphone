@@ -1,5 +1,5 @@
 // ============================================================================
-// CRoadGeneratorGrid.cpp - AAA Grid-Based Road Network Generator
+// CRoadGeneratorGrid.cpp - Grid-Based Road Network Generator
 // ============================================================================
 // REWRITTEN to use the new WPRoadSystem for AAA-quality output:
 //   - Cambered road surfaces with wheel ruts

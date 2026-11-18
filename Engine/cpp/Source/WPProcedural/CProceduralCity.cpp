@@ -5,11 +5,7 @@
 #include <WPProcedural/CRoadNode.hpp>
 #include <WPProcedural/CRoadElement.hpp>
 #include <WPProcedural/CCityBlock.hpp>
-#include <Workphone/Core/Properties.hpp>
-#include <Workphone/Core/StringUtil.hpp>
-#include <Workphone/Math/Math.hpp>
 #include <Workphone/Workphone.hpp>
-
 #include <algorithm>
 
 namespace workphone

@@ -1,6 +1,5 @@
 #include "WPProcedural/WPProceduralPCH.hpp"
 #include "WPProcedural/WPVehiclePresentation.hpp"
-
 #include <algorithm>
 #include <cmath>
 

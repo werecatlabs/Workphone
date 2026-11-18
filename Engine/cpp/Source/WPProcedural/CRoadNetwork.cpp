@@ -5,7 +5,6 @@
 #include <WPProcedural/CRoadNode.hpp>
 #include <WPProcedural/WPRoadSystem.hpp>
 #include <Workphone/Workphone.hpp>
-#include <Workphone/Core/Properties.hpp>
 #include <algorithm>
 #include <limits>
 #include <stdexcept>
