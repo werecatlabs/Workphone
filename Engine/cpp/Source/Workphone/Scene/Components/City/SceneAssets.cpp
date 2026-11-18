@@ -79,6 +79,10 @@ namespace workphone::scene::race
     {
     }
 
+    SceneAssets::SceneAssets() = default;
+
+    SceneAssets::SceneAssets( SceneAssets && ) noexcept = default;
+
     SceneAssets &SceneAssets::operator=( const SceneAssets &other )
     {
         if( this != &other )
@@ -88,6 +92,8 @@ namespace workphone::scene::race
         }
         return *this;
     }
+
+    workphone::scene::race::SceneAssets &SceneAssets::operator=( SceneAssets && ) noexcept = default;
 
     void SceneAssets::swap( SceneAssets &other ) noexcept
     {

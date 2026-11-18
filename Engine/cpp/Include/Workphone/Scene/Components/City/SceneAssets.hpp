@@ -101,11 +101,11 @@ namespace workphone::scene::race
         String resourcePrefix;
         String exportSourceDirectory;
         u64 triangles = 0, textureBytes = 0;
-        SceneAssets() = default;
+        SceneAssets();
         SceneAssets( const SceneAssets &other );
         SceneAssets &operator=( const SceneAssets &other );
-        SceneAssets( SceneAssets && ) noexcept = default;
-        SceneAssets &operator=( SceneAssets && ) noexcept = default;
+        SceneAssets( SceneAssets && ) noexcept;
+        SceneAssets &operator=( SceneAssets && ) noexcept;
         void swap( SceneAssets &other ) noexcept;
     };
 

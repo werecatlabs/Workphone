@@ -41,26 +41,14 @@ namespace workphone::scene::race
     {
         SourceBudgetVector<CircuitSample> samples;
         float length = 0;
-        Circuit() = default;
-        Circuit( const Circuit & ) = default;
-        Circuit( Circuit && ) noexcept = default;
-        Circuit &operator=( Circuit && ) noexcept = default;
+        Circuit();
+        Circuit( const Circuit & );
+        Circuit( Circuit && ) noexcept;
+        Circuit &operator=( Circuit && ) noexcept;
 
-        Circuit &operator=( const Circuit &other )
-        {
-            if( this != &other )
-            {
-                Circuit candidate( other );
-                swap( candidate );
-            }
-            return *this;
-        }
+        Circuit &operator=( const Circuit &other );
 
-        void swap( Circuit &other ) noexcept
-        {
-            samples.swap( other.samples );
-            std::swap( length, other.length );
-        }
+        void swap( Circuit &other ) noexcept;
 
         /**
          * Find the index of the nearest circuit sample to the provided position.
