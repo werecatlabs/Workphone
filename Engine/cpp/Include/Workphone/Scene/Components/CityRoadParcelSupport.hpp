@@ -2,6 +2,7 @@
 #include <Workphone/Interface/Procedural/OpenCityLayout.hpp>
 #include <Workphone/Interface/Procedural/CityRoadSplineSource.hpp>
 #include <Workphone/Graphics/TerrainData.hpp>
+#include <Workphone/Scene/Components/CityRoadBlockFaces.hpp>
 
 namespace workphone::scene
 {
@@ -39,4 +40,16 @@ namespace workphone::scene
                                             procedural::OpenCityLayout &output, u32 &culled,
                                             u32 &supportChecks, String &error,
                                             const CityRoadParcelSupportOptions &options );
+    /** Admit existing lots first, then use the remaining natural-city lot budget
+     * in the least developed enclosed blocks of the authored road network.
+     * culled counts rejected input lots. Optional faces describe this same road bake. */
+    WPCore_API bool prepareCityRoadParcels( const procedural::OpenCityLayout &input,
+                                            const procedural::CityRoadSplineSource &source,
+                                            const procedural::CityRoadSplineBake &bake,
+                                            render::TerrainSnapshot terrain,
+                                            const Transform3<real_Num> &placement,
+                                            procedural::OpenCityLayout &output, u32 &culled,
+                                            u32 &supportChecks, String &error,
+                                            const CityRoadParcelSupportOptions &options, u32 infillSeed,
+                                            CityRoadBlockFaces *faces = nullptr );
 }  // namespace workphone::scene

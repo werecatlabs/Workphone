@@ -17,6 +17,7 @@
 #include <Workphone/Interface/Procedural/IRoadSystem.hpp>
 #include <Workphone/Interface/Procedural/OpenCityStreetDetails.hpp>
 #include <Workphone/Interface/Procedural/OpenCityDebugBlocks.hpp>
+#include <Workphone/Scene/Components/CityRoadBlockFaces.hpp>
 #include <Workphone/Interface/Procedural/OpenCityRoadSource.hpp>
 #include <Workphone/Interface/Procedural/OpenCityLegacyRoute.hpp>
 #include <Workphone/Interface/Procedural/ISkyAtmosphere.hpp>
@@ -3295,7 +3296,8 @@ namespace workphone::scene::race
 
         SourceBudgetVector<Vector3F> prepareTerrainCity( SceneAssets &assets, OpenCityLayout &city,
                                                          SmartPtr<IGameActor> sourceOwner,
-                                                         SmartPtr<IGameActor> vehicle, u32 seed )
+                                                         SmartPtr<IGameActor> vehicle, u32 seed,
+                                                         CityRoadBlockFaces &blockFaces )
         {
             auto app = core::IApplicationManager::instance();
             auto manager = app->getGameManager();
@@ -3542,7 +3544,7 @@ namespace workphone::scene::race
             if( !prepareCityRoadParcels( city, assets.roadAuthoring->getSource(),
                                          assets.roadAuthoring->getBake(), terrain, placement, supported,
                                          assets.cityCulledParcels, assets.cityBuildingSupportChecks,
-                                         error, parcelOptions ) )
+                                         error, parcelOptions, seed, &blockFaces ) )
             {
                 throw std::runtime_error( error.c_str() );
             }
@@ -3613,7 +3615,8 @@ namespace workphone::scene::race
 #include "CityRoofDrainage.hpp"
 #include "CityBuildingImposters.hpp"
 
-        void buildCityLayoutDebug( SceneAssets &assets, const OpenCityLayout &city )
+        void buildCityLayoutDebug( SceneAssets &assets, const OpenCityLayout &city,
+                                   const CityRoadBlockFaces *terrainBlocks = nullptr )
         {
             assets.cityDebugBlockCount = 0;
             assets.cityDebugLotCount = 0;
@@ -3688,8 +3691,7 @@ namespace workphone::scene::race
             if( assets.cityDebugBlocks )
             {
                 Geometry outlines;
-                const auto blocks = openCityDebugBlocks( city );
-                for( const auto &boundary : blocks )
+                const auto outline = [&]( const auto &boundary )
                 {
                     const auto before = outlines.indices.size();
                     const auto inside = insetOpenCityDebugBlock( boundary,
@@ -3698,7 +3700,11 @@ namespace workphone::scene::race
                         line( outlines, inside[i], inside[( i + 1 ) % inside.size()],
                               0.f, 1.15f, .075f, true );
                     assets.cityDebugBlockCount += outlines.indices.size() > before;
-                }
+                };
+                if( terrainBlocks )
+                    for( const auto &boundary : *terrainBlocks ) outline( boundary );
+                else
+                    for( const auto &boundary : openCityDebugBlocks( city ) ) outline( boundary );
                 publish( "City debug block boundaries", outlines, { .95f, .23f, .05f, 1 } );
             }
             if( assets.cityDebugLots )
@@ -3882,9 +3888,10 @@ namespace workphone::scene::race
             auto city = OpenCityLayout::generate( seed, assets.cityBlocks, assets.cityRoute,
                                                   assets.cityNaturalRoads );
             SourceBudgetVector<Vector3F> fittedRoute;
+            CityRoadBlockFaces terrainBlocks;
             if( assets.cityTerrainRoads )
             {
-                fittedRoute = prepareTerrainCity( assets, city, sourceOwner, vehicle, seed );
+                fittedRoute = prepareTerrainCity( assets, city, sourceOwner, vehicle, seed, terrainBlocks );
             }
             if( assets.cityBuildingDensity != 100 )
             {
@@ -5755,7 +5762,7 @@ namespace workphone::scene::race
             }
             mesh( assets, "City parks", parks, land );
             buildCityStreetDressing( assets, city, quality );
-            buildCityLayoutDebug( assets, city );
+            buildCityLayoutDebug( assets, city, assets.cityTerrainRoads && city.naturalRoads ? &terrainBlocks : nullptr );
             Geometry ground;
             ground.box( { 0, -.06f, 0 }, { city.extent * 2 + 80, .1f, city.extent * 2 + 80 } );
             if( !city.naturalRoads && !assets.cityTerrainRoads )

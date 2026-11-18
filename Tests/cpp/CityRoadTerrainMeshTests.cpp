@@ -1,5 +1,7 @@
 #include <Workphone/Scene/Components/CityRoadTerrainMesh.hpp>
 #include <Workphone/Scene/Components/CityRoadJunctions.hpp>
+#include <Workphone/Scene/Components/CityRoadBlockFaces.hpp>
+#include <Workphone/Interface/Procedural/OpenCityDebugBlocks.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
 #include <cmath>
 #include <algorithm>
@@ -337,6 +339,71 @@ namespace
         }
         return hash;
     }
+    void savedBlockContours()
+    {
+        CityRoadSplineSource s;
+        CityRoadSplineBake bake;
+        CityRoadJunctionBake joints;
+        s.revision = bake.sourceRevision = joints.sourceRevision = 12;
+        const auto road = [&]( const char *id, std::initializer_list<OpenCityLayout::Point> points ) {
+            auto &r = s.roads.emplace_back();
+            r.id = id;
+            auto &samples = bake.roads.emplace_back();
+            samples.roadId = id;
+            auto &run = joints.roadRuns.emplace_back();
+            run.roadIndex = u32( s.roads.size() - 1 );
+            for( auto p : points )
+            {
+                CityRoadSplineSample sample;
+                sample.position = { p.x, 0, p.z };
+                if( !run.points.empty() )
+                {
+                    const auto &previous = run.points.back();
+                    sample.distance = previous.distance + ( sample.position - previous.position ).length();
+                }
+                run.points.push_back( sample );
+            }
+            samples.points = run.points;
+        };
+        road( "south", { { 12, 0 }, { 50, -5 }, { 100, 0 } } );
+        road( "east", { { 100, 0 }, { 100, 100 } } );
+        road( "north", { { 100, 100 }, { 0, 100 } } );
+        road( "west", { { 0, 100 }, { 0, 12 } } );
+        // This nested closed street is its own block. The cul-de-sac from
+        // the outer circuit must not contribute a spike to its boundary.
+        road( "loop", { { 20, 20 }, { 40, 20 }, { 40, 40 }, { 20, 40 }, { 20, 20 } } );
+        road( "spur", { { 100, 100 }, { 60, 50 } } );
+        // A self-crossing loop with non-zero signed area has no simple interior.
+        road( "crossed", { { 150, 0 }, { 170, 20 }, { 150, 20 }, { 180, 0 }, { 150, 0 } } );
+        auto &circle = s.roundabouts.emplace_back();
+        circle.center = { 0, 0, 0 };
+        circle.outerRadius = 5;
+        circle.ports = { { "south", { 1, 0, 0 }, 4, 7 }, { "west", { 0, 0, 1 }, 4, 7 } };
+        auto faces = cityRoadBlockFaces( s, bake, joints );
+        require( faces.size() == 2 && faces[0].size() == 4, "Nested closed street lost its separate block" );
+        const auto &outer = faces[1];
+        const auto has = [&]( float x, float z ) {
+            return std::any_of( outer.begin(), outer.end(), [&]( auto p ) { return p.x == x && p.z == z; } );
+        };
+        require( has( 50, -5 ) && has( 0, 0 ) && !has( 60, 50 ),
+                 "Saved block boundary lost its bend, roundabout connection or dead-end exclusion" );
+        circle.ports[0].approachId = "disconnected";
+        require( cityRoadBlockFaces( s, bake, joints ).size() == 1, "Unlinked roundabout closed a phantom block" );
+
+        // Dense straight samples either side of the bend must have the same
+        // visible inset as the five real corners.
+        using Points = std::vector<OpenCityLayout::Point>;
+        const Points sampled{ { -50, 0 }, { 0, .0001f }, { 1, 0 }, { 2, .5f },
+                              { 20, 9.5f }, { 80, 39.5f }, { 80, 90 }, { -50, 90 } };
+        const auto expected = insetOpenCityDebugBlock(
+            Points{ { -50, 0 }, { 1, 0 }, { 80, 39.5f }, { 80, 90 }, { -50, 90 } }, 6 );
+        const auto inset = insetOpenCityDebugBlock( sampled, 6 );
+        require( inset.size() == expected.size(), "Inset block outline folded back at a short spline sample" );
+        for( size_t i = 0; i < inset.size(); ++i )
+            require( std::hypot( inset[i].x - expected[i].x, inset[i].z - expected[i].z ) < .001f,
+                     "Inset spline boundary moved a block corner" );
+    }
+
     void ordinaryJunctions()
     {
         for( unsigned variant = 0; variant < 4; ++variant )
@@ -553,6 +620,7 @@ int main()
         run( "transactional invalid terrain/bake", failures );
         run( "roundabout footprint and approach seams", roundaboutSupport ); run( "staged SourceCpu denial", budgetDenial );
         run( "ordinary unequal-width T/X connectors", ordinaryJunctions );
+        run( "saved road block contours", savedBlockContours );
         run( "short shared junction approach", consecutiveJunctions );
         run( "junction SourceCpu denial", junctionBudgetDenial );
         run( "roundabout and ordinary junction conflicts", roundaboutJunctionConflicts );

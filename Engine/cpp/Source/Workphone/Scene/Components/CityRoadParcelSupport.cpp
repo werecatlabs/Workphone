@@ -1,4 +1,5 @@
 #include <Workphone/WorkphonePCH.hpp>
+#include <Workphone/Graphics/FoliageData.hpp>
 #include <Workphone/Scene/Components/CityRoadParcelSupport.hpp>
 #include <Workphone/Scene/Components/CityRoadJunctions.hpp>
 #include <Workphone/Scene/Components/CityRoadTerrainMesh.hpp>
@@ -7,6 +8,7 @@
 #include <cmath>
 #include <limits>
 #include <new>
+#include <optional>
 #include <stdexcept>
 #include <string_view>
 
@@ -52,6 +54,66 @@ namespace workphone::scene
             double x0, x1, z0, z1;
         };
 
+        struct Bounds
+        {
+            double x0, x1, z0, z1;
+        };
+
+        // Consecutive samples follow a spline or a junction corner. Bound small runs
+        // once so each parcel need only inspect nearby stretches of the network.
+        constexpr size_t reservationGroupSize = 16;
+
+        template <class Items, class BoundsOf>
+        SourceBudgetVector<Bounds> groupBounds( const Items &items, BoundsOf boundsOf )
+        {
+            SourceBudgetVector<Bounds> groups;
+            for( size_t i = 0; i < items.size(); ++i )
+            {
+                const auto b = boundsOf( items[i] );
+                if( i % reservationGroupSize == 0 )
+                {
+                    groups.push_back( b );
+                }
+                else
+                {
+                    auto &group = groups.back();
+                    group.x0 = std::min( group.x0, b.x0 );
+                    group.x1 = std::max( group.x1, b.x1 );
+                    group.z0 = std::min( group.z0, b.z0 );
+                    group.z1 = std::max( group.z1, b.z1 );
+                }
+            }
+            return groups;
+        }
+
+        template <class Items, class Overlaps>
+        bool overlapsReservation( const Items &items, const SourceBudgetVector<Bounds> &groups,
+                                  const Rectangle &r, u64 &visits, Overlaps overlaps )
+        {
+            const Bounds parcel{ r.x - r.width * .5, r.x + r.width * .5, r.z - r.depth * .5,
+                                 r.z + r.depth * .5 };
+            for( size_t i = 0; i < groups.size(); ++i )
+            {
+                require( ++visits <= 32000000, "Parcel road-clearance work budget exceeded." );
+                const auto &b = groups[i];
+                if( parcel.x1 < b.x0 || parcel.x0 > b.x1 || parcel.z1 < b.z0 || parcel.z0 > b.z1 )
+                {
+                    continue;
+                }
+                const size_t start = i * reservationGroupSize;
+                const size_t end = std::min( items.size(), start + reservationGroupSize );
+                for( size_t j = start; j < end; ++j )
+                {
+                    require( ++visits <= 32000000, "Parcel road-clearance work budget exceeded." );
+                    if( overlaps( items[j] ) )
+                    {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
         bool triangleOverlap( const Rectangle &r, const ReservedTriangle &triangle )
         {
             const double halfX = r.width * .5, halfZ = r.depth * .5;
@@ -80,15 +142,8 @@ namespace workphone::scene
         }
 
         SourceBudgetVector<ReservedTriangle> junctionReservations(
-            const procedural::CityRoadSplineSource &source,
-            const procedural::CityRoadSplineBake &bake,
-            const procedural::CityRoadHeightSampler &sampler, String &error )
+            const CityRoadJunctionBake &connections )
         {
-            CityRoadJunctionBake connections;
-            if( !buildCityRoadJunctions( source, bake, sampler, {}, connections, error ) )
-            {
-                throw std::runtime_error( error.c_str() );
-            }
             SourceBudgetVector<ReservedTriangle> triangles;
             const auto point = []( Vector3F p ) { return Point{ p.x, p.z }; };
             const auto append = [&]( Point a, Point b, Point c ) {
@@ -239,6 +294,208 @@ namespace workphone::scene
                    text == "Road footprint is not completely supported by terrain cells." ||
                    text == "Covered terrain or junction carriageway exceeds the road grade limit.";
         }
+
+        using procedural::OpenCityLayout;
+
+        struct BlockCandidate
+        {
+            OpenCityLayout::Lot lot;
+            double streetDistanceSquared;
+        };
+
+        struct BlockCoverage
+        {
+            double minX, maxX, minZ, maxZ, area = 0, occupied = 0;
+            SourceBudgetVector<BlockCandidate> sites;
+            size_t next = 0;
+        };
+
+        // Test the real face, including concave corners. For nested road loops,
+        // assign the site to the smallest enclosing boundary.
+        size_t containingBlock( const CityRoadBlockFaces &faces,
+                                const SourceBudgetVector<BlockCoverage> &blocks, float x, float z )
+        {
+            size_t owner = faces.size();
+            for( size_t i = 0; i < faces.size(); ++i )
+            {
+                const auto &b = blocks[i];
+                if( x <= b.minX || x >= b.maxX || z <= b.minZ || z >= b.maxZ ||
+                    ( owner != faces.size() && b.area >= blocks[owner].area ) )
+                {
+                    continue;
+                }
+                bool inside = false;
+                const auto &ring = faces[i];
+                for( size_t j = 0, k = ring.size() - 1; j < ring.size(); k = j++ )
+                {
+                    const auto a = ring[j], c = ring[k];
+                    if( ( a.z > z ) != ( c.z > z ) && x < a.x + ( double( z ) - a.z ) *
+                                                                    ( double( c.x ) - a.x ) /
+                                                                    ( double( c.z ) - a.z ) )
+                    {
+                        inside = !inside;
+                    }
+                }
+                if( inside )
+                {
+                    owner = i;
+                }
+            }
+            return owner;
+        }
+
+        template <class Admit>
+        void fillCityBlocks( OpenCityLayout &city, const CityRoadBlockFaces &faces, u32 seed,
+                             SourceBudgetSet<u64> &ids, Admit admit )
+        {
+            require( city.blocks >= 1 && city.blocks <= 10 && std::isfinite( city.extent ) &&
+                         city.extent > 0 && city.extent <= 1024,
+                     "Invalid terrain city infill extent." );
+            const auto limit = size_t( city.blocks * city.blocks * 4 );
+            if( city.lots.size() >= limit || faces.empty() )
+            {
+                return;
+            }
+            SourceBudgetVector<BlockCoverage> blocks;
+            for( const auto &ring : faces )
+            {
+                require( ring.size() >= 3, "Invalid terrain city block boundary." );
+                auto &block = blocks.emplace_back();
+                block.minX = block.maxX = ring.front().x;
+                block.minZ = block.maxZ = ring.front().z;
+                for( size_t j = 0, k = ring.size() - 1; j < ring.size(); k = j++ )
+                {
+                    const auto a = ring[k], b = ring[j];
+                    block.area += double( a.x ) * b.z - double( b.x ) * a.z;
+                    block.minX = std::min<double>( block.minX, b.x );
+                    block.maxX = std::max<double>( block.maxX, b.x );
+                    block.minZ = std::min<double>( block.minZ, b.z );
+                    block.maxZ = std::max<double>( block.maxZ, b.z );
+                }
+                block.area = std::abs( block.area ) * .5;
+                require( block.area > 0, "Terrain city block has no area." );
+            }
+            for( const auto &lot : city.lots )
+            {
+                const size_t i = containingBlock( faces, blocks, lot.parcelX, lot.parcelZ );
+                if( i < blocks.size() )
+                {
+                    blocks[i].occupied += lot.parcelWidth * lot.parcelDepth;
+                }
+            }
+
+            // World-aligned sites retain their identity when an unrelated road is edited.
+            // The pitch leaves pedestrian/service gaps between neighbouring infill lots.
+            constexpr float pitch = 18.f;
+            const int half = int( std::floor( ( city.extent - OpenCityLayout::roadSetback ) / pitch ) );
+            for( int ix = -half; ix <= half; ++ix )
+            {
+                for( int iz = -half; iz <= half; ++iz )
+                {
+                    const float x = ix * pitch, z = iz * pitch;
+                    const auto owner = containingBlock( faces, blocks, x, z );
+                    if( owner == faces.size() )
+                    {
+                        continue;
+                    }
+                    OpenCityLayout::Lot lot{};
+                    lot.id = ( u64( seed ) << 32 ) | 0x80000000u | ( ( u32( ix ) & 0x7fffu ) << 15 ) |
+                             ( u32( iz ) & 0x7fffu );
+                    if( ids.count( lot.id ) )
+                    {
+                        continue;
+                    }
+                    const u64 variation = render::foliageStableHash( lot.id );
+                    lot.variant = u32( variation );
+                    lot.parcelX = lot.x = x;
+                    lot.parcelZ = lot.z = z;
+                    lot.parcelWidth = 12.f + float( variation & 3 );
+                    lot.parcelDepth = 12.f + float( ( variation >> 2 ) & 3 );
+                    if( std::abs( x ) + lot.parcelWidth * .5f >
+                            city.extent - OpenCityLayout::roadSetback ||
+                        std::abs( z ) + lot.parcelDepth * .5f >
+                            city.extent - OpenCityLayout::roadSetback )
+                    {
+                        continue;
+                    }
+                    lot.park = ( variation >> 32 ) % 16 == 0;
+                    lot.width = lot.parcelWidth - ( lot.park ? 0.f : 2.f );
+                    lot.depth = lot.parcelDepth - ( lot.park ? 0.f : 2.f );
+                    const bool central = std::hypot( x, z ) < city.extent * .40f;
+                    lot.district = central ? OpenCityLayout::District::Commercial
+                                   : ( variation >> 16 ) % 13 == 0
+                                       ? OpenCityLayout::District::Civic
+                                       : OpenCityLayout::District::Residential;
+                    lot.height = central ? 3.6f * ( 6 + ( variation >> 24 ) % 10 )
+                                         : 3.2f * ( 2 + ( variation >> 24 ) % 5 );
+                    const auto &ring = faces[owner];
+                    double nearest = std::numeric_limits<double>::max();
+                    for( size_t j = 0, k = ring.size() - 1; j < ring.size(); k = j++ )
+                    {
+                        const auto a = ring[k], b = ring[j];
+                        const double dx = double( b.x ) - a.x, dz = double( b.z ) - a.z;
+                        const double length2 = dx * dx + dz * dz;
+                        if( length2 == 0 )
+                        {
+                            continue;
+                        }
+                        const double t =
+                            std::clamp( ( ( x - a.x ) * dx + ( z - a.z ) * dz ) / length2, 0., 1. );
+                        const double ox = a.x + t * dx - x, oz = a.z + t * dz - z;
+                        const double distance = ox * ox + oz * oz;
+                        if( distance < nearest )
+                        {
+                            nearest = distance;
+                            lot.frontage = std::abs( ox ) > std::abs( oz )
+                                               ? ( ox < 0 ? OpenCityLayout::Frontage::West
+                                                          : OpenCityLayout::Frontage::East )
+                                               : ( oz < 0 ? OpenCityLayout::Frontage::North
+                                                          : OpenCityLayout::Frontage::South );
+                        }
+                    }
+                    blocks[owner].sites.push_back( { lot, nearest } );
+                }
+            }
+            for( auto &block : blocks )
+            {
+                std::sort( block.sites.begin(), block.sites.end(), []( const auto &a, const auto &b ) {
+                    if( a.streetDistanceSquared != b.streetDistanceSquared )
+                    {
+                        return a.streetDistanceSquared < b.streetDistanceSquared;
+                    }
+                    return a.lot.id < b.lot.id;
+                } );
+            }
+
+            while( city.lots.size() < limit )
+            {
+                BlockCoverage *least = nullptr;
+                for( auto &block : blocks )
+                {
+                    if( block.next < block.sites.size() &&
+                        ( !least || block.occupied * least->area < least->occupied * block.area ) )
+                    {
+                        least = &block;
+                    }
+                }
+                if( !least )
+                {
+                    break;
+                }
+                const auto &lot = least->sites[least->next++].lot;
+                const bool occupied =
+                    std::any_of( city.lots.begin(), city.lots.end(), [&]( const auto &other ) {
+                        return std::abs( lot.parcelX - other.parcelX ) <
+                                   ( lot.parcelWidth + other.parcelWidth ) * .5f + .75f &&
+                               std::abs( lot.parcelZ - other.parcelZ ) <
+                                   ( lot.parcelDepth + other.parcelDepth ) * .5f + .75f;
+                    } );
+                if( !occupied && admit( lot ) )
+                {
+                    least->occupied += city.lots.back().parcelWidth * city.lots.back().parcelDepth;
+                }
+            }
+        }
     }  // namespace
 
     bool prepareCityRoadParcels( const procedural::OpenCityLayout &input,
@@ -252,12 +509,13 @@ namespace workphone::scene
                                       culled, supportChecks, error, {} );
     }
 
-    bool prepareCityRoadParcels( const procedural::OpenCityLayout &input,
-                                 const procedural::CityRoadSplineSource &source,
-                                 const procedural::CityRoadSplineBake &bake,
-                                 render::TerrainSnapshot terrain, const Transform3<real_Num> &placement,
-                                 procedural::OpenCityLayout &output, u32 &culled, u32 &supportChecks,
-                                 String &error, const CityRoadParcelSupportOptions &options )
+    static bool prepareParcels( const OpenCityLayout &input,
+                                const procedural::CityRoadSplineSource &source,
+                                const procedural::CityRoadSplineBake &bake,
+                                render::TerrainSnapshot terrain, const Transform3<real_Num> &placement,
+                                OpenCityLayout &output, u32 &culled, u32 &supportChecks, String &error,
+                                const CityRoadParcelSupportOptions &options,
+                                std::optional<u32> infillSeed, CityRoadBlockFaces *outFaces )
     {
         try
         {
@@ -354,53 +612,54 @@ namespace workphone::scene
             const procedural::CityRoadHeightSampler sampler = [&]( const Vector3F &point, f32 &height ) {
                 return render::sampleTerrainHeight( *terrain, placement, point, height );
             };
-            const auto reservedJunctions = junctionReservations( source, bake, sampler, error );
-            const auto overlapsOrdinaryJunction = [&]( const Rectangle &footprint ) {
-                for( const auto &triangle : reservedJunctions )
-                {
-                    require( ++clearanceVisits <= 32000000,
-                             "Parcel road-clearance work budget exceeded." );
-                    if( triangleOverlap( footprint, triangle ) ) return true;
-                }
-                return false;
-            };
-            for( auto lot : input.lots )
+            CityRoadJunctionBake connections;
+            if( !buildCityRoadJunctions( source, bake, sampler, {}, connections, error ) )
             {
+                throw std::runtime_error( error.c_str() );
+            }
+            const auto reservedJunctions = junctionReservations( connections );
+            const auto roadBounds = groupBounds( segments, []( const Segment &s ) {
+                return Bounds{ std::min( s.ax, s.bx ) - s.clearance,
+                               std::max( s.ax, s.bx ) + s.clearance,
+                               std::min( s.az, s.bz ) - s.clearance,
+                               std::max( s.az, s.bz ) + s.clearance };
+            } );
+            const auto junctionBounds = groupBounds( reservedJunctions, []( const ReservedTriangle &t ) {
+                return Bounds{ t.x0, t.x1, t.z0, t.z1 };
+            } );
+            const auto reserved = [&]( const Rectangle &footprint ) {
+                if( overlapsReservation(
+                        segments, roadBounds, footprint, clearanceVisits, [&]( const Segment &s ) {
+                            return segmentRectangleSquared( s, footprint ) <= s.clearance * s.clearance;
+                        } ) )
+                {
+                    return true;
+                }
+                for( const auto &junction : source.roundabouts )
+                {
+                    if( junctionOverlap( footprint, junction ) )
+                    {
+                        return true;
+                    }
+                }
+                return overlapsReservation(
+                    reservedJunctions, junctionBounds, footprint, clearanceVisits,
+                    [&]( const ReservedTriangle &t ) { return triangleOverlap( footprint, t ); } );
+            };
+            const auto admit = [&]( OpenCityLayout::Lot lot ) {
                 const Rectangle footprint{ lot.parcelX, lot.parcelZ, lot.parcelWidth, lot.parcelDepth };
-                bool excluded = false;
-                for( const auto &segment : segments )
+                if( reserved( footprint ) )
                 {
-                    require( ++clearanceVisits <= 32000000,
-                             "Parcel road-clearance work budget exceeded." );
-                    if( segmentRectangleSquared( segment, footprint ) <=
-                        segment.clearance * segment.clearance )
-                    {
-                        excluded = true;
-                        break;
-                    }
-                }
-                if( !excluded )
-                {
-                    for( const auto &junction : source.roundabouts )
-                    {
-                        if( junctionOverlap( footprint, junction ) )
-                        {
-                            excluded = true;
-                            break;
-                        }
-                    }
-                }
-                if( !excluded ) excluded = overlapsOrdinaryJunction( footprint );
-                if( excluded )
-                {
-                    ++nextCulled;
-                    continue;
+                    return false;
                 }
                 const auto original = lot;
                 std::array<std::pair<float, float>, 25> scales;
                 size_t scaleIndex = 0;
                 for( float x : { 1.f, .85f, .7f, .55f, .4f } )
-                    for( float z : { 1.f, .85f, .7f, .55f, .4f } ) scales[scaleIndex++] = { x, z };
+                    for( float z : { 1.f, .85f, .7f, .55f, .4f } )
+                    {
+                        scales[scaleIndex++] = { x, z };
+                    }
                 const bool frontageAlongX = lot.frontage == procedural::OpenCityLayout::Frontage::North ||
                                             lot.frontage == procedural::OpenCityLayout::Frontage::South;
                 std::sort( scales.begin(), scales.end(), [&]( const auto &a, const auto &b ) {
@@ -409,7 +668,6 @@ namespace workphone::scene
                     // Equal-area choices keep as much street frontage as possible.
                     return frontageAlongX ? a.first > b.first : a.second > b.second;
                 } );
-                bool accepted = false;
                 for( size_t attempt = 0; attempt < ( options.shrinkForRelief ? scales.size() : 1 ); ++attempt )
                 {
                     lot = original;
@@ -417,29 +675,28 @@ namespace workphone::scene
                     if( attempt )
                     {
                         if( original.width * scale.first < options.minimumBuildingSpan ||
-                            original.depth * scale.second < options.minimumBuildingSpan ) continue;
+                            original.depth * scale.second < options.minimumBuildingSpan )
+                        {
+                            continue;
+                        }
                         using Frontage = procedural::OpenCityLayout::Frontage;
                         const float anchorX = lot.frontage == Frontage::West ? -1.f : lot.frontage == Frontage::East ? 1.f : 0.f;
                         const float anchorZ = lot.frontage == Frontage::North ? -1.f : lot.frontage == Frontage::South ? 1.f : 0.f;
                         lot.parcelX += anchorX * original.parcelWidth * ( 1 - scale.first ) * .5f;
                         lot.parcelZ += anchorZ * original.parcelDepth * ( 1 - scale.second ) * .5f;
-                        lot.parcelWidth *= scale.first; lot.parcelDepth *= scale.second;
+                        lot.parcelWidth *= scale.first;
+                        lot.parcelDepth *= scale.second;
                         lot.x = lot.parcelX + ( original.x - original.parcelX ) * scale.first;
                         lot.z = lot.parcelZ + ( original.z - original.parcelZ ) * scale.second;
-                        lot.width *= scale.first; lot.depth *= scale.second;
+                        lot.width *= scale.first;
+                        lot.depth *= scale.second;
                         // Recheck even these mathematical subsets so float rounding
                         // at large world coordinates cannot erode a road reservation.
                         const Rectangle reduced{ lot.parcelX, lot.parcelZ, lot.parcelWidth, lot.parcelDepth };
-                        bool reserved = false;
-                        for( const auto &segment : segments )
+                        if( reserved( reduced ) )
                         {
-                            require( ++clearanceVisits <= 32000000, "Parcel road-clearance work budget exceeded." );
-                            if( segmentRectangleSquared( segment, reduced ) <= segment.clearance * segment.clearance )
-                            { reserved = true; break; }
+                            continue;
                         }
-                        if( reserved || std::any_of( source.roundabouts.begin(), source.roundabouts.end(),
-                            [&]( const auto &junction ) { return junctionOverlap( reduced, junction ); } ) ||
-                            overlapsOrdinaryJunction( reduced ) ) continue;
                     }
                     ++nextChecks;
                     auto &sweep = rectangle.roads[0];
@@ -485,10 +742,26 @@ namespace workphone::scene
                     lot.groundHeight = maximum;
                     lot.groundMinimumHeight = minimum;
                     candidate.lots.push_back( lot );
-                    accepted = true;
-                    break;
+                    return true;
                 }
-                if( !accepted ) ++nextCulled;
+                return false;
+            };
+            for( const auto &lot : input.lots )
+            {
+                if( !admit( lot ) )
+                {
+                    ++nextCulled;
+                }
+            }
+            CityRoadBlockFaces faces;
+            if( infillSeed && input.naturalRoads )
+            {
+                faces = cityRoadBlockFaces( source, bake, connections );
+                fillCityBlocks( candidate, faces, *infillSeed, ids, admit );
+            }
+            if( outFaces )
+            {
+                outFaces->swap( faces );
             }
             output.swap( candidate );
             culled = nextCulled;
@@ -501,5 +774,28 @@ namespace workphone::scene
             error = exception.what();
             return false;
         }
+    }
+
+    bool prepareCityRoadParcels( const OpenCityLayout &input,
+                                 const procedural::CityRoadSplineSource &source,
+                                 const procedural::CityRoadSplineBake &bake,
+                                 render::TerrainSnapshot terrain, const Transform3<real_Num> &placement,
+                                 OpenCityLayout &output, u32 &culled, u32 &supportChecks, String &error,
+                                 const CityRoadParcelSupportOptions &options )
+    {
+        return prepareParcels( input, source, bake, std::move( terrain ), placement, output, culled,
+                               supportChecks, error, options, std::nullopt, nullptr );
+    }
+
+    bool prepareCityRoadParcels( const OpenCityLayout &input,
+                                 const procedural::CityRoadSplineSource &source,
+                                 const procedural::CityRoadSplineBake &bake,
+                                 render::TerrainSnapshot terrain, const Transform3<real_Num> &placement,
+                                 OpenCityLayout &output, u32 &culled, u32 &supportChecks, String &error,
+                                 const CityRoadParcelSupportOptions &options, u32 infillSeed,
+                                 CityRoadBlockFaces *faces )
+    {
+        return prepareParcels( input, source, bake, std::move( terrain ), placement, output, culled,
+                               supportChecks, error, options, infillSeed, faces );
     }
 }  // namespace workphone::scene

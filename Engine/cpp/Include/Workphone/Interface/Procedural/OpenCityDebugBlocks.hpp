@@ -95,10 +95,34 @@ namespace workphone::procedural
     // Move the diagnostic outline from a road centreline to the block side.
     // Bound the inset by the face dimensions so small irregular blocks do not
     // turn inside out under a wide-road offset.
-    inline std::vector<OpenCityLayout::Point> insetOpenCityDebugBlock(
-        const std::vector<OpenCityLayout::Point> &boundary, float requestedInset )
+    template <class Allocator>
+    inline std::vector<OpenCityLayout::Point, Allocator> insetOpenCityDebugBlock(
+        const std::vector<OpenCityLayout::Point, Allocator> &samples, float requestedInset )
     {
-        if( boundary.size() < 3 || requestedInset <= 0 ) return boundary;
+        if( samples.size() < 3 || requestedInset <= 0 ) return samples;
+        // A short, nearly straight spline sample next to a corner can reverse
+        // its inset edge. Merge straight runs before offsetting the visible line.
+        const auto straight = []( auto a, auto b, auto c ) {
+            const double dx = double( c.x ) - a.x, dz = double( c.z ) - a.z;
+            const double bx = double( b.x ) - a.x, bz = double( b.z ) - a.z;
+            const double along = bx * dx + bz * dz;
+            return along >= 0 && along <= dx * dx + dz * dz &&
+                   std::abs( bx * dz - bz * dx ) <= .005 * std::hypot( dx, dz ) &&
+                   ( dx != 0 || dz != 0 );
+        };
+        std::vector<OpenCityLayout::Point, Allocator> boundary( samples.get_allocator() );
+        boundary.reserve( samples.size() );
+        for( const auto p : samples )
+        {
+            while( boundary.size() > 1 && straight( boundary[boundary.size()-2], boundary.back(), p ) )
+                boundary.pop_back();
+            boundary.push_back( p );
+        }
+        while( boundary.size() > 3 && straight( boundary[boundary.size()-2], boundary.back(), boundary.front() ) )
+            boundary.pop_back();
+        while( boundary.size() > 3 && straight( boundary.back(), boundary.front(), boundary[1] ) )
+            boundary.erase( boundary.begin() );
+        if( boundary.size() < 3 ) return samples;
         float minX = boundary[0].x, maxX = minX, minZ = boundary[0].z, maxZ = minZ;
         for( const auto &p : boundary )
         {
@@ -107,7 +131,7 @@ namespace workphone::procedural
         }
         const float inset = std::min( requestedInset, .15f * std::min( maxX - minX, maxZ - minZ ) );
         if( inset <= 0 ) return boundary;
-        std::vector<OpenCityLayout::Point> result;
+        std::vector<OpenCityLayout::Point, Allocator> result( boundary.get_allocator() );
         result.reserve( boundary.size() );
         for( size_t i = 0; i < boundary.size(); ++i )
         {

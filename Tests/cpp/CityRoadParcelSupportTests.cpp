@@ -198,9 +198,8 @@ namespace
         check( prepareCityRoadParcels( input, s, bake, data, {}, repeated, culled, checks, error, options ), error );
         require( repeated.lots.empty() && culled == 1 && checks == 1, "Adaptive policy waived the exact terrain-cell grade bound" );
     }
-    void generatedHillsideDensity()
+    CityRoadTerrainFitResult fitGeneratedHillside( const OpenCityLayout &input )
     {
-        const auto input = OpenCityLayout::generate( 42, 6, 0, true ); const auto original = input;
         OpenCityRoadSourceOptions options; options.seed = 42; options.maximumRoundabouts = 4;
         options.sourceId = source().id; options.terrainResourceUuid = source().terrainResourceUuid;
         OpenCityRoadSourceResult planned; String error;
@@ -221,6 +220,12 @@ namespace
         }
         CityRoadTerrainFitResult fitted;
         check( prepareCityRoadTerrainFit(planned.source,data,{},{},fitted,error),error );
+        return fitted;
+    }
+    void generatedHillsideDensity()
+    {
+        const auto input = OpenCityLayout::generate( 42, 6, 0, true ); const auto original = input;
+        const auto fitted = fitGeneratedHillside( input ); String error;
         OpenCityLayout strict,adapted,verified; u32 culled=0,checks=0;
         check( prepareCityRoadParcels(input,fitted.source,fitted.bake,fitted.terrain,{},strict,culled,checks,error),error );
         CityRoadParcelSupportOptions adaptation; adaptation.shrinkForRelief=true;
@@ -239,6 +244,92 @@ namespace
         check(prepareCityRoadParcels(adapted,fitted.source,fitted.bake,fitted.terrain,{},verified,culled,checks,error),error);
         require(culled==0 && checks==adapted.lots.size(),"Adapted city cannot pass unchanged strict terrain support and reservations");
         sameCity(adapted,verified);sameCity(input,original);
+    }
+    void largeHillsideInfill()
+    {
+        const auto input = OpenCityLayout::generate( 42, 10, 0, true );
+        const auto fitted = fitGeneratedHillside( input );
+        CityRoadParcelSupportOptions options;
+        options.shrinkForRelief = true;
+        OpenCityLayout result;
+        u32 culled = 0, checks = 0;
+        String error;
+        check( prepareCityRoadParcels( input, fitted.source, fitted.bake, fitted.terrain, {},
+                                       result, culled, checks, error, options, 42u ), error );
+        require( result.lots.size() == 400 && culled > 0,
+                 "Largest supported city failed to fill eligible sites within its clearance work budget" );
+    }
+    void sparseAuthoredBlockInfill()
+    {
+        auto input = city();  // The saved roads enclose a block that the seed graph does not.
+        input.lots = { lot( 901, -25, -25 ) };
+        auto data = terrain();
+        data->spacing = { 2, 2 };
+        data->origin = { -128, -128 };
+        auto roads = source();
+        constexpr float edge = 88.f;
+        const Vector3F corners[] = { { -edge, 0, -edge }, { edge, 0, -edge },
+                                     { edge, 0, edge }, { -edge, 0, edge } };
+        for( unsigned i = 0; i < 4; ++i )
+            addRoad( roads, i, corners[i], corners[( i + 1 ) % 4], 8 );
+        const auto bake = sample( roads );
+        OpenCityLayout original, filled, repeat, verified;
+        u32 culled = 0, checks = 0;
+        String error;
+        CityRoadParcelSupportOptions options;
+        options.shrinkForRelief = true;
+        check( prepareCityRoadParcels( input, roads, bake, data, {}, original, culled, checks, error, options ), error );
+        require( original.lots.size() == 1, "Sparse authored block fixture lost its original lot" );
+
+        const auto fill = [&]( OpenCityLayout &output ) {
+            check( prepareCityRoadParcels( input, roads, bake, data, {}, output, culled, checks, error,
+                                           options, 7u ), error );
+        };
+        fill( filled );
+        fill( repeat );
+        sameCity( filled, repeat );
+        require( filled.lots.size() >= 4 && filled.lots.size() <= size_t( 4 * input.blocks * input.blocks ),
+                 "Terrain infill did not populate a sparse authored block within the city parcel budget" );
+        sameLot( original.lots.front(), filled.lots.front() );
+        float developedArea = 0;
+        for( size_t i = 0; i < filled.lots.size(); ++i )
+        {
+            const auto &parcel = filled.lots[i];
+            developedArea += parcel.parcelWidth * parcel.parcelDepth;
+            require( std::abs( parcel.parcelX ) + parcel.parcelWidth * .5f < edge - 4.f &&
+                     std::abs( parcel.parcelZ ) + parcel.parcelDepth * .5f < edge - 4.f,
+                     "Infill escaped its authored block or entered the enclosing carriageway" );
+            for( size_t j = 0; j < i; ++j )
+            {
+                const auto &other = filled.lots[j];
+                require( parcel.id != other.id &&
+                         ( std::abs( parcel.parcelX - other.parcelX ) >= ( parcel.parcelWidth + other.parcelWidth ) * .5f ||
+                           std::abs( parcel.parcelZ - other.parcelZ ) >= ( parcel.parcelDepth + other.parcelDepth ) * .5f ),
+                         "Infill duplicated a parcel identity or overlapped an occupied parcel" );
+            }
+        }
+        require( developedArea > original.lots.front().parcelWidth * original.lots.front().parcelDepth * 3.f,
+                 "Infill increased the lot count without recovering usable parcel area" );
+
+        // Mark the terrain cell under a known infill site as a hole, then re-run the
+        // same seed. No accepted rectangle may touch the interior of that cell.
+        const auto &site = filled.lots[1];
+        const int cellX = int( std::floor( ( site.parcelX - data->origin.x ) / data->spacing.x ) );
+        const int cellZ = int( std::floor( ( site.parcelZ - data->origin.y ) / data->spacing.y ) );
+        const float x = data->origin.x + data->spacing.x * cellX;
+        const float z = data->origin.y + data->spacing.y * cellZ;
+        data->holes.assign( 128 * 128, 0 );
+        data->holes[cellZ * 128 + cellX] = 1;
+        fill( repeat );
+        require( repeat.lots.size() > 1, "One terrain hole emptied a buildable block" );
+        sameLot( original.lots.front(), repeat.lots.front() );
+        for( const auto &p : repeat.lots )
+            require( p.parcelX + p.parcelWidth * .5f <= x || p.parcelX - p.parcelWidth * .5f >= x + data->spacing.x ||
+                     p.parcelZ + p.parcelDepth * .5f <= z || p.parcelZ - p.parcelDepth * .5f >= z + data->spacing.y,
+                     "Regenerated infill occupied an unsupported terrain cell" );
+        check( prepareCityRoadParcels( repeat, roads, bake, data, {}, verified, culled, checks, error ), error );
+        require( culled == 0, "Infill bypassed the canonical road, sidewalk or terrain checks" );
+        sameCity( repeat, verified );
     }
     void junctions()
     {
@@ -418,7 +509,7 @@ namespace
 int main()
 {
     int result = 0;
-    try { canonicalRoads(); fullTerrain(); adaptiveFootprints(); generatedHillsideDensity(); junctions(); pavementReservations(); ordinaryJunctionReservations(); transactionalFailures(); std::cout << "City parcels: canonical road/junction/pavement clearances, full terrain support/heights, stable order and transactional budgets PASS\n"; }
+    try { canonicalRoads(); fullTerrain(); adaptiveFootprints(); generatedHillsideDensity(); largeHillsideInfill(); sparseAuthoredBlockInfill(); junctions(); pavementReservations(); ordinaryJunctionReservations(); transactionalFailures(); std::cout << "City parcels: canonical road/junction/pavement clearances, full terrain support/heights, stable order and transactional budgets PASS\n"; }
     catch( const std::exception &e ) { std::cerr << "City parcel support: " << e.what() << '\n'; result = 1; }
     WorldStreamingScheduler::shutdownShared(); return result;
 }
