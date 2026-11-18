@@ -884,6 +884,40 @@ BOOST_AUTO_TEST_CASE( open_chains_and_isolated_nodes_never_become_blocks )
     BOOST_CHECK( generator->isFinished() && city->getBlocks().empty() );
 }
 
+BOOST_AUTO_TEST_CASE( nearly_parallel_junction_roads_bound_two_distinct_blocks )
+{
+    auto city = workphone::make_ptr<CProceduralCity>();
+    auto network = workphone::make_ptr<CRoadNetwork>();
+    // These exactly representable road endpoints range from roughly 64 to 192 metres away.
+    // Their XZ directions round to the same double-precision atan2 angle.
+    constexpr real_Num dx = 0x1p-16, dz = 0x1p-24;
+    Array<SmartPtr<IRoadNode>> nodes{ point( 0, 0, 4 ), point( -64, 0.25f - dz, 5 ),
+                                      point( -192 - dx, 0.75f - 2 * dz, 7 ),
+                                      point( -128 - dx, 0.5f - dz, 6 ) };
+    for( size_t tip = 1; tip < nodes.size(); ++tip )
+    {
+        nodes[0]->connect( nodes[tip] );
+    }
+    nodes[1]->connect( nodes[2] );
+    nodes[2]->connect( nodes[3] );
+    network->setNodes( nodes );
+    city->setRoadNetwork( network );
+    generator->addCity( city );
+    generator->setBlockGenerator( workphone::make_ptr<CBlockGenerator>() );
+    generator->generate();
+
+    const auto blocks = city->getBlocks();
+    BOOST_REQUIRE_EQUAL( blocks.size(), 2u );
+    for( size_t tip = 1; tip <= 2; ++tip )
+    {
+        auto expected = workphone::make_ptr<CCityBlock>();
+        expected->addPoint( nodes[0]->getPosition() );
+        expected->addPoint( nodes[tip]->getPosition() );
+        expected->addPoint( nodes[tip + 1]->getPosition() );
+        BOOST_CHECK( blocks[0]->equals( expected ) || blocks[1]->equals( expected ) );
+    }
+}
+
 BOOST_AUTO_TEST_CASE( grid_blocks_have_expected_count_area_and_stable_regeneration )
 {
     constexpr unsigned width = 8, height = 7;
@@ -1061,6 +1095,13 @@ BOOST_AUTO_TEST_CASE( unsplit_junctions_and_vertical_overlaps_fail_without_publi
     BOOST_CHECK_THROW( blocks->generate(), std::invalid_argument );
     BOOST_CHECK( city->getBlocks().empty() );
     nodes.back() = point( 0, 0, 200 );
+    network->setNodes( nodes );
+    BOOST_CHECK_THROW( blocks->generate(), std::invalid_argument );
+    BOOST_CHECK( city->getBlocks().empty() );
+
+    // A road sharing an endpoint can still overlap the vertical side of the square.
+    nodes.back() = point( 10, 5 );
+    nodes[1]->connect( nodes.back() );
     network->setNodes( nodes );
     BOOST_CHECK_THROW( blocks->generate(), std::invalid_argument );
     BOOST_CHECK( city->getBlocks().empty() );

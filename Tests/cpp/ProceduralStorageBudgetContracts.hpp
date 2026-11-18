@@ -197,6 +197,27 @@ namespace procedural_storage_budget_contracts
             graph.InsertVertex( Vector2<real_Num>( 1,1 ), 2 );
             graph.InsertVertex( Vector2<real_Num>( 0,1 ), 3 );
             for( u32 i = 0; i < 4; ++i ) graph.InsertEdge( i, ( i + 1 ) % 4 );
+            {
+                const auto beforeCopy = budget.used();
+                size_t copyBytes;
+                {
+                    Graph copy( graph );
+                    copyBytes = budget.used() - beforeCopy;
+                }
+                Graph destination;
+                const Vector2<real_Num> isolated( 9, 9 );
+                destination.InsertVertex( isolated, 42 );
+                const auto live = budget.used();
+                budget.set( live + copyBytes - 1 );
+                denied( [&] { destination = graph; } );
+                check( destination.FindVertex( isolated ) == 42 && budget.used() == live,
+                       "Late graph copy denial preserves the old coordinate index and storage" );
+                budget.set( budget.original );
+                destination = graph;
+                check( !destination.FindVertex( isolated ) &&
+                           destination.FindVertex( Vector2<real_Num>( 1, 1 ) ) == 2,
+                       "Graph copy retries with the replacement coordinates and IDs" );
+            }
             Array<Graph::Primitive *> output;
             const auto baseline = budget.used();
             budget.set( baseline );

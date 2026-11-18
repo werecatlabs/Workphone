@@ -8,13 +8,12 @@
 #include <Workphone/Interface/Procedural/IRoadNetwork.hpp>
 #include <Workphone/Interface/Procedural/IRoadNode.hpp>
 #include <Workphone/Memory/PointerUtil.hpp>
+#include <algorithm>
 #include <cmath>
 #include <limits>
-#include <map>
-#include <memory>
-#include <set>
 #include <stdexcept>
-#include <vector>
+#include <tuple>
+#include <utility>
 
 namespace workphone
 {
@@ -55,7 +54,6 @@ namespace workphone
                     nodes.push_back( node );
                 }
                 SourceBudgetMap<IProceduralNode *, u32> ids;
-                SourceBudgetMap<std::pair<real_Num, real_Num>, u32> coordinates;
                 SourceBudgetVector<SmartPtr<IProceduralNode>> representatives;
                 for( auto node : nodes )
                 {
@@ -83,12 +81,11 @@ namespace workphone
                         {
                             throw std::invalid_argument( "CBlockGenerator: non-finite road position" );
                         }
-                        const auto coordinate = std::make_pair( position.X(), position.Z() );
-                        auto existing = coordinates.find( coordinate );
+                        const Vector2<real_Num> coordinate( position.X(), position.Z() );
                         u32 id;
-                        if( existing != coordinates.end() )
+                        if( const auto existing = result.graph.FindVertex( coordinate ) )
                         {
-                            id = existing->second;
+                            id = *existing;
                             if( result.positions[id].Y() != position.Y() )
                             {
                                 throw std::invalid_argument(
@@ -103,13 +100,10 @@ namespace workphone
                             }
                             id = static_cast<u32>( result.positions.size() );
                             result.positions.push_back( position );
-                            coordinates.emplace( coordinate, id );
-                            result.graph.InsertVertex( Vector2<real_Num>( position.X(), position.Z() ),
-                                                       id );
+                            result.graph.InsertVertex( coordinate, id );
                         }
-                        ids.emplace( representative.get(), id );
+                        found = ids.emplace( representative.get(), id ).first;
                         representatives.push_back( representative );
-                        found = ids.find( representative.get() );
                     }
                     ids[node.get()] = found->second;
                 }
@@ -165,34 +159,78 @@ namespace workphone
                            ( static_cast<long double>( c.X() ) - a.X() );
             }
 
-            bool onSegment( const Vector3<real_Num> &a, const Vector3<real_Num> &b,
-                            const Vector3<real_Num> &p )
-            {
-                return orientation( a, b, p ) == 0 && p.X() >= std::min( a.X(), b.X() ) &&
-                       p.X() <= std::max( a.X(), b.X() ) && p.Z() >= std::min( a.Z(), b.Z() ) &&
-                       p.Z() <= std::max( a.Z(), b.Z() );
-            }
-
             void validateEmbedding( const RoadGraph &input )
             {
-                // Reject unsplit crossings, overlaps and T-junctions before publishing any blocks.
+                if( input.edges.empty() )
+                {
+                    return;
+                }
+                struct GroundPoint
+                {
+                    real_Num x, z;
+
+                    bool operator<( const GroundPoint &other ) const
+                    {
+                        return std::tie( x, z ) < std::tie( other.x, other.z );
+                    }
+                };
+                struct RoadBounds
+                {
+                    GroundPoint min, max;
+                    Edge endpoints;
+                };
+                SourceBudgetVector<std::pair<GroundPoint, u32>> points;
+                points.reserve( input.positions.size() );
+                for( u32 i = 0; i < input.positions.size(); ++i )
+                {
+                    const auto &p = input.positions[i];
+                    points.emplace_back( GroundPoint{ p.X(), p.Z() }, i );
+                }
+                std::sort( points.begin(), points.end() );
+
+                SourceBudgetVector<RoadBounds> roads;
+                roads.reserve( input.edges.size() );
                 for( const auto &edge : input.edges )
                 {
                     const auto &a = input.positions[edge.first], &b = input.positions[edge.second];
-                    for( size_t i = 0; i < input.positions.size(); ++i )
+                    roads.push_back( { { std::min( a.X(), b.X() ), std::min( a.Z(), b.Z() ) },
+                                       { std::max( a.X(), b.X() ), std::max( a.Z(), b.Z() ) }, edge } );
+                }
+                std::sort( roads.begin(), roads.end(),
+                           []( const auto &a, const auto &b ) { return a.min < b.min; } );
+
+                // Sweep closed bounding boxes in X, breaking ties in Z for north/south roads.
+                // The separate point list also catches isolated nodes and collinear overlaps.
+                auto firstPoint = points.begin();
+                for( auto road = roads.begin(); road != roads.end(); ++road )
+                {
+                    while( firstPoint != points.end() && firstPoint->first < road->min )
                     {
-                        if( i != edge.first && i != edge.second &&
-                            onSegment( a, b, input.positions[i] ) )
+                        ++firstPoint;
+                    }
+                    const auto [start, end] = road->endpoints;
+                    const auto &a = input.positions[start], &b = input.positions[end];
+                    for( auto point = firstPoint; point != points.end() && !( road->max < point->first );
+                         ++point )
+                    {
+                        const auto &[p, id] = *point;
+                        if( id != start && id != end && p.z >= road->min.z && p.z <= road->max.z &&
+                            orientation( a, b, input.positions[id] ) == 0 )
                         {
                             throw std::invalid_argument(
                                 "CBlockGenerator: split roads at junctions before generating blocks" );
                         }
                     }
-                    for( auto other = input.edges.upper_bound( edge ); other != input.edges.end();
+                    for( auto other = road + 1; other != roads.end() && !( road->max < other->min );
                          ++other )
                     {
-                        const auto &c = input.positions[other->first],
-                                   &d = input.positions[other->second];
+                        const auto [cId, dId] = other->endpoints;
+                        if( other->max.z < road->min.z || other->min.z > road->max.z ||
+                            start == cId || start == dId || end == cId || end == dId )
+                        {
+                            continue;
+                        }
+                        const auto &c = input.positions[cId], &d = input.positions[dId];
                         const auto abC = orientation( a, b, c ), abD = orientation( a, b, d );
                         const auto cdA = orientation( c, d, a ), cdB = orientation( c, d, b );
                         if( ( ( abC < 0 && abD > 0 ) || ( abC > 0 && abD < 0 ) ) &&
@@ -209,49 +247,24 @@ namespace workphone
             {
                 auto input = buildRoadGraph( network );
                 validateEmbedding( input );
-                Array<Graph::Primitive *> primitives{ typename Array<Graph::Primitive *>::allocator_type(
-                    sourceBudget ) };
-
-                struct Cleanup
-                {
-                    Array<Graph::Primitive *> &items;
-
-                    ~Cleanup()
-                    {
-                        for( auto item : items )
-                        {
-                            delete item;
-                        }
-                    }
-                } cleanup{ primitives };
-
-                input.graph.ExtractPrimitives( primitives );
                 Array<SmartPtr<ICityBlock>> blocks{ typename Array<SmartPtr<ICityBlock>>::allocator_type(
                     sourceBudget ) };
-                for( const auto primitive : primitives )
-                {
-                    const auto &sequence = primitive->Sequence;
-                    if( sequence.size() < 3 || !input.edges.count( edgeKey( sequence.front().second,
-                                                                            sequence.back().second ) ) )
+                SourceBudgetVector<u32> sortedIds;
+                input.graph.VisitBoundedFaces( [&]( const SourceBudgetVector<u32> &boundary ) {
+                    // A face revisiting a junction cannot be represented by a simple city block.
+                    sortedIds.assign( boundary.begin(), boundary.end() );
+                    std::sort( sortedIds.begin(), sortedIds.end() );
+                    if( std::adjacent_find( sortedIds.begin(), sortedIds.end() ) != sortedIds.end() )
                     {
-                        continue;  // Isolated vertices and bridge chains are not city blocks.
-                    }
-                    SourceBudgetSet<u32> vertices;
-                    for( const auto &point : sequence )
-                    {
-                        vertices.insert( point.second );
-                    }
-                    if( vertices.size() != sequence.size() )
-                    {
-                        continue;  // A block must be a simple polygon.
+                        return;
                     }
                     auto block = workphone::make_ptr<CCityBlock>();
-                    for( const auto &point : sequence )
+                    for( const auto id : boundary )
                     {
-                        block->addPoint( input.positions[point.second] );
+                        block->addPoint( input.positions[id] );
                     }
                     blocks.push_back( block );
-                }
+                } );
                 return blocks;
             }
         }  // namespace
