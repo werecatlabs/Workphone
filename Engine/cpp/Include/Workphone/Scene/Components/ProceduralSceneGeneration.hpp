@@ -18,6 +18,7 @@ namespace workphone::scene::race
     {
         u32 id = 0;
         SmartPtr<IGameActor> actor;
+        u32 respawns = 0;
     };
 
     inline constexpr float defaultCityStreamLoadRadius = 300.f;

@@ -45,6 +45,12 @@ namespace workphone::scene
             u32 transfers = 0, waitTicks = 0;
             f32 station = 0, speed = 0;
             bool yielding = false;
+            bool physical = false;
+            bool motionPending = false;
+            Vector3F measuredPosition{};
+            f32 measuredSpeed = 0;
+            f32 targetSpeed = 0;
+            u32 respawns = 0;
         };
 
         u64 hash( u64 key )
@@ -103,6 +109,32 @@ namespace workphone::scene
                 direction = path.points.back() - path.points.front();
             }
             return direction.lengthSquared() > 1e-8f ? direction.normaliseCopy() : Vector3F( 0, 0, 1 );
+        }
+
+        f32 projectStation( const Path &path, Vector3F position, f32 station )
+        {
+            // Search around the previous station so a nearby loop of the same
+            // road cannot steal this car's position.
+            const auto start = std::lower_bound( path.stations.begin(), path.stations.end(),
+                                                 station - 8.f );
+            const auto first = std::max<size_t>( 1, size_t( start - path.stations.begin() ) );
+            f32 distance = std::numeric_limits<f32>::max();
+            f32 best = station;
+            for( size_t i = first; i < path.points.size() && path.stations[i - 1] <= station + 16.f; ++i )
+            {
+                const auto a = path.points[i - 1];
+                const auto delta = path.points[i] - a;
+                const f32 span = path.stations[i] - path.stations[i - 1];
+                const f32 t = std::clamp( ( ( position.x - a.x ) * delta.x +
+                                            ( position.z - a.z ) * delta.z ) / ( span * span ), 0.f, 1.f );
+                const f32 candidate = horizontalSquared( position, a + delta * t );
+                if( candidate < distance )
+                {
+                    distance = candidate;
+                    best = path.stations[i - 1] + span * t;
+                }
+            }
+            return best;
         }
 
         bool insideJunction( const CityRoadJunction &junction, Vector3F p )
@@ -213,6 +245,14 @@ namespace workphone::scene
             return choices[size_t( hash( key ) % choices.size() )];
         }
 
+        bool canEnter( const Agent &agent ) const
+        {
+            if( agent.next == invalid ) return false;
+            const u32 conflict = paths[agent.next].conflict;
+            return conflict == invalid || ( conflict < conflictOwners.size() &&
+                                            conflictOwners[conflict] == s32( agent.id ) );
+        }
+
         void updatePoses()
         {
             poses.resize( agents.size() );
@@ -230,8 +270,9 @@ namespace workphone::scene
                 pose.lane = agent.path;
                 pose.position = positionAt( path, agent.station );
                 pose.forward = directionAt( path, agent.station );
-                pose.speed = agent.speed;
+                pose.speed = agent.physical ? agent.targetSpeed : agent.speed;
                 pose.yielding = agent.yielding;
+                pose.respawns = agent.respawns;
                 result.moving += agent.speed > .25f;
                 result.yielding += agent.yielding;
                 result.valid = result.valid && pose.position.isFinite() && pose.forward.isFinite() &&
@@ -248,7 +289,8 @@ namespace workphone::scene
             // Opposing lanes on a 7 m street may be only 3.5 m apart at
             // their centres. The global check is for body-width overlap;
             // longitudinal spacing is enforced separately on each lane.
-            if( poses.size() > 1 && result.minimumSeparation < 2.1f )
+            if( poses.size() > 1 && result.minimumSeparation < 2.1f &&
+                std::none_of( agents.begin(), agents.end(), []( const Agent &agent ) { return agent.physical; } ) )
             {
                 result.valid = false;
             }
@@ -324,6 +366,36 @@ namespace workphone::scene
             enabled && position.isFinite() && std::isfinite( radius ) && radius >= 0;
         m_impl->obstacle = position;
         m_impl->obstacleRadius = m_impl->obstacleEnabled ? radius : 0;
+    }
+
+    void CityTrafficSimulation::setVehicleMotion( u32 id, Vector3F position, f32 speed )
+    {
+        if( !position.isFinite() || !std::isfinite( speed ) ) return;
+        for( auto &agent : m_impl->agents )
+        {
+            if( agent.id != id ) continue;
+            agent.physical = true;
+            agent.motionPending = true;
+            agent.measuredPosition = position;
+            agent.measuredSpeed = std::max( 0.f, speed );
+            return;
+        }
+    }
+
+    bool CityTrafficSimulation::getDrivingTarget( u32 id, f32 lookAhead, Vector3F &target ) const
+    {
+        if( !std::isfinite( lookAhead ) || lookAhead <= 0.f ) return false;
+        for( const auto &agent : m_impl->agents )
+        {
+            if( agent.id != id ) continue;
+            const auto &path = m_impl->paths[agent.path];
+            const f32 station = agent.station + lookAhead;
+            target = station > path.length && m_impl->canEnter( agent )
+                         ? positionAt( m_impl->paths[agent.next], station - path.length )
+                         : positionAt( path, station );
+            return true;
+        }
+        return false;
     }
 
     bool CityTrafficSimulation::initialize( const CityRoadSplineSource &source,
@@ -659,6 +731,17 @@ namespace workphone::scene
 
     void CityTrafficSimulation::Impl::tick()
     {
+        for( auto &agent : agents )
+        {
+            if( !agent.motionPending ) continue;
+            agent.motionPending = false;
+            const auto &path = paths[agent.path];
+            const f32 station = projectStation( path, agent.measuredPosition, agent.station );
+            result.travelledMetres += std::max( 0.f, station - agent.station );
+            agent.station = station;
+            agent.speed = agent.measuredSpeed;
+        }
+
         // Keep a reservation until the rear of a car has cleared its exit.
         for( auto &agent : agents )
         {
@@ -802,24 +885,26 @@ namespace workphone::scene
                                                  std::max( 0.f, followingGap - settings.minimumGap ) ) );
             }
 
-            bool blocked = agent.next == invalid;
-            if( agent.next != invalid )
-            {
-                const u32 conflict = paths[agent.next].conflict;
-                blocked = conflict != invalid && ( conflict >= conflictOwners.size() ||
-                                                   conflictOwners[conflict] != s32( agent.id ) );
-            }
+            const bool blocked = !canEnter( agent );
             if( blocked )
             {
                 target = std::min(
                     target, std::sqrt( 2.f * settings.maxBraking * std::max( 0.f, remaining - 2.f ) ) );
             }
+            else if( agent.physical )
+            {
+                // Slow for the connector before the wheels reach it.
+                const f32 nextSpeed = paths[agent.next].speedLimit;
+                target = std::min( target, std::sqrt( nextSpeed * nextSpeed +
+                                                      4.f * std::max( 0.f, remaining - 2.f ) ) );
+            }
             agent.yielding =
                 blocked || target + .05f < std::min( settings.cruiseSpeed, path.speedLimit );
+            agent.targetSpeed = target;
             const f32 delta = std::clamp( target - agent.speed, -settings.maxBraking * tickSeconds,
                                           settings.maxAcceleration * tickSeconds );
-            agent.speed = std::max( 0.f, agent.speed + delta );
-            f32 advance = agent.speed * tickSeconds;
+            if( !agent.physical ) agent.speed = std::max( 0.f, agent.speed + delta );
+            f32 advance = agent.physical ? 0.f : agent.speed * tickSeconds;
             if( std::isfinite( followingGap ) )
             {
                 advance = std::min( advance, std::max( 0.f, followingGap - settings.minimumGap ) );
@@ -832,11 +917,14 @@ namespace workphone::scene
             u32 destination = agent.path;
             f32 destinationStation = agent.station + advance;
             bool transferring = false;
-            if( destinationStation >= path.length - .00001f && agent.next != invalid && !blocked )
+            const f32 transferTolerance = agent.physical ? .55f : .00001f;
+            if( destinationStation >= path.length - transferTolerance && !blocked )
             {
                 destination = agent.next;
-                destinationStation = std::min( paths[destination].length,
-                                               std::max( 0.f, destinationStation - path.length ) );
+                destinationStation = agent.physical
+                                         ? projectStation( paths[destination], agent.measuredPosition, 0.f )
+                                         : std::min( paths[destination].length,
+                                                     std::max( 0.f, destinationStation - path.length ) );
                 transferring = true;
             }
             else
@@ -859,7 +947,7 @@ namespace workphone::scene
                     }
                 }
             }
-            if( overlap )
+            if( overlap && !agent.physical )
             {
                 agent.speed = 0;
                 agent.yielding = true;
@@ -886,8 +974,10 @@ namespace workphone::scene
                 }
             }
 
-            if( agent.next == invalid && paths[agent.path].kind == PathKind::Road &&
-                paths[agent.path].length - agent.station <= 2.1f )
+            const bool atDeadEnd = agent.next == invalid && paths[agent.path].kind == PathKind::Road &&
+                                   paths[agent.path].length - agent.station <= ( agent.physical ? 3.f : 2.1f );
+            const bool stalled = agent.physical && agent.targetSpeed > 1.f && agent.speed < .25f;
+            if( atDeadEnd || stalled )
             {
                 ++agent.waitTicks;
             }
@@ -895,7 +985,7 @@ namespace workphone::scene
             {
                 agent.waitTicks = 0;
             }
-            if( agent.waitTicks >= 90 && !spawnPaths.empty() )
+            if( agent.waitTicks >= ( atDeadEnd ? 90u : 300u ) && !spawnPaths.empty() )
             {
                 // A finite cul-de-sac emits the car back into the bounded
                 // network rather than reversing through a kerb or freezing it.
@@ -913,9 +1003,10 @@ namespace workphone::scene
                     bool clear = true;
                     for( size_t j = 0; j < agents.size(); ++j )
                     {
-                        if( i != j &&
-                            horizontal( point, positionAt( paths[agents[j].path], agents[j].station ) ) <
-                                settings.minimumGap + carLength )
+                        const auto &other = agents[j];
+                        const auto otherPosition = other.physical ? other.measuredPosition
+                                                                  : positionAt( paths[other.path], other.station );
+                        if( i != j && horizontal( point, otherPosition ) < settings.minimumGap + carLength )
                         {
                             clear = false;
                             break;
@@ -933,10 +1024,13 @@ namespace workphone::scene
                     agent.path = candidatePath;
                     agent.station = 4.f;
                     agent.speed = 0;
+                    agent.targetSpeed = 0;
+                    agent.measuredPosition = point;
                     agent.next = selected( agent );
                     agent.heldConflict = invalid;
                     agent.waitTicks = 0;
                     ++agent.transfers;
+                    ++agent.respawns;
                     break;
                 }
             }

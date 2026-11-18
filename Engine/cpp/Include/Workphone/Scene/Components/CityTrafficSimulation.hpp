@@ -21,6 +21,7 @@ namespace workphone::scene
         Vector3F position{}, forward{};
         f32 speed = 0;
         bool yielding = false;
+        u32 respawns = 0;
     };
 
     struct CityTrafficStats
@@ -51,6 +52,10 @@ namespace workphone::scene
                          const procedural::CityRoadHeightSampler &terrainHeight,
                          const CityTrafficSettings &settings, u32 seed, String &error );
         void step( f32 fixedDt );
+        // Drive a route with a physical body. Route progress follows its measured
+        // position, while the published speed becomes the desired driving speed.
+        void setVehicleMotion( u32 id, Vector3F position, f32 speed );
+        bool getDrivingTarget( u32 id, f32 lookAhead, Vector3F &target ) const;
         void setExternalObstacle( Vector3F position, f32 radius, bool enabled = true );
         void clear();
 

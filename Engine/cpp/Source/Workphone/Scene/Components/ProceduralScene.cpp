@@ -5,7 +5,7 @@
 #include <Workphone/Interface/System/ITaskManager.hpp>
 #include <Workphone/System/TaskLock.hpp>
 #include <Workphone/Workphone.hpp>
-#include "Workphone/Scene/Components/CityTrafficAppearance.hpp"
+#include "CityTrafficVehicle.hpp"
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
@@ -29,6 +29,7 @@ namespace workphone::scene
         if( auto manager = core::IApplicationManager::instance()->getGameManager() )
         {
             manager->registerComponentUpdate( TaskId::Application, Thread::UpdateState::Update, this );
+            manager->registerComponentUpdate( TaskId::Physics, Thread::UpdateState::Update, this );
         }
         setLoadingState( LoadingState::Loaded );
     }
@@ -53,7 +54,8 @@ namespace workphone::scene
 
     void ProceduralScene::update()
     {
-        if( Thread::getCurrentTask() != TaskId::Application || !isLoaded() || !isEnabled() )
+        const auto task = Thread::getCurrentTask();
+        if( ( task != TaskId::Application && task != TaskId::Physics ) || !isLoaded() || !isEnabled() )
         {
             return;
         }
@@ -61,6 +63,106 @@ namespace workphone::scene
         auto app = core::IApplicationManager::instancePtr();
         if( !app )
         {
+            return;
+        }
+
+        if( task == TaskId::Physics )
+        {
+            // Read and reset chassis state on the task that owns physics.
+            std::unique_lock<std::recursive_mutex> lock( m_generationMutex, std::try_to_lock );
+            if( !lock.owns_lock() || !m_generated || m_activationPending )
+            {
+                return;
+            }
+            if( m_assets.cityTrafficActors.empty() )
+            {
+                return;
+            }
+            auto timer = app->getTimer();
+            if( !timer )
+            {
+                return;
+            }
+
+            // The actor and the manager can both reach this update.
+            const auto tick = timer->getTickCount( TaskId::Physics );
+            if( tick == m_assets.cityTrafficLastTick )
+            {
+                return;
+            }
+            m_assets.cityTrafficLastTick = tick;
+            const auto traffic = m_assets.cityTraffic;
+            if( !traffic || !app->isPlaying() || app->isPaused() )
+            {
+                m_assets.cityTrafficAccumulator = 0;
+                for( const auto &entry : m_assets.cityTrafficActors )
+                {
+                    race::cityTrafficVehicle::stopTrafficVehicle( entry.actor );
+                }
+                return;
+            }
+            if( const auto player = m_assets.body ? getActor() : nullptr )
+            {
+                traffic->setExternalObstacle( player->getPosition(), 2.2f );
+            }
+            else
+            {
+                traffic->setExternalObstacle( {}, 0, false );
+            }
+
+            const auto &poses = traffic->vehicles();
+            std::array<f32, 32> speeds{};
+            std::array<bool, 32> ready{};
+            const auto count = std::min( { poses.size(), m_assets.cityTrafficActors.size(),
+                                           speeds.size() } );
+            for( size_t index = 0; index < count; ++index )
+            {
+                const auto &entry = m_assets.cityTrafficActors[index];
+                const auto &pose = poses[index];
+                if( entry.id != pose.id )
+                {
+                    continue;
+                }
+                auto position = pose.position;
+                ready[index] = race::cityTrafficVehicle::sampleMotion( entry.actor, position,
+                                                                       speeds[index] );
+                if( entry.respawns == pose.respawns )
+                {
+                    traffic->setVehicleMotion( entry.id, position, speeds[index] );
+                }
+            }
+
+            const f32 frame = std::clamp( f32( timer->getDeltaTime() ), 0.f, .12f );
+            m_assets.cityTrafficAccumulator = std::min( m_assets.cityTrafficAccumulator + frame, .15f );
+            constexpr f32 fixedStep = 1.f / 30.f;
+            while( m_assets.cityTrafficAccumulator >= fixedStep )
+            {
+                traffic->step( fixedStep );
+                m_assets.cityTrafficAccumulator -= fixedStep;
+            }
+
+            for( size_t index = 0; index < count; ++index )
+            {
+                if( !ready[index] )
+                {
+                    continue;
+                }
+                auto &entry = m_assets.cityTrafficActors[index];
+                const auto &pose = poses[index];
+                if( entry.respawns != pose.respawns )
+                {
+                    race::cityTrafficVehicle::resetTrafficVehicle( entry.actor, pose.position,
+                                                                  pose.forward );
+                    entry.respawns = pose.respawns;
+                    continue;
+                }
+                Vector3F target;
+                const f32 lookAhead = std::clamp( 3.f + speeds[index] * .35f, 3.f, 6.f );
+                if( traffic->getDrivingTarget( pose.id, lookAhead, target ) )
+                {
+                    race::cityTrafficVehicle::driveToward( entry.actor, target, pose.speed );
+                }
+            }
             return;
         }
 
@@ -91,81 +193,20 @@ namespace workphone::scene
             return;
         }
 
-        {
-            std::unique_lock<std::recursive_mutex> lock( m_generationMutex, std::try_to_lock );
-            if( !lock.owns_lock() || !m_generated || m_activationPending )
-            {
-                return;
-            }
-            if( auto traffic = m_assets.cityTraffic )
-            {
-                // This component is reachable through both its owning actor and
-                // its explicit manager registration. Advance only once per task tick.
-                const auto tick = app->getTimer()->getTickCount( TaskId::Application );
-                if( tick != m_assets.cityTrafficLastTick )
-                {
-                    m_assets.cityTrafficLastTick = tick;
-                    const bool sourceCurrent =
-                        !m_assets.roadAuthoring ||
-                        ( traffic->sourceRevision() == m_assets.roadAuthoring->getSourceRevision() &&
-                          traffic->sourceRevision() == m_assets.roadAuthoring->getActiveRevision() );
-                    if( !sourceCurrent )
-                    {
-                        // An authored edit invalidates cached lanes immediately. The city
-                        // component rebuilds the graph and actors on its next refresh.
-                        m_assets.cityTrafficAccumulator = 0;
-                    }
-                    else if( app->isPlaying() && !app->isPaused() )
-                    {
-                        const auto player = m_assets.body ? getActor() : nullptr;
-                        if( player )
-                        {
-                            traffic->setExternalObstacle( player->getPosition(), 2.2f );
-                        }
-                        else
-                        {
-                            traffic->setExternalObstacle( {}, 0, false );
-                        }
-                        const f32 frame =
-                            std::clamp( f32( app->getTimer()->getDeltaTime() ), 0.f, .12f );
-                        m_assets.cityTrafficAccumulator =
-                            std::min( m_assets.cityTrafficAccumulator + frame, .15f );
-                        constexpr f32 fixedStep = 1.f / 30.f;
-                        for( u32 step = 0; step < 4 && m_assets.cityTrafficAccumulator >= fixedStep;
-                             ++step )
-                        {
-                            traffic->step( fixedStep );
-                            m_assets.cityTrafficAccumulator -= fixedStep;
-                        }
-                        const auto &poses = traffic->vehicles();
-                        const auto count = std::min( poses.size(), m_assets.cityTrafficActors.size() );
-                        for( size_t index = 0; index < count; ++index )
-                        {
-                            auto &entry = m_assets.cityTrafficActors[index];
-                            const auto &pose = poses[index];
-                            if( !entry.actor || entry.id != pose.id ||
-                                pose.forward.lengthSquared() < .0001f )
-                            {
-                                continue;
-                            }
-                            entry.actor->setPosition(
-                                pose.position +
-                                Vector3F( 0, race::cityTrafficAppearance::chassisLift, 0 ) );
-                            entry.actor->setOrientation(
-                                race::cityTrafficAppearance::roadOrientation( pose.forward ) );
-                            entry.actor->updateTransform();
-                        }
-                    }
-                }
-            }
-        }
-
         std::shared_ptr<race::CityStreaming> streaming;
         {
             std::unique_lock<std::recursive_mutex> lock( m_generationMutex, std::try_to_lock );
             if( !lock.owns_lock() || !m_generated || m_activationPending )
             {
                 return;
+            }
+
+            // Road authoring owns its revisions on the application task.
+            // An edited source invalidates this lane graph until regeneration.
+            if( m_assets.cityTraffic && m_assets.roadAuthoring &&
+                m_assets.cityTraffic->sourceRevision() != m_assets.roadAuthoring->getSourceRevision() )
+            {
+                m_assets.cityTraffic.reset();
             }
 
             streaming = m_assets.cityStreaming;

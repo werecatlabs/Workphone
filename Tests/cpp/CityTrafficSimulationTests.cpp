@@ -154,6 +154,63 @@ namespace
             need( distance( vehicle.position, first.position ) >= 10.f+settings.minimumGap+4.2f,
                   "Initial traffic spawn overlapped the player exclusion." );
     }
+    void measuredVehicleProgress()
+    {
+        auto source = junctionSource();
+        for( auto &spline : source.roads )
+            for( auto &knot : spline.knots )
+            {
+                knot.position *= 4.f;
+                knot.inHandle *= 4.f;
+                knot.outHandle *= 4.f;
+            }
+        const auto bake = sampled( source );
+        CityTrafficSettings settings;
+        settings.densityPercent = 100;
+        settings.maximumVehicles = 1;
+        CityTrafficSimulation simulation;
+        String error;
+        check( simulation.initialize( source, bake, height(), settings, 12, error ), error );
+        need( simulation.vehicles().size() == 1, "Measured-motion fixture did not spawn its car." );
+        const auto start = simulation.vehicles().front();
+
+        // The planner can request motion, but only the physics body advances the car.
+        simulation.setVehicleMotion( start.id, start.position, 0.f );
+        for( u32 tick = 0; tick < 60; ++tick )
+            simulation.step( 1.f / 30.f );
+        const auto held = simulation.vehicles().front();
+        need( distance( held.position, start.position ) < .01f && held.lane == start.lane &&
+                  held.respawns == start.respawns && simulation.stats().travelledMetres < .01f,
+              "A stationary physics car drifted along its planned lane." );
+        need( simulation.stats().valid && std::isfinite( held.speed ) && held.speed > 0.f &&
+                  held.speed <= settings.cruiseSpeed,
+              "A stationary car on a clear road received no valid driving speed." );
+        Vector3F firstAim;
+        need( simulation.getDrivingTarget( start.id, 2.f, firstAim ) && firstAim.isFinite() &&
+                  ( firstAim - start.position ).dotProduct( start.forward ) > 1.f,
+              "A measured car received no finite aim point ahead of it." );
+
+        const auto moved = start.position + start.forward * 3.f;
+        simulation.setVehicleMotion( start.id, moved, 2.f );
+        simulation.step( 1.f / 30.f );
+        const auto advanced = simulation.vehicles().front();
+        Vector3F secondAim;
+        need( distance( advanced.position, moved ) < .05f &&
+                  simulation.stats().travelledMetres > 2.9f && advanced.lane == start.lane,
+              "The planner did not advance its lane station to match the measured car." );
+        need( simulation.getDrivingTarget( start.id, 2.f, secondAim ) && secondAim.isFinite() &&
+                  ( secondAim - firstAim ).dotProduct( start.forward ) > 2.9f,
+              "The driving aim point did not advance with the physics body." );
+
+        simulation.setExternalObstacle( moved + start.forward * 3.f, 1.5f );
+        simulation.setVehicleMotion( start.id, moved, 0.f );
+        for( u32 tick = 0; tick < 60; ++tick )
+            simulation.step( 1.f / 30.f );
+        const auto stopped = simulation.vehicles().front();
+        need( distance( stopped.position, moved ) < .05f && stopped.yielding &&
+                  std::abs( stopped.speed ) < .01f,
+              "The physical car received a forward command through an obstacle." );
+    }
     void drivingSide()
     {
         const auto source = junctionSource(); const auto bake = sampled( source );
@@ -300,13 +357,15 @@ int main()
     {
         deterministicJunctions();
         densityAndObstacle();
+        measuredVehicleProgress();
         drivingSide();
         densityScaling();
         slopedPose();
         queuedLaneProgress();
         authoredRoadRevisionRebake();
         roundaboutArcs();
-        std::cout << "City traffic: deterministic junction and roundabout transfers, density, following, player avoidance and rollback PASS\n";
+        std::cout << "City traffic: deterministic junction and roundabout transfers, density, following, "
+                     "player avoidance, measured vehicle progress and rollback PASS\n";
         return 0;
     }
     catch( const std::exception &error )

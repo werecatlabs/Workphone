@@ -40,6 +40,8 @@
 #include <Workphone/System/WorldStreamingScheduler.hpp>
 #include "Workphone/Scene/Components/CityBuildingKit.hpp"
 #include "Workphone/Scene/Components/CityTrafficAppearance.hpp"
+#include "CityTrafficVehicle.hpp"
+#include <Workphone/Scene/Components/WheelController.hpp>
 #include "Workphone/Scene/Components/CityRoadCrossings.hpp"
 #include "Workphone/Scene/RuntimeSceneMembership.hpp"
 #include <algorithm>
@@ -3988,6 +3990,12 @@ namespace workphone::scene::race
             {
                 return;
             }
+            auto app = core::IApplicationManager::instance();
+            if( !app->getVehicleManager() )
+            {
+                WP_LOG( "City traffic requires a vehicle physics backend." );
+                return;
+            }
 
             procedural::CityRoadSplineSource flatSource;
             procedural::CityRoadSplineBake flatBake;
@@ -4052,7 +4060,6 @@ namespace workphone::scene::race
                 return;
             }
 
-            auto app = core::IApplicationManager::instance();
             auto actorManager = app->getGameManager();
             auto meshManager = dynamic_pointer_cast<MeshManager>( app->getMeshManager() );
             if( !meshManager )
@@ -4120,7 +4127,7 @@ namespace workphone::scene::race
                 rears[style] = sharedMesh( "rear-lamp-" + suffix, tail );
             }
             Geometry tireGeometry, hubGeometry;
-            cityTrafficAppearance::wheels( tireGeometry, hubGeometry );
+            cityTrafficVehicle::wheelMeshes( tireGeometry, hubGeometry );
             const auto tires = sharedMesh( "tires", tireGeometry );
             const auto hubs = sharedMesh( "hubs", hubGeometry );
             const std::array<ColourF, 6> paintColours{
@@ -4144,29 +4151,36 @@ namespace workphone::scene::race
             {
                 const u32 style = pose.variant % 3;
                 const auto label = "City traffic " + StringUtil::toString( pose.id );
-                auto car = visiblePart( label, shells[style], paints[pose.variant % paints.size()] );
+                reserveOwnerSlot( assets.actors );
+                auto car = actorManager->createActor();
+                if( !car )
+                {
+                    throw std::runtime_error( "Cannot create city traffic vehicle actor." );
+                }
+                assets.actors.push_back( car );
+                car->setName( label );
                 car->setStatic( false );
                 car->setPosition( pose.position + Vector3F( 0, cityTrafficAppearance::chassisLift, 0 ) );
-                car->setOrientation( cityTrafficAppearance::roadOrientation( pose.forward ) );
-                auto collider = car->addComponent<scene::CollisionBox>();
-                collider->setExtents( { 1.76f, style == 2 ? 1.73f : 1.44f,
-                                        cityTrafficAppearance::lengths[style] - .16f } );
-                if( style == 2 )
+                car->setOrientation( cityTrafficVehicle::orientation( pose.forward ) );
+                auto shell = visiblePart( label + " body", shells[style],
+                                          paints[pose.variant % paints.size()], car );
+                shell->setLocalOrientation( cityTrafficVehicle::visualOrientation() );
+                visiblePart( label + " windows", windows[style], glazing, shell );
+                visiblePart( label + " headlights", fronts[style], whiteLamp, shell );
+                visiblePart( label + " tail lamps", rears[style], redLamp, shell );
+                for( u32 i = 0; i < 4; ++i )
                 {
-                    collider->setPosition( { 0, .16f, 0 } );
+                    const auto wheelLabel = label + " wheel " + StringUtil::toString( i + 1 );
+                    auto wheel = visiblePart( wheelLabel, tires, rubber, car );
+                    wheel->setLocalPosition( cityTrafficVehicle::wheelPosition( i ) );
+                    wheel->addComponent<scene::WheelController>();
+                    visiblePart( wheelLabel + " alloy", hubs, alloy, wheel );
                 }
-                auto rigidbody = car->addComponent<scene::Rigidbody>();
-                rigidbody->setKinematic( true );
-                rigidbody->setUseGravity( false );
-                visiblePart( label + " windows", windows[style], glazing, car );
-                visiblePart( label + " wheels", tires, rubber, car );
-                visiblePart( label + " alloys", hubs, alloy, car );
-                visiblePart( label + " headlights", fronts[style], whiteLamp, car );
-                visiblePart( label + " tail lamps", rears[style], redLamp, car );
+                cityTrafficVehicle::configure( car, style );
                 assets.cityTrafficActors.push_back( { pose.id, car } );
             }
             WP_LOG( "City traffic spawned " + StringUtil::toString( assets.cityTrafficActors.size() ) +
-                    " kinematic vehicles." );
+                    " FourWheelVehicle controllers." );
         }
 
         void buildCity( SceneAssets &assets, SmartPtr<IGameActor> sourceOwner,
@@ -7360,26 +7374,42 @@ namespace workphone::scene::race
                                      [&]( const auto &entry ) { return entry.actor == generated; } );
                     if( trafficActor )
                     {
-                        auto movingBody = rigidbody ? rigidbody->getRigidDynamic() : nullptr;
-                        if( generated->isStatic() || !rigidbody || !rigidbody->isKinematic() ||
-                            !movingBody || !collision->getShape() ||
-                            !collision->getShape()->isAttached() || movingBody->getScene() != physics ||
-                            movingBody->getNumShapes() == 0 || rigidbody->getState() != componentState ||
-                            collision->getState() != componentState )
+                        auto body = rigidbody ? rigidbody->getRigidDynamic() : nullptr;
+                        auto controller = generated->getComponent<scene::FourWheelVehicle>();
+                        auto native = controller ? controller->getVehicleController() : nullptr;
+                        if( generated->isStatic() || !body || !collision->getShape() || !native ||
+                            !collision->getShape()->isAttached() || body->getScene() != physics ||
+                            body->getNumShapes() == 0 || rigidbody->getState() != componentState ||
+                            collision->getState() != componentState ||
+                            controller->getState() != componentState )
                         {
                             throw std::runtime_error(
-                                "Generated traffic collision publication is incomplete: " +
+                                "Generated traffic physics publication is incomplete: " +
                                 generated->getName() );
                         }
-                        const auto expected = generated->getWorldTransform();
-                        const auto actual = movingBody->getTransform();
-                        if( ( expected.getPosition() - actual.getPosition() ).length() > .001f ||
-                            ( expected.getOrientation() * Vector3F::unitX() -
-                              actual.getOrientation() * Vector3F::unitX() )
-                                    .length() > .001f )
+                        const bool playing = componentState == scene::IComponent::State::Play;
+                        if( rigidbody->isKinematic() == playing )
                         {
-                            throw std::runtime_error( "Generated traffic collision pose is stale: " +
+                            rigidbody->setKinematic( !playing );
+                            if( playing )
+                            {
+                                body->wakeUp();
+                            }
+                        }
+                        const auto wheels = generated->getComponentsInChildren<scene::WheelController>();
+                        if( wheels.size() != 4 )
+                        {
+                            throw std::runtime_error( "Generated traffic actor needs four wheels: " +
                                                       generated->getName() );
+                        }
+                        for( u32 wheel = 0; wheel < wheels.size(); ++wheel )
+                        {
+                            auto nativeWheel = native->getWheelController( wheel );
+                            if( !nativeWheel || wheels[wheel]->getWheelController() != nativeWheel )
+                            {
+                                throw std::runtime_error( "Generated traffic wheel is missing: " +
+                                                          generated->getName() );
+                            }
                         }
                         continue;
                     }
