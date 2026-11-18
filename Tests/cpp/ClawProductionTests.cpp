@@ -25,6 +25,12 @@
 #include <WPGraphics/ClawTexture.hpp>
 #include <WPGraphics/Particle/CParticleSystem.hpp>
 #include <Workphone/Graphics/GraphicsWindow.hpp>
+#include <Workphone/Graphics/GraphicsSettings.hpp>
+#include <Workphone/Interface/UI/IUIText.hpp>
+#include <Workphone/Interface/Graphics/IDebugLine.hpp>
+#include <WPGraphics/ClawDebug.hpp>
+#include <WPGraphics/ClawGraphicsPipeline.hpp>
+#include <WPGraphics/ClawRendererSoftware.hpp>
 #include <Workphone/Graphics/GraphicsSceneNode.hpp>
 #include <Workphone/Scene/Components/Light.hpp>
 #include <Workphone/System/ApplicationManager.hpp>
@@ -111,6 +117,8 @@ namespace
     class ProfileGraphics : public claw_rtt_contracts::Graphics
     {
     public:
+        using ClawHammerSystem::beginGraphicsPipelineFrame;
+        using ClawHammerSystem::endGraphicsPipelineFrame;
         void render() override
         {
             // This fixture keeps one camera and its native candidates unchanged
@@ -124,6 +132,59 @@ namespace
         void abortPublication() { invalidateSceneProfileFrame(); }
         void attachSimulationScene( SmartPtr<IGraphicsScene> scene ) { m_scenes.push_back( scene ); }
     };
+
+    bool testLazySoftwarePipeline( SmartPtr<IGraphicsWindow> window )
+    {
+        auto renderer = make_ptr<ClawRendererDX11>();
+        renderer->load( window );
+        if( !check( renderer->isLoaded(), "lazy pipeline fixture requires DX11" ) ) return false;
+        ProfileGraphics graphics;
+        graphics.initialise( renderer, make_ptr<claw_rtt_contracts::Textures>() );
+        graphics.setDefaultWindow( window );
+        graphics.setDebug( make_ptr<ClawDebug>() );
+        auto configuration = make_ptr<GraphicsSettings>();
+        configuration->setCreateWindow( false );
+        bool ok = check( graphics.configure( configuration ), "DX11 pipeline settings configure" );
+        auto pipeline = graphics.getGraphicsPipeline();
+        if( !check( pipeline != nullptr, "GPU backend retains its pipeline settings facade" ) ) return false;
+        ok &= check( !pipeline->isInitialized() && !pipeline->getOutputBuffer() &&
+                     !pipeline->getGBufferNormal() && !pipeline->getGBufferDepth() &&
+                     !pipeline->getGBufferVelocity(),
+                     "DX11 configuration must not allocate software framebuffers" );
+        ok &= check( pipeline->isTAAEnabled() && pipeline->getTaaSettings().m_quality == 2 &&
+                     pipeline->getCsmSettings().m_shadowMapSize == 2048,
+                     "GPU quality presets are available before CPU initialization" );
+        pipeline->enableGTAO( false );
+        pipeline->enableSSR( true );
+        auto hdr = pipeline->getHdrSettings(); hdr.m_bloomIntensity = .27f;
+        pipeline->setHdrSettings( hdr );
+        auto shadows = pipeline->getCsmSettings(); shadows.m_shadowMapSize = 256;
+        pipeline->setCsmSettings( shadows );
+        auto software = make_ptr<ClawRendererSoftware>();
+        software->load( window );
+        software->setCamera( make_ptr<ClawCamera>() );
+        ok &= check( graphics.beginGraphicsPipelineFrame( software, false ),
+                     "first software main-window frame initializes CPU processing" );
+        ok &= check( pipeline->isInitialized() && pipeline->getOutputBuffer() &&
+                     pipeline->getGBufferNormal() && !pipeline->isGTAOEnabled() &&
+                     pipeline->isSSREnabled() && pipeline->getHdrSettings().m_bloomIntensity == .27f &&
+                     pipeline->getCsmSettings().m_shadowMapSize == 256,
+                     "lazy CPU initialization preserves configured effects and quality" );
+        graphics.endGraphicsPipelineFrame( software );
+        const auto *output = pipeline->getOutputBuffer();
+        ok &= check( output && std::isfinite( output[0] ) && output[3] == 1.0f,
+                     "lazy software pipeline renders and presents a valid RGBA frame" );
+        ok &= check( pipeline->initialize( 64, 64 ) && !pipeline->isGTAOEnabled() &&
+                     pipeline->isSSREnabled() && pipeline->getHdrSettings().m_bloomIntensity == .27f &&
+                     pipeline->getCsmSettings().m_shadowMapSize == 256,
+                     "software framebuffer resize preserves authored settings" );
+        pipeline->shutdown();
+        graphics.setDefaultWindow( nullptr );
+        graphics.detach();
+        software->unload( nullptr );
+        renderer->unload( nullptr );
+        return ok;
+    }
 
     class PausedFrameObject : public ClawMesh
     {
@@ -1715,6 +1776,7 @@ int main( int argc, char **argv )
         ok &= check(renderer.isLoaded(), "required DX11 backend must initialize; this test cannot silently skip");
         if( renderer.isLoaded() )
         {
+            ok &= testLazySoftwarePipeline( window );
             auto *native = wp_renderer_get_dx11( renderer.getNativeRenderer() );
             ok &= check( recordDX11TestDevice( static_cast<ID3D11Device *>(
                              wp_renderer_dx11_get_device( native ) ) ),

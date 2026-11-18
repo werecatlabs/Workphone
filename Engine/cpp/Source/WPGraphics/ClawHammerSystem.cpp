@@ -2549,16 +2549,10 @@ namespace workphone
 
                 if( !m_graphicsPipeline )
                 {
-                    auto pipeline = workphone::make_ptr<ClawGraphicsPipeline>();
-                    auto target = getDefaultWindow();
-                    const auto size = target ? target->getSize() : Vector2I( 1280, 720 );
-                    if( !pipeline->initialize( std::max<s32>( size.x, 1 ), std::max<s32>( size.y, 1 ) ) )
-                    {
-                        WP_LOG_ERROR(
-                            "ClawHammerSystem::configure: failed to create graphics pipeline." );
-                        return false;
-                    }
-                    m_graphicsPipeline = pipeline;
+                    // Keep settings available to every backend. The software
+                    // main-window pass initializes CPU buffers on first use;
+                    // DX11 owns its post-processing targets on the GPU.
+                    m_graphicsPipeline = workphone::make_ptr<ClawGraphicsPipeline>();
                 }
 
                 // Provide a debug helper so application createScene() implementations can

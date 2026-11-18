@@ -126,6 +126,9 @@ namespace workphone
             m_fileList = fileList;
 
             auto files = Path::getFiles( path );
+            // The folder inventory is already known. Avoid geometric spare
+            // capacity and repeated copies of the large fixed-path records.
+            fileList->getFiles().reserve( files.size() );
 
             auto projectPath = applicationManager->getProjectPath();
             if( StringUtil::isNullOrEmpty( projectPath ) )

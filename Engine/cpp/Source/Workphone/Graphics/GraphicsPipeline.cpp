@@ -216,6 +216,10 @@ namespace workphone::render
         setName( name );
         setId( StringUtil::getHash( name ) );
 
+        // Settings exist before framebuffer allocation. Lazy initialization and
+        // resizing must preserve edits made after choosing a quality preset.
+        applyQualityPresets();
+
         WP_LOG_INFO( "GraphicsPipeline: Constructor called" );
     }
 
@@ -261,9 +265,6 @@ namespace workphone::render
             m_culledObjects.reserve( 512 );
             m_culledLights.reserve( 64 );
             m_visibleNodes.reserve( 512 );
-
-            // Apply initial quality presets
-            applyQualityPresets();
 
             m_initialized = true;
 
