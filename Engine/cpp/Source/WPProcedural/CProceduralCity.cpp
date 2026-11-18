@@ -1,7 +1,6 @@
 #include <WPProcedural/WPProceduralPCH.hpp>
 #include <WPProcedural/CProceduralCity.hpp>
 #include <WPProcedural/CRoadNetwork.hpp>
-#include <WPProcedural/Area.hpp>
 #include <WPProcedural/CRoad.hpp>
 #include <WPProcedural/CRoadNode.hpp>
 #include <WPProcedural/CRoadElement.hpp>

@@ -4,7 +4,6 @@
 #include <WPProcedural/WPProceduralPrerequisites.hpp>
 #include <Workphone/System/SourceBudgetAllocator.hpp>
 #include <Workphone/Interface/Memory/ISharedObject.hpp>
-#include <WPProcedural/Area.hpp>
 #include <WPProcedural/BlockNode.hpp>
 #include <WPProcedural/CBlockGenerator.hpp>
 #include <WPProcedural/CCityBlock.hpp>
