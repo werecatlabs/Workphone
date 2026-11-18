@@ -55,10 +55,10 @@ wp_s32 wp_threadpool_submit( wp_threadpool *pool, wp_task_func task_func, void *
  * waiting/destroying; never wait/destroy from one of the group's own tasks.
  * Pool is borrowed and must outlive submitted tasks. NULL pool runs inline. */
 typedef struct wp_task_group wp_task_group;
-wp_task_group *wp_task_group_create(void);
-wp_s32 wp_task_group_submit(wp_task_group *, wp_threadpool *, wp_task_func, void *);
-void wp_task_group_wait(wp_task_group *);
-void wp_task_group_destroy(wp_task_group *);
+wp_task_group *wp_task_group_create( void );
+wp_s32 wp_task_group_submit( wp_task_group *, wp_threadpool *, wp_task_func, void * );
+void wp_task_group_wait( wp_task_group * );
+void wp_task_group_destroy( wp_task_group * );
 
 /* -------------------------------------------------------------------------
  * Control
