@@ -18,6 +18,7 @@ namespace workphone
 {
     namespace procedural
     {
+
         /// An undirected, straight-line planar embedding. T supplies X() and Y().
         /// Positions must be finite and distinct; edges may meet only at shared vertices.
         /// Crossings and vertices in the interior of an edge must be split by the caller.
