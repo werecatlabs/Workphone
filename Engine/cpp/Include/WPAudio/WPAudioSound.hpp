@@ -5,7 +5,10 @@
 #include <Workphone/Sound/Sound.hpp>
 #include <Workphone/System/CompiledResource.hpp>
 
-namespace workphone::resource { class ResourcePayloadMount; }
+namespace workphone::resource
+{
+    class ResourcePayloadMount;
+}
 
 // Keep Windows SDK declarations out of this public, cross-platform header.
 #if defined WP_PLATFORM_WIN32 && WP_USE_XAUDIO2
@@ -34,15 +37,22 @@ namespace workphone
         bool hasReloadError() const;
         /** Control thread only. Uses the existing clip cache and voice lifecycle;
          * no filesystem fallback. Unload an existing voice before changing assets. */
-        bool loadResource(std::shared_ptr<const resource::RuntimeResource> resource,
-            std::shared_ptr<resource::ResourcePayloadMount> mount={});
+        bool loadResource( std::shared_ptr<const resource::RuntimeResource> resource,
+                           std::shared_ptr<resource::ResourcePayloadMount> mount = {} );
         static std::shared_ptr<const resource::RuntimeResource> captureRuntimeResourceSnapshot(
             std::shared_ptr<const resource::RuntimeResource> resource,
-            std::shared_ptr<resource::ResourcePayloadMount> mount,String &error);
+            std::shared_ptr<resource::ResourcePayloadMount> mount, String &error );
         void update() override;
-        bool seekFrames(u64 frame,String &error) override;
+        bool seekFrames( u64 frame, String &error ) override;
         u64 getPlaybackFrame() const override;
-        struct StreamingStats {bool streamed=false,finished=false;u64 residentPcmBytes=0,submittedBytes=0,completedBytes=0,underruns=0,silenceBytes=0,readFailures=0,admissionFailures=0;};
+
+        struct StreamingStats
+        {
+            bool streamed = false, finished = false;
+            u64 residentPcmBytes = 0, submittedBytes = 0, completedBytes = 0, underruns = 0,
+                silenceBytes = 0, readFailures = 0, admissionFailures = 0;
+        };
+
         StreamingStats getStreamingStats() const;
 
         void play() override;

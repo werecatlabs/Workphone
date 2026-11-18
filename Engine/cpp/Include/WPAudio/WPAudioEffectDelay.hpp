@@ -24,7 +24,11 @@ namespace workphone
          * Applies the delay effect to the input buffer and writes the result to the output buffer.
          */
         void process() override;
-        bool isSupported() const noexcept { return false; }
+
+        bool isSupported() const noexcept
+        {
+            return false;
+        }
 
         /** @brief Gets the pointer to the input audio buffer. @return Pointer to the input buffer. */
         f32 *getInput() override;

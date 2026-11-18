@@ -13,22 +13,25 @@ namespace workphone::audio
     public:
         String name() const override;
         Array<resource::CompilerOutput> outputs() const override;
-        resource::CompilationStatus compile(const resource::CompileContext &,std::ostream &,
-            Array<String> &) const override;
-        static bool validate(const resource::RuntimeResource &,String &error);
+        resource::CompilationStatus compile( const resource::CompileContext &, std::ostream &,
+                                             Array<String> & ) const override;
+        static bool validate( const resource::RuntimeResource &, String &error );
+
         struct WaveformBin
         {
             float minimum[2]{}, maximum[2]{}, rms[2]{};
-            u64 firstFrame=0, frames=0;
+            u64 firstFrame = 0, frames = 0;
         };
+
         struct Waveform
         {
-            u32 sampleRate=0, channels=0;
-            u64 frames=0;
+            u32 sampleRate = 0, channels = 0;
+            u64 frames = 0;
             Array<WaveformBin> bins;
         };
+
         /** Control/tool thread only; <=4096 bins and <=64 MiB input. The
          * output is replaced only on success. Accepts the source WAV profile. */
-        static bool analyze(const Array<u8> &wave,u32 maximumBins,Waveform &,String &error);
+        static bool analyze( const Array<u8> &wave, u32 maximumBins, Waveform &, String &error );
     };
-}
+}  // namespace workphone::audio
