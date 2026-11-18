@@ -1,7 +1,12 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Math/Polygon2.hpp>
+#include <boost/multiprecision/cpp_int.hpp>
+#include <algorithm>
+#include <cmath>
 #include <limits>
+#include <numeric>
 #include <stdexcept>
+#include <type_traits>
 
 namespace workphone
 {
@@ -215,499 +220,485 @@ namespace workphone
 #endif
     }
 
-    template <class T>
-    auto Polygon2<T>::polygonEdgeLength2D( s32 i ) -> T
+    namespace
     {
-        WP_ASSERT( MathI::isFinite( i ) );
+        template <class T>
+        using Ring = Array<Vector2<T>>;
 
-        auto v1 = m_points[i];
-        WP_ASSERT( v1.isValid() );
-
-        auto v2 = m_points[( i + 1 ) % static_cast<s32>( m_points.size() )];
-        WP_ASSERT( v2.isValid() );
-
-        auto x = v2.X() - v1.X();
-        WP_ASSERT( Math<T>::isFinite( x ) );
-
-        auto y = v2.Y() - v1.Y();
-        WP_ASSERT( Math<T>::isFinite( y ) );
-
-        auto sq = x * x + y * y;
-        WP_ASSERT( Math<T>::isFinite( sq ) );
-        return Math<T>::Sqrt( sq );
-    }
-
-    template <class T>
-    void Polygon2<T>::polygonSearchEdges( s32 &i1, T &l1, s32 &i2, T &l2 )
-    {
-        auto index1 = 0;
-        auto length1 = T( -1.0 );
-
-        // first search the longest edge of the polygon
-        for( size_t i = 0; i < m_points.size(); i++ )
+        template <class T>
+        bool samePoint( const Vector2<T> &a, const Vector2<T> &b )
         {
-            auto temp = polygonEdgeLength2D( static_cast<u32>( i ) );
-            if( temp > length1 )
-            {
-                index1 = static_cast<s32>( i );
-                length1 = temp;
-            }
+            return a.x == b.x && a.y == b.y;
         }
 
-        // calculate the direction vector of this edge
-        auto d0 =
-            m_points[( index1 + 1 ) % static_cast<int>( m_points.size() )].X() - m_points[index1].X();
-        auto d1 =
-            m_points[( index1 + 1 ) % static_cast<int>( m_points.size() )].Y() - m_points[index1].Y();
-        T dir1[2] = { d0, d1 };
+        // Integer coordinates can span the full signed 32-bit range. Their edge
+        // products and the sum around the polygon need more than 64 bits.
+        template <class T>
+        using AreaNumber =
+            std::conditional_t<std::is_integral_v<T>, boost::multiprecision::int128_t, long double>;
 
-        // now try to find a edge that is nearly parallel to the previous one
-        auto index2 = -1;
-        auto product = T( 0.0 );
-        auto length2 = T( 0.0 );
-
-        for( size_t i = 0; i < m_points.size(); i++ )
+        template <class T>
+        AreaNumber<T> orientation( const Vector2<T> &a, const Vector2<T> &b, const Vector2<T> &c )
         {
-            if( static_cast<s32>( i ) == index1 )
-            {
-                continue;
-            }
+            using N = AreaNumber<T>;
+            return ( N( b.x ) - a.x ) * ( N( c.y ) - a.y ) - ( N( b.y ) - a.y ) * ( N( c.x ) - a.x );
+        }
 
-            T dir2[2] = {
-                m_points[( i + 1 ) % static_cast<int>( m_points.size() )].X() - m_points[i].X(),
-                m_points[( i + 1 ) % static_cast<int>( m_points.size() )].Y() - m_points[i].Y()
+        template <class T>
+        long double signedArea( const Ring<T> &ring )
+        {
+            AreaNumber<T> twiceArea = 0;
+            for( size_t i = 2; i < ring.size(); ++i )
+            {
+                twiceArea += orientation( ring[0], ring[i - 1], ring[i] );
+            }
+            return static_cast<long double>( twiceArea ) * .5L;
+        }
+
+        template <class T>
+        bool withinSegment( const Vector2<T> &a, const Vector2<T> &b, const Vector2<T> &p )
+        {
+            return p.x >= std::min( a.x, b.x ) && p.x <= std::max( a.x, b.x ) &&
+                   p.y >= std::min( a.y, b.y ) && p.y <= std::max( a.y, b.y );
+        }
+
+        template <class T>
+        bool segmentsMeet( const Vector2<T> &a, const Vector2<T> &b, const Vector2<T> &c,
+                           const Vector2<T> &d )
+        {
+            const auto abc = orientation( a, b, c ), abd = orientation( a, b, d );
+            const auto cda = orientation( c, d, a ), cdb = orientation( c, d, b );
+            if( abc == 0 && withinSegment( a, b, c ) )
+            {
+                return true;
+            }
+            if( abd == 0 && withinSegment( a, b, d ) )
+            {
+                return true;
+            }
+            if( cda == 0 && withinSegment( c, d, a ) )
+            {
+                return true;
+            }
+            if( cdb == 0 && withinSegment( c, d, b ) )
+            {
+                return true;
+            }
+            return ( ( abc < 0 && abd > 0 ) || ( abc > 0 && abd < 0 ) ) &&
+                   ( ( cda < 0 && cdb > 0 ) || ( cda > 0 && cdb < 0 ) );
+        }
+
+        template <class T>
+        bool isSimpleRing( const Ring<T> &ring )
+        {
+            for( size_t i = 0; i < ring.size(); ++i )
+            {
+                const auto next = ( i + 1 ) % ring.size(), after = ( next + 1 ) % ring.size();
+                if( orientation( ring[i], ring[next], ring[after] ) == 0 &&
+                    !withinSegment( ring[i], ring[after], ring[next] ) )
+                {
+                    return false;  // The two adjacent edges double back.
+                }
+                for( size_t j = i + 2; j < ring.size(); ++j )
+                {
+                    const auto end = ( j + 1 ) % ring.size();
+                    if( end != i && segmentsMeet( ring[i], ring[next], ring[j], ring[end] ) )
+                    {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        }
+
+        template <class T>
+        Vector2<T> pointOnEdge( const Vector2<T> &a, const Vector2<T> &b, long double fraction,
+                                long double parentArea )
+        {
+            if( fraction <= 0 )
+            {
+                return a;
+            }
+            if( fraction >= 1 )
+            {
+                return b;
+            }
+            const auto dx = static_cast<long double>( b.x ) - a.x;
+            const auto dy = static_cast<long double>( b.y ) - a.y;
+            long double unitX = 1, unitY = 1;
+            if constexpr( std::is_floating_point_v<T> )
+            {
+                const Vector2<T> point{ static_cast<T>( a.x + fraction * dx ),
+                                        static_cast<T>( a.y + fraction * dy ) };
+                // Far from the origin, rounding X and Y independently can move a cut
+                // several metres off its edge. Use the local representable coordinate
+                // lattice when that displacement materially changes the parent's area.
+                const auto tolerance =
+                    std::sqrt( std::numeric_limits<T>::epsilon() ) * std::abs( parentArea );
+                if( std::abs( orientation( a, b, point ) ) <= tolerance )
+                {
+                    return point;
+                }
+                const auto unit = []( T first, T last ) {
+                    const auto magnitude = std::max( std::abs( first ), std::abs( last ) );
+                    if( magnitude == 0 )
+                    {
+                        return 1.L;
+                    }
+                    const int exponent = std::max( std::ilogb( magnitude ) + 1,
+                                                   std::numeric_limits<T>::min_exponent );
+                    return std::ldexp( 1.L, exponent - std::numeric_limits<T>::digits );
+                };
+                unitX = unit( a.x, b.x );
+                unitY = unit( a.y, b.y );
+            }
+            const auto stepsX = dx / unitX, stepsY = dy / unitY;
+            // Endpoints in different exponent ranges need not share the coarser grid.
+            const auto integralSteps = []( long double value ) {
+                return std::abs( value ) < static_cast<long double>( std::numeric_limits<s64>::max() ) &&
+                       std::trunc( value ) == value;
+            };
+            if( !integralSteps( stepsX ) || !integralSteps( stepsY ) )
+            {
+                return fraction < .5L ? a : b;
+            }
+            const auto ix = static_cast<s64>( stepsX ), iy = static_cast<s64>( stepsY );
+            const auto steps = std::gcd( ix, iy );
+            if( !steps )
+            {
+                return fraction < .5L ? a : b;
+            }
+            const auto step = static_cast<s64>( std::round( fraction * steps ) );
+            const Vector2<T> point{ static_cast<T>( a.x + ( ix / steps ) * step * unitX ),
+                                    static_cast<T>( a.y + ( iy / steps ) * step * unitY ) };
+            if( orientation( a, b, point ) != 0 ) return fraction < .5L ? a : b;
+            return point;
+        }
+
+        template <class T>
+        Ring<T> boundaryArc( const Ring<T> &ring, size_t edge, const Vector2<T> &start, size_t lastEdge,
+                             const Vector2<T> &end )
+        {
+            auto arc = makeSourceBudgetSnapshot<Vector2<T>>();
+            arc.push_back( start );
+            while( edge != lastEdge )
+            {
+                edge = ( edge + 1 ) % ring.size();
+                if( !samePoint( arc.back(), ring[edge] ) )
+                {
+                    arc.push_back( ring[edge] );
+                }
+            }
+            if( !samePoint( arc.back(), end ) )
+            {
+                arc.push_back( end );
+            }
+            return arc;
+        }
+
+        template <class T>
+        struct PendingLot
+        {
+            Ring<T> ring;
+            long double aspectScale;
+        };
+
+        template <class T>
+        void splitLot( const Ring<T> &ring, long double area, long double fraction,
+                       long double aspectScale, Array<PendingLot<T>> &pending )
+        {
+            auto tryChord = [&]( size_t edge, const Vector2<T> &p, size_t other, const Vector2<T> &q ) {
+                if( samePoint( p, q ) )
+                {
+                    return false;
+                }
+                // Rounded edge points (especially lattice points) can move the cut toward a
+                // concavity. Reject chords that cross or pass through another boundary vertex.
+                for( size_t i = 0; i < ring.size(); ++i )
+                {
+                    if( i == edge || i == other )
+                    {
+                        continue;
+                    }
+                    const auto &a = ring[i], &b = ring[( i + 1 ) % ring.size()];
+                    if( samePoint( a, p ) || samePoint( a, q ) || samePoint( b, p ) ||
+                        samePoint( b, q ) )
+                    {
+                        if( !samePoint( a, p ) && !samePoint( a, q ) && orientation( p, q, a ) == 0 &&
+                            withinSegment( p, q, a ) )
+                        {
+                            return false;
+                        }
+                        if( !samePoint( b, p ) && !samePoint( b, q ) && orientation( p, q, b ) == 0 &&
+                            withinSegment( p, q, b ) )
+                        {
+                            return false;
+                        }
+                    }
+                    else if( segmentsMeet( p, q, a, b ) )
+                    {
+                        return false;
+                    }
+                }
+                auto left = boundaryArc( ring, edge, p, other, q );
+                auto right = boundaryArc( ring, other, q, edge, p );
+                const auto leftArea = signedArea( left ), rightArea = signedArea( right );
+                const auto smaller = [&]( long double child ) {
+                    return area > 0 ? child > 0 && child < area : child < 0 && child > area;
+                };
+                if( !smaller( leftArea ) || !smaller( rightArea ) )
+                {
+                    return false;
+                }
+                pending.push_back( { std::move( right ), aspectScale } );
+                pending.push_back( { std::move( left ), aspectScale } );
+                return true;
             };
 
-            auto templ = polygonEdgeLength2D( static_cast<u32>( i ) );
-            auto temp = ( dir1[0] * dir2[0] + dir1[1] * dir2[1] ) / ( length1 * templ );
-
-            if( temp < product )
+            size_t longest = 0;
+            long double maxLength = 0;
+            for( size_t i = 0; i < ring.size(); ++i )
             {
-                index2 = static_cast<s32>( i );
-                product = temp;
-                length2 = templ;
-            }
-        }
-
-        // if the step above fails, set index2 to a standard value
-        if( index2 == -1 )
-        {
-            index2 = ( index1 + static_cast<s32>( m_points.size() ) / 2 ) %
-                     static_cast<s32>( m_points.size() );
-            length2 = polygonEdgeLength2D( index2 );
-        }
-
-        using Polygon2I = Polygon2<s32>;
-        using Polygon2F = Polygon2<f32>;
-        using Polygon2D = Polygon2<f64>;
-    }
-
-    template <class T>
-    void Polygon2<T>::recursiveSubdivideInLots( s32 level, const Vector2<T> &minArea,
-                                                const Vector2<T> &maxArea,
-                                                Array<Polygon2<T>> &resultPolygons )
-    {
-        level++;
-
-        auto minPolyArea = minArea.X() * minArea.Y();
-        auto maxPolyArea = maxArea.X() * maxArea.Y();
-
-        auto minXInterval = std::numeric_limits<T>::max();
-        auto maxXInterval = std::numeric_limits<T>::min();
-        auto minYInterval = std::numeric_limits<T>::max();
-        auto maxYInterval = std::numeric_limits<T>::min();
-
-        getPolygonIntervals( *this, Vector2<T>::UNIT_X, minXInterval, maxXInterval );
-        getPolygonIntervals( *this, Vector2<T>::UNIT_Y, minYInterval, maxYInterval );
-
-        auto xLength = maxXInterval - minXInterval;
-        auto yLength = maxYInterval - minYInterval;
-
-        // check if polygon area is already below threshold
-        auto polyArea = Math<T>::Abs( getArea() );
-        if( polyArea <= maxPolyArea )
-        {
-            if( polyArea >= minPolyArea )
-            {
-                if( ( xLength > minArea.X() && xLength < maxArea.X() ) &&
-                    ( yLength > minArea.Y() && yLength < maxArea.Y() ) )
+                const auto &a = ring[i], &b = ring[( i + 1 ) % ring.size()];
+                const auto length = std::hypot( static_cast<long double>( b.x ) - a.x,
+                                                static_cast<long double>( b.y ) - a.y );
+                if( length > maxLength )
                 {
-                    // check ratios
-                    auto maxAreaX = yLength * T( 1.5 );
-                    auto maxAreaY = xLength * T( 1.5 );
-
-                    if( xLength < maxAreaX && yLength < maxAreaY )
+                    maxLength = length;
+                    longest = i;
+                }
+            }
+            for( size_t attempt = 0; attempt < ring.size(); ++attempt )
+            {
+                const auto edge = ( longest + attempt ) % ring.size();
+                const auto &a = ring[edge], &b = ring[( edge + 1 ) % ring.size()];
+                const auto p = pointOnEdge( a, b, fraction, area );
+                if( samePoint( p, a ) || samePoint( p, b ) )
+                {
+                    continue;
+                }
+                const long double dx = static_cast<long double>( b.x ) - a.x;
+                const long double dy = static_cast<long double>( b.y ) - a.y;
+                size_t hit = ring.size();
+                long double hitFraction = 0, nearest = std::numeric_limits<long double>::infinity();
+                for( size_t i = 0; i < ring.size(); ++i )
+                {
+                    if( i == edge )
                     {
-                        resultPolygons.push_back( *this );
+                        continue;
+                    }
+                    const auto &c = ring[i], &d = ring[( i + 1 ) % ring.size()];
+                    const long double cx = static_cast<long double>( c.x ) - p.x;
+                    const long double cy = static_cast<long double>( c.y ) - p.y;
+                    const long double ex = static_cast<long double>( d.x ) - c.x;
+                    const long double ey = static_cast<long double>( d.y ) - c.y;
+                    const auto denominator = dx * ex + dy * ey;
+                    if( denominator == 0 )
+                    {
+                        continue;
+                    }
+                    const auto t = -( dx * cx + dy * cy ) / denominator;
+                    if( t < 0 || t > 1 )
+                    {
+                        continue;
+                    }
+                    const auto side = dx * ( cy + t * ey ) - dy * ( cx + t * ex );
+                    const auto distance = area > 0 ? side : -side;
+                    if( distance > 0 && distance < nearest )
+                    {
+                        nearest = distance;
+                        hit = i;
+                        hitFraction = t;
+                    }
+                }
+                if( hit != ring.size() )
+                {
+                    const auto &c = ring[hit], &d = ring[( hit + 1 ) % ring.size()];
+                    const auto q = pointOnEdge( c, d, hitFraction, area );
+                    if( tryChord( edge, p, hit, q ) ) return;
+                    // The nearest lattice point can be an endpoint on the starting
+                    // edge. The far endpoint may still be a valid diagonal.
+                    if( samePoint( q, c ) && tryChord( edge, p, hit, d ) )
+                    {
+                        return;
+                    }
+                    if( samePoint( q, d ) && tryChord( edge, p, hit, c ) )
+                    {
                         return;
                     }
                 }
             }
-            else
+            // A short integer edge can have no interior lattice points. A diagonal
+            // through existing vertices can still partition a simple polygon.
+            for( size_t i = 0; ring.size() > 3 && i < ring.size(); ++i )
             {
-                return;
-            }
-        }
-
-        if( level > 200 )
-        {
-            return;
-        }
-
-        /*if(m_points.size() > 100)
-        return;*/
-
-        // search two longest edges in polygon
-        auto i1 = 0;
-        auto i2 = 0;
-        auto l1 = T( 0.0 );
-        auto l2 = T( 0.0 );
-        polygonSearchEdges( i1, l1, i2, l2 );
-
-        // sort two longest edges
-        if( i2 < i1 )
-        {
-            s32 te;
-            te = i1;
-            i1 = i2;
-            i2 = te;
-        }
-
-        // calculate mid points of the two longest edges
-        auto randomValue = Math<T>::RangedRandom( T( 0.0 ), T( 0.5 ) );
-        auto offset = T( 0.5 ) + randomValue;
-
-        auto edgePointA0 = m_points[i1];
-        auto edgePointA1 = m_points[( i1 + 1 ) % static_cast<s32>( m_points.size() )];
-
-        auto m = Vector2<T>::zero();
-        m.X() = edgePointA0.X() + offset * ( edgePointA1.X() - edgePointA0.X() );
-        m.Y() = edgePointA0.Y() + offset * ( edgePointA1.Y() - edgePointA0.Y() );
-
-        auto edgePointB0 = m_points[i2];
-        auto edgePointB1 = m_points[( i2 + 1 ) % static_cast<s32>( m_points.size() )];
-
-        auto n = Vector2<T>::zero();
-        n.X() = edgePointB0.X() + offset * ( edgePointB1.X() - edgePointB0.X() );
-        n.Y() = edgePointB0.Y() + offset * ( edgePointB1.Y() - edgePointB0.Y() );
-
-#if 1
-        i2 = findOppositeEdge( edgePointA0, edgePointA1, m, n );
-#endif
-
-        // sort two longest edges
-        if( i2 < i1 )
-        {
-            s32 te;
-            te = i1;
-            i1 = i2;
-            i2 = te;
-
-            Vector2<T> tempVect = m;
-            m = n;
-            n = tempVect;
-        }
-
-        // split polygon in two new polygons
-        Polygon2<T> p1, p2;
-
-        // p1 ------------------------------------------
-        for( int i = 0; i < i1 + 1; i++ )
-        {
-            p1.addPoint( m_points[i] );
-        }
-
-        p1.addPoint( m );
-        p1.addPoint( n );
-
-        for( s32 i = i2 + 1; i < static_cast<s32>( m_points.size() ); i++ )
-        {
-            p1.addPoint( m_points[i] );
-        }
-
-        // p2 ------------------------------------------
-        p2.addPoint( m );
-        for( s32 i = i1 + 1; i < i2 + 1; i++ )
-        {
-            p2.addPoint( m_points[i] );
-        }
-
-        p2.addPoint( n );
-    }
-
-    template <class T>
-    void Polygon2<T>::recursiveSubdivideInLots( s32 level, T minArea, T maxArea,
-                                                Array<Polygon2<T>> &resultPolygons )
-    {
-        level++;
-
-        // check if polygon area is already below threshold
-        auto area = getArea();
-        auto polyArea = Math<T>::Abs( area );
-        if( polyArea <= maxArea )
-        {
-            if( polyArea >= minArea )
-            {
-                resultPolygons.push_back( *this );
-            }
-
-            return;
-        }
-
-        if( level > 200 )
-        {
-            return;
-        }
-
-        /*if(m_points.size() > 100)
-        return;*/
-
-        // search two longest edges in polygon
-        auto i1 = 0;
-        auto i2 = 0;
-        auto l1 = T( 0.0 );
-        auto l2 = T( 0.0 );
-        polygonSearchEdges( i1, l1, i2, l2 );
-
-        // sort two longest edges
-        if( i2 < i1 )
-        {
-            s32 te;
-            te = i1;
-            i1 = i2;
-            i2 = te;
-        }
-
-        // calculate mid points of the two longest edges
-        auto randomValue = Math<T>::RangedRandom( T( 0.0 ), T( 0.5f ) );
-        auto offset = T( 0.5 ) + randomValue;
-
-        auto edgePointA0 = m_points[i1];
-        auto edgePointA1 = m_points[( i1 + 1 ) % static_cast<int>( m_points.size() )];
-
-        auto m = Vector2<T>::zero();
-        m.X() = edgePointA0.X() + offset * ( edgePointA1.X() - edgePointA0.X() );
-        m.Y() = edgePointA0.Y() + offset * ( edgePointA1.Y() - edgePointA0.Y() );
-
-        auto edgePointB0 = m_points[i2];
-        auto edgePointB1 = m_points[( i2 + 1 ) % static_cast<int>( m_points.size() )];
-
-        auto n = Vector2<T>::zero();
-        n.X() = edgePointB0.X() + offset * ( edgePointB1.X() - edgePointB0.X() );
-        n.Y() = edgePointB0.Y() + offset * ( edgePointB1.Y() - edgePointB0.Y() );
-
-#if 1
-        i2 = findOppositeEdge( edgePointA0, edgePointA1, m, n );
-#endif
-
-        // sort two longest edges
-        if( i2 < i1 )
-        {
-            s32 te;
-            te = i1;
-            i1 = i2;
-            i2 = te;
-
-            auto tempVect = m;
-            m = n;
-            n = tempVect;
-        }
-
-        // split polygon in two new polygons
-        Polygon2<T> p1, p2;
-
-        // p1 ------------------------------------------
-        for( s32 i = 0; i < i1 + 1; i++ )
-        {
-            p1.addPoint( m_points[i] );
-        }
-
-        p1.addPoint( m );
-        p1.addPoint( n );
-
-        for( int i = i2 + 1; i < static_cast<int>( m_points.size() ); i++ )
-        {
-            p1.addPoint( m_points[i] );
-        }
-
-        // p2 ------------------------------------------
-        p2.addPoint( m );
-
-        for( s32 i = i1 + 1; i < i2 + 1; i++ )
-        {
-            p2.addPoint( m_points[i] );
-        }
-
-        p2.addPoint( n );
-
-        // make recursive call
-        p1.recursiveSubdivideInLots( level, minArea, maxArea, resultPolygons );
-        p2.recursiveSubdivideInLots( level, minArea, maxArea, resultPolygons );
-    }
-
-    template <class T>
-    void Polygon2<T>::subDivide( const Vector2<T> &minArea, const Vector2<T> &maxArea,
-                                 Array<Polygon2<T>> &resultPolygons )
-    {
-        recursiveSubdivideInLots( 0, minArea, maxArea, resultPolygons );
-    }
-
-    template <class T>
-    void Polygon2<T>::subDivide( T minArea, T maxArea, Array<Polygon2<T>> &resultPolygons )
-    {
-#if 0
-			Array< polygon2<T> > polygons;
-			polygons.push_back(*this);
-
-			while (!polygons.empty())
-			{
-				polygon2<T>& curPolygon = polygons.getLast();
-
-				// check if polygon area is already below threshold
-				T polyArea = MathF::Abs(curPolygon.getArea());
-				if (polyArea <= maxArea) 
-				{
-					if (polyArea >= minArea) 
-					{
-						resultPolygons.push_back(curPolygon);
-
-						polygons.erase(polygons.size()-1);
-						continue;
-					}
-					else if(polyArea < minArea) 
-					{
-						polygons.erase(polygons.size()-1);
-						continue;
-					}
-				}
-
-				// search two longest edges in polygon
-				s32 i1, i2;
-				T l1, l2;
-				curPolygon.polygonSearchEdges(i1, l1, i2, l2);
-
-				// sort two longest edges
-				if (i2 < i1) 
-				{
-					s32 te;
-					te = i1; 
-					i1 = i2; 
-					i2 = te;
-				}
-
-				// calculate mid points of the two longest edges
-				T randomValue = MathF::rangedRandom(T(0.0), T(1.0));
-				T offset = randomValue * T(0.4) - T(0.2);
-
-				Vector2<T> edgePoint0 = Points[i1];
-				Vector2<T> edgePoint1 = Points[(i1+1) % (int)Points.size()];
-
-				Vector2<T> m;
-				m.X() = edgePoint0.X() + (T(0.5) + offset) * (edgePoint1.X() - edgePoint0.X());
-				m.Y() = edgePoint0.Y() + (T(0.5) + offset) * (edgePoint1.Y() - edgePoint0.Y());
-
-				Vector2<T> n;
-				n.X() = Points[i2].X() + (T(0.5) - offset) * (Points[(i2+1) % (int)Points.size()].X() - Points[i2].X());
-				n.Y() = Points[i2].Y() + (T(0.5) - offset) * (Points[(i2+1) % (int)Points.size()].Y() - Points[i2].Y());
-
-	        //i2 = curPolygon.findOppositeEdge(edgePoint0, edgePoint1, m, n);
+                const auto j = ( i + 2 ) % ring.size();
+                if( tryChord( i, ring[i], j, ring[j] ) )
+                {
+                    return;
                 }
             }
         }
 
-        // Placeholder implementation: return first edge index
-        return 0;
-				// sort two longest edges
-				if (i2 < i1) 
-				{
-					s32 te;
-					te = i1; 
-					i1 = i2; 
-					i2 = te;
+        struct LotLimits
+        {
+            long double minArea, maxArea;
+            long double minWidth = 0, minHeight = 0, maxWidth = 0, maxHeight = 0;
+        };
 
-					Vector2<T> tempVect = m;
-					m = n;
-					n = tempVect;
-				}
+        template <class T>
+        void subdivideLots( const Ring<T> &points, const LotLimits &limits, Array<Polygon2<T>> &output )
+        {
+            auto ring = makeSourceBudgetSnapshot<Vector2<T>>();
+            for( const auto &p : points )
+            {
+                if( !std::isfinite( static_cast<long double>( p.x ) ) ||
+                    !std::isfinite( static_cast<long double>( p.y ) ) )
+                {
+                    throw std::invalid_argument( "Lot polygon coordinates must be finite" );
+                }
+                if( ring.empty() || !samePoint( ring.back(), p ) )
+                {
+                    ring.push_back( p );
+                }
+            }
+            if( ring.size() > 1 && samePoint( ring.front(), ring.back() ) )
+            {
+                ring.pop_back();
+            }
+            if( ring.size() < 3 || !isSimpleRing( ring ) )
+            {
+                return;
+            }
 
-				/// split polygon in two new polygons
-				polygon2<T> p1, p2;
+            auto pending = makeSourceBudgetSnapshot<PendingLot<T>>();
+            auto lots = makeSourceBudgetSnapshot<Polygon2<T>>();
+            pending.push_back( { std::move( ring ), 0 } );
+            while( !pending.empty() )
+            {
+                auto item = std::move( pending.back() );
+                pending.pop_back();
+                const auto &current = item.ring;
+                const auto area = signedArea( current ), magnitude = std::abs( area );
+                if( !std::isfinite( magnitude ) )
+                {
+                    throw std::overflow_error( "Lot polygon area exceeds the supported range" );
+                }
+                if( magnitude == 0 || magnitude < limits.minArea )
+                {
+                    continue;
+                }
+                bool fits = magnitude <= limits.maxArea;
+                if( limits.maxWidth > 0 )
+                {
+                    auto min = current.front(), max = min;
+                    for( const auto &p : current )
+                    {
+                        min.x = std::min( min.x, p.x );
+                        min.y = std::min( min.y, p.y );
+                        max.x = std::max( max.x, p.x );
+                        max.y = std::max( max.y, p.y );
+                    }
+                    const auto width = static_cast<long double>( max.x ) - min.x;
+                    const auto height = static_cast<long double>( max.y ) - min.y;
+                    if( width < limits.minWidth || height < limits.minHeight )
+                    {
+                        continue;
+                    }
+                    fits = fits && width <= limits.maxWidth && height <= limits.maxHeight;
+                    if( fits && ( width > 1.5L * height || height > 1.5L * width ) )
+                    {
+                        // Only shape needs refinement now. Aim for lots on the scale of
+                        // the shorter side. An acute tip can have the same aspect ratio
+                        // after every cut, even when the caller specified no minimum size.
+                        if( item.aspectScale == 0 )
+                        {
+                            item.aspectScale = std::min( width, height );
+                        }
+                        if( std::max( width, height ) <= item.aspectScale )
+                        {
+                            continue;
+                        }
+                        fits = false;
+                    }
+                }
+                if( fits )
+                {
+                    lots.emplace_back( current );
+                    continue;
+                }
+                const auto count = std::ceil( magnitude / limits.maxArea );
+                if( count >= static_cast<long double>( lots.max_size() ) )
+                {
+                    throw std::length_error( "Requested lot area exceeds output capacity" );
+                }
+                // Give each half a proportional share, including odd lot counts.
+                const auto fraction = count > 1 ? std::floor( count / 2 ) / count : .5L;
+                splitLot( current, area, fraction, item.aspectScale, pending );
+            }
+            // Reserve before moving any result so allocation failure leaves the caller's
+            // existing entries intact, including when this polygon is itself an entry.
+            if( lots.size() > output.max_size() - output.size() )
+            {
+                throw std::length_error( "Too many lot polygons" );
+            }
+            output.reserve( output.size() + lots.size() );
+            for( auto &lot : lots )
+            {
+                output.push_back( std::move( lot ) );
+            }
+        }
+    }  // namespace
 
-				// p1 ------------------------------------------
-				for (int i = 0; i < i1 + 1; i++) 
-				{
-					p1.addPoint(Points[i]);
-				}
+    template <class T>
+    void Polygon2<T>::subDivide( T minArea, T maxArea, Array<Polygon2<T>> &resultPolygons )
+    {
+        if( !( minArea >= 0 && maxArea > 0 && minArea <= maxArea ) ||
+            !std::isfinite( static_cast<long double>( maxArea ) ) )
+        {
+            throw std::invalid_argument(
+                "Lot area limits require 0 <= min <= max and a positive finite max" );
+        }
+        subdivideLots( m_points,
+                       { static_cast<long double>( minArea ), static_cast<long double>( maxArea ) },
+                       resultPolygons );
+    }
 
-				p1.addPoint(m);
-				p1.addPoint(n);
-
-				for (int i = i2 + 1; i < (int)Points.size(); i++) 
-				{
-					p1.addPoint(Points[i]);
-				}
-
-				// p2 ------------------------------------------
-				p2.addPoint(m);
-				for (int i = i1 + 1; i < i2 + 1; i++) 
-				{
-					p2.addPoint(Points[i]);
-				}
-				p2.addPoint(n);
-
-				polygons.erase(polygons.size()-1);
-				polygons.push_back(p1);
-				polygons.push_back(p2);
-
-				if(polygons.size() > 20000)
-					break;
-			}
-
-#else
-        recursiveSubdivideInLots( 0, minArea, maxArea, resultPolygons );
-#endif
+    template <class T>
+    void Polygon2<T>::subDivide( const Vector2<T> &min, const Vector2<T> &max,
+                                 Array<Polygon2<T>> &resultPolygons )
+    {
+        if( !( min.x >= 0 && min.y >= 0 && max.x > 0 && max.y > 0 && min.x <= max.x &&
+               min.y <= max.y ) ||
+            !std::isfinite( static_cast<long double>( max.x ) ) ||
+            !std::isfinite( static_cast<long double>( max.y ) ) )
+        {
+            throw std::invalid_argument(
+                "Lot dimensions require 0 <= min <= max and positive finite maxima" );
+        }
+        const long double minX = min.x, minY = min.y, maxX = max.x, maxY = max.y;
+        subdivideLots( m_points, { minX * minY, maxX * maxY, minX, minY, maxX, maxY }, resultPolygons );
     }
 
     template <class T>
     void Polygon2<T>::changePointOrdering()
     {
-        Array<Vector2<T>> tempPoints{ Allocator<Vector2<T>>( sourceBudget ) };
-        auto numPoints = m_points.size();
-        WP_ASSERT( MathI::isFinite( static_cast<s32>( numPoints ) ) );
-        tempPoints.reserve( numPoints );
-
-        for( u32 i = 0; i < m_points.size(); ++i )
-        {
-            auto p = m_points[i];
-            WP_ASSERT( p.isValid() );
-            tempPoints.push_back( p );
-        }
-
-        m_points.swap( tempPoints );
+        std::reverse( m_points.begin(), m_points.end() );
     }
 
     template <class T>
     auto Polygon2<T>::getArea() const -> T
     {
-        auto center = getCenter();
-
-        // polygon area function
-        // http://astronomy.swin.edu.au/~pbourke/geometry/polyarea/
-        auto sum = T( 0.0 );
-        auto numPoints = m_points.size();
-        for( size_t i = 0; i < numPoints; i++ )
+        const auto area = signedArea( m_points );
+        if constexpr( std::is_integral_v<T> )
         {
-            auto v1 = m_points[i];
-            auto v2 = m_points[( i + 1 ) % numPoints];
-
-            v1 = v1 - center;
-            v2 = v2 - center;
-            sum += v1.X() * v2.Y() - v2.X() * v1.Y();
+            if( std::trunc( area ) < std::numeric_limits<T>::lowest() ||
+                std::trunc( area ) > std::numeric_limits<T>::max() )
+            {
+                throw std::overflow_error( "Polygon area cannot be represented by its coordinate type" );
+            }
         }
-
-        // return area: if positive -> ccw ordering
-        //              if negative -> cw  ordering
-        return T( 0.5 ) * sum;
+        return static_cast<T>( area );
     }
 
     template <class T>
@@ -1000,60 +991,6 @@ namespace workphone
     {
         WP_ASSERT( i < m_points.size() );  // invalid index
         return m_points[i];
-    }
-
-    template <class T>
-    auto Polygon2<T>::findOppositeEdge( const Vector2<T> &edgePoint0, const Vector2<T> &edgePoint1,
-                                        const Vector2<T> &pointOnEdge, Vector2<T> &collidingPoint )
-        -> u32
-    {
-        Vector2<T> perp = ( edgePoint1 - edgePoint0 ).perp();
-        perp.normalise();
-
-        Vector2<T> tangent = perp;
-        /*if(fabs(perp.X()) > 0.5)
-        {
-        tangent.X() = 1.0;
-        tangent.Y() = 0.0;
-        }
-        else
-        {
-        tangent.X() = 0.0;
-        tangent.Y() = 1.0;
-        }*/
-
-        flipTangent( edgePoint0, edgePoint1, tangent );
-
-        auto lineStart = pointOnEdge;
-        auto lineEnd = pointOnEdge + ( tangent * T( 1000.0 ) );
-
-        Line2<T> testLine( lineStart, lineEnd );
-
-        auto edgePointB0 = Vector2<T>::zero();
-        auto edgePointB1 = Vector2<T>::zero();
-
-        for( size_t pointIdx = 0; pointIdx < m_points.size(); ++pointIdx )
-        {
-            auto point0 = getPoint( static_cast<u32>( pointIdx ) );
-            auto point1 = getPoint( static_cast<u32>( ( pointIdx + 1 ) % m_points.size() ) );
-
-            if( edgePoint0 == point0 && edgePoint1 == point1 )
-            {
-                continue;
-            }
-
-            Line2<T> curLine;
-            curLine.setStart( point0 );
-            curLine.setEnd( point1 );
-
-            Vector2<T> intersectionPoint;
-            if( testLine.intersectWith( curLine, intersectionPoint ) )
-            {
-            }
-        }
-
-        // Placeholder implementation: return first edge index
-        return 0;
     }
 
     // explicit instantiation

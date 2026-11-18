@@ -101,91 +101,7 @@ namespace workphone::procedural
                 city.generateNatural( seed, route );
                 return city;
             }
-            city.lots.reserve( std::size_t( city.blocks * city.blocks * 4 ) );
-            for( int x = 0; x < city.blocks; ++x )
-            {
-                for( int z = 0; z < city.blocks; ++z )
-                {
-                    for( int a = 0; a < 2; ++a )
-                    {
-                        for( int b = 0; b < 2; ++b )
-                        {
-                            const int cellX = x - city.blocks / 2, cellZ = z - city.blocks / 2;
-                            // The bounded signed-cell domain needs 8 bits per axis. This
-                            // identity is injective for every supported seed/cell/quadrant
-                            // and remains stable when city bounds or route selection change.
-                            const std::uint64_t id =
-                                ( ( std::uint64_t( seed ) << 18 ) |
-                                  ( std::uint64_t( std::uint32_t( cellX ) & 255u ) << 10 ) |
-                                  ( std::uint64_t( std::uint32_t( cellZ ) & 255u ) << 2 ) |
-                                  std::uint64_t( a * 2 + b ) ) +
-                                1;
-                            const auto block =
-                                hash( ( std::uint64_t( seed ) << 32 ) ^ std::uint32_t( cellX ) ^
-                                      ( std::uint64_t( std::uint32_t( cellZ ) ) << 16 ) );
-                            const float cellRadius = std::hypot( cellX + .5f, cellZ + .5f );
-                            const float density = std::exp( -cellRadius * .55f );
-                            const auto district = cellRadius < 1.5f || ( std::abs( cellZ + .5f ) < .6f &&
-                                                                         std::abs( cellX + .5f ) < 3.2f )
-                                                      ? District::Commercial
-                                                  : block % 11 == 0 ? District::Civic
-                                                                    : District::Residential;
-                            const float minX =
-                                cellX * city.spacing +
-                                ( a ? city.spacing * .5f + serviceGap * .5f : roadSetback );
-                            const float maxX =
-                                cellX * city.spacing + ( a ? city.spacing - roadSetback
-                                                           : city.spacing * .5f - serviceGap * .5f );
-                            const float minZ =
-                                cellZ * city.spacing +
-                                ( b ? city.spacing * .5f + serviceGap * .5f : roadSetback );
-                            const float maxZ =
-                                cellZ * city.spacing + ( b ? city.spacing - roadSetback
-                                                           : city.spacing * .5f - serviceGap * .5f );
-                            Lot lot{};
-                            lot.id = id;
-                            lot.variant = std::uint32_t( hash( id ^ 0xb76a5d29ULL ) );
-                            lot.district = district;
-                            lot.frontage = random( id, 1 ) < .5f
-                                               ? ( a ? Frontage::East : Frontage::West )
-                                               : ( b ? Frontage::South : Frontage::North );
-                            lot.parcelX = ( minX + maxX ) * .5f;
-                            lot.parcelZ = ( minZ + maxZ ) * .5f;
-                            lot.parcelWidth = maxX - minX;
-                            lot.parcelDepth = maxZ - minZ;
-                            lot.width = lot.parcelWidth * ( .72f + .23f * random( id, 2 ) );
-                            lot.depth = lot.parcelDepth * ( .68f + .27f * random( id, 3 ) );
-                            lot.x = lot.frontage == Frontage::West   ? minX + lot.width * .5f
-                                    : lot.frontage == Frontage::East ? maxX - lot.width * .5f
-                                                                     : lot.parcelX;
-                            lot.z = lot.frontage == Frontage::North   ? minZ + lot.depth * .5f
-                                    : lot.frontage == Frontage::South ? maxZ - lot.depth * .5f
-                                                                      : lot.parcelZ;
-                            const float nominalHeight =
-                                district == District::Commercial
-                                    ? 20 + random( id, 4 ) * ( 18 + density * 34 )
-                                : district == District::Civic
-                                    ? 10 + random( id, 4 ) * 14
-                                    : 8 + random( id, 4 ) * ( 11 + density * 10 );
-                            const float floorHeight = district == District::Commercial ? 3.6f : 3.2f;
-                            lot.height =
-                                std::max( floorHeight * 2,
-                                          std::floor( nominalHeight / floorHeight ) * floorHeight );
-                            lot.park = random( id, 5 ) < ( district == District::Commercial ? .04f
-                                                           : district == District::Civic    ? .22f
-                                                                                            : .16f );
-                            if( lot.park )
-                            {
-                                lot.x = lot.parcelX;
-                                lot.z = lot.parcelZ;
-                                lot.width = lot.parcelWidth;
-                                lot.depth = lot.parcelDepth;
-                            }
-                            city.lots.push_back( lot );
-                        }
-                    }
-                }
-            }
+            city.generateGridLots( seed );
             const float radius = ( city.blocks / 2 - 2 + std::clamp( route, 0, 2 ) ) * city.spacing;
             // Start at the origin facing -Z, matching the existing vehicle reset.
             const Point corners[] = { { 0, 0 },           { 0, -radius }, { radius, -radius },
@@ -287,7 +203,8 @@ namespace workphone::procedural
         }
 
     private:
-        float footprintClearance( float x, float z, float width, float depth, bool fromEdge ) const
+        float footprintClearance( float x, float z, float width, float depth, bool fromEdge,
+                                  float upperBound = 1000.f ) const
         {
             if( !std::isfinite( x ) || !std::isfinite( z ) || !std::isfinite( width ) ||
                 !std::isfinite( depth ) || width < 0 || depth < 0 || spacing <= 0 )
@@ -296,8 +213,16 @@ namespace workphone::procedural
             }
             const float x0 = x - width * .5f, x1 = x + width * .5f;
             const float z0 = z - depth * .5f, z1 = z + depth * .5f;
-            float distance = 1000;
+            float distance = upperBound;
             const auto segment = [&]( float ax, float az, float bx, float bz, float halfWidth ) {
+                // An axis gap bounds the closest possible centreline distance.
+                // Lot placement only needs distances inside the required setback.
+                const float reach = distance + ( fromEdge ? halfWidth : 0.f );
+                if( std::min( ax, bx ) - x1 > reach || x0 - std::max( ax, bx ) > reach ||
+                    std::min( az, bz ) - z1 > reach || z0 - std::max( az, bz ) > reach )
+                {
+                    return;
+                }
                 float t0 = 0, t1 = 1;
                 const auto clip = [&]( float p, float q ) {
                     if( std::abs( p ) < 1e-7f )
@@ -360,6 +285,7 @@ namespace workphone::procedural
             return std::hypot( x - ax - t * dx, z - az - t * dz );
         }
 
+        WPCore_API void generateGridLots( std::uint32_t seed );
         WPCore_API void generateNatural( std::uint32_t seed, int routeChoice );
 
         static std::uint64_t hash( std::uint64_t value )

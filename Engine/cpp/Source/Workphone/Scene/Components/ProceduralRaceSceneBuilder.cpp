@@ -1155,6 +1155,7 @@ namespace workphone::scene::race
         namespace cityReserveLandscape { struct Site; }
 
         void buildFoliageWorld( SceneAssets &assets, u32 seed, VehicleAppearanceQuality quality,
+                                const OpenCityLayout *city = nullptr,
                                 const CityRoadTerrainMesh *cityFootways = nullptr,
                                 const SourceBudgetVector<cityParkLandscape::Layout> *parkLayouts = nullptr,
                                 const SourceBudgetVector<cityReserveLandscape::Site> *reserveSites = nullptr );
@@ -1555,6 +1556,7 @@ namespace workphone::scene::race
 #include "CityReservePlanting.hpp"
 
         void buildFoliageWorld( SceneAssets &assets, u32 seed, VehicleAppearanceQuality quality,
+                                const OpenCityLayout *city,
                                 const CityRoadTerrainMesh *cityFootways,
                                 const SourceBudgetVector<cityParkLandscape::Layout> *parkLayouts,
                                 const SourceBudgetVector<cityReserveLandscape::Site> *reserveSites )
@@ -1697,18 +1699,11 @@ namespace workphone::scene::race
                     "Generated foliage atlas lost its registered texture identity." );
             }
             const cityFoliageLOD::LeafSource leafSource( leafAtlas, leafTextureName );
-            auto city = assets.cityTerrainRoads ? assets.cityLayout
-                              : assets.openCity
-                                  ? OpenCityLayout::generate( seed, assets.cityBlocks, assets.cityRoute,
-                                                              assets.cityNaturalRoads )
-                                  : OpenCityLayout{};
-            if( assets.openCity && !assets.cityTerrainRoads )
-                applyCityBuildingDensity( city, seed, assets.cityBuildingDensity );
             auto world = std::make_shared<render::FoliageWorldData>();
             world->revision = 1;
             // The bounded city overview needs a longer tree view range. Larger city
             // pages keep that range inside the existing 30-page-width pager gate.
-            if( assets.openCity )
+            if( city )
             {
                 world->pageSize = 128;
             }
@@ -1738,7 +1733,7 @@ namespace workphone::scene::race
                     throw std::runtime_error( "Generated foliage species lost its leaf cutout atlas." );
                 }
                 species->maximumDistance =
-                    assets.openCity ? std::max( 600.f, city.extent * 5.f ) : 600.f;
+                    city ? std::max( 600.f, city->extent * 5.f ) : 600.f;
                 species->shadowDistance = 120;
                 cityFoliageLOD::configure( assets, *species, leafSource, quality );
                 world->species.push_back( species );
@@ -1752,13 +1747,13 @@ namespace workphone::scene::race
             const int count = parkLayouts || ( cityFootways && !assets.useFoliageWorld ) ? 0 :
                               quality == VehicleAppearanceQuality::Preview ? 90 : 220;
             SourceBudgetVector<size_t> cityParks;
-            if( assets.openCity && count > 0 )
+            if( city && count > 0 )
             {
                 cityParks.reserve( size_t( std::count_if(
-                    city.lots.begin(), city.lots.end(), []( const auto &lot ) { return lot.park; } ) ) );
-                for( size_t index = 0; index < city.lots.size(); ++index )
+                    city->lots.begin(), city->lots.end(), []( const auto &lot ) { return lot.park; } ) ) );
+                for( size_t index = 0; index < city->lots.size(); ++index )
                 {
-                    if( city.lots[index].park )
+                    if( city->lots[index].park )
                     {
                         cityParks.push_back( index );
                     }
@@ -1766,22 +1761,22 @@ namespace workphone::scene::race
                 // A bounded preview must not always populate only the first city rows.
                 // Every park receives a candidate before another round is distributed.
                 std::sort( cityParks.begin(), cityParks.end(), [&]( size_t a, size_t b ) {
-                    const auto ha = render::foliageStableHash( city.lots[a].id );
-                    const auto hb = render::foliageStableHash( city.lots[b].id );
-                    return ha != hb ? ha < hb : city.lots[a].id < city.lots[b].id;
+                    const auto ha = render::foliageStableHash( city->lots[a].id );
+                    const auto hb = render::foliageStableHash( city->lots[b].id );
+                    return ha != hb ? ha < hb : city->lots[a].id < city->lots[b].id;
                 } );
             }
             for( int i = 0; i < count; ++i )
             {
                 Vector3F p( -100 + unit( random ) * 380, 0, -250 + unit( random ) * 440 );
                 u64 cityPlacementId = 0;
-                if( assets.openCity )
+                if( city )
                 {
                     if( cityParks.empty() )
                     {
                         continue;
                     }
-                    const auto &lot = city.lots[cityParks[size_t( i ) % cityParks.size()]];
+                    const auto &lot = city->lots[cityParks[size_t( i ) % cityParks.size()]];
                     const auto round = u64( size_t( i ) / cityParks.size() );
                     // Mix the complete parcel identity with an independent round domain.
                     const u64 key =
@@ -5741,7 +5736,7 @@ namespace workphone::scene::race
                 }
                 cityParkAmenities::build( assets, parkLayouts, seed );
                 buildTerrainCityVerges( assets, fitted, seed, quality );
-                buildFoliageWorld( assets, seed, quality, &fitted, &parkLayouts, &reserveSites );
+                buildFoliageWorld( assets, seed, quality, &city, &fitted, &parkLayouts, &reserveSites );
             }
             mesh( assets, "City street furniture", streetMetal,
                   material( assets, { .16f, .19f, .20f, 1 }, .48f, .6f ) );
@@ -5791,7 +5786,7 @@ namespace workphone::scene::race
             mesh( assets, "City surrounding landscape", hinterland, land );
             if( assets.useFoliageWorld && !assets.cityTerrainRoads )
             {
-                buildFoliageWorld( assets, seed, quality );
+                buildFoliageWorld( assets, seed, quality, &city );
             }
             assets.circuit = {};
             for( size_t i = 0; i < city.route.size(); ++i )

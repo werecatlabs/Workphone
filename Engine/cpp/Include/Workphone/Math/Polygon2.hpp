@@ -163,7 +163,8 @@ namespace workphone
         void changePointOrdering();
 
         /**
-         * @brief Subdivides the polygon into smaller ones that have an area in the given range.
+         * @brief Appends lots within the inclusive area limits. Cuts follow the winding of
+         * a simple boundary. Portions too small or without a representable cut are omitted.
          *
          * @param minArea The minimum area allowed for a polygon.
          * @param maxArea The maximum area allowed for a polygon.
@@ -172,7 +173,9 @@ namespace workphone
         void subDivide( T minArea, T maxArea, Array<Polygon2<T>> &resultPolygons );
 
         /**
-         * @brief Subdivides the polygon into smaller ones that have an area in the given range.
+         * @brief Appends compact lots within inclusive axis-aligned width and height limits.
+         * Lots must also meet the minimum width-height product in area and have an aspect
+         * ratio of at most 1.5. Portions that cannot satisfy the limits are omitted.
          *
          * @param minArea The minimum area allowed for a polygon.
          * @param maxArea The maximum area allowed for a polygon.
@@ -238,59 +241,6 @@ namespace workphone
          */
         void flipTangent( const Vector2<T> &edgePoint0, const Vector2<T> &edgePoint1,
                           Vector2<T> &edgeTangent ) const;
-
-        /**
-         * @brief Finds the edge of this polygon that is on the opposite side of a given point.
-         *
-         * @param edgePoint0 The first point of the edge to check.
-         * @param edgePoint1 The second point of the edge to check.
-         * @param pointOnEdge The point on the edge to check.
-         * @param collidingPoint The point on the opposite edge of this polygon that intersects the ray
-         * from the given point.
-         *
-         * @return The index of the edge that is opposite to the given point.
-         */
-        u32 findOppositeEdge( const Vector2<T> &edgePoint0, const Vector2<T> &edgePoint1,
-                              const Vector2<T> &pointOnEdge, Vector2<T> &collidingPoint );
-
-        /**
-         * @brief Subdivides this polygon into smaller polygons.
-         *
-         * @param level The current level of the subdivision.
-         * @param minArea The minimum area of a resulting polygon.
-         * @param maxArea The maximum area of a resulting polygon.
-         * @param resultPolygons The resulting sub-polygons.
-         */
-        void recursiveSubdivideInLots( s32 level, T minArea, T maxArea,
-                                       Array<Polygon2<T>> &resultPolygons );
-
-        /**
-         * @brief Subdivides this polygon into smaller polygons.
-         *
-         * @param level The current level of the subdivision.
-         * @param minArea The minimum area of a resulting polygon.
-         * @param maxArea The maximum area of a resulting polygon.
-         * @param resultPolygons The resulting sub-polygons.
-         */
-        void recursiveSubdivideInLots( s32 level, const Vector2<T> &minArea, const Vector2<T> &maxArea,
-                                       Array<Polygon2<T>> &resultPolygons );
-
-        /**
-         * @brief Searches for edges in this polygon that intersect another polygon.
-         *
-         * @param i1 The index of the first edge that intersects another polygon.
-         * @param l1 The location of the intersection along the first edge.
-         * @param i2 The index of the second edge that intersects another polygon.
-         * @param l2 The location of the intersection along the second edge.
-         */
-        void polygonSearchEdges( s32 &i1, T &l1, s32 &i2, T &l2 );
-
-        /**
-         * @brief Computes the length of the 2D edge specified by the given index.
-         * @param i The index of the 2D edge to measure.
-         * @return The length of the specified 2D edge.
-         */
-        T polygonEdgeLength2D( s32 i );
 
         Array<Vector2<T>> m_points{ Allocator<Vector2<T>>( sourceBudget ) }; /**< The 2D points that make up the polygon. */
     };

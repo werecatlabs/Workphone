@@ -3861,8 +3861,7 @@ namespace workphone
                 }
                 else if( m_assets.openCity )
                 {
-                    const auto city = procedural::OpenCityLayout::generate( m_seed, m_assets.cityBlocks, m_assets.cityRoute,
-                                                                            m_assets.cityNaturalRoads );
+                    const auto &city = m_assets.cityLayout;
                     size_t parkLots = 0, buildingLots = 0, buildingCollisions = 0, expectedBuildingCollisions = 0;
                     size_t cityLODGroups = 0, cityLODNear = 0, cityLODFar = 0;
                     bool footprintValid = true, routeValid = m_assets.circuit.samples.size() >= 3;
@@ -5109,8 +5108,7 @@ namespace workphone
                     return;
                 }
                 const float sidewalkY = hitPosition.y;
-                const auto city = procedural::OpenCityLayout::generate( m_seed, m_assets.cityBlocks, m_assets.cityRoute,
-                                                                        m_assets.cityNaturalRoads );
+                const auto &city = m_assets.cityLayout;
                 size_t expectedMasses = 0;
                 for( const auto &lot : city.lots ) expectedMasses += procedural::OpenCityLayout::buildingVolumes( lot ).size();
                 if( cityBuildingMasses != expectedMasses || expectedMasses == 0 )
@@ -6064,8 +6062,7 @@ namespace workphone
         }
         else if( m_assets.openCity )
         {
-            const auto city = procedural::OpenCityLayout::generate( m_seed, m_assets.cityBlocks, m_assets.cityRoute,
-                                                                    m_assets.cityNaturalRoads );
+            const auto &city = m_assets.cityLayout;
             m_cityExtent = city.extent;
             m_citySpacing = city.spacing;
             m_cityOverviewExtent = city.extent;

@@ -272,8 +272,8 @@ namespace workphone::scene
                    std::isfinite( position.z );
         };
         auto application = core::IApplicationManager::instancePtr();
-        auto manager = application ? application->getGameManagerPtr() : nullptr;
-        ScopedLock managerLock( manager );
+        auto manager = application->getGameManagerPtr();
+
         {
             ScopedLock lock( this );
             if( m_hasViewOverride )

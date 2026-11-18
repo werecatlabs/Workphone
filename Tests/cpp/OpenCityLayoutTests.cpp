@@ -212,6 +212,13 @@ int main()
     require(std::abs(crossing.footprintRoadEdgeClearance(-10,10,2,2)-(std::sqrt(162.f)-6.f))<.001f &&
         crossing.footprintRoadEdgeClearance(0,0,10,10)<0,
         "Arterial frontage failed to reserve the wider carriageway");
+    // The second centreline is farther away, but its wider carriageway is closer.
+    crossing.roads.nodes = { { 11, -20 }, { 11, 20 }, { -12, -20 }, { -12, 20 } };
+    crossing.roads.edges = { { 0, 1 }, { 2, 3 } };
+    crossing.roads.edges.back().roadClass = workphone::procedural::OpenCityRoadNetwork::RoadClass::Arterial;
+    require(crossing.footprintRoadClearance(0,0,2,2)==10 &&
+        crossing.footprintRoadEdgeClearance(0,0,2,2)==5,
+        "Parcel clearance pruned a wider road using the nearest centreline");
     const auto city=OpenCityLayout::generate(1);
     require(OpenCityLayout{}.roadDistance(1,1)==1000,"Uninitialized city road query divided by zero");
     require(city.roadDistance(std::numeric_limits<float>::quiet_NaN(),0)==1000 &&
