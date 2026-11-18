@@ -45,32 +45,35 @@ typedef struct wp_geometry_dx11 wp_geometry_dx11;
  * clients must not leave it bound when beginning another scene. No CPU readback. */
 wp_s32 wp_renderer_dx11_begin_hdr_scene( wp_renderer_dx11 *renderer, wp_f32 exposure );
 void wp_renderer_dx11_set_output_options( wp_renderer_dx11 *renderer, wp_s32 hdr_enabled,
-                                         wp_s32 linear_workflow, wp_s32 tonemapping );
+                                          wp_s32 linear_workflow, wp_s32 tonemapping );
 void wp_renderer_dx11_set_scene_sampling( wp_renderer_dx11 *renderer, wp_s32 samples, wp_f32 scale );
-void wp_renderer_dx11_set_post_options( wp_renderer_dx11 *renderer, wp_s32 anti_aliasing,
-                                       wp_s32 bloom, wp_s32 motion_blur, wp_u64 temporal_key );
+void wp_renderer_dx11_set_post_options( wp_renderer_dx11 *renderer, wp_s32 anti_aliasing, wp_s32 bloom,
+                                        wp_s32 motion_blur, wp_u64 temporal_key );
 /* Up to four view-local SH9 probes: each is position float4 followed by nine
  * convolved irradiance RGB float4 coefficients (40 floats per probe). */
-wp_s32 wp_renderer_dx11_set_irradiance_probes( wp_renderer_dx11 *renderer,
-                                             const void *probes, wp_u32 count, wp_s32 mode );
-wp_s32 wp_renderer_dx11_set_local_lights(wp_renderer_dx11 *renderer,const wp_f32 *lights,
-    wp_u32 count,const wp_u32 *cells,const wp_u32 *indices,wp_u32 index_count,
-    wp_u32 grid_x,wp_u32 grid_y,wp_u32 grid_z,wp_f32 z_near,wp_f32 z_far,const wp_f32 *camera_forward);
-void wp_renderer_dx11_set_pipeline_mode(wp_renderer_dx11 *renderer,wp_s32 pipeline,wp_s32 ambient_occlusion);
-void wp_renderer_dx11_set_present_mode(wp_renderer_dx11 *renderer,wp_s32 mode);
+wp_s32 wp_renderer_dx11_set_irradiance_probes( wp_renderer_dx11 *renderer, const void *probes,
+                                               wp_u32 count, wp_s32 mode );
+wp_s32 wp_renderer_dx11_set_local_lights( wp_renderer_dx11 *renderer, const wp_f32 *lights, wp_u32 count,
+                                          const wp_u32 *cells, const wp_u32 *indices, wp_u32 index_count,
+                                          wp_u32 grid_x, wp_u32 grid_y, wp_u32 grid_z, wp_f32 z_near,
+                                          wp_f32 z_far, const wp_f32 *camera_forward );
+void wp_renderer_dx11_set_pipeline_mode( wp_renderer_dx11 *renderer, wp_s32 pipeline,
+                                         wp_s32 ambient_occlusion );
+void wp_renderer_dx11_set_present_mode( wp_renderer_dx11 *renderer, wp_s32 mode );
 /* Execute the shared scene pipeline on a real D3D12 device/queue through the
  * Windows D3D11On12 interop layer. Applies to subsequent renderer creation. */
-void wp_renderer_dx11_set_d3d12_execution(wp_s32 enabled);
+void wp_renderer_dx11_set_d3d12_execution( wp_s32 enabled );
 /* Borrowed actual D3D12 device, or NULL for native D3D11 execution. */
-void *wp_renderer_dx11_get_d3d12_device(wp_renderer_dx11 *renderer);
+void *wp_renderer_dx11_get_d3d12_device( wp_renderer_dx11 *renderer );
 /* Applies to subsequent device creation and built-in shader compilation. */
-void wp_renderer_dx11_set_startup_options( wp_s32 mode, wp_s32 shader_model,
-                                          wp_s32 validation, wp_s32 allow_fallback );
+void wp_renderer_dx11_set_startup_options( wp_s32 mode, wp_s32 shader_model, wp_s32 validation,
+                                           wp_s32 allow_fallback );
 /* Optional compiler returns 1 and an owned ID3DBlob, 0 for the built-in HLSL
  * compiler, or -1 on an actionable provider error. Feature defines are already
  * prepended to source. The bridge retains the full project profile itself. */
-typedef wp_s32 (*wp_dx11_shader_compiler_callback)(void *user, const wp_c8 *source,
-    const wp_c8 *entry, const wp_c8 *target, void **native_blob);
+typedef wp_s32 ( *wp_dx11_shader_compiler_callback )( void *user, const wp_c8 *source,
+                                                      const wp_c8 *entry, const wp_c8 *target,
+                                                      void **native_blob );
 void wp_renderer_dx11_set_shader_compiler( wp_dx11_shader_compiler_callback callback, void *user );
 wp_u32 wp_renderer_dx11_supported_scene_samples( wp_renderer_dx11 *renderer );
 /* Borrowed scene depth, valid until the next scene-target allocation. The
@@ -101,12 +104,13 @@ typedef struct wp_dx11_camera_layer
 } wp_dx11_camera_layer;
 
 wp_s32 wp_renderer_dx11_apply_camera_effects( wp_renderer_dx11 *renderer,
-    const wp_dx11_camera_effects *effects, const wp_dx11_camera_layer *layers, wp_u32 count );
+                                              const wp_dx11_camera_effects *effects,
+                                              const wp_dx11_camera_layer *layers, wp_u32 count );
 
 /* Explicit opt-in history for a window viewport that does not clear each
  * frame. The swap chain may discard its back buffer after Present. */
-wp_s32 wp_renderer_dx11_restore_window_history( wp_renderer_dx11 *renderer,
-                                                wp_u64 owner, const wp_vec4f *background );
+wp_s32 wp_renderer_dx11_restore_window_history( wp_renderer_dx11 *renderer, wp_u64 owner,
+                                                const wp_vec4f *background );
 void wp_renderer_dx11_save_window_history( wp_renderer_dx11 *renderer );
 void wp_renderer_dx11_discard_window_history( wp_renderer_dx11 *renderer );
 
@@ -118,7 +122,8 @@ void wp_renderer_dx11_discard_window_history( wp_renderer_dx11 *renderer );
  * forget_mesh before destruction to release cached GPU allocations eagerly. */
 struct wp_graphics_mesh;
 wp_geometry_dx11 *wp_renderer_dx11_prepare_mesh_geometry( wp_renderer_dx11 *renderer,
-    struct wp_graphics_mesh *mesh, wp_u32 first, wp_u32 count );
+                                                          struct wp_graphics_mesh *mesh, wp_u32 first,
+                                                          wp_u32 count );
 void wp_renderer_dx11_forget_mesh( const struct wp_graphics_mesh *mesh );
 
 /* Optional owner-provided allocation admission. reserve returns a token for the
@@ -133,8 +138,9 @@ typedef struct wp_gpu_allocation_callbacks
     wp_s32 ( *retain )( void *reservation, void *native_resource );
     void ( *release )( void *reservation );
 } wp_gpu_allocation_callbacks;
-wp_geometry_dx11 *wp_renderer_dx11_prepare_mesh_geometry_budgeted( wp_renderer_dx11 *renderer,
-    struct wp_graphics_mesh *mesh, wp_u32 first, wp_u32 count,
+
+wp_geometry_dx11 *wp_renderer_dx11_prepare_mesh_geometry_budgeted(
+    wp_renderer_dx11 *renderer, struct wp_graphics_mesh *mesh, wp_u32 first, wp_u32 count,
     const wp_gpu_allocation_callbacks *callbacks );
 
 /** Parameters consumed by the built-in PBR mesh shader. */
@@ -142,29 +148,36 @@ typedef struct wp_material_dx11
 {
     wp_vec4f base_color;
     wp_vec4f emissive_color;
-    wp_vec4f specular_color;    /* rgb dielectric F0 reflectance (default 0.04) */
-    wp_vec4f light_color;       /* rgb colour, w intensity */
-    wp_vec4f light_direction;   /* xyz direction light travels */
-    wp_vec4f camera_position;   /* xyz world position, w ambient strength */
-    wp_vec4f surface;           /* metalness, roughness, uv scale x/y */
-    wp_vec4f uv_transform;      /* uv offset x/y, lighting enabled, rotation degrees */
-    wp_vec4f controls;          /* normal strength, AO strength, alpha cutoff (-1 disables), premultiply */
-    wp_vec4f map_flags;         /* normal, metallic, roughness, emission textures present */
-    wp_vec4f extra_map_flags;   /* AO, opacity present; albedo/emission samples already linear (draw-owned) */
-    wp_vec4f texture_sources;   /* editor metallic, roughness, AO, opacity channel selectors */
-    wp_vec4f projection;        /* mode: mesh/world box/object box/world XZ/XY/YZ/screen; scale, unused x2 */
-    wp_vec4f ambient_color;     /* rgb ambient radiance; w enables RGB instead of legacy scalar */
-    wp_vec4f environment;       /* x enabled, y maximum LOD, z authored probe radiance (otherwise ambient-scaled) */
-    wp_vec4f fog_color;         /* linear scene fog radiance */
-    wp_vec4f fog_params;        /* mode (0 none, 1 exp, 2 exp2, 3 linear), density, start, end */
-    wp_vec4f metallic_color;    /* sRGB metallic tint, w=0 uses albedo, w=1 uses this tint */
+    wp_vec4f specular_color;  /* rgb dielectric F0 reflectance (default 0.04) */
+    wp_vec4f light_color;     /* rgb colour, w intensity */
+    wp_vec4f light_direction; /* xyz direction light travels */
+    wp_vec4f camera_position; /* xyz world position, w ambient strength */
+    wp_vec4f surface;         /* metalness, roughness, uv scale x/y */
+    wp_vec4f uv_transform;    /* uv offset x/y, lighting enabled, rotation degrees */
+    wp_vec4f controls;        /* normal strength, AO strength, alpha cutoff (-1 disables), premultiply */
+    wp_vec4f map_flags;       /* normal, metallic, roughness, emission textures present */
+    wp_vec4f
+        extra_map_flags; /* AO, opacity present; albedo/emission samples already linear (draw-owned) */
+    wp_vec4f texture_sources; /* editor metallic, roughness, AO, opacity channel selectors */
+    wp_vec4f projection;    /* mode: mesh/world box/object box/world XZ/XY/YZ/screen; scale, unused x2 */
+    wp_vec4f ambient_color; /* rgb ambient radiance; w enables RGB instead of legacy scalar */
+    wp_vec4f
+        environment; /* x enabled, y maximum LOD, z authored probe radiance (otherwise ambient-scaled) */
+    wp_vec4f fog_color;      /* linear scene fog radiance */
+    wp_vec4f fog_params;     /* mode (0 none, 1 exp, 2 exp2, 3 linear), density, start, end */
+    wp_vec4f metallic_color; /* sRGB metallic tint, w=0 uses albedo, w=1 uses this tint */
 } wp_material_dx11;
 
 /* Owner-thread upload policy for built-in PNTC/terrain/foliage shaders. Combined
  * remains the default. Split lazily creates surface/view/binding buffers and a
  * shader variant; failure preserves the previous policy. Changes reject during
  * transactional RTT, HDR or shadow passes. Equal assignments are harmless. */
-enum { WP_DX11_MATERIAL_UPLOAD_COMBINED = 0, WP_DX11_MATERIAL_UPLOAD_SPLIT = 1 };
+enum
+{
+    WP_DX11_MATERIAL_UPLOAD_COMBINED = 0,
+    WP_DX11_MATERIAL_UPLOAD_SPLIT = 1
+};
+
 wp_s32 wp_renderer_dx11_set_material_upload_mode( wp_renderer_dx11 *, wp_s32 mode );
 wp_s32 wp_renderer_dx11_get_material_upload_mode( const wp_renderer_dx11 * );
 
@@ -182,8 +195,9 @@ typedef struct wp_material_upload_statistics_dx11
     wp_u64 binding_uploads, binding_bytes;
     wp_u64 map_failures;
 } wp_material_upload_statistics_dx11;
-wp_s32 wp_renderer_dx11_get_material_upload_statistics(
-    const wp_renderer_dx11 *, wp_material_upload_statistics_dx11 * );
+
+wp_s32 wp_renderer_dx11_get_material_upload_statistics( const wp_renderer_dx11 *,
+                                                        wp_material_upload_statistics_dx11 * );
 
 /** Four-layer terrain constants. Texture slots are albedo/normal/ORM per layer,
  * followed by a linear RGBA control map. UV scales are cycles per local metre;
@@ -193,33 +207,40 @@ wp_s32 wp_renderer_dx11_get_material_upload_statistics(
 typedef struct wp_terrain_material_dx11
 {
     wp_vec4f control_transform; /* x/z offset, inverse extent (with texel centres) */
-    wp_vec4f controls; /* enabled, control map present, reserved, reserved */
+    wp_vec4f controls;          /* enabled, control map present, reserved, reserved */
     wp_vec4f tint[4];
     wp_vec4f surface[4]; /* UV scale x/y, roughness multiplier, metallic multiplier */
-    wp_vec4f maps[4]; /* albedo present, normal present, ORM present, normal strength */
-    wp_vec4f height[4]; /* ORM-alpha height scale, bias; view-owned linear albedo samples; reserved */
+    wp_vec4f maps[4];    /* albedo present, normal present, ORM present, normal strength */
+    wp_vec4f height[4];  /* ORM-alpha height scale, bias; view-owned linear albedo samples; reserved */
     wp_vec4f appearance; /* projection 0 planar/1 triplanar, sharpness, height blend, transition */
-    wp_vec4f detail; /* UV scale x/y, normal strength, detail texture present */
-    wp_vec4f macro; /* local cycles/metre, strength, seed low/high 16-bit halves */
+    wp_vec4f detail;     /* UV scale x/y, normal strength, detail texture present */
+    wp_vec4f macro;      /* local cycles/metre, strength, seed low/high 16-bit halves */
     wp_vec4f macro_tint;
     wp_vec4f weather; /* wetness, wet darkening, wet roughness, snow */
-    wp_vec4f snow; /* snow roughness, surface mask present, reserved, reserved */
+    wp_vec4f snow;    /* snow roughness, surface mask present, reserved, reserved */
     wp_vec4f snow_tint;
 } wp_terrain_material_dx11;
 
-enum { WP_TERRAIN_MATERIAL_VIEWS = 15 };
+enum
+{
+    WP_TERRAIN_MATERIAL_VIEWS = 15
+};
+
 /** Atomically validate/install 12 layer views, control, detail normal and wet/snow mask.
  * NULL disables terrain.
  * Invalid constants/views leave the previous complete binding unchanged. */
 wp_s32 wp_renderer_dx11_set_terrain_material( wp_renderer_dx11 *renderer,
-    const wp_terrain_material_dx11 *material, void *const *views );
+                                              const wp_terrain_material_dx11 *material,
+                                              void *const *views );
 wp_s32 wp_renderer_dx11_validate_terrain_material( wp_renderer_dx11 *renderer,
-    const wp_terrain_material_dx11 *material, void *const *views );
+                                                   const wp_terrain_material_dx11 *material,
+                                                   void *const *views );
 
 /** Directional depth pass. light_matrix uses the mesh shader's OpenGL clip convention.
  * End restores output targets, viewport and scissor. Caller submits caster geometry
  * with light_matrix, then enables shadow receiving for each colour draw. */
-wp_s32 wp_renderer_dx11_begin_shadow_map( wp_renderer_dx11 *renderer, const wp_mat4f *light_matrix, wp_s32 size );
+wp_s32 wp_renderer_dx11_begin_shadow_map( wp_renderer_dx11 *renderer, const wp_mat4f *light_matrix,
+                                          wp_s32 size );
 void wp_renderer_dx11_end_shadow_map( wp_renderer_dx11 *renderer );
 void wp_renderer_dx11_enable_shadow_receiving( wp_renderer_dx11 *renderer, wp_s32 enabled );
 void wp_renderer_dx11_set_shadow_filter_quality( wp_renderer_dx11 *renderer, wp_s32 quality );
@@ -280,13 +301,12 @@ void wp_renderer_dx11_present( wp_renderer_dx11 *renderer, wp_s32 vsync );
  * Returns 1 for S_OK, 2 for occlusion, -1 for a DXGI failure, or 0 for rejection.
  * Occlusion is not a completed submitted frame. The legacy entry point uses this
  * same path with the renderer's window. */
-wp_s32 wp_renderer_dx11_try_present( wp_renderer_dx11 *renderer,
-                                     void *expected_hwnd, wp_s32 vsync );
+wp_s32 wp_renderer_dx11_try_present( wp_renderer_dx11 *renderer, void *expected_hwnd, wp_s32 vsync );
 /** Copies the current window back buffer before Present as top-down, packed RGBA8.
  * expected_hwnd must match the swap chain's window. An invalid request leaves
  * output unchanged. Front-buffer capture after Present is not supported. */
-wp_s32 wp_renderer_dx11_copy_back_buffer_rgba8(
-    wp_renderer_dx11 *renderer, void *expected_hwnd, void *output, wp_u64 output_bytes );
+wp_s32 wp_renderer_dx11_copy_back_buffer_rgba8( wp_renderer_dx11 *renderer, void *expected_hwnd,
+                                                void *output, wp_u64 output_bytes );
 
 /** Optional benchmark counters. Reset is requested from any thread and applied
  * at the next render frame. Read statistics on the render thread or under the
@@ -307,6 +327,7 @@ typedef struct wp_render_statistics_dx11
     uint64_t present_attempts, present_occluded, present_failures;
     wp_s32 last_present_hresult; /* Raw DXGI HRESULT; render-thread diagnostics. */
 } wp_render_statistics_dx11;
+
 /** Call after external code (e.g. ImGui) changes the immediate context state. */
 void wp_renderer_dx11_invalidate_state( wp_renderer_dx11 *renderer );
 void wp_renderer_dx11_reset_statistics( wp_renderer_dx11 *renderer );
@@ -369,8 +390,7 @@ void wp_renderer_dx11_set_view_matrix( wp_renderer_dx11 *renderer, const wp_mat4
 void wp_renderer_dx11_set_projection_matrix( wp_renderer_dx11 *renderer, const wp_mat4f *mat );
 
 /** Sets the material and scene-light constants used by PNTC mesh draws. */
-void wp_renderer_dx11_set_material( wp_renderer_dx11 *renderer,
-                                    const wp_material_dx11 *material );
+void wp_renderer_dx11_set_material( wp_renderer_dx11 *renderer, const wp_material_dx11 *material );
 
 /** Borrowed texture views in normal, metallic, roughness, emission, AO, opacity order.
  * Passing NULL clears all six slots. Albedo continues to use set_texture_native. */
@@ -378,8 +398,8 @@ void wp_renderer_dx11_set_material_textures( wp_renderer_dx11 *renderer, void *c
 /** Borrowed linear HDR TextureCube, filtered from smooth to rough across its mip chain. */
 void wp_renderer_dx11_set_environment( wp_renderer_dx11 *renderer, void *view, wp_f32 max_lod );
 /** Editor sampler modes: wrap 0..4, filter 0..3, anisotropy 1..16. */
-void wp_renderer_dx11_set_material_sampler( wp_renderer_dx11 *renderer, wp_u32 wrap_u,
-                                            wp_u32 wrap_v, wp_u32 filter, wp_u32 anisotropy );
+void wp_renderer_dx11_set_material_sampler( wp_renderer_dx11 *renderer, wp_u32 wrap_u, wp_u32 wrap_v,
+                                            wp_u32 filter, wp_u32 anisotropy );
 
 /**
  * @brief Uploads a texture for subsequent PTC draw calls.
@@ -390,8 +410,7 @@ void wp_renderer_dx11_set_material_sampler( wp_renderer_dx11 *renderer, wp_u32 w
 void wp_renderer_dx11_set_texture( wp_renderer_dx11 *renderer, const void *pixels, wp_s32 width,
                                    wp_s32 height, wp_pixel_format format );
 void wp_renderer_dx11_set_texture_native( wp_renderer_dx11 *renderer, void *texture_view );
-void wp_renderer_dx11_set_render_target_native( wp_renderer_dx11 *renderer,
-                                                void *render_target_view );
+void wp_renderer_dx11_set_render_target_native( wp_renderer_dx11 *renderer, void *render_target_view );
 
 /**
  * @brief Creates a standalone shader-resource view from CPU pixel data.
@@ -400,23 +419,25 @@ void wp_renderer_dx11_set_render_target_native( wp_renderer_dx11 *renderer,
  * resource wrappers can cache the GPU texture across draw calls.
  */
 void *wp_renderer_dx11_create_texture_native( wp_renderer_dx11 *renderer, const void *pixels,
-                                               wp_s32 width, wp_s32 height,
-                                               wp_pixel_format format );
+                                              wp_s32 width, wp_s32 height, wp_pixel_format format );
 void wp_renderer_dx11_destroy_texture_native( void *texture_view );
+
 typedef struct wp_texture_mip_dx11
 {
     const void *bgra;
     wp_u32 width, height;
 } wp_texture_mip_dx11;
+
 /** Immutable BGRA8 mip chain; dimensions halve at each level. */
 void *wp_renderer_dx11_create_texture_mips_native( wp_renderer_dx11 *renderer,
-    const wp_texture_mip_dx11 *levels, wp_u32 level_count );
+                                                   const wp_texture_mip_dx11 *levels,
+                                                   wp_u32 level_count );
 
 /** Immutable RGBA32F sampled texture. The exact float count is required and
  * upload is rejected above the 256 MiB texture budget. Returns an owned SRV.
  */
-void *wp_renderer_dx11_create_texture_rgba32f_native( wp_renderer_dx11 *renderer,
-    const wp_f32 *rgba, wp_u32 width, wp_u32 height, wp_u64 float_count );
+void *wp_renderer_dx11_create_texture_rgba32f_native( wp_renderer_dx11 *renderer, const wp_f32 *rgba,
+                                                      wp_u32 width, wp_u32 height, wp_u64 float_count );
 
 typedef struct wp_texture_cube_mip_dx11
 {
@@ -424,12 +445,13 @@ typedef struct wp_texture_cube_mip_dx11
     wp_u32 width, height;
     wp_u64 float_count;
 } wp_texture_cube_mip_dx11;
+
 /** Immutable RGBA32F environment cube with six faces and eight mips per face.
  * Levels are face-major and every mip must contain its exact pixel count.
  * The returned SRV is caller-owned; release with destroy_texture_native().
  */
-void *wp_dx11_create_cubemap_rgba32f_native( void *device,
-    const wp_texture_cube_mip_dx11 *levels, wp_u32 level_count );
+void *wp_dx11_create_cubemap_rgba32f_native( void *device, const wp_texture_cube_mip_dx11 *levels,
+                                             wp_u32 level_count );
 
 typedef struct wp_dx11_cubemap_owner wp_dx11_cubemap_owner;
 /** Publishes a complete filtered cube and retains each non-NULL source view.
@@ -437,12 +459,12 @@ typedef struct wp_dx11_cubemap_owner wp_dx11_cubemap_owner;
  * The owner keeps the cube and source identities alive until destruction.
  */
 wp_dx11_cubemap_owner *wp_dx11_cubemap_owner_create( void *device,
-    const wp_texture_cube_mip_dx11 *levels, wp_u32 level_count,
-    void *const source_views[6] );
+                                                     const wp_texture_cube_mip_dx11 *levels,
+                                                     wp_u32 level_count, void *const source_views[6] );
 void wp_dx11_cubemap_owner_destroy( wp_dx11_cubemap_owner *owner );
 void *wp_dx11_cubemap_owner_get_view( const wp_dx11_cubemap_owner *owner );
-wp_s32 wp_dx11_cubemap_owner_matches( const wp_dx11_cubemap_owner *owner,
-    void *device, void *const source_views[6] );
+wp_s32 wp_dx11_cubemap_owner_matches( const wp_dx11_cubemap_owner *owner, void *device,
+                                      void *const source_views[6] );
 /** Returns whether a shader view belongs to the supplied DX11 device. */
 wp_s32 wp_dx11_texture_view_matches_device( void *view, void *device );
 wp_s32 wp_dx11_device_matches_context( void *device, void *context );
@@ -454,18 +476,20 @@ enum wp_dx11_face_format
     WP_DX11_FACE_RGBA16F = 3,
     WP_DX11_FACE_RGBA32F = 4
 };
+
 typedef struct wp_texture_face_readback_dx11
 {
     void *pixels; /* tightly packed rows; release with release_texture_face_readback_native */
     wp_u32 width, height, row_pitch, format;
 } wp_texture_face_readback_dx11;
+
 /** Reads the selected mip of a same-device 2D SRV, up to 2048x2048.
  * Pass a zero-initialized output and release it before reuse. On failure the
  * output is empty. This synchronous readback is for infrequent
  * cubemap preparation, not the per-frame render path.
  */
 wp_s32 wp_dx11_read_texture_face_native( void *device, void *context, void *view,
-    wp_texture_face_readback_dx11 *output );
+                                         wp_texture_face_readback_dx11 *output );
 void wp_dx11_release_texture_face_readback_native( wp_texture_face_readback_dx11 *output );
 
 typedef struct wp_texture_encoded_mip_dx11
@@ -473,16 +497,18 @@ typedef struct wp_texture_encoded_mip_dx11
     const void *bytes;
     wp_u32 width, height, byte_count;
 } wp_texture_encoded_mip_dx11;
+
 /* Whitelisted DXGI BC1/BC3/BGRA8 linear/SRGB formats. Exact pitches and byte
  * counts are computed and checked before device creation. Returns an owned SRV. */
 void *wp_renderer_dx11_create_texture_encoded_mips_native( wp_renderer_dx11 *renderer,
-    const wp_texture_encoded_mip_dx11 *levels, wp_u32 count, wp_u32 dxgi_format );
+                                                           const wp_texture_encoded_mip_dx11 *levels,
+                                                           wp_u32 count, wp_u32 dxgi_format );
 
 /**
  * @brief Creates an off-screen colour/depth target that can also be sampled as a texture.
  */
-wp_render_texture_dx11 *wp_renderer_dx11_create_render_texture( wp_renderer_dx11 *renderer,
-                                                                 wp_s32 width, wp_s32 height );
+wp_render_texture_dx11 *wp_renderer_dx11_create_render_texture( wp_renderer_dx11 *renderer, wp_s32 width,
+                                                                wp_s32 height );
 void wp_renderer_dx11_destroy_render_texture( wp_render_texture_dx11 *render_texture );
 /* Synchronous, transactional RGBA8-UNORM offscreen job (legacy LDR draw policy).
  * Scene-linear/HDR output formats are explicitly unsupported in this tier. Requires D3D11.1
@@ -497,25 +523,24 @@ void wp_renderer_dx11_destroy_render_texture( wp_render_texture_dx11 *render_tex
  * reused per target, bounded to 256 MiB colour+depth. Callbacks may draw but must
  * not destroy/rebind output resources or mutate renderer lifetime. Exceptions
  * must be caught in the C++ adapter. No GPU completion wait is implied by OK. */
-wp_u64 wp_renderer_dx11_get_rtt_generation(const wp_renderer_dx11 *renderer);
-wp_u64 wp_renderer_dx11_get_render_texture_generation(const wp_render_texture_dx11 *target);
-wp_rtt_result wp_renderer_dx11_execute_rtt_job(wp_renderer_dx11 *renderer,
-    wp_render_texture_dx11 *target, const wp_graphics_rtt_desc *desc,
-    wp_rtt_check_func dependency, wp_rtt_check_func validate,
-    wp_rtt_check_func draw, void *context);
+wp_u64 wp_renderer_dx11_get_rtt_generation( const wp_renderer_dx11 *renderer );
+wp_u64 wp_renderer_dx11_get_render_texture_generation( const wp_render_texture_dx11 *target );
+wp_rtt_result wp_renderer_dx11_execute_rtt_job( wp_renderer_dx11 *renderer,
+                                                wp_render_texture_dx11 *target,
+                                                const wp_graphics_rtt_desc *desc,
+                                                wp_rtt_check_func dependency, wp_rtt_check_func validate,
+                                                wp_rtt_check_func draw, void *context );
 
 void wp_renderer_dx11_set_render_texture( wp_renderer_dx11 *renderer,
                                           wp_render_texture_dx11 *render_texture );
-void *wp_renderer_dx11_get_render_texture_resource(
-    const wp_render_texture_dx11 *render_texture );
+void *wp_renderer_dx11_get_render_texture_resource( const wp_render_texture_dx11 *render_texture );
 void *wp_renderer_dx11_get_render_texture_view( const wp_render_texture_dx11 *render_texture );
-void *wp_renderer_dx11_get_render_texture_target_view(
-    const wp_render_texture_dx11 *render_texture );
+void *wp_renderer_dx11_get_render_texture_target_view( const wp_render_texture_dx11 *render_texture );
 /** Copies the complete offscreen colour texture as tightly packed, top-down RGBA8.
  * Returns 0 without changing output if the target or output capacity is invalid.
  * The target must not be concurrently resized or destroyed. */
-wp_s32 wp_renderer_dx11_copy_render_texture_rgba8(
-    const wp_render_texture_dx11 *render_texture, void *output, wp_u64 output_bytes );
+wp_s32 wp_renderer_dx11_copy_render_texture_rgba8( const wp_render_texture_dx11 *render_texture,
+                                                   void *output, wp_u64 output_bytes );
 
 /* =========================================================================
  * Draw calls
@@ -541,9 +566,9 @@ void wp_renderer_dx11_draw_indexed_triangles_ptc( wp_renderer_dx11 *renderer,
                                                   const wp_vertex_ptc *vertices, wp_s32 vertex_count,
                                                   const uint16_t *indices, wp_s32 index_count );
 
-void wp_renderer_dx11_draw_indexed_triangles_ptc_u32(
-    wp_renderer_dx11 *renderer, const wp_vertex_ptc *vertices, wp_s32 vertex_count,
-    const uint32_t *indices, wp_s32 index_count );
+void wp_renderer_dx11_draw_indexed_triangles_ptc_u32( wp_renderer_dx11 *renderer,
+                                                      const wp_vertex_ptc *vertices, wp_s32 vertex_count,
+                                                      const uint32_t *indices, wp_s32 index_count );
 
 /**
  * @brief Uploads and binds PTC geometry once for multiple indexed range draws.
@@ -551,42 +576,45 @@ void wp_renderer_dx11_draw_indexed_triangles_ptc_u32(
  * Texture, scissor and blend state may be changed between prepared draws without
  * uploading the vertex/index data again.
  */
-wp_s32 wp_renderer_dx11_prepare_indexed_triangles_ptc(
-    wp_renderer_dx11 *renderer, const wp_vertex_ptc *vertices, wp_s32 vertex_count,
-    const uint16_t *indices, wp_s32 index_count );
-wp_s32 wp_renderer_dx11_prepare_indexed_triangles_ptc_u32(
-    wp_renderer_dx11 *renderer, const wp_vertex_ptc *vertices, wp_s32 vertex_count,
-    const uint32_t *indices, wp_s32 index_count );
-void wp_renderer_dx11_draw_prepared_indexed_triangles_ptc(
-    wp_renderer_dx11 *renderer, wp_s32 index_start, wp_s32 index_count,
-    wp_s32 base_vertex );
+wp_s32 wp_renderer_dx11_prepare_indexed_triangles_ptc( wp_renderer_dx11 *renderer,
+                                                       const wp_vertex_ptc *vertices,
+                                                       wp_s32 vertex_count, const uint16_t *indices,
+                                                       wp_s32 index_count );
+wp_s32 wp_renderer_dx11_prepare_indexed_triangles_ptc_u32( wp_renderer_dx11 *renderer,
+                                                           const wp_vertex_ptc *vertices,
+                                                           wp_s32 vertex_count, const uint32_t *indices,
+                                                           wp_s32 index_count );
+void wp_renderer_dx11_draw_prepared_indexed_triangles_ptc( wp_renderer_dx11 *renderer,
+                                                           wp_s32 index_start, wp_s32 index_count,
+                                                           wp_s32 base_vertex );
 
 /** Creates immutable indexed PTC geometry for repeated mesh draws. */
-wp_geometry_dx11 *wp_renderer_dx11_create_indexed_geometry_ptc(
-    wp_renderer_dx11 *renderer, const wp_vertex_ptc *vertices, wp_s32 vertex_count,
-    const void *indices, wp_s32 index_count, wp_s32 indices_are_u32 );
+wp_geometry_dx11 *wp_renderer_dx11_create_indexed_geometry_ptc( wp_renderer_dx11 *renderer,
+                                                                const wp_vertex_ptc *vertices,
+                                                                wp_s32 vertex_count, const void *indices,
+                                                                wp_s32 index_count,
+                                                                wp_s32 indices_are_u32 );
 void wp_renderer_dx11_destroy_geometry( wp_geometry_dx11 *geometry );
-void wp_renderer_dx11_draw_geometry_ptc( wp_renderer_dx11 *renderer,
-                                         const wp_geometry_dx11 *geometry,
-                                         wp_s32 index_start, wp_s32 index_count,
-                                         wp_s32 base_vertex );
+void wp_renderer_dx11_draw_geometry_ptc( wp_renderer_dx11 *renderer, const wp_geometry_dx11 *geometry,
+                                         wp_s32 index_start, wp_s32 index_count, wp_s32 base_vertex );
 
 /** Creates and draws immutable indexed geometry through the lit PNTC pipeline. */
-wp_geometry_dx11 *wp_renderer_dx11_create_indexed_geometry_pntc(
-    wp_renderer_dx11 *renderer, const wp_vertex_pntc *vertices, wp_s32 vertex_count,
-    const void *indices, wp_s32 index_count, wp_s32 indices_are_u32 );
-void wp_renderer_dx11_draw_geometry_pntc( wp_renderer_dx11 *renderer,
-                                          const wp_geometry_dx11 *geometry,
-                                          wp_s32 index_start, wp_s32 index_count,
-                                          wp_s32 base_vertex );
+wp_geometry_dx11 *wp_renderer_dx11_create_indexed_geometry_pntc( wp_renderer_dx11 *renderer,
+                                                                 const wp_vertex_pntc *vertices,
+                                                                 wp_s32 vertex_count,
+                                                                 const void *indices, wp_s32 index_count,
+                                                                 wp_s32 indices_are_u32 );
+void wp_renderer_dx11_draw_geometry_pntc( wp_renderer_dx11 *renderer, const wp_geometry_dx11 *geometry,
+                                          wp_s32 index_start, wp_s32 index_count, wp_s32 base_vertex );
 
 /** Optional owning-thread material activation, after built-in geometry state.
  * Return zero to defer submission. Must not throw or issue draws. The callback
  * is borrowed only for this call; the next ordinary draw restores built-in state. */
-typedef wp_s32 (*wp_material_bind_dx11)(wp_renderer_dx11 *, wp_s32 instanced, void *);
-wp_s32 wp_renderer_dx11_draw_geometry_pntc_bound(wp_renderer_dx11 *, const wp_geometry_dx11 *,
-    wp_s32 start, wp_s32 count, wp_s32 base, wp_material_bind_dx11, void *);
-wp_s32 wp_renderer_dx11_material_view_allowed(wp_renderer_dx11 *, void *view);
+typedef wp_s32 ( *wp_material_bind_dx11 )( wp_renderer_dx11 *, wp_s32 instanced, void * );
+wp_s32 wp_renderer_dx11_draw_geometry_pntc_bound( wp_renderer_dx11 *, const wp_geometry_dx11 *,
+                                                  wp_s32 start, wp_s32 count, wp_s32 base,
+                                                  wp_material_bind_dx11, void * );
+wp_s32 wp_renderer_dx11_material_view_allowed( wp_renderer_dx11 *, void *view );
 
 /** Instance transforms compose beneath the currently bound world matrix.
  * Positive-determinant affine transforms, including nonuniform scale, are
@@ -601,8 +629,8 @@ typedef struct wp_instance_pntc_dx11
 #    define WP_DX11_INSTANCE_CAPACITY 4096
 /** CPU-only preflight using precisely the draw path's transform/tint rules.
  * An empty population is valid, including a NULL pointer with count zero. */
-wp_s32 wp_renderer_dx11_validate_instances_pntc(
-    const wp_instance_pntc_dx11 *instances, wp_s32 instance_count );
+wp_s32 wp_renderer_dx11_validate_instances_pntc( const wp_instance_pntc_dx11 *instances,
+                                                 wp_s32 instance_count );
 /** Issues indexed instanced draws through the same PBR/cutout/shadow pipeline.
  * Upload storage is renderer-owned and bounded to WP_DX11_INSTANCE_CAPACITY.
  * A compatible group may span pages; callers separate mesh/material/pass/LOD
@@ -610,13 +638,14 @@ wp_s32 wp_renderer_dx11_validate_instances_pntc(
  * number actually submitted (possibly partial on GPU upload failure). Zero
  * instances issue no draw. Statistics count successful native submissions. */
 wp_s32 wp_renderer_dx11_draw_geometry_pntc_instanced(
-    wp_renderer_dx11 *renderer, const wp_geometry_dx11 *geometry,
-    wp_s32 index_start, wp_s32 index_count, wp_s32 base_vertex,
-    const wp_instance_pntc_dx11 *instances, wp_s32 instance_count );
+    wp_renderer_dx11 *renderer, const wp_geometry_dx11 *geometry, wp_s32 index_start, wp_s32 index_count,
+    wp_s32 base_vertex, const wp_instance_pntc_dx11 *instances, wp_s32 instance_count );
 
-wp_s32 wp_renderer_dx11_draw_geometry_pntc_instanced_bound(wp_renderer_dx11 *,
-    const wp_geometry_dx11 *, wp_s32 start, wp_s32 count, wp_s32 base,
-    const wp_instance_pntc_dx11 *, wp_s32 instances, wp_material_bind_dx11, void *);
+wp_s32 wp_renderer_dx11_draw_geometry_pntc_instanced_bound( wp_renderer_dx11 *, const wp_geometry_dx11 *,
+                                                            wp_s32 start, wp_s32 count, wp_s32 base,
+                                                            const wp_instance_pntc_dx11 *,
+                                                            wp_s32 instances, wp_material_bind_dx11,
+                                                            void * );
 
 /* Resolved indexed PNTC section. Geometry, native views, instances and bind
  * context are borrowed through submission. Set struct_size to sizeof the
@@ -653,14 +682,15 @@ typedef struct wp_mesh_section_state_dx11
     wp_fill_mode fill_mode;
     wp_s32 depth_test, depth_write;
 } wp_mesh_section_state_dx11;
-wp_s32 wp_renderer_dx11_begin_mesh_sections(wp_renderer_dx11 *, wp_mesh_section_state_dx11 *);
-void wp_renderer_dx11_end_mesh_sections(wp_renderer_dx11 *, const wp_mesh_section_state_dx11 *);
+
+wp_s32 wp_renderer_dx11_begin_mesh_sections( wp_renderer_dx11 *, wp_mesh_section_state_dx11 * );
+void wp_renderer_dx11_end_mesh_sections( wp_renderer_dx11 *, const wp_mesh_section_state_dx11 * );
 
 /* Applies section state and submits without restoring the staged state.
  * Returns one for a scalar draw, the number submitted for instances, or zero
  * on rejection/failure. A null instance span selects a scalar draw. A zero
  * instance_batch_size uses the whole span, still split at native capacity. */
-wp_s32 wp_renderer_dx11_submit_mesh_section(wp_renderer_dx11 *, const wp_mesh_section_dx11 *);
+wp_s32 wp_renderer_dx11_submit_mesh_section( wp_renderer_dx11 *, const wp_mesh_section_dx11 * );
 
 /* Fills the material, texture, raster and custom binding fields for one section.
  * Return a positive value to draw, zero to skip, or a negative value to stop.
@@ -668,7 +698,7 @@ wp_s32 wp_renderer_dx11_submit_mesh_section(wp_renderer_dx11 *, const wp_mesh_se
  * and its GPU cache must remain live and stable until this call completes.
  * Retire is called after each resolve, including on skips and early stop. */
 typedef wp_s32 ( *wp_mesh_batch_resolve_dx11 )( wp_s32 section_index, wp_mesh_section_dx11 *section,
-                                               void *user );
+                                                void *user );
 typedef void ( *wp_mesh_batch_retire_dx11 )( void *user );
 
 typedef struct wp_mesh_batch_dx11
@@ -705,17 +735,19 @@ typedef struct wp_foliage_instance_dx11
     wp_vec4f wind;        /* local x/z amplitude, phase, flutter amplitude */
     wp_vec4f interaction; /* local x/z bend, signed coverage fade [-1,1], seed [0,1] */
 } wp_foliage_instance_dx11;
+
 typedef struct wp_foliage_parameters_dx11
 {
     wp_vec4f time;   /* seconds, frequency, reserved z/w */
     wp_vec4f height; /* bend start, bend end, reserved z/w */
 } wp_foliage_parameters_dx11;
-wp_s32 wp_renderer_dx11_validate_foliage_instances(
-    const wp_foliage_instance_dx11 *, wp_s32 count, const wp_foliage_parameters_dx11 * );
-wp_s32 wp_renderer_dx11_draw_foliage_instances(
-    wp_renderer_dx11 *, const wp_geometry_dx11 *, wp_s32 index_start,
-    wp_s32 index_count, const wp_foliage_instance_dx11 *, wp_s32 count,
-    const wp_foliage_parameters_dx11 * );
+
+wp_s32 wp_renderer_dx11_validate_foliage_instances( const wp_foliage_instance_dx11 *, wp_s32 count,
+                                                    const wp_foliage_parameters_dx11 * );
+wp_s32 wp_renderer_dx11_draw_foliage_instances( wp_renderer_dx11 *, const wp_geometry_dx11 *,
+                                                wp_s32 index_start, wp_s32 index_count,
+                                                const wp_foliage_instance_dx11 *, wp_s32 count,
+                                                const wp_foliage_parameters_dx11 * );
 
 /* =========================================================================
  * Dimension queries

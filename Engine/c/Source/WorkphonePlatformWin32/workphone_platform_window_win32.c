@@ -72,7 +72,7 @@ static LRESULT CALLBACK wp_win32_wnd_proc( HWND hwnd, UINT msg, WPARAM wparam, L
         if( win )
         {
             win->closed = 1;
-            win->hwnd = NULL;  /* prevent pump from dispatching after destroy */
+            win->hwnd = NULL; /* prevent pump from dispatching after destroy */
         }
         DestroyWindow( hwnd );
         return 0;
@@ -91,8 +91,11 @@ static LRESULT CALLBACK wp_win32_wnd_proc( HWND hwnd, UINT msg, WPARAM wparam, L
         break;
     }
 
-    if( win && win->event_callback && win->event_callback( win->event_userdata, hwnd, msg, wparam, lparam ) )
+    if( win && win->event_callback &&
+        win->event_callback( win->event_userdata, hwnd, msg, wparam, lparam ) )
+    {
         return 0;
+    }
 
     return DefWindowProcW( hwnd, msg, wparam, lparam );
 }
@@ -106,7 +109,9 @@ static wp_s32 wp_win32_register_class( void )
     WNDCLASSW wc;
 
     if( s_class_registered )
+    {
         return 1;
+    }
 
     memset( &wc, 0, sizeof( wc ) );
     wc.style = CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS;
@@ -117,7 +122,9 @@ static wp_s32 wp_win32_register_class( void )
     wc.hbrBackground = (HBRUSH)( COLOR_WINDOW + 1 );
     wc.lpszClassName = WP_WIN32_CLASS_NAME;
     if( !RegisterClassW( &wc ) )
+    {
         return 0;
+    }
 
     s_class_registered = 1;
     return 1;
@@ -129,7 +136,9 @@ static void wp_win32_unregister_unused_class( void )
 {
     if( s_window_count == 0 && s_class_registered &&
         UnregisterClassW( WP_WIN32_CLASS_NAME, GetModuleHandleW( NULL ) ) )
+    {
         s_class_registered = 0;
+    }
 }
 
 /* =========================================================================
@@ -147,7 +156,9 @@ wp_platform_window_win32 *wp_platform_window_win32_create( const wp_c8 *title, w
     HWND hwnd;
 
     if( !wp_win32_register_class() )
+    {
         return NULL;
+    }
 
     win = (wp_platform_window_win32 *)malloc( sizeof( wp_platform_window_win32 ) );
     if( !win )
@@ -202,7 +213,9 @@ wp_platform_window_win32 *wp_platform_window_win32_create( const wp_c8 *title, w
 void wp_platform_window_win32_destroy( wp_platform_window_win32 *win )
 {
     if( !win )
+    {
         return;
+    }
 
     if( win->hwnd && IsWindow( win->hwnd ) )
     {
@@ -213,7 +226,9 @@ void wp_platform_window_win32_destroy( wp_platform_window_win32 *win )
     free( win );
 
     if( s_window_count > 0 )
+    {
         --s_window_count;
+    }
     wp_win32_unregister_unused_class();
 }
 
@@ -226,7 +241,9 @@ void wp_platform_window_win32_pump_messages( wp_platform_window_win32 *win )
     MSG msg;
 
     if( !win || !win->hwnd )
+    {
         return;
+    }
 
     while( PeekMessageW( &msg, NULL, 0, 0, PM_REMOVE ) )
     {
@@ -240,11 +257,14 @@ void wp_platform_window_win32_pump_messages( wp_platform_window_win32 *win )
     }
 }
 
-void wp_platform_window_win32_set_event_callback(
-    wp_platform_window_win32 *win, wp_platform_window_win32_event_callback callback, void *userdata )
+void wp_platform_window_win32_set_event_callback( wp_platform_window_win32 *win,
+                                                  wp_platform_window_win32_event_callback callback,
+                                                  void *userdata )
 {
     if( !win )
+    {
         return;
+    }
 
     win->event_callback = callback;
     win->event_userdata = userdata;
@@ -293,13 +313,17 @@ void wp_platform_window_win32_set_title( wp_platform_window_win32 *win, const wp
     WCHAR wtitle[WP_PLATFORM_WINDOW_MAX_TITLE];
 
     if( !win || !title )
+    {
         return;
+    }
 
     strncpy( win->title, title, WP_PLATFORM_WINDOW_MAX_TITLE - 1 );
     win->title[WP_PLATFORM_WINDOW_MAX_TITLE - 1] = '\0';
 
     if( !win->hwnd || !IsWindow( win->hwnd ) )
+    {
         return;
+    }
 
     MultiByteToWideChar( CP_UTF8, 0, title, -1, wtitle, WP_PLATFORM_WINDOW_MAX_TITLE );
     wtitle[WP_PLATFORM_WINDOW_MAX_TITLE - 1] = L'\0';
@@ -312,10 +336,14 @@ void wp_platform_window_win32_resize( wp_platform_window_win32 *win, wp_u32 widt
     RECT rect;
 
     if( !win || !win->hwnd || !IsWindow( win->hwnd ) || win->fullscreen )
+    {
         return;
+    }
 
     if( IsZoomed( win->hwnd ) )
+    {
         ShowWindow( win->hwnd, SW_RESTORE );
+    }
 
     style = (DWORD)GetWindowLongW( win->hwnd, GWL_STYLE );
     exstyle = (DWORD)GetWindowLongW( win->hwnd, GWL_EXSTYLE );
@@ -334,10 +362,14 @@ wp_s32 wp_platform_window_win32_set_fullscreen( wp_platform_window_win32 *win, w
     HWND hwnd;
     MONITORINFO monitor;
     if( !win || !win->hwnd || !IsWindow( win->hwnd ) )
+    {
         return 0;
+    }
     fullscreen = fullscreen != 0;
     if( win->fullscreen == fullscreen )
+    {
         return 1;
+    }
 
     hwnd = win->hwnd;
     if( fullscreen )
@@ -346,7 +378,9 @@ wp_s32 wp_platform_window_win32_set_fullscreen( wp_platform_window_win32 *win, w
         win->windowed_placement.length = sizeof( win->windowed_placement );
         if( !GetWindowPlacement( hwnd, &win->windowed_placement ) ||
             !GetMonitorInfoW( MonitorFromWindow( hwnd, MONITOR_DEFAULTTONEAREST ), &monitor ) )
+        {
             return 0;
+        }
 
         win->windowed_style = GetWindowLongPtrW( hwnd, GWL_STYLE ) & ~( WS_MAXIMIZE | WS_MINIMIZE );
         SetWindowLongPtrW( hwnd, GWL_STYLE, win->windowed_style & ~WS_OVERLAPPEDWINDOW );
@@ -366,7 +400,9 @@ wp_s32 wp_platform_window_win32_set_fullscreen( wp_platform_window_win32 *win, w
         SetWindowPos( hwnd, NULL, 0, 0, 0, 0,
                       SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER );
         if( !SetWindowPlacement( hwnd, &win->windowed_placement ) )
+        {
             return 0;
+        }
     }
     win->fullscreen = fullscreen;
     return 1;
@@ -379,31 +415,41 @@ wp_s32 wp_platform_window_win32_set_fullscreen( wp_platform_window_win32 *win, w
 void wp_platform_window_win32_show( wp_platform_window_win32 *win )
 {
     if( win && win->hwnd )
+    {
         ShowWindow( win->hwnd, SW_SHOW );
+    }
 }
 
 void wp_platform_window_win32_hide( wp_platform_window_win32 *win )
 {
     if( win && win->hwnd )
+    {
         ShowWindow( win->hwnd, SW_HIDE );
+    }
 }
 
 void wp_platform_window_win32_maximize( wp_platform_window_win32 *win )
 {
     if( win && win->hwnd )
+    {
         ShowWindow( win->hwnd, SW_MAXIMIZE );
+    }
 }
 
 void wp_platform_window_win32_minimize( wp_platform_window_win32 *win )
 {
     if( win && win->hwnd )
+    {
         ShowWindow( win->hwnd, SW_MINIMIZE );
+    }
 }
 
 void wp_platform_window_win32_restore( wp_platform_window_win32 *win )
 {
     if( win && win->hwnd )
+    {
         ShowWindow( win->hwnd, SW_RESTORE );
+    }
 }
 
 #endif /* _WIN32 */

@@ -5,9 +5,9 @@
 #include "workphone_graphics_renderer_dx11.h"
 
 #ifdef _WIN32
-#ifdef __cplusplus
+#    ifdef __cplusplus
 extern "C" {
-#endif
+#    endif
 
 /* Borrowed, immutable PTC and index spans for one ordered UI draw list.
  * Initialise upload_state to zero. Reset it after any callback or draw that
@@ -29,12 +29,12 @@ typedef struct wp_ui_draw_list_dx11
  * texture lifetimes. Returns zero for invalid input and one when the range was
  * passed to the backend. */
 wp_s32 wp_renderer_dx11_draw_ui_range( wp_renderer_dx11 *renderer, wp_ui_draw_list_dx11 *list,
-                                      size_t first_index, size_t index_count, size_t base_vertex,
-                                      wp_viewport_i scissor, void *texture_view );
+                                       size_t first_index, size_t index_count, size_t base_vertex,
+                                       wp_viewport_i scissor, void *texture_view );
 
-#ifdef __cplusplus
+#    ifdef __cplusplus
 }
-#endif
+#    endif
 #endif /* _WIN32 */
 
 #endif

@@ -45,11 +45,9 @@ wp_s32 wp_renderer_dx12_resize( wp_renderer_dx12 *renderer, wp_s32 width, wp_s32
 void wp_renderer_dx12_begin_frame( wp_renderer_dx12 *renderer );
 void wp_renderer_dx12_end_frame( wp_renderer_dx12 *renderer );
 void wp_renderer_dx12_present( wp_renderer_dx12 *renderer, wp_s32 vsync );
-wp_s32 wp_renderer_dx12_try_present( wp_renderer_dx12 *renderer, void *expected_hwnd,
-                                     wp_s32 vsync );
-wp_s32 wp_renderer_dx12_copy_back_buffer_rgba8( wp_renderer_dx12 *renderer,
-                                                void *expected_hwnd, void *output,
-                                                wp_u64 output_bytes );
+wp_s32 wp_renderer_dx12_try_present( wp_renderer_dx12 *renderer, void *expected_hwnd, wp_s32 vsync );
+wp_s32 wp_renderer_dx12_copy_back_buffer_rgba8( wp_renderer_dx12 *renderer, void *expected_hwnd,
+                                                void *output, wp_u64 output_bytes );
 
 typedef struct wp_render_statistics_dx12
 {
@@ -125,9 +123,8 @@ void wp_renderer_dx12_draw_indexed_triangles_ptc( wp_renderer_dx12 *renderer,
                                                   const wp_vertex_ptc *vertices, wp_s32 vertex_count,
                                                   const uint16_t *indices, wp_s32 index_count );
 void wp_renderer_dx12_draw_indexed_triangles_ptc_u32( wp_renderer_dx12 *renderer,
-                                                      const wp_vertex_ptc *vertices,
-                                                      wp_s32 vertex_count, const uint32_t *indices,
-                                                      wp_s32 index_count );
+                                                      const wp_vertex_ptc *vertices, wp_s32 vertex_count,
+                                                      const uint32_t *indices, wp_s32 index_count );
 wp_s32 wp_renderer_dx12_prepare_indexed_triangles_ptc( wp_renderer_dx12 *renderer,
                                                        const wp_vertex_ptc *vertices,
                                                        wp_s32 vertex_count, const uint16_t *indices,

@@ -39,7 +39,7 @@ extern "C" {
 typedef struct wp_platform_window_win32 wp_platform_window_win32;
 
 typedef wp_s32 ( *wp_platform_window_win32_event_callback )( void *userdata, HWND hwnd, UINT msg,
-                                                              WPARAM wparam, LPARAM lparam );
+                                                             WPARAM wparam, LPARAM lparam );
 
 /* =========================================================================
  * Lifecycle
@@ -55,8 +55,9 @@ void wp_platform_window_win32_destroy( wp_platform_window_win32 *win );
  * ====================================================================== */
 
 void wp_platform_window_win32_pump_messages( wp_platform_window_win32 *win );
-void wp_platform_window_win32_set_event_callback(
-    wp_platform_window_win32 *win, wp_platform_window_win32_event_callback callback, void *userdata );
+void wp_platform_window_win32_set_event_callback( wp_platform_window_win32 *win,
+                                                  wp_platform_window_win32_event_callback callback,
+                                                  void *userdata );
 
 /* =========================================================================
  * State queries
