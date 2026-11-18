@@ -37,9 +37,9 @@ namespace workphone::scene
 
         properties->setPropertyAsEnum( "type", m_textureType, textureTypes );
         properties->setPropertyAsEnum( "size", m_textureSize, textureSizes );
-        properties->setPropertyAsEnum( "mipmapFilter", m_mipmapFilter,
-                                      Array<String>{ "None", "Colour", "Data", "Normal", "Cutout",
-                                                     "Roughness" } );
+        properties->setPropertyAsEnum(
+            "mipmapFilter", m_mipmapFilter,
+            Array<String>{ "None", "Colour", "Data", "Normal", "Cutout", "Roughness" } );
         properties->setProperty( "useTiling", m_useTiling );
 
         properties->setProperty( "borderLeft", m_borderLeft );

@@ -7,13 +7,14 @@
 namespace workphone::meshy_credentials
 {
     namespace detail = api_credentials::detail;
+
     namespace
     {
         detail::CredentialStore editorStore()
         {
             return detail::CredentialStore( detail::meshy.editorTarget, detail::meshy );
         }
-    }
+    }  // namespace
 
     bool saveEditorKey( const String &key, String &error )
     {
@@ -82,7 +83,10 @@ namespace workphone::meshy_credentials
                     return editorStore().read( saved, failure );
                 },
                 std::getenv( "MESHY_API_KEY" ), secret, diagnostic, detail::meshy );
-            if( found ) key.assign( secret.data(), secret.size() );
+            if( found )
+            {
+                key.assign( secret.data(), secret.size() );
+            }
             error = diagnostic.c_str();
             return found;
         }
@@ -93,4 +97,4 @@ namespace workphone::meshy_credentials
             return false;
         }
     }
-}
+}  // namespace workphone::meshy_credentials

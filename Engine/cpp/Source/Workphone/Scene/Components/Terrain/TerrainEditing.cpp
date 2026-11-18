@@ -445,8 +445,8 @@ namespace workphone::scene
             {
                 if( !autoMaterial )
                 {
-                    autoMaterial = Change<render::TerrainAutoMaterial>{ before.autoMaterial,
-                                                                       after.autoMaterial };
+                    autoMaterial =
+                        Change<render::TerrainAutoMaterial>{ before.autoMaterial, after.autoMaterial };
                 }
                 else
                 {
@@ -1051,8 +1051,10 @@ namespace workphone::scene
         }
         const auto source = terrain->getTerrainSnapshot();
         auto candidate = *source;
-        const Vector4F tints[] = { { .76f, .67f, .44f, 1 }, { .22f, .36f, .11f, 1 },
-                                  { .38f, .37f, .34f, 1 }, { .35f, .25f, .16f, 1 } };
+        const Vector4F tints[] = { { .76f, .67f, .44f, 1 },
+                                   { .22f, .36f, .11f, 1 },
+                                   { .38f, .37f, .34f, 1 },
+                                   { .35f, .25f, .16f, 1 } };
         for( u32 layer = 0; layer < 4; ++layer )
         {
             candidate.layers[layer].tint = tints[layer];

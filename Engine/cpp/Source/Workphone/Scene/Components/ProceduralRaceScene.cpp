@@ -16,7 +16,9 @@
 namespace workphone::scene
 {
     WP_CLASS_REGISTER_DERIVED( workphone::scene, ProceduralRaceScene, ProceduralScene );
-    ProceduralRaceScene::ProceduralRaceScene() : m_city( std::make_unique<ProceduralCityConfiguration>() )
+
+    ProceduralRaceScene::ProceduralRaceScene() :
+        m_city( std::make_unique<ProceduralCityConfiguration>() )
     {
     }
 
@@ -130,7 +132,7 @@ namespace workphone::scene
         if( !m_assets.body )
         {
             throw std::runtime_error( m_generationError.empty() ? "Generated scene activation failed."
-                                                                 : m_generationError.c_str() );
+                                                                : m_generationError.c_str() );
         }
 
         // Scene play can reconstruct the body and controller; configure again after settling.
@@ -169,10 +171,10 @@ namespace workphone::scene
                 auto app = core::IApplicationManager::instancePtr();
                 if( app && m_assets.terrainGameplaySource && m_assets.ground )
                 {
-                    const auto actorState = app->isPlaying() ? IGameActor::State::Play
-                                                            : IGameActor::State::Edit;
-                    const auto componentState = app->isPlaying() ? IComponent::State::Play
-                                                                : IComponent::State::Edit;
+                    const auto actorState =
+                        app->isPlaying() ? IGameActor::State::Play : IGameActor::State::Edit;
+                    const auto componentState =
+                        app->isPlaying() ? IComponent::State::Play : IComponent::State::Edit;
                     const auto ground = m_assets.ground;
                     const auto terrain = ground->getComponent<TerrainSystem>();
                     const auto collision = ground->getComponent<CollisionTerrain>();

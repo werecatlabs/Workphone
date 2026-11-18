@@ -142,11 +142,12 @@ namespace workphone::scene
                                                    render::TextureMipFilter filter )
         {
             const bool constant = buffer.width == 1 && buffer.height == 1;
-            const bool surface = buffer.width >= 256 && buffer.width <= 1024 && buffer.height == buffer.width;
-            requireRuntime(
-                ( constant || surface ) &&
-                    buffer.pixels.size() == size_t( buffer.width ) * buffer.height * 4,
-                "Authored road surfaces require complete bounded 256-1024px textures or one exact scalar texel." );
+            const bool surface =
+                buffer.width >= 256 && buffer.width <= 1024 && buffer.height == buffer.width;
+            requireRuntime( ( constant || surface ) &&
+                                buffer.pixels.size() == size_t( buffer.width ) * buffer.height * 4,
+                            "Authored road surfaces require complete bounded 256-1024px textures or one "
+                            "exact scalar texel." );
             requireRuntime( state.textures.size() < 16 && state.textures.capacity() >= 16,
                             "Authored road texture ownership must be admitted before publication." );
             // Use the same transactional staging path as the procedural scene:
@@ -175,8 +176,9 @@ namespace workphone::scene
             properties->setProperty( "mipmapAtlasColumns", 1u );
             texture->setProperties( properties );
             String error;
-            requireRuntime( texture->copyByteData( bgra, { s32( buffer.width ), s32( buffer.height ) }, error ),
-                            error.empty() ? "Road texture staging failed." : error.c_str() );
+            requireRuntime(
+                texture->copyByteData( bgra, { s32( buffer.width ), s32( buffer.height ) }, error ),
+                error.empty() ? "Road texture staging failed." : error.c_str() );
             texture->load( nullptr );
             return texture;
         }
@@ -231,14 +233,21 @@ namespace workphone::scene
         // aggregate scale stays fixed while close views gain 4.1mm texels.
         constexpr u32 asphaltTiles = 2;
 
-        enum class PaintWear : u32 { Edge, Lane, Zebra, Wheel };
+        enum class PaintWear : u32
+        {
+            Edge,
+            Lane,
+            Zebra,
+            Wheel
+        };
         constexpr u32 paintBand = 64, paintProfiles = 4, paintWidth = 256;
         constexpr float paintTileMetres = 1.24f;
         constexpr float paintPadding = 4.f / paintBand;
 
         float paintV( PaintWear wear, float across )
         {
-            return ( u32( wear ) + paintPadding + across * ( 1.f - 2.f * paintPadding ) ) / paintProfiles;
+            return ( u32( wear ) + paintPadding + across * ( 1.f - 2.f * paintPadding ) ) /
+                   paintProfiles;
         }
 
         procedural::TextureBuffer thermoplasticPaint( u32 seed )
@@ -249,7 +258,9 @@ namespace workphone::scene
                 return t * t * ( 3.f - 2.f * t );
             };
             const auto encoded = []( float linear ) {
-                return u8( std::lround( ( 1.055f * std::pow( std::clamp( linear, .01f, 1.f ), 1.f / 2.4f ) - .055f ) * 255.f ) );
+                return u8( std::lround(
+                    ( 1.055f * std::pow( std::clamp( linear, .01f, 1.f ), 1.f / 2.4f ) - .055f ) *
+                    255.f ) );
             };
             for( u32 band = 0; band < paintProfiles; ++band )
             {
@@ -257,33 +268,49 @@ namespace workphone::scene
                 const float traffic = wear[band];
                 const u32 key = seed ^ ( 0x476ccbadu + band * 0x770db2bu );
                 for( u32 y = 0; y < paintBand; ++y )
+                {
                     for( u32 x = 0; x < paintWidth; ++x )
                     {
                         const float u = ( x + .5f ) / paintWidth;
-                        const float v = ( ( y + .5f ) / paintBand - paintPadding ) / ( 1.f - 2.f * paintPadding );
+                        const float v =
+                            ( ( y + .5f ) / paintBand - paintPadding ) / ( 1.f - 2.f * paintPadding );
                         const float grain = roadGrain( key, x, y, paintWidth );
-                        const float broad = roadVariation( key ^ 0xa1b1fu, u, std::clamp( v, 0.f, 1.f ), 9 );
+                        const float broad =
+                            roadVariation( key ^ 0xa1b1fu, u, std::clamp( v, 0.f, 1.f ), 9 );
                         // Small losses cluster into worn patches instead of peppering
                         // every stripe evenly. Most scuffing only thins the paint.
-                        const float cluster = smooth( ( roadVariation( key ^ 0xa6731u, u,
-                            std::clamp( v, 0.f, 1.f ), 13 ) - .34f ) / .38f );
+                        const float cluster =
+                            smooth( ( roadVariation( key ^ 0xa6731u, u, std::clamp( v, 0.f, 1.f ), 13 ) -
+                                      .34f ) /
+                                    .38f );
                         const float gx = u * 64.f, gy = std::clamp( v, 0.f, .9999f ) * 18.f;
                         const u32 ix = u32( gx ), iy = u32( gy );
-                        const float poreCluster = smooth( ( roadVariation( key ^ 0xa6731u,
-                            ( ix + .5f ) / 64.f, ( iy + .5f ) / 18.f, 13 ) - .34f ) / .38f );
+                        const float poreCluster =
+                            smooth( ( roadVariation( key ^ 0xa6731u, ( ix + .5f ) / 64.f,
+                                                     ( iy + .5f ) / 18.f, 13 ) -
+                                      .34f ) /
+                                    .38f );
                         const float shape = roadGrain( key ^ 0xb872u, ix, iy, 64 );
                         const float dx = ( gx - ix - ( .34f + .32f * shape ) ) / ( .22f + .13f * shape );
-                        const float dy = ( gy - iy - ( .39f + .23f * roadGrain( key ^ 0xeb72u, ix, iy, 64 ) ) ) / .29f;
-                        const bool open = roadGrain( key ^ 0x8d741u, ix, iy, 64 ) < .018f + .20f * traffic * poreCluster;
-                        const float loss = open ? smooth( ( 1.05f - dx * dx - dy * dy + .18f * ( grain - .5f ) ) * 2.5f ) : 0.f;
+                        const float dy =
+                            ( gy - iy - ( .39f + .23f * roadGrain( key ^ 0xeb72u, ix, iy, 64 ) ) ) /
+                            .29f;
+                        const bool open = roadGrain( key ^ 0x8d741u, ix, iy, 64 ) <
+                                          .018f + .20f * traffic * poreCluster;
+                        const float loss =
+                            open
+                                ? smooth( ( 1.05f - dx * dx - dy * dy + .18f * ( grain - .5f ) ) * 2.5f )
+                                : 0.f;
                         const u32 line = u32( u * 56.f );
                         const u32 side = v > .5f ? 1u : 0u;
                         const float rough = roadGrain( key ^ 0x93133u, line, side, 56 );
                         const float nick = rough > .90f ? ( .012f + .013f * cluster ) * traffic : 0.f;
                         const float setback = .003f + .007f * rough + nick;
                         const float edge = smooth( ( std::min( v, 1.f - v ) - setback ) / .023f );
-                        const float base = .625f - .045f * traffic + .045f * ( broad - .5f ) + .032f * ( grain - .5f );
-                        const float scuff = ( .028f + .16f * traffic ) * cluster * ( .35f + .65f * grain );
+                        const float base =
+                            .625f - .045f * traffic + .045f * ( broad - .5f ) + .032f * ( grain - .5f );
+                        const float scuff =
+                            ( .028f + .16f * traffic ) * cluster * ( .35f + .65f * grain );
                         const float alpha = edge * ( .985f - ( .50f + .27f * traffic ) * loss - scuff );
                         auto *pixel = result.pixel( x, band * paintBand + y );
                         pixel[0] = encoded( base );
@@ -291,6 +318,7 @@ namespace workphone::scene
                         pixel[2] = encoded( base * .94f );
                         pixel[3] = u8( std::lround( alpha * 255.f ) );
                     }
+                }
             }
             return result;
         }
@@ -302,7 +330,9 @@ namespace workphone::scene
             // or repeated road tiles reveal a bright/dark checkerboard.
             constexpr u32 size = 1024;
             procedural::TextureBuffer colour( size, size ), normal( size, size ), orm( size, size );
-            const auto byte = []( float value ) { return u8( std::clamp( std::lround( value ), 0l, 255l ) ); };
+            const auto byte = []( float value ) {
+                return u8( std::clamp( std::lround( value ), 0l, 255l ) );
+            };
             const auto wrappedSample = []( s32 coordinate, u32 period ) {
                 const s32 wrapped = coordinate % s32( period );
                 return u32( wrapped < 0 ? wrapped + s32( period ) : wrapped );
@@ -332,11 +362,14 @@ namespace workphone::scene
                     // together, so the two source-scan copies do not form an
                     // obvious four-square grid or split their normal detail.
                     const s32 shiftX = s32( std::lround( ( broad - .5f ) * 7.f ) );
-                    const s32 shiftY = s32( std::lround( ( periodicVariation( seed ^ 0x9125bdu, u, v, 4 ) - .5f ) * 7.f ) );
-                    const u32 sx = wrappedSample( s32( x * asphaltTiles * surface.albedo.width / size ) + shiftX,
-                                                  surface.albedo.width );
-                    const u32 sy = wrappedSample( s32( y * asphaltTiles * surface.albedo.height / size ) + shiftY,
-                                                  surface.albedo.height );
+                    const s32 shiftY = s32(
+                        std::lround( ( periodicVariation( seed ^ 0x9125bdu, u, v, 4 ) - .5f ) * 7.f ) );
+                    const u32 sx =
+                        wrappedSample( s32( x * asphaltTiles * surface.albedo.width / size ) + shiftX,
+                                       surface.albedo.width );
+                    const u32 sy =
+                        wrappedSample( s32( y * asphaltTiles * surface.albedo.height / size ) + shiftY,
+                                       surface.albedo.height );
                     const float binder = .16f * broad +
                                          .29f * periodicVariation( seed ^ 0x1f73a1u, u, v, 7 ) +
                                          .34f * periodicVariation( seed ^ 0x673c51u, u, v, 19 ) +
@@ -347,10 +380,12 @@ namespace workphone::scene
                     // darker and a little smoother. Use the existing wrapped
                     // metre-scale fields so the response follows the photographed
                     // aggregate without adding a hard-edged repeating repair decal.
-                    const float compactedInput = std::clamp( ( .60f * broad + .40f * binder - .43f ) / .29f,
-                                                             0.f, 1.f );
-                    const float compacted = compactedInput * compactedInput * ( 3.f - 2.f * compactedInput );
-                    const float grain = ( roadGrain( 0x7f33abu, x, y, size ) - .5f ) * ( 3.f + 2.5f * wear );
+                    const float compactedInput =
+                        std::clamp( ( .60f * broad + .40f * binder - .43f ) / .29f, 0.f, 1.f );
+                    const float compacted =
+                        compactedInput * compactedInput * ( 3.f - 2.f * compactedInput );
+                    const float grain =
+                        ( roadGrain( 0x7f33abu, x, y, size ) - .5f ) * ( 3.f + 2.5f * wear );
                     const auto *source = surface.albedo.pixel( sx, sy );
                     auto *pixel = colour.pixel( x, y );
                     const float tone = .95f + .13f * wear + .085f * ( broad - .5f ) - .030f * compacted;
@@ -376,8 +411,11 @@ namespace workphone::scene
 
         void finishIslandTurf( procedural::TextureBuffer &colour, u32 seed )
         {
-            const auto channel = []( float value ) { return u8( std::clamp( std::lround( value ), 0l, 255l ) ); };
+            const auto channel = []( float value ) {
+                return u8( std::clamp( std::lround( value ), 0l, 255l ) );
+            };
             for( u32 y = 0; y < colour.height; ++y )
+            {
                 for( u32 x = 0; x < colour.width; ++x )
                 {
                     auto *pixel = colour.pixel( x, y );
@@ -390,6 +428,7 @@ namespace workphone::scene
                     pixel[1] = channel( 122.f + value - thatch * 7.f );
                     pixel[2] = channel( 59.f + value + thatch * 8.f );
                 }
+            }
         }
 
         void roadSurface( CityRoadRuntimeState &state, const String &prefix,
@@ -404,7 +443,9 @@ namespace workphone::scene
             if( paint )
             {
                 material->setDiffuse( ColourF::White );
-                material->setTexture( surfaceTexture( state, prefix, thermoplasticPaint( seed ), render::TextureMipFilter::Colour ), 0 );
+                material->setTexture( surfaceTexture( state, prefix, thermoplasticPaint( seed ),
+                                                      render::TextureMipFilter::Colour ),
+                                      0 );
                 material->setRoughness( .77f );
                 material->setMetalness( 0 );
                 material->setTransparent( true );
@@ -416,19 +457,28 @@ namespace workphone::scene
                 return;
             }
             {
-                const auto family = asphalt ? CitySurface::Asphalt : turf ? CitySurface::Ground
-                                                                         : CitySurface::Concrete;
+                const auto family = asphalt ? CitySurface::Asphalt
+                                    : turf  ? CitySurface::Ground
+                                            : CitySurface::Concrete;
                 SurfaceBakeResult scanned;
                 String diagnostic;
                 if( loadCitySurface( family, 512, scanned, diagnostic ) )
                 {
-                    if( asphalt ) weatherScannedAsphalt( scanned, seed );
-                    if( turf ) finishIslandTurf( scanned.albedo, seed );
-                    surfaceMaps( state, prefix + "/city-surface/" + citySurfaceAssetId( family ), material, scanned );
+                    if( asphalt )
+                    {
+                        weatherScannedAsphalt( scanned, seed );
+                    }
+                    if( turf )
+                    {
+                        finishIslandTurf( scanned.albedo, seed );
+                    }
+                    surfaceMaps( state, prefix + "/city-surface/" + citySurfaceAssetId( family ),
+                                 material, scanned );
                     material->setNormalStrength( asphalt ? .45f : turf ? .34f : .35f );
                     material->setEditorFloat( "aoStrength", .65f );
                     material->setUVProjection( kind == CityRoadTerrainTriangleKind::Kerb ? 1 : 3 );
-                    const float repeatMetres = citySurfaceTileMetres( family ) * ( asphalt ? asphaltTiles : 1u );
+                    const float repeatMetres =
+                        citySurfaceTileMetres( family ) * ( asphalt ? asphaltTiles : 1u );
                     material->setTriplanarScale( 1.f / repeatMetres );
                     material->setEditorUInt( "uvFilter", 3 );
                     material->setEditorFloat( "uvAniso", 8.f );
@@ -466,7 +516,8 @@ namespace workphone::scene
             {
                 for( u32 x = 0; x < params.size; ++x )
                 {
-                    const float grain = roadGrain( seed, x, y, params.size ), patch = smoothNoise( x, y, 3 );
+                    const float grain = roadGrain( seed, x, y, params.size ),
+                                patch = smoothNoise( x, y, 3 );
                     const float aggregate = smoothNoise( x, y, 32 );
                     auto pixel = surface.albedo.pixel( x, y ), orm = surface.orm.pixel( x, y );
                     auto &height = surface.height.values[size_t( y ) * params.size + x];
@@ -604,9 +655,13 @@ namespace workphone::scene
                     crossingCandidates.clear();
                 }
             }
-            const auto terminals = buildCityRoadTerminals( source, bake, connections, *terrain, placement );
+            const auto terminals =
+                buildCityRoadTerminals( source, bake, connections, *terrain, placement );
             SourceBudgetVector<std::array<bool, 2>> rounded( source.roads.size() );
-            for( const auto &terminal : terminals ) rounded[terminal.roadIndex][terminal.atStart ? 0 : 1] = true;
+            for( const auto &terminal : terminals )
+            {
+                rounded[terminal.roadIndex][terminal.atStart ? 0 : 1] = true;
+            }
             const auto straightRunEnd =
                 []( const SourceBudgetVector<procedural::CityRoadSplineSample> &points, size_t first ) {
                     auto direction = points[first + 1].position - points[first].position;
@@ -800,7 +855,10 @@ namespace workphone::scene
                 const auto z0 = s32( std::floor( std::min( { a.z, b.z, c.z } ) / cellSize ) );
                 const auto z1 = s32( std::floor( std::max( { a.z, b.z, c.z } ) / cellSize ) );
                 const u64 buckets = u64( s64( x1 ) - x0 + 1 ) * u64( s64( z1 ) - z0 + 1 );
-                if( optional && ( visits >= maximum || buckets > maximum - visits ) ) return 0;
+                if( optional && ( visits >= maximum || buckets > maximum - visits ) )
+                {
+                    return 0;
+                }
                 requireRuntime( buckets <= maximum - visits,
                                 "Road marking projection work budget exceeded." );
                 ++stamp;
@@ -809,7 +867,10 @@ namespace workphone::scene
                 {
                     for( s32 z = z0; z <= z1; ++z )
                     {
-                        if( optional && visits >= maximum ) return 0;
+                        if( optional && visits >= maximum )
+                        {
+                            return 0;
+                        }
                         requireRuntime( ++visits <= maximum,
                                         "Road marking projection work budget exceeded." );
                         auto cell = std::lower_bound(
@@ -820,7 +881,10 @@ namespace workphone::scene
                             } );
                         for( ; cell != cells.end() && cell->x == x && cell->z == z; ++cell )
                         {
-                            if( optional && visits >= maximum ) return 0;
+                            if( optional && visits >= maximum )
+                            {
+                                return 0;
+                            }
                             requireRuntime( ++visits <= maximum,
                                             "Road marking projection work budget exceeded." );
                             const u32 road = cell->triangle;
@@ -865,16 +929,23 @@ namespace workphone::scene
                             };
                             for( size_t i = 1; i + 1 < count; ++i )
                             {
-                                const auto piece = std::abs( area( scratch[0], scratch[i], scratch[i + 1] ) );
+                                const auto piece =
+                                    std::abs( area( scratch[0], scratch[i], scratch[i + 1] ) );
                                 if( piece <= 1e-10 )
                                 {
                                     continue;
                                 }
                                 covered += piece * .5;
-                                if( !draw ) continue;
+                                if( !draw )
+                                {
+                                    continue;
+                                }
                                 if( mesh.vertices.size() + 3 > 1000000 )
                                 {
-                                    if( optional ) return 0;
+                                    if( optional )
+                                    {
+                                        return 0;
+                                    }
                                     throw std::runtime_error(
                                         ( String( "Road marking vertex budget exceeded: base=" ) +
                                           StringUtil::toString( baseVertexCount ) + " added=" +
@@ -912,8 +983,10 @@ namespace workphone::scene
                                         bool optional, float phaseOffset = 0.f ) {
                 const double dx = double( p[1].x ) - p[0].x, dz = double( p[1].z ) - p[0].z;
                 const double length = std::hypot( dx, dz );
-                const double phase = length > .0001 ?
-                    ( p[0].x * dx + p[0].z * dz ) / ( length * paintTileMetres ) + phaseOffset : 0.;
+                const double phase =
+                    length > .0001
+                        ? ( p[0].x * dx + p[0].z * dz ) / ( length * paintTileMetres ) + phaseOffset
+                        : 0.;
                 const float u0 = float( phase - std::floor( phase ) );
                 const float u1 = u0 + float( length / paintTileMetres );
                 const float v0 = paintV( wear, 0 ), v1 = paintV( wear, 1 );
@@ -928,24 +1001,30 @@ namespace workphone::scene
                 const auto half = across * ( width * .5f );
                 paintQuad( { a - half, b - half, b + half, a + half }, wear, true, false );
             };
-            const auto rectangle = []( Vector3F centre, Vector3F along, Vector3F across, float length, float width ) {
+            const auto rectangle = []( Vector3F centre, Vector3F along, Vector3F across, float length,
+                                       float width ) {
                 const auto start = along * ( length * .5f ), side = across * ( width * .5f );
-                return std::array{ centre - start - side, centre + start - side,
-                                   centre + start + side, centre - start + side };
+                return std::array{ centre - start - side, centre + start - side, centre + start + side,
+                                   centre - start + side };
             };
             const auto projectRectangle = [&]( const std::array<Vector3F, 4> &p, bool draw,
                                                PaintWear wear = PaintWear::Lane,
                                                float phaseOffset = 0.f ) {
-                const double expected = std::abs( double( cityRoadCrossings::crossXZ( p[1] - p[0], p[3] - p[0] ) ) );
+                const double expected =
+                    std::abs( double( cityRoadCrossings::crossXZ( p[1] - p[0], p[3] - p[0] ) ) );
                 const double covered = paintQuad( p, wear, draw, true, phaseOffset );
                 return expected > .0001 &&
                        std::abs( covered - expected ) < std::max( .001, expected * .0006 );
             };
             const auto optionalPaint = [&]( const auto &draw ) {
-                const auto vertices = mesh.vertices.size(), indices = mesh.indices.size(), kinds = mesh.triangleKinds.size();
+                const auto vertices = mesh.vertices.size(), indices = mesh.indices.size(),
+                           kinds = mesh.triangleKinds.size();
                 try
                 {
-                    if( mesh.vertices.size() < 940000 && draw() ) return true;
+                    if( mesh.vertices.size() < 940000 && draw() )
+                    {
+                        return true;
+                    }
                 }
                 catch( const std::bad_alloc & )
                 {
@@ -957,45 +1036,65 @@ namespace workphone::scene
             };
             // Fit the complete envelope before painting any of its stripes. A partial
             // zebra across a hole or unsupported branch must leave no stray rectangles.
-            crossingCandidates.erase( std::remove_if( crossingCandidates.begin(), crossingCandidates.end(),
-                [&]( const cityRoadCrossings::Crossing &crossing ) {
-                    const float available = crossing.width - 1.f;
-                    const auto envelope = rectangle( crossing.centre, crossing.outward, crossing.across,
-                                                     crossing.depth, available );
-                    if( !projectRectangle( envelope, false ) ) return true;
-                    const auto count = std::clamp( int( std::round( available / .82f ) ), 5, 16 );
-                    const float step = available / count;
-                    return !optionalPaint( [&] {
-                        for( int i = 0; i < count; ++i )
+            crossingCandidates.erase(
+                std::remove_if(
+                    crossingCandidates.begin(), crossingCandidates.end(),
+                    [&]( const cityRoadCrossings::Crossing &crossing ) {
+                        const float available = crossing.width - 1.f;
+                        const auto envelope = rectangle( crossing.centre, crossing.outward,
+                                                         crossing.across, crossing.depth, available );
+                        if( !projectRectangle( envelope, false ) )
                         {
-                            const float lateral = ( i + .5f ) * step - available * .5f;
-                            const auto centre = crossing.centre + crossing.across * lateral;
-                            const float lane = std::abs( lateral ) / ( crossing.width * .5f );
-                            const bool wheelBand = std::min( std::abs( lane - .27f ), std::abs( lane - .74f ) ) < .14f;
-                            const auto wear = wheelBand ? PaintWear::Wheel : PaintWear::Zebra;
-                            // A shared phase made all bars sample the same 1.24 m wear
-                            // patch. Offset each bar deterministically without moving
-                            // its geometry or disturbing fitted-road projection.
-                            const float phase = float( i ) * .618034f +
-                                float( crossing.roadIndex ) * .414214f + crossing.firstStation * .103f;
-                            if( !projectRectangle( rectangle( centre, crossing.outward, crossing.across,
-                                        crossing.depth, std::min( .53f, .57f * step ) ), true, wear,
-                                        phase ) ) return false;
+                            return true;
                         }
-                        return true;
-                    } );
-                } ), crossingCandidates.end() );
-            std::sort( crossingCandidates.begin(), crossingCandidates.end(), []( const auto &a, const auto &b ) {
-                return a.roadIndex == b.roadIndex ? a.firstStation < b.firstStation : a.roadIndex < b.roadIndex;
-            } );
+                        const auto count = std::clamp( int( std::round( available / .82f ) ), 5, 16 );
+                        const float step = available / count;
+                        return !optionalPaint( [&] {
+                            for( int i = 0; i < count; ++i )
+                            {
+                                const float lateral = ( i + .5f ) * step - available * .5f;
+                                const auto centre = crossing.centre + crossing.across * lateral;
+                                const float lane = std::abs( lateral ) / ( crossing.width * .5f );
+                                const bool wheelBand =
+                                    std::min( std::abs( lane - .27f ), std::abs( lane - .74f ) ) < .14f;
+                                const auto wear = wheelBand ? PaintWear::Wheel : PaintWear::Zebra;
+                                // A shared phase made all bars sample the same 1.24 m wear
+                                // patch. Offset each bar deterministically without moving
+                                // its geometry or disturbing fitted-road projection.
+                                const float phase = float( i ) * .618034f +
+                                                    float( crossing.roadIndex ) * .414214f +
+                                                    crossing.firstStation * .103f;
+                                if( !projectRectangle(
+                                        rectangle( centre, crossing.outward, crossing.across,
+                                                   crossing.depth, std::min( .53f, .57f * step ) ),
+                                        true, wear, phase ) )
+                                {
+                                    return false;
+                                }
+                            }
+                            return true;
+                        } );
+                    } ),
+                crossingCandidates.end() );
+            std::sort( crossingCandidates.begin(), crossingCandidates.end(),
+                       []( const auto &a, const auto &b ) {
+                           return a.roadIndex == b.roadIndex ? a.firstStation < b.firstStation
+                                                             : a.roadIndex < b.roadIndex;
+                       } );
             for( const auto &run : connections.roadRuns )
             {
                 const auto &points = run.points;
                 const auto &authored = bake.roads[run.roadIndex].points;
-                const float firstDash = points.front().distance +
-                    ( rounded[run.roadIndex][0] && points.front().distance == authored.front().distance ? 1.5f : 0.f );
-                const float lastDash = points.back().distance -
-                    ( rounded[run.roadIndex][1] && points.back().distance == authored.back().distance ? 1.5f : 0.f );
+                const float firstDash =
+                    points.front().distance +
+                    ( rounded[run.roadIndex][0] && points.front().distance == authored.front().distance
+                          ? 1.5f
+                          : 0.f );
+                const float lastDash =
+                    points.back().distance -
+                    ( rounded[run.roadIndex][1] && points.back().distance == authored.back().distance
+                          ? 1.5f
+                          : 0.f );
                 for( size_t first = 0; first + 1 < points.size(); )
                 {
                     // Paint is projected onto exact fitted triangles, so only
@@ -1023,16 +1122,28 @@ namespace workphone::scene
                             // A crossing can trim a three-metre dash down to a
                             // tiny isolated stub. Suppress fragments that no
                             // longer read as an intentional lane marking.
-                            if( finish - begin < 1.15f ) return;
-                            const auto p = a.position + ( b.position - a.position ) * ( ( begin - a.distance ) / length );
-                            const auto q = a.position + ( b.position - a.position ) * ( ( finish - a.distance ) / length );
+                            if( finish - begin < 1.15f )
+                            {
+                                return;
+                            }
+                            const auto p = a.position + ( b.position - a.position ) *
+                                                            ( ( begin - a.distance ) / length );
+                            const auto q = a.position + ( b.position - a.position ) *
+                                                            ( ( finish - a.distance ) / length );
                             strip( p, q, across, .12f, PaintWear::Lane );
                         };
                         for( const auto &crossing : crossingCandidates )
                         {
-                            if( crossing.roadIndex > run.roadIndex ) break;
-                            if( crossing.roadIndex != run.roadIndex || crossing.lastStation + .32f <= start ||
-                                crossing.firstStation - .32f >= end ) continue;
+                            if( crossing.roadIndex > run.roadIndex )
+                            {
+                                break;
+                            }
+                            if( crossing.roadIndex != run.roadIndex ||
+                                crossing.lastStation + .32f <= start ||
+                                crossing.firstStation - .32f >= end )
+                            {
+                                continue;
+                            }
                             dashSegment( start, crossing.firstStation - .32f );
                             start = std::max( start, crossing.lastStation + .32f );
                         }
@@ -1085,15 +1196,19 @@ namespace workphone::scene
                     const Vector3F across( outward.z, 0, -outward.x );
                     const float incoming = junction.clockwise ? 1.f : -1.f;
                     const auto nose = junction.center + outward * junction.outerRadius;
-                    const auto crossing = std::find_if( crossingCandidates.begin(), crossingCandidates.end(),
-                        [&]( const cityRoadCrossings::Crossing &candidate ) {
-                            const auto offset = candidate.centre - nose;
-                            return candidate.roundabout && candidate.outward.dotProduct( outward ) > .999f &&
-                                   std::abs( offset.dotProduct( across ) ) < .02f &&
-                                   offset.dotProduct( outward ) > 0 && offset.dotProduct( outward ) < port.length;
-                        } );
-                    const float crossingCentre = crossing == crossingCandidates.end() ? 0.f :
-                        ( crossing->centre - nose ).dotProduct( outward );
+                    const auto crossing =
+                        std::find_if( crossingCandidates.begin(), crossingCandidates.end(),
+                                      [&]( const cityRoadCrossings::Crossing &candidate ) {
+                                          const auto offset = candidate.centre - nose;
+                                          return candidate.roundabout &&
+                                                 candidate.outward.dotProduct( outward ) > .999f &&
+                                                 std::abs( offset.dotProduct( across ) ) < .02f &&
+                                                 offset.dotProduct( outward ) > 0 &&
+                                                 offset.dotProduct( outward ) < port.length;
+                                      } );
+                    const float crossingCentre = crossing == crossingCandidates.end()
+                                                     ? 0.f
+                                                     : ( crossing->centre - nose ).dotProduct( outward );
                     const float laneWidth = port.width * .5f;
                     if( laneWidth >= 2.2f && port.length >= 3.15f )
                     {
@@ -1103,21 +1218,31 @@ namespace workphone::scene
                         const auto count = std::clamp( int( std::round( span / .71f ) ), 2, 7 );
                         const float pitch = span / count;
                         if( optionalPaint( [&] {
-                            for( const float row : { 1.04f, 1.45f } )
-                            {
-                                for( int dash = 0; dash < count; ++dash )
+                                for( const float row : { 1.04f, 1.45f } )
                                 {
-                                    const float lateral = .47f + ( dash + .5f ) * pitch;
-                                    const auto p = nose + outward * row + across * ( incoming * lateral );
-                                    if( !projectRectangle( rectangle( p, outward, across, .19f,
-                                                                    std::min( .52f, pitch * .72f ) ), true ) ) return false;
+                                    for( int dash = 0; dash < count; ++dash )
+                                    {
+                                        const float lateral = .47f + ( dash + .5f ) * pitch;
+                                        const auto p =
+                                            nose + outward * row + across * ( incoming * lateral );
+                                        if( !projectRectangle(
+                                                rectangle( p, outward, across, .19f,
+                                                           std::min( .52f, pitch * .72f ) ),
+                                                true ) )
+                                        {
+                                            return false;
+                                        }
+                                    }
                                 }
-                            }
-                            return true;
-                        } ) ) ++yieldApproaches;
+                                return true;
+                            } ) )
+                        {
+                            ++yieldApproaches;
+                        }
                     }
                     if( laneWidth >= 2.75f && port.length >= 6.5f &&
-                        ( crossing == crossingCandidates.end() || crossingCentre - crossing->depth * .5f > 3.02f ) )
+                        ( crossing == crossingCandidates.end() ||
+                          crossingCentre - crossing->depth * .5f > 3.02f ) )
                     {
                         const auto lane = across * ( incoming * laneWidth * .5f );
                         const auto a = nose + lane + outward * 1.88f - across * .56f;
@@ -1127,14 +1252,18 @@ namespace workphone::scene
                         const std::array outline{ a, b, tip };
                         const auto inset = [&]( Vector3F p ) { return p + ( centre - p ) * .25f; };
                         const auto stroke = [&]( Vector3F p, Vector3F q, Vector3F r ) {
-                            const auto expected = .5 * std::abs( cityRoadCrossings::crossXZ( q - p, r - p ) );
+                            const auto expected =
+                                .5 * std::abs( cityRoadCrossings::crossXZ( q - p, r - p ) );
                             return std::abs( triangle( p, q, r, true, true ) - expected ) < .001;
                         };
                         optionalPaint( [&] {
                             for( size_t i = 0; i < outline.size(); ++i )
                             {
                                 const auto p = outline[i], q = outline[( i + 1 ) % outline.size()];
-                                if( !stroke( p, q, inset( q ) ) || !stroke( p, inset( q ), inset( p ) ) ) return false;
+                                if( !stroke( p, q, inset( q ) ) || !stroke( p, inset( q ), inset( p ) ) )
+                                {
+                                    return false;
+                                }
                             }
                             return true;
                         } );
@@ -1148,8 +1277,10 @@ namespace workphone::scene
                         {
                             const float span = std::min( 1.70f, last - station );
                             optionalPaint( [&] {
-                                return projectRectangle( rectangle( nose + outward * ( station + span * .5f ),
-                                                     outward, across, span, .12f ), true );
+                                return projectRectangle(
+                                    rectangle( nose + outward * ( station + span * .5f ), outward,
+                                               across, span, .12f ),
+                                    true );
                             } );
                         }
                     };
@@ -1175,25 +1306,33 @@ namespace workphone::scene
             }
             if( !crossingCandidates.empty() || yieldApproaches )
             {
-                const auto roundCrossings = std::count_if( crossingCandidates.begin(), crossingCandidates.end(),
-                    []( const auto &crossing ) { return crossing.roundabout; } );
-                WP_LOG( String( "City road projected paint roundaboutCrossings=" ) + StringUtil::toString( roundCrossings ) +
-                        " ordinaryCrossings=" + StringUtil::toString( crossingCandidates.size() - roundCrossings ) +
+                const auto roundCrossings =
+                    std::count_if( crossingCandidates.begin(), crossingCandidates.end(),
+                                   []( const auto &crossing ) { return crossing.roundabout; } );
+                WP_LOG( String( "City road projected paint roundaboutCrossings=" ) +
+                        StringUtil::toString( roundCrossings ) + " ordinaryCrossings=" +
+                        StringUtil::toString( crossingCandidates.size() - roundCrossings ) +
                         " yieldApproaches=" + StringUtil::toString( yieldApproaches ) );
             }
             if( fittedWalks )
             {
                 String kerbError;
                 if( !crossingCandidates.empty() &&
-                    !cityRoadCrossings::fitDroppedKerbs( *fittedWalks, mesh, crossingCandidates, kerbError ) )
+                    !cityRoadCrossings::fitDroppedKerbs( *fittedWalks, mesh, crossingCandidates,
+                                                         kerbError ) )
                 {
-                    WP_LOG( String( "City crossing kerbs retained their original heights: " ) + kerbError );
+                    WP_LOG( String( "City crossing kerbs retained their original heights: " ) +
+                            kerbError );
                 }
-                const auto lowered = std::count_if( crossingCandidates.begin(), crossingCandidates.end(),
-                    []( const auto &crossing ) { return crossing.droppedKerbs; } );
+                const auto lowered =
+                    std::count_if( crossingCandidates.begin(), crossingCandidates.end(),
+                                   []( const auto &crossing ) { return crossing.droppedKerbs; } );
                 if( !crossingCandidates.empty() )
+                {
                     WP_LOG( String( "City crossing kerbs fitted=" ) + StringUtil::toString( lowered ) +
-                            " raisedFallbacks=" + StringUtil::toString( crossingCandidates.size() - lowered ) );
+                            " raisedFallbacks=" +
+                            StringUtil::toString( crossingCandidates.size() - lowered ) );
+                }
                 fittedWalks->crossings.swap( crossingCandidates );
                 state.footways = std::move( fittedWalks );
             }
@@ -1209,8 +1348,11 @@ namespace workphone::scene
     }
 
     bool CityRoadAuthoring::publishRuntimePrepared( const procedural::CityRoadSplineSource &source,
-        const procedural::CityRoadSplineBake &bake, render::TerrainSnapshot terrain,
-        const Transform3<real_Num> &placement, const RuntimePublication &publication, String &error )
+                                                    const procedural::CityRoadSplineBake &bake,
+                                                    render::TerrainSnapshot terrain,
+                                                    const Transform3<real_Num> &placement,
+                                                    const RuntimePublication &publication,
+                                                    String &error )
     {
         try
         {
@@ -1237,15 +1379,30 @@ namespace workphone::scene
                 auto physicsScene = physics ? physics->getPhysicsScene() : nullptr;
                 const auto detachBodies = [&]( const std::shared_ptr<CityRoadRuntimeState> &runtime ) {
                     if( physicsScene && runtime )
-                        for( const auto &body : runtime->bodies ) physicsScene->removeActor( body );
+                    {
+                        for( const auto &body : runtime->bodies )
+                        {
+                            physicsScene->removeActor( body );
+                        }
+                    }
                 };
                 const auto admit = [&] {
-                    requireRuntime( getActor()->getScene() == scene && detail::runtimeActorPublished( getActor() ),
-                                    "The authoring scene changed during preparation." );
-                    if( m_runtime ) for( const auto &body : m_runtime->bodies )
-                        requireRuntime( !body->getScene() || body->getScene() == physicsScene,
-                                        "The active road bodies belong to a different physics scene." );
-                    if( !candidate ) return;
+                    requireRuntime(
+                        getActor()->getScene() == scene && detail::runtimeActorPublished( getActor() ),
+                        "The authoring scene changed during preparation." );
+                    if( m_runtime )
+                    {
+                        for( const auto &body : m_runtime->bodies )
+                        {
+                            requireRuntime(
+                                !body->getScene() || body->getScene() == physicsScene,
+                                "The active road bodies belong to a different physics scene." );
+                        }
+                    }
+                    if( !candidate )
+                    {
+                        return;
+                    }
                     requireRuntime( bool( physicsScene ), "The road physics scene is unavailable." );
                     getActor()->addChild( candidate->root );
                     for( auto actor : candidate->actors )
@@ -1259,7 +1416,8 @@ namespace workphone::scene
                         for( const auto &body : candidate->bodies )
                         {
                             physicsScene->addActor( body );
-                            requireRuntime( body->getScene() == physicsScene, "Road static body admission failed." );
+                            requireRuntime( body->getScene() == physicsScene,
+                                            "Road static body admission failed." );
                         }
                     }
                     catch( ... )
@@ -1284,15 +1442,20 @@ namespace workphone::scene
                         candidate.reset();
                         return published;
                     }
-                    if( candidate ) if( auto bound = getTerrain() )
+                    if( candidate )
                     {
-                        render::TerrainSnapshot current;
-                        Transform3<real_Num> currentPlacement;
-                        u64 serial = 0;
-                        bool detached = false;
-                        bound->getTerrainIntegrationState( current, currentPlacement, serial, detached );
-                        requireRuntime( !detached && current == terrain && currentPlacement == placement,
-                                        "Terrain changed before road publication." );
+                        if( auto bound = getTerrain() )
+                        {
+                            render::TerrainSnapshot current;
+                            Transform3<real_Num> currentPlacement;
+                            u64 serial = 0;
+                            bool detached = false;
+                            bound->getTerrainIntegrationState( current, currentPlacement, serial,
+                                                               detached );
+                            requireRuntime(
+                                !detached && current == terrain && currentPlacement == placement,
+                                "Terrain changed before road publication." );
+                        }
                     }
                     if( candidate )
                     {
@@ -1300,7 +1463,10 @@ namespace workphone::scene
                         admit();
                         commit();
                     }
-                    else m_runtime.swap( candidate );
+                    else
+                    {
+                        m_runtime.swap( candidate );
+                    }
                     candidate.reset();
                     error.clear();
                     return true;

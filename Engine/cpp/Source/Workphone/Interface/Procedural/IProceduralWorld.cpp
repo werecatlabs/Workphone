@@ -8,4 +8,4 @@ namespace workphone::procedural
     {
         throw std::logic_error( "This procedural world does not support atomic scene replacement" );
     }
-}
+}  // namespace workphone::procedural

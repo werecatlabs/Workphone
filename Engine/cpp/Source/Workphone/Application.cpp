@@ -183,9 +183,16 @@ namespace workphone::core
                 if( profile->getPropertyAsInt( "tasks.jobSystem", 0 ) == 3 )
                 {
                     auto factory = applicationManager->getFactoryManager();
-                    auto external = factory->createObjectFromType<IThreadPool>( profile->getProperty( "tasks.providerType" ) );
-                    if( !external ) throw std::runtime_error( "External job-system provider could not be created" );
-                    if( auto previous = applicationManager->getThreadPool() ) previous->unload( nullptr );
+                    auto external = factory->createObjectFromType<IThreadPool>(
+                        profile->getProperty( "tasks.providerType" ) );
+                    if( !external )
+                    {
+                        throw std::runtime_error( "External job-system provider could not be created" );
+                    }
+                    if( auto previous = applicationManager->getThreadPool() )
+                    {
+                        previous->unload( nullptr );
+                    }
                     external->setNumThreads( projectWorkerCount( getActiveThreads() ) );
                     external->load( profile );
                     applicationManager->setThreadPool( external );
@@ -307,11 +314,15 @@ namespace workphone::core
 
             if( auto profile = applicationManager->getPlayerSettings() )
             {
-                if( profile->hasProperty( "services.crashReporting" ) || profile->hasProperty( "network.multiplayer" ) )
+                if( profile->hasProperty( "services.crashReporting" ) ||
+                    profile->hasProperty( "network.multiplayer" ) )
                 {
                     String error;
-                    if( !applyProjectServiceSettings( profile, applicationManager->getProjectPath(), error ) )
+                    if( !applyProjectServiceSettings( profile, applicationManager->getProjectPath(),
+                                                      error ) )
+                    {
                         throw std::runtime_error( error.c_str() );
+                    }
                 }
             }
 
@@ -352,8 +363,11 @@ namespace workphone::core
                     !applicationManager->getProjectPath().empty() )
                 {
                     String error;
-                    if( !applyProjectIrradianceSettings( profile, applicationManager->getProjectPath(), error ) )
+                    if( !applyProjectIrradianceSettings( profile, applicationManager->getProjectPath(),
+                                                         error ) )
+                    {
                         WP_LOG_ERROR( error );
+                    }
                 }
             }
         }
@@ -528,7 +542,10 @@ namespace workphone::core
                 network->poll();
             }
             updateProjectIrradiance();
-            if( timer ) updateProjectRuntimeDiagnostics( timer->getTime() );
+            if( timer )
+            {
+                updateProjectRuntimeDiagnostics( timer->getTime() );
+            }
         }
 
         stateManager->preUpdate();
@@ -676,7 +693,10 @@ namespace workphone::core
         break;
         case TaskId::Sound:
         {
-            if(soundManager)soundManager->update();
+            if( soundManager )
+            {
+                soundManager->update();
+            }
         }
         break;
         default:
@@ -753,8 +773,9 @@ namespace workphone::core
                 }
                 auto files = applicationManager->getFileSystem();
                 const auto packaged = files && isPackageFileSystem( *files );
-                auto settingsText = packaged ? files->readAllText( settingsPath + "GameGraphics.settings" )
-                                             : Path::readAllText( settingsPath + "GameGraphics.settings" );
+                auto settingsText = packaged
+                                        ? files->readAllText( settingsPath + "GameGraphics.settings" )
+                                        : Path::readAllText( settingsPath + "GameGraphics.settings" );
                 if( !settingsText.empty() )
                 {
                     gameGraphics = workphone::make_ptr<Properties>();
@@ -805,7 +826,8 @@ namespace workphone::core
                 if( packaged )
                 {
                     const auto nativeCatalog = applicationManager->getCachePath() + "media-assets.db";
-                    if( std::filesystem::is_regular_file( std::filesystem::u8path( nativeCatalog.c_str() ) ) )
+                    if( std::filesystem::is_regular_file(
+                            std::filesystem::u8path( nativeCatalog.c_str() ) ) )
                     {
                         mediaCatalogPath = nativeCatalog;
                         auto projectCatalog = resourceDatabase->getDatabaseManager();
@@ -818,11 +840,11 @@ namespace workphone::core
                     }
                 }
                 if( mountBundledMediaCatalog( resourceDatabase, mediaRoot, mediaCatalogError,
-                                               mediaCatalogPath ) )
+                                              mediaCatalogPath ) )
                 {
                     WP_LOG( "Mounted bundled media catalog: " +
                             ( mediaCatalogPath.empty() ? mediaRoot + "/.workphone/media-assets.db"
-                                                      : mediaCatalogPath ) );
+                                                       : mediaCatalogPath ) );
                 }
                 else
                 {
@@ -976,7 +998,8 @@ namespace workphone::core
             auto graphicsSystem = applicationManager->getGraphicsSystem();
             if( graphicsSystem )
             {
-                if( auto inputManager = createProjectInputBackend( factoryManager, applicationManager->getPlayerSettings() ) )
+                if( auto inputManager = createProjectInputBackend(
+                        factoryManager, applicationManager->getPlayerSettings() ) )
                 {
                     applicationManager->setInputDeviceManager( inputManager );
 
@@ -2258,7 +2281,8 @@ namespace workphone::core
         auto factoryManager = applicationManager->getFactoryManagerPtr();
         WP_ASSERT( factoryManager );
 
-        if( auto soundManager = createProjectSoundBackend( factoryManager, applicationManager->getPlayerSettings() ) )
+        if( auto soundManager =
+                createProjectSoundBackend( factoryManager, applicationManager->getPlayerSettings() ) )
         {
             applicationManager->setSoundManager( soundManager );
             soundManager->load( nullptr );
@@ -2499,9 +2523,10 @@ namespace workphone::core
                 GetModuleFileNameW( nullptr, module.data(), static_cast<DWORD>( module.size() ) );
             if( count > 0 && count < module.size() )
             {
-                executableDirectory =
-                    std::filesystem::path( std::wstring( module.data(), count ) )
-                        .parent_path().generic_u8string().c_str();
+                executableDirectory = std::filesystem::path( std::wstring( module.data(), count ) )
+                                          .parent_path()
+                                          .generic_u8string()
+                                          .c_str();
             }
 #endif
 
@@ -2511,11 +2536,11 @@ namespace workphone::core
                 fileSystem->addFileArchive( pack, true, true, IFileSystem::ArchiveType::Zip );
             }
 
-            const auto mediaPath = mountBundledMedia( fileSystem, workingDirectory, getMediaPath(),
-                                                       executableDirectory );
+            const auto mediaPath =
+                mountBundledMedia( fileSystem, workingDirectory, getMediaPath(), executableDirectory );
             applicationManager->setMediaPath( mediaPath );
-            WP_LOG( "Mounted bundled Media folder: " + mediaPath + "; startup directory: " +
-                    workingDirectory );
+            WP_LOG( "Mounted bundled Media folder: " + mediaPath +
+                    "; startup directory: " + workingDirectory );
 
             fileSystem->addFileArchive( ".FBCache", true, true, IFileSystem::ArchiveType::Folder );
             fileSystem->addFileArchive( "./", true, true, IFileSystem::ArchiveType::Folder );
@@ -2623,7 +2648,12 @@ namespace workphone::core
 
         auto numThreads = projectWorkerCount( static_cast<u32>( getActiveThreads() ) );
         if( auto profile = applicationManager->getPlayerSettings() )
-            if( profile->getPropertyAsInt( "tasks.jobSystem", 0 ) == 3 ) numThreads = 0;
+        {
+            if( profile->getPropertyAsInt( "tasks.jobSystem", 0 ) == 3 )
+            {
+                numThreads = 0;
+            }
+        }
 
         auto maxThreads = Thread::hardware_concurrency();
         if( numThreads > maxThreads )

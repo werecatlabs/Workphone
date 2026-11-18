@@ -247,7 +247,10 @@ namespace workphone
 
     void InputDeviceManager::setProperties( SmartPtr<Properties> properties )
     {
-        if( !properties ) return;
+        if( !properties )
+        {
+            return;
+        }
         properties->getPropertyValue( "input.system", m_projectInputSystem );
         properties->getPropertyValue( "input.gamepad", m_createJoysticks );
         properties->getPropertyValue( "input.touch", m_touchEnabled );
@@ -256,19 +259,35 @@ namespace workphone
         properties->getPropertyValue( "input.gestures", m_gesturesEnabled );
         properties->getPropertyValue( "input.haptics", m_hapticsEnabled );
         for( const auto &entry : m_gameInputs )
+        {
             if( const auto map = dynamic_cast<GameInputMap *>( entry.second->getGameInputMap().get() ) )
+            {
                 map->setRebindingEnabled( m_rebindingEnabled );
+            }
+        }
 #ifdef WP_PLATFORM_WIN32
         HWND windowHandle = nullptr;
-        if( auto window = getWindow() ) window->getWindowHandle( &windowHandle );
+        if( auto window = getWindow() )
+        {
+            window->getWindowHandle( &windowHandle );
+        }
         if( windowHandle )
         {
-            if( m_touchEnabled ) RegisterTouchWindow( windowHandle, 0 );
-            else UnregisterTouchWindow( windowHandle );
+            if( m_touchEnabled )
+            {
+                RegisterTouchWindow( windowHandle, 0 );
+            }
+            else
+            {
+                UnregisterTouchWindow( windowHandle );
+            }
             GESTURECONFIG gestures = { 0, static_cast<DWORD>( m_gesturesEnabled ? GC_ALLGESTURES : 0 ),
-                                          static_cast<DWORD>( m_gesturesEnabled ? 0 : GC_ALLGESTURES ) };
+                                       static_cast<DWORD>( m_gesturesEnabled ? 0 : GC_ALLGESTURES ) };
             SetGestureConfig( windowHandle, 0, 1, &gestures, sizeof( gestures ) );
-            if( !m_mouseCaptureEnabled && GetCapture() == windowHandle ) ReleaseCapture();
+            if( !m_mouseCaptureEnabled && GetCapture() == windowHandle )
+            {
+                ReleaseCapture();
+            }
         }
         if( !m_hapticsEnabled || properties->hasProperty( "input.vibration.left" ) ||
             properties->hasProperty( "input.vibration.right" ) )
@@ -276,9 +295,15 @@ namespace workphone
             using SetState = DWORD( WINAPI * )( DWORD, XINPUT_VIBRATION * );
             static SetState setState = []() -> SetState {
                 for( const auto dll : { L"xinput1_4.dll", L"xinput9_1_0.dll", L"xinput1_3.dll" } )
+                {
                     if( auto module = LoadLibraryW( dll ) )
+                    {
                         if( auto symbol = GetProcAddress( module, "XInputSetState" ) )
+                        {
                             return reinterpret_cast<SetState>( symbol );
+                        }
+                    }
+                }
                 return nullptr;
             }();
             if( setState )
@@ -289,12 +314,23 @@ namespace workphone
                 properties->getPropertyValue( "input.vibration.right", right );
                 properties->getPropertyValue( "input.vibration.device", device );
                 XINPUT_VIBRATION vibration = {};
-                vibration.wLeftMotorSpeed = m_hapticsEnabled ?
-                    static_cast<WORD>( std::clamp( left, 0.0f, 1.0f ) * 65535.0f ) : 0;
-                vibration.wRightMotorSpeed = m_hapticsEnabled ?
-                    static_cast<WORD>( std::clamp( right, 0.0f, 1.0f ) * 65535.0f ) : 0;
-                if( m_hapticsEnabled ) setState( device, &vibration );
-                else for( DWORD i = 0; i < XUSER_MAX_COUNT; ++i ) setState( i, &vibration );
+                vibration.wLeftMotorSpeed =
+                    m_hapticsEnabled ? static_cast<WORD>( std::clamp( left, 0.0f, 1.0f ) * 65535.0f )
+                                     : 0;
+                vibration.wRightMotorSpeed =
+                    m_hapticsEnabled ? static_cast<WORD>( std::clamp( right, 0.0f, 1.0f ) * 65535.0f )
+                                     : 0;
+                if( m_hapticsEnabled )
+                {
+                    setState( device, &vibration );
+                }
+                else
+                {
+                    for( DWORD i = 0; i < XUSER_MAX_COUNT; ++i )
+                    {
+                        setState( i, &vibration );
+                    }
+                }
             }
         }
 #endif
@@ -306,7 +342,9 @@ namespace workphone
         {
             setLoadingState( LoadingState::Loading );
             if( auto application = core::IApplicationManager::instancePtr() )
+            {
                 setProperties( application->getPlayerSettings() );
+            }
 
             m_currentInputEvent = workphone::make_ptr<InputEvent>();
             m_currentMouseState = workphone::make_ptr<MouseState>();
@@ -420,7 +458,10 @@ namespace workphone
 
     void InputDeviceManager::update()
     {
-        if( getDebuggerSuspended() ) return;
+        if( getDebuggerSuspended() )
+        {
+            return;
+        }
         auto inputTask = getTask();
         auto task = Thread::getCurrentTask();
 
@@ -782,8 +823,11 @@ namespace workphone
 
     void InputDeviceManager::triggerEvent( SmartPtr<IInputEvent> inputEvent )
     {
-        if( getDebuggerSuspended() || !inputEvent || ( !m_createJoysticks &&
-            inputEvent->getEventType() == IInputEvent::EventType::Joystick ) ) return;
+        if( getDebuggerSuspended() || !inputEvent ||
+            ( !m_createJoysticks && inputEvent->getEventType() == IInputEvent::EventType::Joystick ) )
+        {
+            return;
+        }
         auto listeners = m_listeners.snapshot();
         for( auto &listener : listeners )
         {
@@ -804,24 +848,34 @@ namespace workphone
     {
         if( getDebuggerSuspended() || !event ||
             ( !m_createJoysticks && event->getEventType() == IInputEvent::EventType::Joystick ) )
+        {
             return false;
+        }
         // Serialize publication with the pause boundary so no producer can
         // append an event after the transition has discarded the task queues.
         ScopedLock lock( &m_mutex );
-        if( getDebuggerSuspended() ) return false;
+        if( getDebuggerSuspended() )
+        {
+            return false;
+        }
         if( event->getEventType() == IInputEvent::EventType::User )
         {
             auto properties = event->getProperties();
             const auto kind = properties ? properties->getProperty( "input.kind" ) : String();
-            if( ( kind == "touch" && !m_touchEnabled ) ||
-                ( kind == "gesture" && !m_gesturesEnabled ) ) return false;
+            if( ( kind == "touch" && !m_touchEnabled ) || ( kind == "gesture" && !m_gesturesEnabled ) )
+            {
+                return false;
+            }
         }
         if( m_projectInputSystem != 2 )
         {
             for( const auto &entry : m_gameInputs )
             {
                 const auto map = entry.second ? entry.second->getGameInputMap() : nullptr;
-                if( !map ) continue;
+                if( !map )
+                {
+                    continue;
+                }
                 u32 action = IGameInput::UNASSIGNED;
                 bool pressed = false;
                 if( auto key = event->getKeyboardState() )
@@ -831,7 +885,10 @@ namespace workphone
                 }
                 else if( auto joystick = event->getJoystickState() )
                 {
-                    if( joystick->getJoystick() != entry.second->getJoystickId() ) continue;
+                    if( joystick->getJoystick() != entry.second->getJoystickId() )
+                    {
+                        continue;
+                    }
                     action = map->getActionFromButton( joystick->getButtonId() );
                     pressed = joystick->isPressedDown();
                 }
@@ -862,7 +919,10 @@ namespace workphone
     void InputDeviceManager::setDebuggerSuspended( bool suspended )
     {
         ScopedLock lock( &m_mutex );
-        if( getDebuggerSuspended() == suspended ) return;
+        if( getDebuggerSuspended() == suspended )
+        {
+            return;
+        }
         // Keep producers held through both entry and resume cleanup. Explicit
         // Editor input uses the window/ImGui path, not these gameplay queues.
         m_debuggerSuspended.store( true );
@@ -870,11 +930,20 @@ namespace workphone
         if( suspended )
         {
             HWND windowHandle = nullptr;
-            if( auto window = getWindow() ) window->getWindowHandle( &windowHandle );
-            if( windowHandle && GetCapture() == windowHandle ) ReleaseCapture();
+            if( auto window = getWindow() )
+            {
+                window->getWindowHandle( &windowHandle );
+            }
+            if( windowHandle && GetCapture() == windowHandle )
+            {
+                ReleaseCapture();
+            }
         }
 #endif
-        for( auto &queue : m_inputEventQueue ) queue.clear();
+        for( auto &queue : m_inputEventQueue )
+        {
+            queue.clear();
+        }
         m_currentInputEvent = nullptr;
         // Replace snapshots: an event stopped inside Lua may still own the old
         // snapshot, which must remain immutable until its callback returns.
@@ -885,13 +954,19 @@ namespace workphone
             mouse->setRelativePosition( m_currentMouseState->getRelativePosition() );
             m_currentMouseState = mouse;
         }
-        if( m_currentKeyboardState ) m_currentKeyboardState = createKeyboardState();
+        if( m_currentKeyboardState )
+        {
+            m_currentKeyboardState = createKeyboardState();
+        }
         m_mouseScroll = Vector3<real_Num>::zero();
         m_dragStartPosition = m_mousePosition;
         m_isDragging.store( false );
         m_shiftPressed.store( false );
         m_controlPressed.store( false );
-        if( m_windowListener ) m_windowListener->setOwner( this );
+        if( m_windowListener )
+        {
+            m_windowListener->setOwner( this );
+        }
         m_debuggerSuspended.store( suspended );
     }
 
@@ -940,7 +1015,9 @@ namespace workphone
             auto gameInput = workphone::make_ptr<GameInput>();
             gameInput->setId( id );
             if( auto map = dynamic_cast<GameInputMap *>( gameInput->getGameInputMap().get() ) )
+            {
                 map->setRebindingEnabled( m_rebindingEnabled );
+            }
             m_gameInputs[id] = gameInput;
             return gameInput;
         }
@@ -1238,8 +1315,14 @@ namespace workphone
             // Do not allocate/publish gameplay snapshots or capture the mouse
             // for debugger UI input. Windows transfers ownership of these two
             // handles to this listener even when their payload is discarded.
-            if( msg == WM_TOUCH ) CloseTouchInputHandle( reinterpret_cast<HTOUCHINPUT>( lParam ) );
-            else if( msg == WM_GESTURE ) CloseGestureInfoHandle( reinterpret_cast<HGESTUREINFO>( lParam ) );
+            if( msg == WM_TOUCH )
+            {
+                CloseTouchInputHandle( reinterpret_cast<HTOUCHINPUT>( lParam ) );
+            }
+            else if( msg == WM_GESTURE )
+            {
+                CloseGestureInfoHandle( reinterpret_cast<HGESTUREINFO>( lParam ) );
+            }
             m_hasLastMousePosition = false;
             return;
         }
@@ -1307,10 +1390,13 @@ namespace workphone
             {
                 std::vector<TOUCHINPUT> touches( count );
                 if( GetTouchInputInfo( touchHandle, count, touches.data(), sizeof( TOUCHINPUT ) ) )
+                {
                     for( const auto &touch : touches )
                     {
-                        POINT point = { TOUCH_COORD_TO_PIXEL( touch.x ), TOUCH_COORD_TO_PIXEL( touch.y ) };
-                        ScreenToClient( reinterpret_cast<HWND>( windowsEvent->getWindowHandle() ), &point );
+                        POINT point = { TOUCH_COORD_TO_PIXEL( touch.x ),
+                                        TOUCH_COORD_TO_PIXEL( touch.y ) };
+                        ScreenToClient( reinterpret_cast<HWND>( windowsEvent->getWindowHandle() ),
+                                        &point );
                         auto input = workphone::make_ptr<InputEvent>();
                         auto values = workphone::make_ptr<Properties>();
                         input->setEventType( IInputEvent::EventType::User );
@@ -1322,6 +1408,7 @@ namespace workphone
                         input->setProperties( values );
                         owner->postEvent( input );
                     }
+                }
             }
             CloseTouchInputHandle( touchHandle );
             break;
@@ -1399,7 +1486,10 @@ namespace workphone
             owner->m_dragStartPosition = currentPos;
             if( auto windowHandle = reinterpret_cast<HWND>( windowsEvent->getWindowHandle() ) )
             {
-                if( owner->m_mouseCaptureEnabled ) SetCapture( windowHandle );
+                if( owner->m_mouseCaptureEnabled )
+                {
+                    SetCapture( windowHandle );
+                }
             }
             postMouseEvent( IMouseState::Event::LeftPressed, currentPos, wParam, IMouseState::MOUSE_LEFT,
                             true, true );
@@ -1416,7 +1506,10 @@ namespace workphone
             owner->m_dragStartPosition = getMousePositionFromLParam( lParam );
             if( auto windowHandle = reinterpret_cast<HWND>( windowsEvent->getWindowHandle() ) )
             {
-                if( owner->m_mouseCaptureEnabled ) SetCapture( windowHandle );
+                if( owner->m_mouseCaptureEnabled )
+                {
+                    SetCapture( windowHandle );
+                }
             }
             postMouseEvent( IMouseState::Event::LeftPressed, owner->m_dragStartPosition, wParam,
                             IMouseState::MOUSE_LEFT, true, false );

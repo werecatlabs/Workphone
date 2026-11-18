@@ -252,7 +252,8 @@ namespace workphone::scene
             // An attached mesh's application history is not an independent
             // simulation pose. Follow the sampled parent unless physics owns it.
             auto parent = actor.getFlag( IGameActor::ActorFlagWorldSpaceTransform )
-                              ? nullptr : actor.getParentPtr();
+                              ? nullptr
+                              : actor.getParentPtr();
             const auto sourceTask = transform.getTask();
             const bool attached = parent && parent->isSmoothMotion() && sourceTask != TaskId::Physics;
             if( !attached && manager.getTransformState( id, time, dt, worldTransform, sourceTask ) )
@@ -273,7 +274,9 @@ namespace workphone::scene
         {
         public:
             ActorTransformSampler( GameManager &manager, time_interval time, time_interval dt ) :
-                m_manager( manager ), m_time( time ), m_dt( dt )
+                m_manager( manager ),
+                m_time( time ),
+                m_dt( dt )
             {
                 m_samples.swap( scratch() );
             }
@@ -333,6 +336,7 @@ namespace workphone::scene
                 SmartPtr<IGameActor> actor;
                 std::optional<ActorPose> pose;
             };
+
             using Samples = boost::unordered_flat_map<IGameActor *, Sample>;
 
             static Samples &scratch()
@@ -834,7 +838,8 @@ namespace workphone::scene
                                 }
 
                                 auto components =
-                                    getRegisteredComponents( Thread::UpdateState::PreUpdate, task ).snapshot();
+                                    getRegisteredComponents( Thread::UpdateState::PreUpdate, task )
+                                        .snapshot();
                                 for( auto &component : components )
                                 {
                                     if( component )
@@ -850,7 +855,8 @@ namespace workphone::scene
                         }
                     }
 
-                    auto components = getRegisteredComponents( Thread::UpdateState::Transform, task ).snapshot();
+                    auto components =
+                        getRegisteredComponents( Thread::UpdateState::Transform, task ).snapshot();
                     if( task == getSceneTask() )
                     {
                         auto actors = scene->getActors();
@@ -928,7 +934,8 @@ namespace workphone::scene
 
         if( !sampleActorPose( *this, *actor, *transform, id, time, dt, worldTransform,
                               [&]( IGameActor *parent, ActorPose &pose ) {
-                                  return getActorTransformState( parent, time, dt, pose, sampledTransforms );
+                                  return getActorTransformState( parent, time, dt, pose,
+                                                                 sampledTransforms );
                               } ) )
         {
             return false;
@@ -978,10 +985,15 @@ namespace workphone::scene
                         auto registered = m_systems.readLocked();
                         for( auto &[key, system] : registered )
                         {
-                            if( !system ) continue;
+                            if( !system )
+                            {
+                                continue;
+                            }
                             const auto updateTask = system->getUpdateTask();
                             if( task == ( updateTask == TaskId::None ? sceneTask : updateTask ) )
+                            {
                                 systems.push_back( system );
+                            }
                         }
                     }
                     // Pin selected systems and release the registry view before
@@ -1051,7 +1063,8 @@ namespace workphone::scene
                         }
                     }
 
-                    auto components = getRegisteredComponents( Thread::UpdateState::PostUpdate, task ).snapshot();
+                    auto components =
+                        getRegisteredComponents( Thread::UpdateState::PostUpdate, task ).snapshot();
                     for( auto component : components )
                     {
                         if( component )
@@ -1271,21 +1284,47 @@ namespace workphone::scene
             {
                 throw std::bad_alloc();
             }
+
             struct StagedActor
             {
                 SmartPtr<IGameActor> actor;
                 SmartPtr<IFSMManager> manager;
                 SmartPtr<IFSM> fsm, gameFSM;
                 bool published = false;
+
                 ~StagedActor()
                 {
                     if( !published )
                     {
                         // No manager actor slot/count has been published yet.
                         // Release each staged owner even if a legacy unload throws.
-                        try { actor->unload( nullptr ); } catch( ... ) {}
-                        try { if( fsm ) manager->destroyFSM( fsm ); } catch( ... ) {}
-                        try { if( gameFSM ) manager->destroyFSM( gameFSM ); } catch( ... ) {}
+                        try
+                        {
+                            actor->unload( nullptr );
+                        }
+                        catch( ... )
+                        {
+                        }
+                        try
+                        {
+                            if( fsm )
+                            {
+                                manager->destroyFSM( fsm );
+                            }
+                        }
+                        catch( ... )
+                        {
+                        }
+                        try
+                        {
+                            if( gameFSM )
+                            {
+                                manager->destroyFSM( gameFSM );
+                            }
+                        }
+                        catch( ... )
+                        {
+                        }
                     }
                 }
             } staged{ actor, fsmManager };
@@ -1634,8 +1673,11 @@ namespace workphone::scene
             // A component reloaded into its system can acquire another slot.
             // Retire its previous manager pin before publishing the new ID.
             const auto previous = handle ? handle->getInstanceId() : std::numeric_limits<u32>::max();
-            if( previous != position && previous < components.size() && components[previous] == component )
+            if( previous != position && previous < components.size() &&
+                components[previous] == component )
+            {
                 components[previous] = nullptr;
+            }
             components[position] = component;
             if( handle )
             {

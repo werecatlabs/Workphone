@@ -9,17 +9,19 @@
 namespace workphone::scene
 {
     bool createLandscapeMaterials( TerrainSystem *terrain, SmartPtr<ICommandManager> commands,
-                                     String &error )
+                                   String &error )
     {
         try
         {
             auto app = core::IApplicationManager::instancePtr();
             auto factories = app ? app->getFactoryManager() : nullptr;
-            auto forge = factories ? factories->createObjectFromType<procedural::ITextureForge>(
-                                         "ITextureForge" ) : nullptr;
+            auto forge =
+                factories ? factories->createObjectFromType<procedural::ITextureForge>( "ITextureForge" )
+                          : nullptr;
             if( !terrain || !forge )
             {
-                error = "Select a terrain and load the WPProcedural plugin to create landscape textures.";
+                error =
+                    "Select a terrain and load the WPProcedural plugin to create landscape textures.";
                 return false;
             }
             const auto source = terrain->getTerrainSnapshot();
@@ -30,8 +32,9 @@ namespace workphone::scene
             }
             auto layers = source->layers;
             const procedural::SurfaceTag surfaces[] = { procedural::SurfaceTag::Sand,
-                procedural::SurfaceTag::Foliage, procedural::SurfaceTag::Stone,
-                procedural::SurfaceTag::Dirt };
+                                                        procedural::SurfaceTag::Foliage,
+                                                        procedural::SurfaceTag::Stone,
+                                                        procedural::SurfaceTag::Dirt };
             const char *names[] = { "sand", "grass", "rock", "soil" };
             procedural::SurfaceBakeParams params;
             params.size = 256;
@@ -42,16 +45,18 @@ namespace workphone::scene
                 auto &layer = layers[index];
                 const String directory = "Assets/Landscape/Materials";
                 const String name = names[index];
-                if( !render::saveGeneratedTextureSource( surface.albedo, app->getProjectPath(),
-                        directory, name + "-albedo", render::TextureMipFilter::Colour,
-                        layer.albedo, error ) ||
-                    !render::saveGeneratedTextureSource( surface.normal, app->getProjectPath(),
-                        directory, name + "-normal", render::TextureMipFilter::Normal,
-                        layer.normal, error ) ||
-                    !render::saveGeneratedTextureSource( surface.orm, app->getProjectPath(),
-                        directory, name + "-orm", render::TextureMipFilter::Data,
-                        layer.orm, error ) )
+                if( !render::saveGeneratedTextureSource(
+                        surface.albedo, app->getProjectPath(), directory, name + "-albedo",
+                        render::TextureMipFilter::Colour, layer.albedo, error ) ||
+                    !render::saveGeneratedTextureSource(
+                        surface.normal, app->getProjectPath(), directory, name + "-normal",
+                        render::TextureMipFilter::Normal, layer.normal, error ) ||
+                    !render::saveGeneratedTextureSource( surface.orm, app->getProjectPath(), directory,
+                                                         name + "-orm", render::TextureMipFilter::Data,
+                                                         layer.orm, error ) )
+                {
                     return false;
+                }
                 layer.tint = { 1, 1, 1, 1 };
                 layer.uvScale = { .25f, .25f };
                 layer.roughness = 1;
@@ -66,4 +71,4 @@ namespace workphone::scene
             return false;
         }
     }
-}
+}  // namespace workphone::scene

@@ -66,7 +66,10 @@ namespace workphone::scene::race
 
         u64 appendDigest( u64 value, const u8 *bytes, size_t size )
         {
-            for( size_t i = 0; i < size; ++i ) value = ( value ^ bytes[i] ) * 1099511628211ull;
+            for( size_t i = 0; i < size; ++i )
+            {
+                value = ( value ^ bytes[i] ) * 1099511628211ull;
+            }
             return value;
         }
 
@@ -82,22 +85,34 @@ namespace workphone::scene::race
             void data( const void *data, u64 size )
             {
                 if( size > std::numeric_limits<size_t>::max() || ( size && !data ) )
+                {
                     throw std::runtime_error( "Invalid city stream geometry buffer." );
+                }
                 field( size );
-                digest = appendDigest( digest, static_cast<const u8 *>( data ), static_cast<size_t>( size ) );
+                digest =
+                    appendDigest( digest, static_cast<const u8 *>( data ), static_cast<size_t>( size ) );
                 bytes += size;
             }
 
             void vertices( const SmartPtr<IVertexBuffer> &buffer )
             {
-                if( !buffer ) throw std::runtime_error( "Missing city stream vertex buffer." );
+                if( !buffer )
+                {
+                    throw std::runtime_error( "Missing city stream vertex buffer." );
+                }
                 const auto declaration = buffer->getVertexDeclaration();
-                if( !declaration ) throw std::runtime_error( "Missing city stream vertex declaration." );
+                if( !declaration )
+                {
+                    throw std::runtime_error( "Missing city stream vertex declaration." );
+                }
                 const auto &elements = declaration->getElements();
                 field( elements.size() );
                 for( const auto &element : elements )
                 {
-                    if( !element ) throw std::runtime_error( "Invalid city stream vertex element." );
+                    if( !element )
+                    {
+                        throw std::runtime_error( "Invalid city stream vertex element." );
+                    }
                     field( element->getSource() );
                     field( element->getOffset() );
                     field( element->getSemantic() );
@@ -108,9 +123,13 @@ namespace workphone::scene::race
                 const auto streams = buffer->getDataArray();
                 for( size_t i = 0; i < streams.size(); ++i )
                 {
-                    if( !streams[i] ) continue;
+                    if( !streams[i] )
+                    {
+                        continue;
+                    }
                     field( i );
-                    data( streams[i], u64( buffer->getNumVertices() ) * declaration->getSize( static_cast<u16>( i ) ) );
+                    data( streams[i], u64( buffer->getNumVertices() ) *
+                                          declaration->getSize( static_cast<u16>( i ) ) );
                 }
             }
         };
@@ -119,20 +138,33 @@ namespace workphone::scene::race
         {
             MeshFingerprint value;
             value.field( mesh.getHasSharedVertexData() );
-            if( mesh.getHasSharedVertexData() ) value.vertices( mesh.getSharedVertexBuffer() );
+            if( mesh.getHasSharedVertexData() )
+            {
+                value.vertices( mesh.getSharedVertexBuffer() );
+            }
             const auto submeshes = mesh.getSubMeshes();
             value.field( submeshes.size() );
             for( const auto &part : submeshes )
             {
-                if( !part ) throw std::runtime_error( "Missing city stream submesh." );
+                if( !part )
+                {
+                    throw std::runtime_error( "Missing city stream submesh." );
+                }
                 value.field( static_cast<u64>( part->getRenderOperationType() ) );
                 value.field( part->getUseSharedVertices() );
-                if( !part->getUseSharedVertices() ) value.vertices( part->getVertexBuffer() );
+                if( !part->getUseSharedVertices() )
+                {
+                    value.vertices( part->getVertexBuffer() );
+                }
                 const auto indices = part->getIndexBuffer();
-                if( !indices ) throw std::runtime_error( "Missing city stream index buffer." );
+                if( !indices )
+                {
+                    throw std::runtime_error( "Missing city stream index buffer." );
+                }
                 value.field( indices->getNumIndices() );
                 value.field( indices->getIndexSize() );
-                value.data( indices->getIndexData(), u64( indices->getNumIndices() ) * indices->getIndexSize() );
+                value.data( indices->getIndexData(),
+                            u64( indices->getNumIndices() ) * indices->getIndexSize() );
             }
             return value;
         }
@@ -141,23 +173,34 @@ namespace workphone::scene::race
         {
             const auto source = dynamic_pointer_cast<workphone::Mesh>( mesh );
             if( !source || !source->getNumSubMeshes() || !source->isValid() )
+            {
                 throw std::runtime_error( "Invalid generated city mesh for the stream cache." );
+            }
             const auto geometry = fingerprint( *source );
 
             {
                 std::fstream file( path, std::ios::binary | std::ios::out | std::ios::trunc );
-                if( !file ) throw std::runtime_error( "Cannot create a city stream mesh." );
+                if( !file )
+                {
+                    throw std::runtime_error( "Cannot create a city stream mesh." );
+                }
                 SmartPtr<IStream> stream = make_ptr<FileDataStream>( &file, false );
                 MeshSerializer serializer;
                 serializer.exportMesh( source.get(), stream );
                 file.flush();
-                if( !file ) throw std::runtime_error( "Cannot finish writing a city stream mesh." );
+                if( !file )
+                {
+                    throw std::runtime_error( "Cannot finish writing a city stream mesh." );
+                }
                 stream->close();
             }
 
             const auto length = fs::file_size( path );
             if( !length || length > byteLimit )
-                throw std::runtime_error( "A generated city patch exceeds the stream cache byte limit." );
+            {
+                throw std::runtime_error(
+                    "A generated city patch exceeds the stream cache byte limit." );
+            }
 
             std::ifstream file( path, std::ios::binary );
             std::array<u8, ioChunkSize> bytes;
@@ -166,7 +209,9 @@ namespace workphone::scene::race
             {
                 const auto count = static_cast<size_t>( std::min<uintmax_t>( remaining, bytes.size() ) );
                 if( !file.read( reinterpret_cast<char *>( bytes.data() ), count ) )
+                {
                     throw std::runtime_error( "Cannot verify a city stream mesh cache file." );
+                }
                 digest = appendDigest( digest, bytes.data(), count );
                 remaining -= count;
             }
@@ -177,16 +222,24 @@ namespace workphone::scene::race
                                      const StreamCancellation &cancel )
         {
             WorldStreamResult result;
-            if( cancel.cancelled() ) return result;
+            if( cancel.cancelled() )
+            {
+                return result;
+            }
             auto decoded = std::allocate_shared<DecodedPatch>( SourceBudgetAllocator<DecodedPatch>{} );
             decoded->meshes.reserve( cache->files.size() );
             MeshSerializer serializer;
             for( const auto &entry : cache->files )
             {
-                if( cancel.cancelled() ) return {};
+                if( cancel.cancelled() )
+                {
+                    return {};
+                }
                 std::ifstream file( entry.path, std::ios::binary | std::ios::ate );
                 if( !file || file.tellg() != static_cast<std::streamoff>( entry.length ) )
+                {
                     throw std::runtime_error( "A city stream mesh cache file changed size." );
+                }
                 file.seekg( 0 );
                 // The scheduler reserves the largest encoded mesh as WorkingCpu for this job.
                 // The actual decoded engine buffers are charged to SourceCpu by MeshSerializer.
@@ -194,26 +247,41 @@ namespace workphone::scene::race
                 auto digest = hashStart;
                 for( size_t offset = 0; offset < bytes.size(); )
                 {
-                    if( cancel.cancelled() ) return {};
+                    if( cancel.cancelled() )
+                    {
+                        return {};
+                    }
                     const auto size = std::min( ioChunkSize, bytes.size() - offset );
                     if( !file.read( reinterpret_cast<char *>( bytes.data() + offset ), size ) )
+                    {
                         throw std::runtime_error( "Cannot read a city stream mesh cache file." );
+                    }
                     digest = appendDigest( digest, bytes.data() + offset, size );
                     offset += size;
                 }
-                if( digest != entry.digest ) throw std::runtime_error( "A city stream mesh cache file changed contents." );
-                SmartPtr<IStream> stream = make_ptr<MemoryFile>( bytes.data(), static_cast<long>( bytes.size() ),
-                                                               String(), false );
+                if( digest != entry.digest )
+                {
+                    throw std::runtime_error( "A city stream mesh cache file changed contents." );
+                }
+                SmartPtr<IStream> stream = make_ptr<MemoryFile>(
+                    bytes.data(), static_cast<long>( bytes.size() ), String(), false );
                 auto mesh = serializer.loadMesh( stream );
                 if( !mesh || !mesh->getNumSubMeshes() || !mesh->isValid() )
+                {
                     throw std::runtime_error( "Cannot decode a city stream mesh." );
+                }
                 const auto geometry = fingerprint( *mesh );
                 if( geometry.digest != entry.geometryDigest || geometry.bytes != entry.sourceBytes )
+                {
                     throw std::runtime_error( "The decoded city stream mesh changed its geometry." );
+                }
                 mesh->updateAABB( true );
                 decoded->meshes.push_back( std::move( mesh ) );
             }
-            if( cancel.cancelled() ) return {};
+            if( cancel.cancelled() )
+            {
+                return {};
+            }
             result.bytes = cache->length;
             result.payload = std::move( decoded );
             return result;
@@ -224,21 +292,36 @@ namespace workphone::scene::race
             const auto object = renderer->getGraphicsObject();
             const auto node = renderer->getMeshNode();
             if( !renderer->isLoaded() || !object || !object->isLoaded() || !node || !node->isLoaded() )
+            {
                 return false;
+            }
             const auto owner = object->getOwner();
             return !owner || owner == node;
         }
 
         bool belongsTo( SmartPtr<IGameActor> actor, const SmartPtr<IGameActor> &owner )
         {
-            for( ; actor; actor = actor->getParent() ) if( actor == owner ) return true;
+            for( ; actor; actor = actor->getParent() )
+            {
+                if( actor == owner )
+                {
+                    return true;
+                }
+            }
             return false;
         }
     }  // namespace
 
     struct CityStreaming::Impl
     {
-        enum class Phase { Resident, Retiring, Absent, Queued, Installing };
+        enum class Phase
+        {
+            Resident,
+            Retiring,
+            Absent,
+            Queued,
+            Installing
+        };
 
         struct DetailMesh
         {
@@ -271,16 +354,28 @@ namespace workphone::scene::race
 
         ~Impl()
         {
-            if( producer ) producer->drain();
+            if( producer )
+            {
+                producer->drain();
+            }
             std::error_code ignored;
-            for( const auto &file : outputFiles ) fs::remove( file, ignored );
-            if( !directory.empty() ) fs::remove( directory, ignored );
+            for( const auto &file : outputFiles )
+            {
+                fs::remove( file, ignored );
+            }
+            if( !directory.empty() )
+            {
+                fs::remove( directory, ignored );
+            }
         }
 
         void selectFallback( Patch &patch )
         {
             patch.lod->setForcedLOD( patch.fallbackLevel );
-            for( auto &renderer : patch.fallback ) renderer->setLODVisible( true );
+            for( auto &renderer : patch.fallback )
+            {
+                renderer->setLODVisible( true );
+            }
             for( auto &detail : patch.details )
             {
                 detail.renderer->setLODVisible( false );
@@ -299,7 +394,10 @@ namespace workphone::scene::race
             const auto app = core::IApplicationManager::instancePtr();
             const auto graphics = app ? app->getGraphicsSystemPtr() : nullptr;
             const auto scene = graphics ? graphics->getGraphicsScenePtr() : nullptr;
-            if( !scene ) return;
+            if( !scene )
+            {
+                return;
+            }
 
             bool pending = false;
             for( auto &detail : patch.details )
@@ -314,7 +412,10 @@ namespace workphone::scene::race
                         detail.retiring = object;
                     }
                     auto node = detail.renderer->getMeshNode();
-                    if( node ) node->detachObject( object );
+                    if( node )
+                    {
+                        node->detachObject( object );
+                    }
                     if( !scene->removeGraphicsObject( object ) )
                     {
                         pending = true;
@@ -322,7 +423,10 @@ namespace workphone::scene::race
                     }
                     if( node )
                     {
-                        if( auto parent = node->getParent() ) parent->removeChild( node );
+                        if( auto parent = node->getParent() )
+                        {
+                            parent->removeChild( node );
+                        }
                         scene->removeSceneNode( node );
                     }
                     detail.renderer->setGraphicsObject( nullptr );
@@ -348,7 +452,10 @@ namespace workphone::scene::race
             if( !pending )
             {
                 patch.phase = Phase::Absent;
-                if( patch.countedResident ) ++totals.evictedPatches;
+                if( patch.countedResident )
+                {
+                    ++totals.evictedPatches;
+                }
                 patch.countedResident = false;
             }
         }
@@ -356,11 +463,15 @@ namespace workphone::scene::race
         void install( Patch &patch, const DecodedPatch &decoded )
         {
             if( decoded.meshes.size() != patch.details.size() )
+            {
                 throw std::runtime_error( "A decoded city patch has an incomplete mesh inventory." );
+            }
             patch.phase = Phase::Installing;
             patch.installDeadline = Clock::now() + std::chrono::seconds( 30 );
             for( size_t i = 0; i < patch.details.size(); ++i )
+            {
                 patch.details[i].resource->setMesh( decoded.meshes[i] );
+            }
             for( auto &detail : patch.details )
             {
                 detail.renderer->setEnabled( true );
@@ -370,10 +481,14 @@ namespace workphone::scene::race
                 const auto actor = detail.renderer->getActor();
                 auto node = detail.renderer->getMeshNode();
                 if( !detail.renderer->isLoaded() || !object || !actor || !node )
+                {
                     throw std::runtime_error( "Cannot publish all renderers in a streamed city patch." );
+                }
                 object->setVisible( false );
-                object->setCastShadows( detail.renderer->getCastShadows() != Renderer::CastShadows::Off );
-                object->setReceiveShadows( detail.renderer->getRecieveShadows() == Renderer::RecieveShadows::On );
+                object->setCastShadows( detail.renderer->getCastShadows() !=
+                                        Renderer::CastShadows::Off );
+                object->setReceiveShadows( detail.renderer->getRecieveShadows() ==
+                                           Renderer::RecieveShadows::On );
                 object->setZOrder( detail.renderer->getZOrder() );
                 object->setVisibilityFlags( detail.visibilityFlags );
                 node->setStatic( actor->isStatic() );
@@ -398,19 +513,31 @@ namespace workphone::scene::race
 
         void fail( Patch &patch, const String &reason, String &error )
         {
-            if( patch.phase == Phase::Installing ) retire( patch );
-            else patch.phase = Phase::Absent;
+            if( patch.phase == Phase::Installing )
+            {
+                retire( patch );
+            }
+            else
+            {
+                patch.phase = Phase::Absent;
+            }
             patch.retryAfter = Clock::now() + std::chrono::seconds( 2 );
             ++totals.failedPatches;
-            if( error.empty() ) error = reason;
+            if( error.empty() )
+            {
+                error = reason;
+            }
         }
     };
 
-    CityStreaming::CityStreaming( const CityStreamingOptions &options ) : m_options( options ) {}
+    CityStreaming::CityStreaming( const CityStreamingOptions &options ) : m_options( options )
+    {
+    }
+
     CityStreaming::~CityStreaming() = default;
 
-    bool CityStreaming::initialize( SceneAssets &assets, SmartPtr<IGameActor> owner, const String &cacheDirectory,
-                                    String &error )
+    bool CityStreaming::initialize( SceneAssets &assets, SmartPtr<IGameActor> owner,
+                                    const String &cacheDirectory, String &error )
     {
         std::lock_guard<std::mutex> lock( m_mutex );
         error.clear();
@@ -427,7 +554,9 @@ namespace workphone::scene::race
                 !m_options.maximumResidentPatches || !m_options.maximumPendingPatches ||
                 !m_options.maximumInstallsPerUpdate || !m_options.maximumPatchBytes ||
                 m_options.maximumPatchBytes > static_cast<u64>( std::numeric_limits<long>::max() ) )
+            {
                 throw std::runtime_error( "Invalid generated city streaming setup." );
+            }
 
             auto candidate = std::make_unique<Impl>();
             SourceBudgetMap<const IMeshResource *, u32> meshUsers;
@@ -435,22 +564,38 @@ namespace workphone::scene::race
             {
                 const auto mesh = actor ? actor->getComponent<scene::Mesh>() : nullptr;
                 const auto resource = mesh ? mesh->getMeshResource() : nullptr;
-                if( resource ) ++meshUsers[resource.get()];
+                if( resource )
+                {
+                    ++meshUsers[resource.get()];
+                }
             }
             for( const auto &actor : assets.actors )
             {
-                if( !actor || actor->getName() != "City LOD patch" || !belongsTo( actor, owner ) ) continue;
+                if( !actor || actor->getName() != "City LOD patch" || !belongsTo( actor, owner ) )
+                {
+                    continue;
+                }
                 const auto lod = actor->getComponent<LODGroup>();
-                if( !lod || !lod->isLODEnabled() || lod->getForcedLOD() >= 0 ) continue;
+                if( !lod || !lod->isLODEnabled() || lod->getForcedLOD() >= 0 )
+                {
+                    continue;
+                }
                 const auto levels = lod->getLevels();
-                if( levels.size() < 2 || levels.back().renderers.empty() ) continue;
-                const bool imposterBacked = std::any_of( levels.back().renderers.begin(),
-                    levels.back().renderers.end(), []( const auto &item ) {
-                        const auto renderer = dynamic_pointer_cast<MeshRenderer>( item );
-                        const auto child = renderer ? renderer->getActor() : nullptr;
-                        return child && child->getComponent<MeshImposter>();
-                    } );
-                if( !imposterBacked ) continue;
+                if( levels.size() < 2 || levels.back().renderers.empty() )
+                {
+                    continue;
+                }
+                const bool imposterBacked =
+                    std::any_of( levels.back().renderers.begin(), levels.back().renderers.end(),
+                                 []( const auto &item ) {
+                                     const auto renderer = dynamic_pointer_cast<MeshRenderer>( item );
+                                     const auto child = renderer ? renderer->getActor() : nullptr;
+                                     return child && child->getComponent<MeshImposter>();
+                                 } );
+                if( !imposterBacked )
+                {
+                    continue;
+                }
                 Impl::Patch patch;
                 patch.actor = actor;
                 patch.lod = lod;
@@ -458,7 +603,10 @@ namespace workphone::scene::race
                 patch.fallbackLevel = static_cast<s32>( levels.size() - 1 );
                 patch.radius = lod->getSize() * .5f;
                 for( const auto &bound : lod->getDetailBounds() )
-                    patch.radius = std::max( patch.radius, static_cast<f32>( bound.centre.length() ) + bound.diameter * .5f );
+                {
+                    patch.radius = std::max(
+                        patch.radius, static_cast<f32>( bound.centre.length() ) + bound.diameter * .5f );
+                }
 
                 bool eligible = true;
                 for( size_t level = 0; level < levels.size() && eligible; ++level )
@@ -475,7 +623,8 @@ namespace workphone::scene::race
                             eligible = false;
                             break;
                         }
-                        const bool duplicate = std::any_of( patch.details.begin(), patch.details.end(),
+                        const bool duplicate = std::any_of(
+                            patch.details.begin(), patch.details.end(),
                             [&]( const auto &detail ) { return detail.resource == resource; } );
                         if( duplicate )
                         {
@@ -496,9 +645,15 @@ namespace workphone::scene::race
                         patch.details.push_back( { renderer, resource, nullptr } );
                     }
                 }
-                if( eligible && !patch.details.empty() ) candidate->patches.push_back( std::move( patch ) );
+                if( eligible && !patch.details.empty() )
+                {
+                    candidate->patches.push_back( std::move( patch ) );
+                }
                 else if( imposterBacked )
-                    throw std::runtime_error( "Cannot stream every detail level of a city imposter patch." );
+                {
+                    throw std::runtime_error(
+                        "Cannot stream every detail level of a city imposter patch." );
+                }
             }
             if( candidate->patches.empty() )
             {
@@ -511,7 +666,10 @@ namespace workphone::scene::race
             fs::create_directories( cacheRoot );
             const auto directory = cacheRoot / fs::u8path( StringUtil::getUUID().c_str() );
             if( !fs::create_directory( directory ) )
-                throw std::runtime_error( "Cannot reserve a private generated city stream cache directory." );
+            {
+                throw std::runtime_error(
+                    "Cannot reserve a private generated city stream cache directory." );
+            }
             candidate->directory = directory;
             for( auto &patch : candidate->patches )
             {
@@ -519,9 +677,11 @@ namespace workphone::scene::race
                 cache->files.reserve( patch.details.size() );
                 for( const auto &detail : patch.details )
                 {
-                    const auto path = candidate->directory / ( std::to_string( candidate->outputFiles.size() ) + ".mesh" );
+                    const auto path = candidate->directory /
+                                      ( std::to_string( candidate->outputFiles.size() ) + ".mesh" );
                     candidate->outputFiles.push_back( path );
-                    auto file = writeCache( path, detail.resource->getMesh(), m_options.maximumPatchBytes - cache->length );
+                    auto file = writeCache( path, detail.resource->getMesh(),
+                                            m_options.maximumPatchBytes - cache->length );
                     cache->length += file.length;
                     cache->largestFile = std::max( cache->largestFile, file.length );
                     cache->files.push_back( std::move( file ) );
@@ -536,14 +696,21 @@ namespace workphone::scene::race
             limits.maximumReady = 1;
             limits.maximumReadyBytes = m_options.maximumPatchBytes;
             candidate->producer = WorldStreamingScheduler::shared()->createProducer( limits, error );
-            if( !candidate->producer ) return false;
+            if( !candidate->producer )
+            {
+                return false;
+            }
             for( auto &patch : candidate->patches )
             {
                 // No detail tier may have a native graphics object at cold start.
                 // Reject a late publication instead of reporting false residency.
                 for( const auto &detail : patch.details )
+                {
                     if( detail.renderer->getGraphicsObject() )
+                    {
                         throw std::runtime_error( "City detail loaded before imposter-only startup." );
+                    }
+                }
                 candidate->selectFallback( patch );
                 for( auto &detail : patch.details )
                 {
@@ -563,7 +730,8 @@ namespace workphone::scene::race
         }
     }
 
-    bool CityStreaming::updateFromActiveCamera( String &error ) try
+    bool CityStreaming::updateFromActiveCamera( String &error )
+    try
     {
         SmartPtr<LODSystem> lodSystem;
         {
@@ -576,7 +744,10 @@ namespace workphone::scene::race
             for( const auto &patch : m_impl->patches )
             {
                 lodSystem = dynamic_pointer_cast<LODSystem>( patch.lod->getComponentSystem() );
-                if( lodSystem ) break;
+                if( lodSystem )
+                {
+                    break;
+                }
             }
         }
 
@@ -586,8 +757,12 @@ namespace workphone::scene::race
         LODSystem::View view;
         if( lodSystem && lodSystem->getView( view ) )
         {
-            const Vector3F position{ f32( view.position.x ), f32( view.position.y ), f32( view.position.z ) };
-            if( position.isFinite() ) observers.push_back( position );
+            const Vector3F position{ f32( view.position.x ), f32( view.position.y ),
+                                     f32( view.position.z ) };
+            if( position.isFinite() )
+            {
+                observers.push_back( position );
+            }
         }
         return update( observers, error );
     }
@@ -597,17 +772,30 @@ namespace workphone::scene::race
         return false;
     }
 
-    bool CityStreaming::update( const Array<Vector3F> &observers, String &error ) try
+    bool CityStreaming::update( const Array<Vector3F> &observers, String &error )
+    try
     {
         std::lock_guard<std::mutex> lock( m_mutex );
         error.clear();
-        if( !m_impl ) return false;
-        auto &state = *m_impl;
-        if( state.patches.empty() ) return true;
-        // Losing the camera during a scene or editor transition must preserve existing demand.
-        if( std::any_of( observers.begin(), observers.end(), []( const auto &p ) { return p.isFinite(); } ) )
+        if( !m_impl )
         {
-            struct Demand { size_t index; double distance; };
+            return false;
+        }
+        auto &state = *m_impl;
+        if( state.patches.empty() )
+        {
+            return true;
+        }
+        // Losing the camera during a scene or editor transition must preserve existing demand.
+        if( std::any_of( observers.begin(), observers.end(),
+                         []( const auto &p ) { return p.isFinite(); } ) )
+        {
+            struct Demand
+            {
+                size_t index;
+                double distance;
+            };
+
             SourceBudgetVector<Demand> nearest;
             nearest.reserve( state.patches.size() );
             for( size_t i = 0; i < state.patches.size(); ++i )
@@ -616,21 +804,39 @@ namespace workphone::scene::race
                 const auto pose = patch.actor->getWorldTransform();
                 const auto p = pose.getPosition(), scale = pose.getScale();
                 const double extent = patch.radius * std::max( { std::abs( double( scale.x ) ),
-                    std::abs( double( scale.y ) ), std::abs( double( scale.z ) ) } );
+                                                                 std::abs( double( scale.y ) ),
+                                                                 std::abs( double( scale.z ) ) } );
                 double distance = std::numeric_limits<double>::infinity();
                 for( const auto &observer : observers )
-                    if( observer.isFinite() ) distance = std::min( distance, std::max( 0.,
-                        std::hypot( double( observer.x ) - p.x, double( observer.z ) - p.z ) - extent ) );
+                {
+                    if( observer.isFinite() )
+                    {
+                        distance =
+                            std::min( distance, std::max( 0., std::hypot( double( observer.x ) - p.x,
+                                                                          double( observer.z ) - p.z ) -
+                                                                  extent ) );
+                    }
+                }
                 const auto radius = patch.requested || patch.phase == Impl::Phase::Resident
-                                    ? m_options.retainRadius : m_options.loadRadius;
+                                        ? m_options.retainRadius
+                                        : m_options.loadRadius;
                 patch.requested = false;
-                if( distance <= radius ) nearest.push_back( { i, distance } );
+                if( distance <= radius )
+                {
+                    nearest.push_back( { i, distance } );
+                }
             }
             std::sort( nearest.begin(), nearest.end(), []( const Demand &a, const Demand &b ) {
                 return a.distance != b.distance ? a.distance < b.distance : a.index < b.index;
             } );
-            if( nearest.size() > m_options.maximumResidentPatches ) nearest.resize( m_options.maximumResidentPatches );
-            for( const auto &entry : nearest ) state.patches[entry.index].requested = true;
+            if( nearest.size() > m_options.maximumResidentPatches )
+            {
+                nearest.resize( m_options.maximumResidentPatches );
+            }
+            for( const auto &entry : nearest )
+            {
+                state.patches[entry.index].requested = true;
+            }
 
             for( size_t i = 0; i < state.patches.size(); ++i )
             {
@@ -640,68 +846,116 @@ namespace workphone::scene::race
                     state.producer->cancel( i + 1 );
                     patch.phase = Impl::Phase::Absent;
                 }
-                if( !patch.requested && ( patch.phase == Impl::Phase::Resident || patch.phase == Impl::Phase::Installing ) &&
-                    std::all_of( patch.fallback.begin(), patch.fallback.end(), nativeReady ) ) state.retire( patch );
+                if( !patch.requested &&
+                    ( patch.phase == Impl::Phase::Resident || patch.phase == Impl::Phase::Installing ) &&
+                    std::all_of( patch.fallback.begin(), patch.fallback.end(), nativeReady ) )
+                {
+                    state.retire( patch );
+                }
             }
 
             Array<WorldStreamRequest> requests{ Allocator<WorldStreamRequest>( sourceBudget ) };
             const auto queue = state.producer->stats();
             const auto pending = queue.pending + queue.active + queue.ready;
-            const bool awaitingRetirement = std::any_of( state.patches.begin(), state.patches.end(), []( const auto &patch ) {
-                return patch.phase == Impl::Phase::Retiring;
-            } );
+            const bool awaitingRetirement =
+                std::any_of( state.patches.begin(), state.patches.end(),
+                             []( const auto &patch ) { return patch.phase == Impl::Phase::Retiring; } );
             for( const auto &entry : nearest )
             {
-                if( awaitingRetirement || pending + requests.size() >= m_options.maximumPendingPatches ) break;
+                if( awaitingRetirement || pending + requests.size() >= m_options.maximumPendingPatches )
+                {
+                    break;
+                }
                 const auto &patch = state.patches[entry.index];
                 if( patch.phase != Impl::Phase::Absent || patch.retryAfter > Clock::now() ||
-                    state.producer->contains( entry.index + 1 ) ) continue;
+                    state.producer->contains( entry.index + 1 ) )
+                {
+                    continue;
+                }
                 WorldStreamRequest request;
                 request.key = entry.index + 1;
                 request.priority = static_cast<s32>( nearest.size() - requests.size() );
                 request.workingBytes = patch.cache->largestFile;
                 request.maximumResultBytes = patch.cache->length;
-                request.execute = [cache = patch.cache]( const StreamCancellation &cancel ) { return readPatch( cache, cancel ); };
+                request.execute = [cache = patch.cache]( const StreamCancellation &cancel ) {
+                    return readPatch( cache, cancel );
+                };
                 requests.push_back( std::move( request ) );
             }
             if( !requests.empty() && state.producer->enqueue( requests, error ) )
-                for( const auto &request : requests ) state.patches[request.key - 1].phase = Impl::Phase::Queued;
+            {
+                for( const auto &request : requests )
+                {
+                    state.patches[request.key - 1].phase = Impl::Phase::Queued;
+                }
+            }
         }
 
         for( auto &patch : state.patches )
         {
-            if( patch.phase == Impl::Phase::Retiring ) state.reclaim( patch );
-            if( patch.phase != Impl::Phase::Installing ) continue;
-            const bool failed = std::any_of( patch.details.begin(), patch.details.end(), []( const auto &detail ) {
-                const auto object = detail.renderer->getGraphicsObject();
-                return !object || object->getLoadingState() == LoadingState::Error;
-            } );
-            if( std::all_of( patch.details.begin(), patch.details.end(), []( const auto &detail ) {
-                return nativeReady( detail.renderer );
-            } ) ) state.publish( patch );
+            if( patch.phase == Impl::Phase::Retiring )
+            {
+                state.reclaim( patch );
+            }
+            if( patch.phase != Impl::Phase::Installing )
+            {
+                continue;
+            }
+            const bool failed =
+                std::any_of( patch.details.begin(), patch.details.end(), []( const auto &detail ) {
+                    const auto object = detail.renderer->getGraphicsObject();
+                    return !object || object->getLoadingState() == LoadingState::Error;
+                } );
+            if( std::all_of( patch.details.begin(), patch.details.end(),
+                             []( const auto &detail ) { return nativeReady( detail.renderer ); } ) )
+            {
+                state.publish( patch );
+            }
             else if( failed || Clock::now() >= patch.installDeadline )
-                state.fail( patch, "A streamed city mesh could not load natively within its install window.", error );
+            {
+                state.fail( patch,
+                            "A streamed city mesh could not load natively within its install window.",
+                            error );
+            }
         }
 
         WorldStreamResult result;
         for( u32 i = 0; i < m_options.maximumInstallsPerUpdate && state.producer->take( result ); ++i )
         {
-            if( !result.key || result.key > state.patches.size() ) continue;
-            auto &patch = state.patches[result.key - 1];
-            if( patch.phase != Impl::Phase::Queued ) continue;
-            if( !result.payload || !result.error.empty() )
+            if( !result.key || result.key > state.patches.size() )
             {
-                state.fail( patch, result.error.empty() ? "The city stream did not return its mesh payload." : result.error, error );
                 continue;
             }
-            try { state.install( patch, *std::static_pointer_cast<const DecodedPatch>( result.payload ) ); }
-            catch( const std::exception &failure ) { state.fail( patch, failure.what(), error ); }
+            auto &patch = state.patches[result.key - 1];
+            if( patch.phase != Impl::Phase::Queued )
+            {
+                continue;
+            }
+            if( !result.payload || !result.error.empty() )
+            {
+                state.fail( patch,
+                            result.error.empty() ? "The city stream did not return its mesh payload."
+                                                 : result.error,
+                            error );
+                continue;
+            }
+            try
+            {
+                state.install( patch, *std::static_pointer_cast<const DecodedPatch>( result.payload ) );
+            }
+            catch( const std::exception &failure )
+            {
+                state.fail( patch, failure.what(), error );
+            }
         }
         for( size_t i = 0; i < state.patches.size(); ++i )
         {
             auto &patch = state.patches[i];
             if( patch.phase == Impl::Phase::Queued && !state.producer->contains( i + 1 ) )
-                state.fail( patch, "A city stream request expired before its mesh data was available.", error );
+            {
+                state.fail( patch, "A city stream request expired before its mesh data was available.",
+                            error );
+            }
         }
         return error.empty();
     }
@@ -730,19 +984,33 @@ namespace workphone::scene::race
     CityStreamingStats CityStreaming::stats() const
     {
         std::lock_guard<std::mutex> lock( m_mutex );
-        if( !m_impl ) return {};
+        if( !m_impl )
+        {
+            return {};
+        }
         auto result = m_impl->totals;
         for( const auto &patch : m_impl->patches )
         {
-            if( patch.phase == Impl::Phase::Queued || patch.phase == Impl::Phase::Installing ) ++result.pendingPatches;
-            if( patch.phase == Impl::Phase::Retiring ) ++result.retiringPatches;
-            if( patch.phase == Impl::Phase::Resident ) ++result.residentPatches;
+            if( patch.phase == Impl::Phase::Queued || patch.phase == Impl::Phase::Installing )
+            {
+                ++result.pendingPatches;
+            }
+            if( patch.phase == Impl::Phase::Retiring )
+            {
+                ++result.retiringPatches;
+            }
+            if( patch.phase == Impl::Phase::Resident )
+            {
+                ++result.residentPatches;
+            }
             for( size_t i = 0; i < patch.details.size(); ++i )
+            {
                 if( patch.details[i].resource->getMesh() )
                 {
                     ++result.residentMeshes;
                     result.residentSourceBytes += patch.cache->files[i].sourceBytes;
                 }
+            }
         }
         return result;
     }
@@ -750,22 +1018,33 @@ namespace workphone::scene::race
     bool CityStreaming::isStreamedOut( const MeshRenderer *renderer ) const
     {
         std::lock_guard<std::mutex> lock( m_mutex );
-        if( !m_impl || !renderer ) return false;
+        if( !m_impl || !renderer )
+        {
+            return false;
+        }
         for( const auto &patch : m_impl->patches )
+        {
             if( patch.phase != Impl::Phase::Resident &&
-                std::any_of( patch.details.begin(), patch.details.end(), [&]( const auto &detail ) {
-                    return detail.renderer.get() == renderer;
-                } ) ) return true;
+                std::any_of( patch.details.begin(), patch.details.end(),
+                             [&]( const auto &detail ) { return detail.renderer.get() == renderer; } ) )
+            {
+                return true;
+            }
+        }
         return false;
     }
 
     bool CityStreaming::hasPending() const
     {
         std::lock_guard<std::mutex> lock( m_mutex );
-        if( !m_impl ) return false;
+        if( !m_impl )
+        {
+            return false;
+        }
         return std::any_of( m_impl->patches.begin(), m_impl->patches.end(), []( const auto &patch ) {
             return patch.phase == Impl::Phase::Queued || patch.phase == Impl::Phase::Retiring ||
-                   patch.phase == Impl::Phase::Installing || ( patch.phase == Impl::Phase::Absent && patch.requested );
+                   patch.phase == Impl::Phase::Installing ||
+                   ( patch.phase == Impl::Phase::Absent && patch.requested );
         } );
     }
 }  // namespace workphone::scene::race

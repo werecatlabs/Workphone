@@ -51,7 +51,10 @@ namespace workphone::scene
                 m_service = app->getFactoryManager()->createObjectFromType<procedural::ITextureForge>(
                     "ITextureForge" );
             }
-            if( sourceBudgetDenialCount() != denials ) throw std::bad_alloc();
+            if( sourceBudgetDenialCount() != denials )
+            {
+                throw std::bad_alloc();
+            }
             if( !m_service )
             {
                 m_error = "Load the WPProcedural plugin to bake surface textures";
@@ -59,7 +62,10 @@ namespace workphone::scene
             }
             m_service->setSeed( m_seed );
             auto candidate = m_service->bakeSurface( m_surface, m_params );
-            if( sourceBudgetDenialCount() != denials ) throw std::bad_alloc();
+            if( sourceBudgetDenialCount() != denials )
+            {
+                throw std::bad_alloc();
+            }
             m_result = std::move( candidate );
             m_error.clear();
             return true;
@@ -72,7 +78,10 @@ namespace workphone::scene
         }
         catch( const std::exception &e )
         {
-            try { m_error = e.what(); }
+            try
+            {
+                m_error = e.what();
+            }
             catch( const std::bad_alloc & )
             {
                 m_dirty = true;

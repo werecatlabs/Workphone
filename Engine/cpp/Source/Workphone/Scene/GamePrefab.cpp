@@ -32,24 +32,34 @@ namespace workphone::scene
         auto sceneManager = applicationManager->getGameManager();
         WP_ASSERT( sceneManager );
         SmartPtr<ITask> renderTask;
-        if(auto tasks=applicationManager->getTaskManager())
-            if(auto task=tasks->getTask(TaskId::Render);task&&task->isLoaded())renderTask=task;
-        TaskLock renderPause(renderTask);
-        ScopedLock managerLock(sceneManager);
+        if( auto tasks = applicationManager->getTaskManager() )
+        {
+            if( auto task = tasks->getTask( TaskId::Render ); task && task->isLoaded() )
+            {
+                renderTask = task;
+            }
+        }
+        TaskLock renderPause( renderTask );
+        ScopedLock managerLock( sceneManager );
 
         // Authoring resources can outlive a save in the prefab editor. Read the
         // current asset before each new instance; cooked runtime data is sealed.
         const auto sourcePath = getFilePath();
-        const bool linkedAuthoring = !m_runtimeAssets && applicationManager->isEditor() && !applicationManager->isPlaying() &&
+        const bool linkedAuthoring =
+            !m_runtimeAssets && applicationManager->isEditor() && !applicationManager->isPlaying() &&
             StringUtil::make_lower( Path::getFileExtension( sourcePath ) ) == ".prefab";
         if( linkedAuthoring )
         {
             auto files = applicationManager->getFileSystem();
             const auto text = files->readAllText( sourcePath );
             auto first = text.find_first_not_of( " \t\r\n" );
-            if( first == String::npos ) throw std::runtime_error( "Prefab source is empty or missing: " + sourcePath );
+            if( first == String::npos )
+            {
+                throw std::runtime_error( "Prefab source is empty or missing: " + sourcePath );
+            }
             auto fresh = make_ptr<Properties>();
-            DataUtil::parse( text, fresh.get(), text[first] == '<' ? DataFormat::XML : DataFormat::JSON );
+            DataUtil::parse( text, fresh.get(),
+                             text[first] == '<' ? DataFormat::XML : DataFormat::JSON );
             setData( fresh );
         }
         auto data = workphone::dynamic_pointer_cast<Properties>( getData() );
@@ -58,22 +68,44 @@ namespace workphone::scene
             return nullptr;
         }
         String error;
-        if(m_runtimeAssets&&!resource::validateCookedActorGraphData(data,false,m_runtimeAssets,error))
-            throw std::runtime_error(error.c_str());
-        struct ResolutionScope {
+        if( m_runtimeAssets &&
+            !resource::validateCookedActorGraphData( data, false, m_runtimeAssets, error ) )
+        {
+            throw std::runtime_error( error.c_str() );
+        }
+
+        struct ResolutionScope
+        {
             Properties::ObjectResolver previous;
-            bool fallback=true,active=false;
-            explicit ResolutionScope(const std::shared_ptr<const resource::RuntimeAssetContext> &context) {
-                if(context){previous=Properties::exchangeObjectResolver(context->objects);fallback=Properties::exchangeObjectResolverFallback(false);active=true;}
+            bool fallback = true, active = false;
+
+            explicit ResolutionScope(
+                const std::shared_ptr<const resource::RuntimeAssetContext> &context )
+            {
+                if( context )
+                {
+                    previous = Properties::exchangeObjectResolver( context->objects );
+                    fallback = Properties::exchangeObjectResolverFallback( false );
+                    active = true;
+                }
             }
-            ~ResolutionScope(){if(active){Properties::exchangeObjectResolver(std::move(previous));Properties::exchangeObjectResolverFallback(fallback);}}
-        } resolution(m_runtimeAssets);
-        auto instanceData = linkedAuthoring
-            ? PrefabInstanceService::createLinkedInstanceData( data, sourcePath,
-                  getHandle()->getUUIDAsString() )
-            : GameActorUtil::createInstanceData( data );
-        auto graphics=applicationManager->getGraphicsSystem();ScopedLock graphicsLock(graphics);
-        auto actors = GameActorUtil::loadSceneActors( { instanceData },nullptr,m_runtimeAssets );
+
+            ~ResolutionScope()
+            {
+                if( active )
+                {
+                    Properties::exchangeObjectResolver( std::move( previous ) );
+                    Properties::exchangeObjectResolverFallback( fallback );
+                }
+            }
+        } resolution( m_runtimeAssets );
+
+        auto instanceData = linkedAuthoring ? PrefabInstanceService::createLinkedInstanceData(
+                                                  data, sourcePath, getHandle()->getUUIDAsString() )
+                                            : GameActorUtil::createInstanceData( data );
+        auto graphics = applicationManager->getGraphicsSystem();
+        ScopedLock graphicsLock( graphics );
+        auto actors = GameActorUtil::loadSceneActors( { instanceData }, nullptr, m_runtimeAssets );
         return actors.empty() ? nullptr : actors.front();
     }
 
@@ -84,11 +116,15 @@ namespace workphone::scene
         String error;
         auto format =
             Path::getFileExtension( path ) == ".fbscenexml" ? DataFormat::XML : DataFormat::JSON;
-        if( auto files = core::IApplicationManager::instancePtr()->getFileSystem(); files && files->isExistingFile( path ) )
+        if( auto files = core::IApplicationManager::instancePtr()->getFileSystem();
+            files && files->isExistingFile( path ) )
         {
             const auto previous = files->readAllText( path );
             const auto first = previous.find_first_not_of( " \t\r\n" );
-            if( first != String::npos ) format = previous[first] == '<' ? DataFormat::XML : DataFormat::JSON;
+            if( first != String::npos )
+            {
+                format = previous[first] == '<' ? DataFormat::XML : DataFormat::JSON;
+            }
         }
         if( !saveAssetDocumentText( path, properties,
                                     DataUtil::toString( properties.get(), true, format ), error ) )
@@ -140,15 +176,21 @@ namespace workphone::scene
     void GamePrefab::setData( SmartPtr<ISharedObject> data )
     {
         ScopedLock lock( this );
-        if(m_runtimeAssets&&data&&data!=m_data)throw std::logic_error("Unload the cooked prefab before replacing its document");
+        if( m_runtimeAssets && data && data != m_data )
+        {
+            throw std::logic_error( "Unload the cooked prefab before replacing its document" );
+        }
         m_data = data;
     }
 
     void GamePrefab::setRuntimeAssets( std::shared_ptr<const resource::RuntimeAssetContext> context )
     {
-        ScopedLock lock(this);
-        if(m_runtimeAssets)throw std::logic_error("Cooked prefab context is already sealed");
-        m_runtimeAssets=std::move(context);
+        ScopedLock lock( this );
+        if( m_runtimeAssets )
+        {
+            throw std::logic_error( "Cooked prefab context is already sealed" );
+        }
+        m_runtimeAssets = std::move( context );
     }
 
     void GamePrefab::lock()

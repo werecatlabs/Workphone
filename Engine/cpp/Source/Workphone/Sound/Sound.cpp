@@ -18,7 +18,10 @@ namespace workphone
 
     void Sound::setCategory( const String &category )
     {
-        if( category == "music" || category == "sfx" || category == "voice" ) m_category = category;
+        if( category == "music" || category == "sfx" || category == "voice" )
+        {
+            m_category = category;
+        }
         setVolume( getVolume() );
     }
 
@@ -160,9 +163,15 @@ namespace workphone
 
     void Sound::setProperties( SmartPtr<Properties> properties )
     {
-        if( !properties ) return;
+        if( !properties )
+        {
+            return;
+        }
         String category;
-        if( properties->getPropertyValue( "category", category ) ) setCategory( category );
+        if( properties->getPropertyValue( "category", category ) )
+        {
+            setCategory( category );
+        }
         if( properties->isButtonPressed( Sound::playStr ) )
         {
             play();

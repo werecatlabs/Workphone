@@ -24,6 +24,7 @@ namespace workphone
             bool archived = false;
             std::map<std::string, std::string> entries;
         };
+
         std::mutex dictionaryMutex;
         std::map<std::string, Dictionary> dictionaries;
 
@@ -35,53 +36,75 @@ namespace workphone
             auto fileSystem = application ? application->getFileSystem() : nullptr;
             const auto packaged = fileSystem && isPackageFileSystem( *fileSystem );
             std::error_code error;
-            const auto timestamp = packaged ? std::filesystem::file_time_type{} :
-                                             std::filesystem::last_write_time( path, error );
+            const auto timestamp = packaged ? std::filesystem::file_time_type{}
+                                            : std::filesystem::last_write_time( path, error );
             const auto bytes = !packaged && !error ? std::filesystem::file_size( path, error ) : 0;
-            if( cached.path == path &&
-                ( ( ( packaged || error ) && cached.archived ) ||
-                  ( !error && !cached.archived && cached.timestamp == timestamp &&
-                    cached.bytes == bytes ) ) )
+            if( cached.path == path && ( ( ( packaged || error ) && cached.archived ) ||
+                                         ( !error && !cached.archived && cached.timestamp == timestamp &&
+                                           cached.bytes == bytes ) ) )
+            {
                 return cached;
+            }
             cached = Dictionary{};
             cached.path = path;
             cached.timestamp = timestamp;
             cached.bytes = bytes;
-            if( bytes > 1024 * 1024 ) return cached;
+            if( bytes > 1024 * 1024 )
+            {
+                return cached;
+            }
             std::string source;
             if( fileSystem )
             {
-                auto input = fileSystem->open( String( path.generic_u8string().c_str() ),
-                                               true, true, false, false, true );
-                if( !input || input->size() > 1024 * 1024 ) return cached;
+                auto input = fileSystem->open( String( path.generic_u8string().c_str() ), true, true,
+                                               false, false, true );
+                if( !input || input->size() > 1024 * 1024 )
+                {
+                    return cached;
+                }
                 source.resize( input->size() );
-                if( input->read( source.data(), source.size() ) != source.size() ) return cached;
+                if( input->read( source.data(), source.size() ) != source.size() )
+                {
+                    return cached;
+                }
                 // Archives are immutable for the mounted project. Project switches
                 // call releaseProjectLocalization to discard this snapshot.
                 cached.archived = packaged || bool( error );
             }
             else
             {
-                if( error ) return cached;
+                if( error )
+                {
+                    return cached;
+                }
                 std::ifstream stream( path, std::ios::binary );
                 std::ostringstream contents;
                 contents << stream.rdbuf();
-                if( !stream || stream.bad() ) return cached;
+                if( !stream || stream.bad() )
+                {
+                    return cached;
+                }
                 source = contents.str();
             }
             rapidjson::Document document;
             document.Parse<rapidjson::kParseValidateEncodingFlag>( source.data(), source.size() );
-            if( document.HasParseError() || !document.IsObject() ) return cached;
+            if( document.HasParseError() || !document.IsObject() )
+            {
+                return cached;
+            }
             for( auto it = document.MemberBegin(); it != document.MemberEnd(); ++it )
             {
-                if( !it->value.IsString() ) continue;
+                if( !it->value.IsString() )
+                {
+                    continue;
+                }
                 cached.entries.emplace(
                     std::string( it->name.GetString(), it->name.GetStringLength() ),
                     std::string( it->value.GetString(), it->value.GetStringLength() ) );
             }
             return cached;
         }
-    }
+    }  // namespace
 
     String getProjectLanguageTag()
     {
@@ -103,13 +126,18 @@ namespace workphone
             const auto lookup = [&]( const String &tag, String &value ) {
                 const auto &entries = dictionary( root, tag ).entries;
                 const auto it = entries.find( std::string( key.c_str(), key.size() ) );
-                if( it == entries.end() ) return false;
+                if( it == entries.end() )
+                {
+                    return false;
+                }
                 value = String( it->second.c_str(), it->second.size() );
                 return true;
             };
             String value;
             if( lookup( language, value ) || ( language != "en" && lookup( "en", value ) ) )
+            {
                 return value;
+            }
         }
         return fallback.empty() ? key : fallback;
     }
@@ -117,7 +145,9 @@ namespace workphone
     String localizeProjectText( const String &text )
     {
         if( text.size() >= 4 && text[0] == '@' && text[1] == '{' && text.back() == '}' )
+        {
             return localizeProjectString( text.substr( 2, text.size() - 3 ), {} );
+        }
         return text;
     }
 
@@ -126,4 +156,4 @@ namespace workphone
         std::lock_guard<std::mutex> lock( dictionaryMutex );
         dictionaries.clear();
     }
-}
+}  // namespace workphone

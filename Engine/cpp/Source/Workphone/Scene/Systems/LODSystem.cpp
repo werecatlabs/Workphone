@@ -560,7 +560,7 @@ namespace workphone::scene
     {
         auto application = core::IApplicationManager::instancePtr();
         auto manager = application->getGameManagerPtr();
-        auto graphics =  application->getGraphicsSystemPtr();
+        auto graphics = application->getGraphicsSystemPtr();
 
         for( size_t index = 0; index < batch->slots.size(); ++index )
         {

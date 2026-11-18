@@ -273,8 +273,12 @@ namespace workphone
     {
         auto str = m_sourceFile + " " + StringUtil::toString( m_lineNumber ) + " " + m_functionName;
         if( auto app = core::IApplicationManager::instancePtr() )
+        {
             if( auto log = app->getLogManager() )
+            {
                 log->logMessage( str, ILogManager::Type::Trace );
+            }
+        }
     }
 
     void DebugTrace::addDebugObject( RawPtr<DebugTrace> ptr )

@@ -370,12 +370,10 @@ namespace workphone::scene
                         // Smooth height interpolation with proper damping
                         m_currentHeight = Math<real_Num>::lerp(
                             m_currentHeight, m_targetHeight,
-                            Math<real_Num>::clamp01( m_heightDamping *
-                                                     static_cast<real_Num>( dt ) ) );
+                            Math<real_Num>::clamp01( m_heightDamping * static_cast<real_Num>( dt ) ) );
 
                         // Calculate velocity using target position consistently
-                        m_velocity =
-                            ( position - m_lastTargetPosition ) / static_cast<real_dNum>( dt );
+                        m_velocity = ( position - m_lastTargetPosition ) / static_cast<real_dNum>( dt );
                         m_lastTargetPosition = position;
 
                         // Fix distance snap time calculation
@@ -385,13 +383,11 @@ namespace workphone::scene
 
                         // Calculate target distance with velocity-based adjustment
                         auto velocityMagnitude = m_velocity.length();
-                        auto desiredDistance =
-                            m_distance + ( velocityMagnitude * m_distanceMultiplier );
+                        auto desiredDistance = m_distance + ( velocityMagnitude * m_distanceMultiplier );
 
                         // Use smoothDampAngle for distance with proper velocity reference
                         auto smoothedDistance = Math<real_dNum>::smoothDampAngle(
-                            m_targetDistance, desiredDistance, m_cameraVelocity.Z(),
-                            fDistanceSnapTime );
+                            m_targetDistance, desiredDistance, m_cameraVelocity.Z(), fDistanceSnapTime );
 
                         // Apply smooth interpolation to target distance
                         m_targetDistance = Math<real_dNum>::lerp(
@@ -407,9 +403,8 @@ namespace workphone::scene
                         // Positive distance places camera behind vehicle (+Z direction)
                         auto cameraPosition = position;
                         cameraPosition.y = m_currentHeight;
-                        cameraPosition +=
-                            Quaternion<real_dNum>::euler( 0, m_currentRotationAngle, 0 ) *
-                            Vector3<real_dNum>( 0, 0, m_targetDistance );
+                        cameraPosition += Quaternion<real_dNum>::euler( 0, m_currentRotationAngle, 0 ) *
+                                          Vector3<real_dNum>( 0, 0, m_targetDistance );
 
                         // Handle rotation logic
                         auto &targetTransform = smoothTransform;
@@ -437,8 +432,8 @@ namespace workphone::scene
                         auto fCurrentPosition = m_cameraTransform.getPosition();
                         auto currentPosition = Vector3<real_dNum>(
                             fCurrentPosition.x, fCurrentPosition.y, fCurrentPosition.z );
-                        auto lerpFactor = Math<real_dNum>::clamp01(
-                            static_cast<real_dNum>( dt ) * (real_dNum)m_positionLerpFactor );
+                        auto lerpFactor = Math<real_dNum>::clamp01( static_cast<real_dNum>( dt ) *
+                                                                    (real_dNum)m_positionLerpFactor );
 
                         auto finalPosition =
                             Math<real_dNum>::lerp( currentPosition, cameraPosition, lerpFactor );
@@ -447,16 +442,15 @@ namespace workphone::scene
                             Vector3<real_Num>( (real_Num)finalPosition.x, (real_Num)finalPosition.y,
                                                (real_Num)finalPosition.z );
 
-                        auto lookAtPosition = Vector3<real_Num>(
-                            (real_Num)position.x, (real_Num)position.y + m_lookAtHeight,
-                            (real_Num)position.z );
+                        auto lookAtPosition = Vector3<real_Num>( (real_Num)position.x,
+                                                                 (real_Num)position.y + m_lookAtHeight,
+                                                                 (real_Num)position.z );
                         auto vec = lookAtPosition - cameraRenderPosition;
                         auto cameraRenderOrientation =
                             MathUtil<real_Num>::getOrientationFromDirection( vec );
                         auto camera = actor->getComponentPtr<Camera>();
 
-                        m_cameraTransform =
-                            Transform3F( cameraRenderPosition, cameraRenderOrientation );
+                        m_cameraTransform = Transform3F( cameraRenderPosition, cameraRenderOrientation );
                         // Keep LOD queries and the standalone sample camera on this render pose.
                         auto actorTransform = actor->getTransform();
                         actorTransform->setWorldTransform( m_cameraTransform );

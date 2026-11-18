@@ -74,9 +74,8 @@ namespace workphone
 
         auto lowerArchivePath( String path ) -> String
         {
-            std::transform( path.begin(), path.end(), path.begin(), []( unsigned char ch ) {
-                return static_cast<char>( std::tolower( ch ) );
-            } );
+            std::transform( path.begin(), path.end(), path.begin(),
+                            []( unsigned char ch ) { return static_cast<char>( std::tolower( ch ) ); } );
             return path;
         }
 
@@ -234,8 +233,8 @@ namespace workphone
         m_password = password;
     }
 
-    auto ObfuscatedZipArchive::open( const String &filename, bool input, bool, bool,
-                                     bool ignorePath, bool ignoreCase ) -> SmartPtr<IStream>
+    auto ObfuscatedZipArchive::open( const String &filename, bool input, bool, bool, bool ignorePath,
+                                     bool ignoreCase ) -> SmartPtr<IStream>
     {
         RecursiveMutex::ScopedLock lock( m_mutex );
 
@@ -259,8 +258,8 @@ namespace workphone
 
         const auto closeFile = []( ZZIP_FILE *file ) { zzip_file_close( file ); };
         std::unique_ptr<ZZIP_FILE, decltype( closeFile )> file( zzipFile, closeFile );
-        auto stream = workphone::make_ptr<ObfuscatedZipFile>( this, info.fileName.c_str(), file.get(),
-                                                             static_cast<u32>( info.uncompressedSize ) );
+        auto stream = workphone::make_ptr<ObfuscatedZipFile>(
+            this, info.fileName.c_str(), file.get(), static_cast<u32>( info.uncompressedSize ) );
         file.release();
         stream->setFileInfo( info );
         return stream;

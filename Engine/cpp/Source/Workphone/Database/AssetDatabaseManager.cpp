@@ -5,7 +5,7 @@
 #include <Workphone/Database/AssetDocumentSave.hpp>
 #include <Workphone/Database/AssetDocumentInventory.hpp>
 #if WP_TYPED_UI_RESOURCE
-#include <Workphone/System/UIResource.hpp>
+#    include <Workphone/System/UIResource.hpp>
 #endif
 #include "AssetPackagePolicyInternal.hpp"
 #include <Workphone/Database/ResourceDatabase.hpp>
@@ -205,8 +205,8 @@ namespace workphone
         }
 
         bool insertCatalogEntry( AssetDatabaseManager &manager, const String &uuid,
-                                 const AssetCatalogPath &path, const String &kind,
-                                 const String &type, bool &inserted, String &error )
+                                 const AssetCatalogPath &path, const String &kind, const String &type,
+                                 bool &inserted, String &error )
         {
             inserted = false;
             auto existing =
@@ -1407,7 +1407,8 @@ namespace workphone
             {
                 // The optional derived index keeps substring matching in a
                 // narrow UUID-ordered leaf scan. Older read-only catalogs can omit it.
-                auto index = queryCatalog( *this,
+                auto index = queryCatalog(
+                    *this,
                     "SELECT 1 FROM sqlite_master WHERE type='index' AND "
                     "name='idx_resources_uuid_browse' AND tbl_name='resources' COLLATE NOCASE" );
                 useCoveringIndex = index && !index->eof();
@@ -1415,20 +1416,28 @@ namespace workphone
             if( useCoveringIndex )
             {
                 if( auto *cache = dynamic_cast<ICatalogBrowseCache *>( database.get() ) )
+                {
                     cache->prepareCatalogBrowseCache();
+                }
             }
-            const Array<String> values{ query.search, pattern, pattern, query.type, query.type,
-                query.includeScenes ? "1" : "0", cursor ? cursor->afterUuid : String(),
-                StringUtil::toString( query.pageSize + 1 ) };
+            const Array<String> values{ query.search,
+                                        pattern,
+                                        pattern,
+                                        query.type,
+                                        query.type,
+                                        query.includeScenes ? "1" : "0",
+                                        cursor ? cursor->afterUuid : String(),
+                                        StringUtil::toString( query.pageSize + 1 ) };
             const auto readPage = [&]( bool covering, bool literalSearch ) {
                 String statement = "SELECT uuid,path,type,kind,path_key FROM resources ";
                 if( covering )
                 {
                     statement += "INDEXED BY idx_resources_uuid_browse ";
                 }
-                const String matches = literalSearch
-                    ? "COALESCE(wp_catalog_contains(path,uuid,?),path GLOB ? OR uuid GLOB ?)"
-                    : "(?='' OR path GLOB ? OR uuid GLOB ?)";
+                const String matches =
+                    literalSearch
+                        ? "COALESCE(wp_catalog_contains(path,uuid,?),path GLOB ? OR uuid GLOB ?)"
+                        : "(?='' OR path GLOB ? OR uuid GLOB ?)";
                 const char *filters = "(?='' OR type=?) AND (?='1' OR kind='file')";
                 if( covering )
                 {
@@ -2747,15 +2756,22 @@ namespace workphone
             return result;
         }
 
-        SmartPtr<Properties> parseReferenceDocument( const Array<u8> &bytes,const String &sourcePath )
+        SmartPtr<Properties> parseReferenceDocument( const Array<u8> &bytes, const String &sourcePath )
         {
-            if(StringUtil::make_lower(std::filesystem::u8path(sourcePath.c_str()).extension().u8string().c_str())==".uires")
+            if( StringUtil::make_lower(
+                    std::filesystem::u8path( sourcePath.c_str() ).extension().u8string().c_str() ) ==
+                ".uires" )
             {
 #if WP_TYPED_UI_RESOURCE
-                String error;auto result=ui::UIResourceCompiler::sourceReferenceProperties(bytes,error);
-                if(!result)throw std::runtime_error(error.c_str());return result;
+                String error;
+                auto result = ui::UIResourceCompiler::sourceReferenceProperties( bytes, error );
+                if( !result )
+                {
+                    throw std::runtime_error( error.c_str() );
+                }
+                return result;
 #else
-                throw std::runtime_error("Typed UI reference discovery is unavailable in this build");
+                throw std::runtime_error( "Typed UI reference discovery is unavailable in this build" );
 #endif
             }
             if( PropertiesBinarySerializer::hasBinaryHeader( bytes.data(), bytes.size() ) )
@@ -2898,7 +2914,7 @@ namespace workphone
             {
                 throw std::runtime_error( "Reindex source changed while reading" );
             }
-            auto serialized = parseReferenceDocument( bytes,source.path );
+            auto serialized = parseReferenceDocument( bytes, source.path );
             CatalogTransaction transaction( *catalog );
             AssetReferenceSave save;
             if( !transaction.active() || !session.isCurrent( catalog ) ||
@@ -3234,7 +3250,7 @@ namespace workphone
                         }
                         auto bytes = readInventoryDocument( file, budget );
                         entry.digest = referenceDigest( bytes.data(), bytes.size() );
-                        auto serialized = parseReferenceDocument( bytes,entry.path );
+                        auto serialized = parseReferenceDocument( bytes, entry.path );
                         AssetReferenceSave save;
                         if( !beginReferenceSave( catalog, entry.path, serialized, bytes, save, error,
                                                  media, false, true ) )
@@ -3345,7 +3361,7 @@ namespace workphone
                 {
                     throw std::runtime_error( "Document changed during batch reindex" );
                 }
-                auto serialized = parseReferenceDocument( bytes,entry.path );
+                auto serialized = parseReferenceDocument( bytes, entry.path );
                 AssetReferenceSave save;
                 if( !beginReferenceSave( catalog, entry.path, serialized, bytes, save, error, media,
                                          false ) ||
@@ -3535,7 +3551,8 @@ namespace workphone
             return assetfs::is_symlink( assetfs::symlink_status( path ) );
         }
 
-        String treeDigest( const assetfs::path &path, u64 maximumBytes = std::numeric_limits<u64>::max() )
+        String treeDigest( const assetfs::path &path,
+                           u64 maximumBytes = std::numeric_limits<u64>::max() )
         {
             SourceBudgetMap<String, String> entries;
             auto add = [&]( const assetfs::path &entry, const std::string &relative ) {
@@ -3587,7 +3604,8 @@ namespace workphone
                         const auto count = static_cast<size_t>( input.gcount() );
                         if( count > maximumBytes - bytesRead )
                         {
-                            throw std::runtime_error( "Asset recovery exceeds the content inspection limit" );
+                            throw std::runtime_error(
+                                "Asset recovery exceeds the content inspection limit" );
                         }
                         bytesRead += count;
                         feed( bytes, count );
@@ -3675,15 +3693,24 @@ namespace workphone
 
         bool validOperationId( const String &id )
         {
-            if( id.size() != 36 ) return false;
+            if( id.size() != 36 )
+            {
+                return false;
+            }
             for( size_t i = 0; i < id.size(); ++i )
             {
                 const auto c = id[i];
                 if( i == 8 || i == 13 || i == 18 || i == 23 )
                 {
-                    if( c != '-' ) return false;
+                    if( c != '-' )
+                    {
+                        return false;
+                    }
                 }
-                else if( ( c < '0' || c > '9' ) && ( c < 'a' || c > 'f' ) ) return false;
+                else if( ( c < '0' || c > '9' ) && ( c < 'a' || c > 'f' ) )
+                {
+                    return false;
+                }
             }
             return true;
         }
@@ -3692,46 +3719,70 @@ namespace workphone
         {
             AssetCatalogPath canonical;
             String error;
-            if( !canonicalAssetCatalogPath( root, relative, canonical, error ) || canonical.path != relative )
+            if( !canonicalAssetCatalogPath( root, relative, canonical, error ) ||
+                canonical.path != relative )
+            {
                 throw std::runtime_error( "Recovery journal path is redirected or outside its project" );
+            }
             auto result = assetfs::u8path( root.c_str() );
             for( const auto &component : assetfs::u8path( relative.c_str() ) )
             {
                 result /= component;
-                if( reparsePath( result ) ) throw std::runtime_error( "Recovery rejects linked paths" );
+                if( reparsePath( result ) )
+                {
+                    throw std::runtime_error( "Recovery rejects linked paths" );
+                }
             }
             return result;
         }
 
         RecoveryRecord readRecoveryRecord( AssetDatabaseManager &manager, const String &id )
         {
-            if( !validOperationId( id ) ) throw std::runtime_error( "Invalid operation journal ID" );
-            auto row = queryCatalog( manager,
+            if( !validOperationId( id ) )
+            {
+                throw std::runtime_error( "Invalid operation journal ID" );
+            }
+            auto row = queryCatalog(
+                manager,
                 "SELECT substr(kind,1,16) AS kind,substr(state,1,32) AS state,"
                 "substr(digest,1,22) AS digest,substr(root,1,4097) AS root,"
                 "substr(source,1,4097) AS source,substr(destination,1,4097) AS destination "
-                "FROM wp_asset_operations WHERE id=?", { id } );
-            if( !row || row->eof() ) throw std::runtime_error( "Operation journal record is unavailable" );
-            RecoveryRecord record{ id, row->getFieldValue( "kind" ), row->getFieldValue( "state" ),
-                row->getFieldValue( "digest" ), row->getFieldValue( "root" ), row->getFieldValue( "source" ),
-                row->getFieldValue( "destination" ), ".workphone/asset-operations/" + id + "/payload",
-                ".workphone/asset-operations/" + id + "/preserved-conflict" };
+                "FROM wp_asset_operations WHERE id=?",
+                { id } );
+            if( !row || row->eof() )
+            {
+                throw std::runtime_error( "Operation journal record is unavailable" );
+            }
+            RecoveryRecord record{ id,
+                                   row->getFieldValue( "kind" ),
+                                   row->getFieldValue( "state" ),
+                                   row->getFieldValue( "digest" ),
+                                   row->getFieldValue( "root" ),
+                                   row->getFieldValue( "source" ),
+                                   row->getFieldValue( "destination" ),
+                                   ".workphone/asset-operations/" + id + "/payload",
+                                   ".workphone/asset-operations/" + id + "/preserved-conflict" };
             const auto root = manager.getProjectRoot();
             if( record.root != root || !validValue( record.source, 4096 ) ||
                 !validValue( record.destination, 4096 ) ||
                 ( record.kind != "move" && record.kind != "copy" && record.kind != "delete" ) ||
                 !validValue( record.digest, 20 ) ||
-                !std::all_of( record.digest.begin(), record.digest.end(), []( char c ) { return c >= '0' && c <= '9'; } ) )
+                !std::all_of( record.digest.begin(), record.digest.end(),
+                              []( char c ) { return c >= '0' && c <= '9'; } ) )
+            {
                 throw std::runtime_error( "Invalid operation journal record for this project" );
+            }
             AssetCatalogPath source, destination;
             String error;
             if( !canonicalAssetCatalogPath( root, record.source, source, error ) ||
                 !canonicalAssetCatalogPath( root, record.destination, destination, error ) ||
                 pathWithin( ".workphone", source.key ) || pathWithin( source.key, destination.key ) ||
                 pathWithin( destination.key, source.key ) ||
-                ( record.kind == "delete" ? record.destination != record.stage :
-                                             pathWithin( ".workphone", destination.key ) ) )
+                ( record.kind == "delete" ? record.destination != record.stage
+                                          : pathWithin( ".workphone", destination.key ) ) )
+            {
                 throw std::runtime_error( "Operation journal endpoints are unsafe" );
+            }
             return record;
         }
 
@@ -3742,7 +3793,8 @@ namespace workphone
 
         bool operationJournalIdle( AssetDatabaseManager &manager )
         {
-            auto pending = queryCatalog( manager,
+            auto pending = queryCatalog(
+                manager,
                 "SELECT id FROM wp_asset_operations WHERE state IN ('prepared','undoing') LIMIT 1" );
             return pending && pending->eof();
         }
@@ -3751,20 +3803,28 @@ namespace workphone
                                    const String &previous, const String &next )
         {
             if( !queryCatalog( manager, "UPDATE wp_asset_operations SET state=? WHERE id=? AND state=?",
-                               { next, record.id, previous } ) ) return false;
+                               { next, record.id, previous } ) )
+            {
+                return false;
+            }
             // SQL success includes ignored writes. Read after all triggers and
             // before the transaction can commit changed catalog identities.
-            auto verified = queryCatalog( manager,
-                "SELECT id FROM wp_asset_operations WHERE id=? AND state=? AND kind=? "
-                "AND source=? AND destination=? AND root=? AND digest=?",
-                { record.id, next, record.kind, record.source, record.destination, record.root, record.digest } );
+            auto verified =
+                queryCatalog( manager,
+                              "SELECT id FROM wp_asset_operations WHERE id=? AND state=? AND kind=? "
+                              "AND source=? AND destination=? AND root=? AND digest=?",
+                              { record.id, next, record.kind, record.source, record.destination,
+                                record.root, record.digest } );
             return verified && !verified->eof();
         }
 
         void recoverOperationRecord( AssetDatabaseManager &manager, const RecoveryRecord &record,
                                      String &error, u64 maximumBytes = std::numeric_limits<u64>::max() )
         {
-            if( !recoveryPending( record ) ) throw std::runtime_error( "Operation no longer needs recovery" );
+            if( !recoveryPending( record ) )
+            {
+                throw std::runtime_error( "Operation no longer needs recovery" );
+            }
             const auto source = checkedRecoveryPath( record.root, record.source );
             const auto destination = checkedRecoveryPath( record.root, record.destination );
             const auto stage = checkedRecoveryPath( record.root, record.stage );
@@ -3774,20 +3834,30 @@ namespace workphone
                 const auto &reversed = record.kind == "copy" ? stage : source;
                 if( assetfs::exists( destination ) )
                 {
-                    if( treeDigest( destination, maximumBytes ) != record.digest || assetfs::exists( reversed ) )
+                    if( treeDigest( destination, maximumBytes ) != record.digest ||
+                        assetfs::exists( reversed ) )
+                    {
                         throw std::runtime_error( "Ambiguous interrupted undo; content retained" );
+                    }
                 }
-                else if( !assetfs::exists( reversed ) || treeDigest( reversed, maximumBytes ) != record.digest ||
+                else if( !assetfs::exists( reversed ) ||
+                         treeDigest( reversed, maximumBytes ) != record.digest ||
                          !renameExclusive( reversed, destination, error ) )
+                {
                     throw std::runtime_error( "Interrupted undo recovery conflicts; content retained" );
+                }
                 next = "committed";
             }
             else if( record.kind == "copy" )
             {
                 // Keep a staged or published copy in quarantine.
-                if( assetfs::exists( destination ) && ( assetfs::exists( stage ) ||
-                    treeDigest( destination, maximumBytes ) != record.digest || !renameExclusive( destination, stage, error ) ) )
+                if( assetfs::exists( destination ) &&
+                    ( assetfs::exists( stage ) ||
+                      treeDigest( destination, maximumBytes ) != record.digest ||
+                      !renameExclusive( destination, stage, error ) ) )
+                {
                     throw std::runtime_error( "Copy recovery conflicts; content retained" );
+                }
                 next = "rolled-back";
             }
             else
@@ -3796,22 +3866,30 @@ namespace workphone
                 const bool atStage = assetfs::exists( stage );
                 const bool atDestination = record.kind != "delete" && assetfs::exists( destination );
                 if( int( atSource ) + int( atStage ) + int( atDestination ) != 1 )
+                {
                     throw std::runtime_error( "Ambiguous asset recovery; content retained" );
+                }
                 const auto &location = atSource ? source : atStage ? stage : destination;
                 if( treeDigest( location, maximumBytes ) != record.digest ||
                     ( !atSource && !renameExclusive( location, source, error ) ) )
-                    throw std::runtime_error( "Recovery conflicts with external bytes; content retained" );
+                {
+                    throw std::runtime_error(
+                        "Recovery conflicts with external bytes; content retained" );
+                }
                 next = "rolled-back";
             }
             if( !finishOperationState( manager, record, record.state, next ) )
+            {
                 throw std::runtime_error( "Could not finish journal recovery" );
+            }
         }
 
         bool recoveryRecordMatches( const RecoveryRecord &record,
                                     const AssetDatabaseManager::FileOperationRecovery &selection )
         {
             return record.kind == selection.kind && record.state == selection.state &&
-                   record.source == selection.sourcePath && record.destination == selection.destinationPath &&
+                   record.source == selection.sourcePath &&
+                   record.destination == selection.destinationPath &&
                    record.digest == selection.payloadDigest;
         }
 
@@ -3819,44 +3897,82 @@ namespace workphone
         bool conflictCatalogMatches( AssetDatabaseManager &manager, const RecoveryRecord &record )
         {
             auto entries = queryCatalog( manager,
-                "SELECT uuid,path,type,path_key,new_uuid,new_path,new_key FROM wp_asset_operation_entries "
-                "WHERE operation_id=? LIMIT 2", { record.id } );
-            if( !entries ) return false;
+                                         "SELECT uuid,path,type,path_key,new_uuid,new_path,new_key FROM "
+                                         "wp_asset_operation_entries "
+                                         "WHERE operation_id=? LIMIT 2",
+                                         { record.id } );
+            if( !entries )
+            {
+                return false;
+            }
             String uuid, key, path, type;
             if( !entries->eof() )
             {
                 if( entries->getFieldValue( "path" ) != record.source ||
-                    entries->getFieldValue( "new_path" ) != record.destination ) return false;
+                    entries->getFieldValue( "new_path" ) != record.destination )
+                {
+                    return false;
+                }
                 const bool undo = record.state == "undoing";
                 uuid = entries->getFieldValue( undo ? "new_uuid" : "uuid" );
                 key = entries->getFieldValue( undo ? "new_key" : "path_key" );
                 path = undo ? record.destination : record.source;
                 type = entries->getFieldValue( "type" );
                 entries->nextRow();
-                if( !entries->eof() || !validValue( uuid, 128 ) || !validValue( key, 4096 ) ) return false;
-                auto identity = queryCatalog( manager, "SELECT uuid,path,path_key,type,kind FROM resources WHERE uuid=?", { uuid } );
-                if( !identity ) return false;
+                if( !entries->eof() || !validValue( uuid, 128 ) || !validValue( key, 4096 ) )
+                {
+                    return false;
+                }
+                auto identity = queryCatalog(
+                    manager, "SELECT uuid,path,path_key,type,kind FROM resources WHERE uuid=?",
+                    { uuid } );
+                if( !identity )
+                {
+                    return false;
+                }
                 if( undo && record.kind == "delete" )
                 {
-                    if( !identity->eof() ) return false;
+                    if( !identity->eof() )
+                    {
+                        return false;
+                    }
                     uuid.clear();
                 }
                 else if( identity->eof() || identity->getFieldValue( "kind" ) != "file" ||
-                         identity->getFieldValue( "path" ) != path || identity->getFieldValue( "path_key" ) != key ||
-                         identity->getFieldValue( "type" ) != type ) return false;
+                         identity->getFieldValue( "path" ) != path ||
+                         identity->getFieldValue( "path_key" ) != key ||
+                         identity->getFieldValue( "type" ) != type )
+                {
+                    return false;
+                }
             }
-            for( const auto &endpoint : { record.source, record.destination, record.stage, record.hold } )
+            for( const auto &endpoint :
+                 { record.source, record.destination, record.stage, record.hold } )
             {
                 AssetCatalogPath canonical;
                 String error;
-                if( !canonicalAssetCatalogPath( record.root, endpoint, canonical, error ) ) return false;
-                auto present = queryCatalog( manager, "SELECT uuid FROM resources WHERE path_key=? AND kind='file'", { canonical.key } );
-                if( !present ) return false;
+                if( !canonicalAssetCatalogPath( record.root, endpoint, canonical, error ) )
+                {
+                    return false;
+                }
+                auto present =
+                    queryCatalog( manager, "SELECT uuid FROM resources WHERE path_key=? AND kind='file'",
+                                  { canonical.key } );
+                if( !present )
+                {
+                    return false;
+                }
                 if( endpoint == path && !uuid.empty() )
                 {
-                    if( present->eof() || present->getFieldValue( "uuid" ) != uuid ) return false;
+                    if( present->eof() || present->getFieldValue( "uuid" ) != uuid )
+                    {
+                        return false;
+                    }
                 }
-                else if( !present->eof() ) return false;
+                else if( !present->eof() )
+                {
+                    return false;
+                }
             }
             return true;
         }
@@ -3866,32 +3982,59 @@ namespace workphone
         void inspectConflict( AssetDatabaseManager &manager, const RecoveryRecord &record,
                               AssetDatabaseManager::FileOperationRecovery &selection )
         {
-            if( !selection.retainedPath.empty() || record.kind == "copy" ) return;
+            if( !selection.retainedPath.empty() || record.kind == "copy" )
+            {
+                return;
+            }
             const auto source = checkedRecoveryPath( record.root, record.source );
             const auto destination = checkedRecoveryPath( record.root, record.destination );
             const auto stage = checkedRecoveryPath( record.root, record.stage );
             const bool undo = record.state == "undoing";
             const auto &blocker = undo ? destination : source;
-            if( !assetfs::exists( blocker ) ) return;
-            const auto payloadPath = undo ? record.source
-                                          : ( assetfs::exists( stage ) ? record.stage : record.destination );
+            if( !assetfs::exists( blocker ) )
+            {
+                return;
+            }
+            const auto payloadPath =
+                undo ? record.source : ( assetfs::exists( stage ) ? record.stage : record.destination );
             const auto payload = checkedRecoveryPath( record.root, payloadPath );
-            if( payload == blocker || !assetfs::exists( payload ) ) return;
-            if( ( !undo && record.kind == "move" && assetfs::exists( stage ) && assetfs::exists( destination ) ) ||
+            if( payload == blocker || !assetfs::exists( payload ) )
+            {
+                return;
+            }
+            if( ( !undo && record.kind == "move" && assetfs::exists( stage ) &&
+                  assetfs::exists( destination ) ) ||
                 ( undo && record.kind == "move" && assetfs::exists( stage ) ) )
-                throw std::runtime_error( "More than two locations contain files. Review the copies manually." );
+            {
+                throw std::runtime_error(
+                    "More than two locations contain files. Review the copies manually." );
+            }
             if( !assetfs::is_regular_file( blocker ) || !assetfs::is_regular_file( payload ) )
-                throw std::runtime_error( "Preserve-and-recover supports two regular files. Review folders manually." );
+            {
+                throw std::runtime_error(
+                    "Preserve-and-recover supports two regular files. Review folders manually." );
+            }
             if( assetfs::file_size( blocker ) > recoveryConflictByteLimit ||
                 assetfs::file_size( payload ) > recoveryConflictByteLimit )
-                throw std::runtime_error( "Preserve-and-recover inspection is limited to 64 MiB per file." );
+            {
+                throw std::runtime_error(
+                    "Preserve-and-recover inspection is limited to 64 MiB per file." );
+            }
             if( treeDigest( payload, recoveryConflictByteLimit ) != record.digest )
-                throw std::runtime_error( "Expected journal bytes could not be identified. Review the copies manually." );
+            {
+                throw std::runtime_error(
+                    "Expected journal bytes could not be identified. Review the copies manually." );
+            }
             const auto blockerDigest = treeDigest( blocker, recoveryConflictByteLimit );
             if( blockerDigest == record.digest )
+            {
                 throw std::runtime_error( "Both files match the journal. Review the copies manually." );
+            }
             if( !conflictCatalogMatches( manager, record ) )
-                throw std::runtime_error( "Catalog identities changed. Review the conflicting files manually." );
+            {
+                throw std::runtime_error(
+                    "Catalog identities changed. Review the conflicting files manually." );
+            }
             selection.payloadPath = payloadPath;
             selection.conflictPath = undo ? record.destination : record.source;
             selection.conflictDigest = blockerDigest;
@@ -4035,7 +4178,10 @@ namespace workphone
                 throw std::runtime_error( "Destination folder does not exist" );
             }
             String digest;
-            if( !refreshDatabaseRevision() ) throw std::runtime_error( "Cannot capture catalog revision for operation" );
+            if( !refreshDatabaseRevision() )
+            {
+                throw std::runtime_error( "Cannot capture catalog revision for operation" );
+            }
             const auto expectedRevision = m_databaseRevision;
             Array<OperationEntry> entries = makeSourceBudgetSnapshot<OperationEntry>();
             auto rows =
@@ -4117,14 +4263,23 @@ namespace workphone
             }
             {
                 CatalogTransaction transaction( *this );
-                if( !transaction.active() || !refreshDatabaseRevision() || m_databaseRevision != expectedRevision ||
-                    !operationSchema( *this ) || !operationJournalIdle( *this ) )
-                    throw std::runtime_error( "Cannot prepare asset operation while another intent or catalog change is pending" );
+                if( !transaction.active() || !refreshDatabaseRevision() ||
+                    m_databaseRevision != expectedRevision || !operationSchema( *this ) ||
+                    !operationJournalIdle( *this ) )
+                {
+                    throw std::runtime_error(
+                        "Cannot prepare asset operation while another intent or catalog change is "
+                        "pending" );
+                }
                 const auto checkedFrom = checkedRecoveryPath( m_projectRoot, source.path );
                 const auto checkedTo = checkedRecoveryPath( m_projectRoot, destination.path );
                 const auto checkedStage = checkedRecoveryPath( m_projectRoot, storage );
-                if( !assetfs::exists( checkedFrom ) || assetfs::exists( checkedTo ) || assetfs::exists( checkedStage ) )
-                    throw std::runtime_error( "Asset operation files changed before intent publication" );
+                if( !assetfs::exists( checkedFrom ) || assetfs::exists( checkedTo ) ||
+                    assetfs::exists( checkedStage ) )
+                {
+                    throw std::runtime_error(
+                        "Asset operation files changed before intent publication" );
+                }
                 digest = treeDigest( checkedFrom );
                 if( !queryCatalog( *this,
                                    "INSERT INTO wp_asset_operations VALUES(?,?,?,?,?,'prepared',?)",
@@ -4151,18 +4306,27 @@ namespace workphone
             // Publish intent durably first. Reacquire write admission and check
             // it before touching files, then hold admission through final SQL.
             CatalogTransaction transaction( *this );
-            if( !transaction.active() || !refreshDatabaseRevision() || m_databaseRevision != expectedRevision )
-                throw std::runtime_error( "Cannot admit prepared asset operation at its captured catalog revision" );
+            if( !transaction.active() || !refreshDatabaseRevision() ||
+                m_databaseRevision != expectedRevision )
+            {
+                throw std::runtime_error(
+                    "Cannot admit prepared asset operation at its captured catalog revision" );
+            }
             const auto record = readRecoveryRecord( *this, result.operationId );
             if( record.state != "prepared" || record.kind != kind || record.source != source.path ||
                 record.destination != destination.path || record.digest != digest )
+            {
                 throw std::runtime_error( "Prepared asset operation was already changed or recovered" );
+            }
             const auto activeFrom = checkedRecoveryPath( m_projectRoot, record.source );
             const auto activeTo = checkedRecoveryPath( m_projectRoot, record.destination );
             assetfs::create_directories( checkedRecoveryPath( m_projectRoot, storage ).parent_path() );
             const auto activeStage = checkedRecoveryPath( m_projectRoot, storage );
             if( assetfs::exists( activeStage ) || assetfs::exists( activeTo ) )
-                throw std::runtime_error( "Prepared asset operation destination or staging path is occupied" );
+            {
+                throw std::runtime_error(
+                    "Prepared asset operation destination or staging path is occupied" );
+            }
             if( operation == FileOperation::Copy )
             {
                 assetfs::copy( activeFrom, activeStage, assetfs::copy_options::recursive );
@@ -4175,7 +4339,8 @@ namespace workphone
             {
                 throw std::runtime_error( "Asset changed while staging; recovery required" );
             }
-            if( operation != FileOperation::Delete && !renameExclusive( activeStage, activeTo, result.error ) )
+            if( operation != FileOperation::Delete &&
+                !renameExclusive( activeStage, activeTo, result.error ) )
             {
                 return result;
             }
@@ -4183,9 +4348,13 @@ namespace workphone
                   !referenceDeleteAllowed( *this, removedIds, source.key, result.error ) ) ||
                 !applyOperationEntries( *this, entries, kind, false ) ||
                 !applyReferenceDocuments( *this, kind, source.path, destination.path, false ) ||
-                !finishOperationState( *this, record, "prepared", "committed" ) || !transaction.commit() )
-                throw std::runtime_error(
-                    result.error.empty() ? "Asset catalog commit failed; journal recovery required" : result.error.c_str() );
+                !finishOperationState( *this, record, "prepared", "committed" ) ||
+                !transaction.commit() )
+            {
+                throw std::runtime_error( result.error.empty()
+                                              ? "Asset catalog commit failed; journal recovery required"
+                                              : result.error.c_str() );
+            }
             invalidateCatalog();
             result.succeeded = true;
         }
@@ -4249,27 +4418,41 @@ namespace workphone
                 }
             }
             const auto confirmUndoState = [&]( const char *state ) {
-                if( !refreshDatabaseRevision() || m_databaseRevision != expectedRevision ) return false;
+                if( !refreshDatabaseRevision() || m_databaseRevision != expectedRevision )
+                {
+                    return false;
+                }
                 const auto current = readRecoveryRecord( *this, id );
-                return current.state == state && current.kind == kind && current.source == originalSource &&
-                       current.destination == originalDestination && current.digest == record.digest;
+                return current.state == state && current.kind == kind &&
+                       current.source == originalSource && current.destination == originalDestination &&
+                       current.digest == record.digest;
             };
             {
                 CatalogTransaction intent( *this );
-                if( !intent.active() || !confirmUndoState( "committed" ) || !operationJournalIdle( *this ) ||
+                if( !intent.active() || !confirmUndoState( "committed" ) ||
+                    !operationJournalIdle( *this ) ||
                     !assetfs::exists( checkedRecoveryPath( m_projectRoot, originalDestination ) ) ||
                     assetfs::exists( checkedRecoveryPath( m_projectRoot, undoDestination ) ) ||
-                    !queryCatalog( *this, "UPDATE wp_asset_operations SET state='undoing' WHERE id=? AND state='committed'",
-                                   { id } ) || !intent.commit() )
+                    !queryCatalog( *this,
+                                   "UPDATE wp_asset_operations SET state='undoing' WHERE id=? AND "
+                                   "state='committed'",
+                                   { id } ) ||
+                    !intent.commit() )
+                {
                     throw std::runtime_error( "Cannot journal undo at its captured catalog revision" );
+                }
             }
             CatalogTransaction transaction( *this );
             if( !transaction.active() || !confirmUndoState( "undoing" ) )
+            {
                 throw std::runtime_error( "Undo intent was already changed or recovered" );
+            }
             const auto activeFrom = checkedRecoveryPath( m_projectRoot, originalDestination );
             const auto activeTo = checkedRecoveryPath( m_projectRoot, undoDestination );
             if( assetfs::exists( activeTo ) || treeDigest( activeFrom ) != record.digest )
+            {
                 throw std::runtime_error( "Undo conflicts with external files or changed asset bytes" );
+            }
             if( !renameExclusive( activeFrom, activeTo, result.error ) )
             {
                 return result;
@@ -4278,7 +4461,9 @@ namespace workphone
                 !applyOperationEntries( *this, entries, kind, true ) ||
                 !applyReferenceDocuments( *this, kind, originalSource, originalDestination, true ) ||
                 !finishOperationState( *this, record, "undoing", "undone" ) || !transaction.commit() )
+            {
                 throw std::runtime_error( "Undo catalog commit failed; recovery required" );
+            }
             invalidateCatalog();
             result.succeeded = true;
         }
@@ -4289,7 +4474,8 @@ namespace workphone
         return result;
     }
 
-    AssetDatabaseManager::FileOperationRecovery AssetDatabaseManager::inspectFileOperationRecovery( const String &id )
+    AssetDatabaseManager::FileOperationRecovery AssetDatabaseManager::inspectFileOperationRecovery(
+        const String &id )
     {
         ScopedLock lock( this );
         FileOperationRecovery selection;
@@ -4297,7 +4483,9 @@ namespace workphone
         try
         {
             if( !m_catalogReady || !refreshDatabaseRevision() )
+            {
                 throw std::runtime_error( "Original project catalog is unavailable" );
+            }
             selection.catalogInstance = m_catalogInstance;
             selection.generation = m_catalogGeneration;
             const auto record = readRecoveryRecord( *this, id );
@@ -4307,8 +4495,13 @@ namespace workphone
             selection.destinationPath = record.destination;
             selection.payloadDigest = record.digest;
             if( assetfs::is_regular_file( checkedRecoveryPath( record.root, record.hold ) ) )
+            {
                 selection.retainedPath = record.hold;
-            if( m_readOnly || !recoveryPending( record ) ) return selection;
+            }
+            if( m_readOnly || !recoveryPending( record ) )
+            {
+                return selection;
+            }
             checkedRecoveryPath( record.root, record.source );
             checkedRecoveryPath( record.root, record.destination );
             checkedRecoveryPath( record.root, record.stage );
@@ -4319,7 +4512,8 @@ namespace workphone
             if( !refreshDatabaseRevision() || selection.generation != m_catalogGeneration )
             {
                 selection.canRetry = selection.canPreserve = false;
-                throw std::runtime_error( "Catalog changed while inspecting recovery. Select the record again." );
+                throw std::runtime_error(
+                    "Catalog changed while inspecting recovery. Select the record again." );
             }
         }
         catch( const std::exception &exception )
@@ -4337,22 +4531,37 @@ namespace workphone
         result.operationId = selection.operationId;
         try
         {
-            if( m_readOnly || !m_catalogReady || !selection.canRetry || selection.catalogInstance != m_catalogInstance )
-                throw std::runtime_error( "Operation or project session changed. Select the record again." );
+            if( m_readOnly || !m_catalogReady || !selection.canRetry ||
+                selection.catalogInstance != m_catalogInstance )
+            {
+                throw std::runtime_error(
+                    "Operation or project session changed. Select the record again." );
+            }
             CatalogTransaction transaction( *this );
-            if( !transaction.active() || !refreshDatabaseRevision() || selection.generation != m_catalogGeneration )
+            if( !transaction.active() || !refreshDatabaseRevision() ||
+                selection.generation != m_catalogGeneration )
+            {
                 throw std::runtime_error( "Cannot retry recovery with the selected catalog revision" );
+            }
             const auto record = readRecoveryRecord( *this, selection.operationId );
             if( !recoveryRecordMatches( record, selection ) )
+            {
                 throw std::runtime_error( "Operation changed. Select the record again." );
+            }
             recoverOperationRecord( *this, record, result.error, 256ull << 20 );
-            if( !transaction.commit() ) throw std::runtime_error( "Cannot commit recovery. Retry the journal record." );
+            if( !transaction.commit() )
+            {
+                throw std::runtime_error( "Cannot commit recovery. Retry the journal record." );
+            }
             invalidateCatalog();
             result.succeeded = true;
         }
         catch( const std::exception &exception )
         {
-            if( result.error.empty() ) result.error = exception.what();
+            if( result.error.empty() )
+            {
+                result.error = exception.what();
+            }
         }
         return result;
     }
@@ -4366,38 +4575,68 @@ namespace workphone
         ScopedLock lock( this );
         try
         {
-            if( m_readOnly || !m_catalogReady || !selection.canPreserve || selection.catalogInstance != m_catalogInstance )
-                throw std::runtime_error( "Conflict or project session changed. Inspect the record again." );
+            if( m_readOnly || !m_catalogReady || !selection.canPreserve ||
+                selection.catalogInstance != m_catalogInstance )
+            {
+                throw std::runtime_error(
+                    "Conflict or project session changed. Inspect the record again." );
+            }
             CatalogTransaction transaction( *this );
-            if( !transaction.active() || !refreshDatabaseRevision() || selection.generation != m_catalogGeneration )
-                throw std::runtime_error( "Cannot preserve conflict with the selected catalog revision" );
+            if( !transaction.active() || !refreshDatabaseRevision() ||
+                selection.generation != m_catalogGeneration )
+            {
+                throw std::runtime_error(
+                    "Cannot preserve conflict with the selected catalog revision" );
+            }
             const auto record = readRecoveryRecord( *this, selection.operationId );
             if( !recoveryPending( record ) || !recoveryRecordMatches( record, selection ) )
+            {
                 throw std::runtime_error( "Operation changed. Inspect the record again." );
+            }
             FileOperationRecovery latest;
             const auto holding = checkedRecoveryPath( record.root, record.hold );
-            if( assetfs::exists( holding ) ) throw std::runtime_error( "Conflict holding path is already occupied" );
+            if( assetfs::exists( holding ) )
+            {
+                throw std::runtime_error( "Conflict holding path is already occupied" );
+            }
             inspectConflict( *this, record, latest );
             if( !latest.canPreserve || latest.payloadPath != selection.payloadPath ||
-                latest.conflictPath != selection.conflictPath || latest.conflictDigest != selection.conflictDigest ||
+                latest.conflictPath != selection.conflictPath ||
+                latest.conflictDigest != selection.conflictDigest ||
                 latest.holdingPath != selection.holdingPath )
-                throw std::runtime_error( "Conflict bytes or locations changed. Inspect the record again." );
+            {
+                throw std::runtime_error(
+                    "Conflict bytes or locations changed. Inspect the record again." );
+            }
             const auto conflict = checkedRecoveryPath( record.root, latest.conflictPath );
-            if( !assetfs::is_directory( holding.parent_path() ) || !renameExclusive( conflict, holding, result.error ) )
+            if( !assetfs::is_directory( holding.parent_path() ) ||
+                !renameExclusive( conflict, holding, result.error ) )
+            {
                 throw std::runtime_error( "Cannot preserve the conflicting file" );
+            }
             // From here both files remain available even if publication fails. The
             // unchanged pending record lets ordinary recovery retry the journaled bytes.
-            if( treeDigest( checkedRecoveryPath( record.root, record.hold ), recoveryConflictByteLimit ) !=
-                latest.conflictDigest )
-                throw std::runtime_error( "The blocking file changed during rename. Inspect the holding file before retrying." );
+            if( treeDigest( checkedRecoveryPath( record.root, record.hold ),
+                            recoveryConflictByteLimit ) != latest.conflictDigest )
+            {
+                throw std::runtime_error(
+                    "The blocking file changed during rename. Inspect the holding file before "
+                    "retrying." );
+            }
             recoverOperationRecord( *this, record, result.error, recoveryConflictByteLimit );
-            if( !transaction.commit() ) throw std::runtime_error( "Cannot commit recovery. Retry the journal record." );
+            if( !transaction.commit() )
+            {
+                throw std::runtime_error( "Cannot commit recovery. Retry the journal record." );
+            }
             invalidateCatalog();
             result.succeeded = true;
         }
         catch( const std::exception &exception )
         {
-            if( result.error.empty() ) result.error = exception.what();
+            if( result.error.empty() )
+            {
+                result.error = exception.what();
+            }
         }
 #else
         result.error = "Preserve-and-recover requires Windows exclusive rename support.";
@@ -4423,10 +4662,9 @@ namespace workphone
         {
             return results;
         }
-        auto rows = queryCatalog(
-            *this,
-            "SELECT substr(id,1,37) AS id FROM wp_asset_operations "
-            "WHERE state IN ('prepared','undoing') ORDER BY id" );
+        auto rows = queryCatalog( *this,
+                                  "SELECT substr(id,1,37) AS id FROM wp_asset_operations "
+                                  "WHERE state IN ('prepared','undoing') ORDER BY id" );
         if( !rows )
         {
             return results;
@@ -4438,15 +4676,28 @@ namespace workphone
             try
             {
                 CatalogTransaction transaction( *this );
-                if( !transaction.active() ) throw std::runtime_error( "Cannot admit journal recovery while another writer is active" );
+                if( !transaction.active() )
+                {
+                    throw std::runtime_error(
+                        "Cannot admit journal recovery while another writer is active" );
+                }
                 const auto record = readRecoveryRecord( *this, result.operationId );
-                if( recoveryPending( record ) ) recoverOperationRecord( *this, record, result.error );
-                if( !transaction.commit() ) throw std::runtime_error( "Cannot commit journal recovery" );
+                if( recoveryPending( record ) )
+                {
+                    recoverOperationRecord( *this, record, result.error );
+                }
+                if( !transaction.commit() )
+                {
+                    throw std::runtime_error( "Cannot commit journal recovery" );
+                }
                 result.succeeded = true;
             }
             catch( const std::exception &error )
             {
-                if( result.error.empty() ) result.error = error.what();
+                if( result.error.empty() )
+                {
+                    result.error = error.what();
+                }
             }
             results.push_back( result );
             rows->nextRow();

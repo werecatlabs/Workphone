@@ -137,9 +137,9 @@ namespace workphone
         return result;
     }
 
-    MeshImposterSpriteSheet bakeMeshImposterSpriteSheet(
-        const Array<MeshImposterTriangle> &triangles, const Vector3F &lo, const Vector3F &hi,
-        const MeshImposterSpriteSheetOptions &options )
+    MeshImposterSpriteSheet bakeMeshImposterSpriteSheet( const Array<MeshImposterTriangle> &triangles,
+                                                         const Vector3F &lo, const Vector3F &hi,
+                                                         const MeshImposterSpriteSheetOptions &options )
     {
         const auto finite = []( const Vector3F &v ) { return MathUtil<f32>::isFinite( v ); };
         const auto extent = hi - lo;
@@ -157,30 +157,45 @@ namespace workphone
         }
         const auto viewCount = options.azimuthViews * options.elevationRings + 1;
         if( !options.columns || options.columns > viewCount )
+        {
             throw std::invalid_argument( "Invalid directional mesh imposter atlas columns." );
+        }
         const auto rows = ( viewCount + options.columns - 1 ) / options.columns;
         const auto width = options.columns * options.tileWidth, height = rows * options.tileHeight;
         const auto imageBytes = u64( width ) * height * 4;
         if( width > 16384 || height > 16384 || imageBytes > 128ull * 1024 * 1024 )
+        {
             throw std::invalid_argument( "Directional mesh imposter atlas exceeds its image bound." );
+        }
 
         // Validate borrowed inputs before admitting any retained or temporary storage.
         for( const auto &triangle : triangles )
         {
             const auto &colour = triangle.colour;
-            if( !std::isfinite( colour.r ) || !std::isfinite( colour.g ) ||
-                !std::isfinite( colour.b ) || !std::isfinite( colour.a ) )
+            if( !std::isfinite( colour.r ) || !std::isfinite( colour.g ) || !std::isfinite( colour.b ) ||
+                !std::isfinite( colour.a ) )
+            {
                 throw std::invalid_argument( "Non-finite directional imposter colour." );
+            }
             for( const auto &p : triangle.positions )
-                if( !finite( p ) || p.x < lo.x || p.y < lo.y || p.z < lo.z ||
-                    p.x > hi.x || p.y > hi.y || p.z > hi.z )
-                    throw std::invalid_argument( "Directional imposter vertex is outside finite bounds." );
+            {
+                if( !finite( p ) || p.x < lo.x || p.y < lo.y || p.z < lo.z || p.x > hi.x || p.y > hi.y ||
+                    p.z > hi.z )
+                {
+                    throw std::invalid_argument(
+                        "Directional imposter vertex is outside finite bounds." );
+                }
+            }
         }
 
         MeshImposterSpriteSheet result;
-        result.width = width; result.height = height;
-        result.tileWidth = options.tileWidth; result.tileHeight = options.tileHeight;
-        result.columns = options.columns; result.rows = rows; result.gutter = options.gutter;
+        result.width = width;
+        result.height = height;
+        result.tileWidth = options.tileWidth;
+        result.tileHeight = options.tileHeight;
+        result.columns = options.columns;
+        result.rows = rows;
+        result.gutter = options.gutter;
         result.rgba.reserve( size_t( imageBytes ) );
         result.rgba.resize( size_t( imageBytes ), 0 );
         result.views.reserve( viewCount );
@@ -196,10 +211,13 @@ namespace workphone
             }
             else
             {
-                const auto elevation = ( index / options.azimuthViews ) * ( pi * .5 / options.elevationRings );
-                const auto azimuth = ( index % options.azimuthViews ) * ( 2 * pi / options.azimuthViews );
+                const auto elevation =
+                    ( index / options.azimuthViews ) * ( pi * .5 / options.elevationRings );
+                const auto azimuth =
+                    ( index % options.azimuthViews ) * ( 2 * pi / options.azimuthViews );
                 view.towardCamera = { f32( std::sin( azimuth ) * std::cos( elevation ) ),
-                    f32( std::sin( elevation ) ), f32( std::cos( azimuth ) * std::cos( elevation ) ) };
+                                      f32( std::sin( elevation ) ),
+                                      f32( std::cos( azimuth ) * std::cos( elevation ) ) };
                 view.right = { f32( std::cos( azimuth ) ), 0, f32( -std::sin( azimuth ) ) };
                 view.up = view.towardCamera.crossProduct( view.right );
             }
@@ -224,19 +242,24 @@ namespace workphone
                 view.maximumDepth = std::max( view.maximumDepth, p.dotProduct( view.towardCamera ) );
             }
             const auto span = view.maximum - view.minimum;
-            if( !std::isfinite( span.x ) || !std::isfinite( span.y ) || !std::isfinite( view.maximumDepth ) ||
-                span.x <= 0 || span.y <= 0 )
+            if( !std::isfinite( span.x ) || !std::isfinite( span.y ) ||
+                !std::isfinite( view.maximumDepth ) || span.x <= 0 || span.y <= 0 )
+            {
                 throw std::invalid_argument( "Directional imposter projection bounds overflow." );
+            }
             result.views.push_back( view );
         }
 
         const auto sampling = options.supersampling;
-        const auto rasterWidth = options.tileWidth * sampling, rasterHeight = options.tileHeight * sampling;
+        const auto rasterWidth = options.tileWidth * sampling,
+                   rasterHeight = options.tileHeight * sampling;
         const auto rasterPixels = size_t( rasterWidth ) * rasterHeight;
         auto depth = makeSourceBudgetSnapshot<float>();
-        depth.reserve( rasterPixels ); depth.resize( rasterPixels );
+        depth.reserve( rasterPixels );
+        depth.resize( rasterPixels );
         auto colours = makeSourceBudgetSnapshot<u8>();
-        colours.reserve( rasterPixels * 4 ); colours.resize( rasterPixels * 4 );
+        colours.reserve( rasterPixels * 4 );
+        colours.resize( rasterPixels * 4 );
         auto light = Vector3F( .4f, .75f, .5f );
         light.normalise();
         const auto gutter = options.gutter * sampling;
@@ -256,21 +279,33 @@ namespace workphone
                     projected[i] = {
                         gutter + ( p.dotProduct( view.right ) - view.minimum.x ) / span.x * rasterSpanX,
                         gutter + ( view.maximum.y - p.dotProduct( view.up ) ) / span.y * rasterSpanY,
-                        p.dotProduct( view.towardCamera ) };
+                        p.dotProduct( view.towardCamera )
+                    };
                 }
                 const auto &a = projected[0], &b = projected[1], &c = projected[2];
                 const auto det = ( b.y - c.y ) * ( a.x - c.x ) + ( c.x - b.x ) * ( a.y - c.y );
-                if( std::abs( det ) < 1e-8f ) continue;
-                const auto xmin = std::max( int( gutter ), int( std::floor( std::min( { a.x, b.x, c.x } ) ) ) );
+                if( std::abs( det ) < 1e-8f )
+                {
+                    continue;
+                }
+                const auto xmin =
+                    std::max( int( gutter ), int( std::floor( std::min( { a.x, b.x, c.x } ) ) ) );
                 const auto xmax = std::min( int( rasterWidth - gutter - 1 ),
-                    int( std::ceil( std::max( { a.x, b.x, c.x } ) ) ) );
-                const auto ymin = std::max( int( gutter ), int( std::floor( std::min( { a.y, b.y, c.y } ) ) ) );
+                                            int( std::ceil( std::max( { a.x, b.x, c.x } ) ) ) );
+                const auto ymin =
+                    std::max( int( gutter ), int( std::floor( std::min( { a.y, b.y, c.y } ) ) ) );
                 const auto ymax = std::min( int( rasterHeight - gutter - 1 ),
-                    int( std::ceil( std::max( { a.y, b.y, c.y } ) ) ) );
-                if( xmax < xmin || ymax < ymin ) continue;
+                                            int( std::ceil( std::max( { a.y, b.y, c.y } ) ) ) );
+                if( xmax < xmin || ymax < ymin )
+                {
+                    continue;
+                }
                 const auto samples = u64( xmax - xmin + 1 ) * u64( ymax - ymin + 1 );
                 if( samples > options.maximumRasterSamples - result.rasterSamples )
-                    throw std::runtime_error( "Directional mesh imposter raster-work budget exhausted." );
+                {
+                    throw std::runtime_error(
+                        "Directional mesh imposter raster-work budget exhausted." );
+                }
                 result.rasterSamples += samples;
 
                 // Double intermediates keep shading finite even for very large valid meshes.
@@ -280,50 +315,85 @@ namespace workphone
                 const double ny = double( ab.z ) * ac.x - double( ab.x ) * ac.z;
                 const double nz = double( ab.x ) * ac.y - double( ab.y ) * ac.x;
                 const auto length = std::sqrt( nx * nx + ny * ny + nz * nz );
-                const auto lit = length > 0 ? std::max( 0., ( nx * light.x + ny * light.y + nz * light.z ) / length ) : 0.;
+                const auto lit =
+                    length > 0 ? std::max( 0., ( nx * light.x + ny * light.y + nz * light.z ) / length )
+                               : 0.;
                 const auto illumination = .45 + .65 * lit;
                 const auto toSRGB = [&]( float value ) {
-                    return u8( std::round( 255 * std::pow( std::clamp( value * illumination, 0., 1. ), 1. / 2.2 ) ) );
+                    return u8( std::round(
+                        255 * std::pow( std::clamp( value * illumination, 0., 1. ), 1. / 2.2 ) ) );
                 };
-                const std::array<u8, 3> colour{ toSRGB( triangle.colour.r ), toSRGB( triangle.colour.g ), toSRGB( triangle.colour.b ) };
+                const std::array<u8, 3> colour{ toSRGB( triangle.colour.r ), toSRGB( triangle.colour.g ),
+                                                toSRGB( triangle.colour.b ) };
                 for( int y = ymin; y <= ymax; ++y )
+                {
                     for( int x = xmin; x <= xmax; ++x )
                     {
-                        const float u = ( ( b.y - c.y ) * ( x + .5f - c.x ) +
-                            ( c.x - b.x ) * ( y + .5f - c.y ) ) / det;
-                        const float v = ( ( c.y - a.y ) * ( x + .5f - c.x ) +
-                            ( a.x - c.x ) * ( y + .5f - c.y ) ) / det;
+                        const float u =
+                            ( ( b.y - c.y ) * ( x + .5f - c.x ) + ( c.x - b.x ) * ( y + .5f - c.y ) ) /
+                            det;
+                        const float v =
+                            ( ( c.y - a.y ) * ( x + .5f - c.x ) + ( a.x - c.x ) * ( y + .5f - c.y ) ) /
+                            det;
                         const float w = 1 - u - v;
-                        if( u < 0 || v < 0 || w < 0 ) continue;
+                        if( u < 0 || v < 0 || w < 0 )
+                        {
+                            continue;
+                        }
                         const auto z = a.z * u + b.z * v + c.z * w;
                         const auto index = size_t( y ) * rasterWidth + x;
-                        if( z <= depth[index] ) continue;
+                        if( z <= depth[index] )
+                        {
+                            continue;
+                        }
                         depth[index] = z;
                         auto pixel = colours.data() + index * 4;
-                        pixel[0] = colour[0]; pixel[1] = colour[1]; pixel[2] = colour[2]; pixel[3] = 255;
+                        pixel[0] = colour[0];
+                        pixel[1] = colour[1];
+                        pixel[2] = colour[2];
+                        pixel[3] = 255;
                     }
+                }
             }
             // Resolve each tile independently; no sample can cross its transparent gutter.
             for( u32 y = options.gutter; y < options.tileHeight - options.gutter; ++y )
+            {
                 for( u32 x = options.gutter; x < options.tileWidth - options.gutter; ++x )
                 {
                     u32 count = 0;
                     std::array<u32, 3> sum{};
                     for( u32 sy = 0; sy < sampling; ++sy )
+                    {
                         for( u32 sx = 0; sx < sampling; ++sx )
                         {
-                            const auto pixel = colours.data() +
+                            const auto pixel =
+                                colours.data() +
                                 ( size_t( y * sampling + sy ) * rasterWidth + x * sampling + sx ) * 4;
-                            if( !pixel[3] ) continue;
+                            if( !pixel[3] )
+                            {
+                                continue;
+                            }
                             ++count;
-                            for( size_t c = 0; c < sum.size(); ++c ) sum[c] += pixel[c];
+                            for( size_t c = 0; c < sum.size(); ++c )
+                            {
+                                sum[c] += pixel[c];
+                            }
                         }
-                    if( !count ) continue;
+                    }
+                    if( !count )
+                    {
+                        continue;
+                    }
                     auto output = result.rgba.data() +
-                        ( size_t( view.tileY + y ) * result.width + view.tileX + x ) * 4;
-                    for( size_t c = 0; c < sum.size(); ++c ) output[c] = u8( ( sum[c] + count / 2 ) / count );
-                    output[3] = u8( ( count * 255 + sampling * sampling / 2 ) / ( sampling * sampling ) );
+                                  ( size_t( view.tileY + y ) * result.width + view.tileX + x ) * 4;
+                    for( size_t c = 0; c < sum.size(); ++c )
+                    {
+                        output[c] = u8( ( sum[c] + count / 2 ) / count );
+                    }
+                    output[3] =
+                        u8( ( count * 255 + sampling * sampling / 2 ) / ( sampling * sampling ) );
                 }
+            }
         }
         return result;
     }
@@ -333,11 +403,17 @@ namespace workphone
     {
         const bool previousValid = previous >= 0 && size_t( previous ) < views.size();
         const auto retained = previousValid ? previous : -1;
-        if( views.empty() || !MathUtil<f32>::isFinite( towardCamera ) ) return retained;
+        if( views.empty() || !MathUtil<f32>::isFinite( towardCamera ) )
+        {
+            return retained;
+        }
         // Scaling first avoids overflow and allows very small finite directions.
-        const auto magnitude = std::max( { std::abs( towardCamera.x ), std::abs( towardCamera.y ),
-                                          std::abs( towardCamera.z ) } );
-        if( magnitude <= 0 ) return retained;
+        const auto magnitude = std::max(
+            { std::abs( towardCamera.x ), std::abs( towardCamera.y ), std::abs( towardCamera.z ) } );
+        if( magnitude <= 0 )
+        {
+            return retained;
+        }
         auto direction = towardCamera / magnitude;
         direction.normalise();
         f32 bestScore = -std::numeric_limits<f32>::infinity();
@@ -351,11 +427,16 @@ namespace workphone
                 selected = s32( i );
             }
         }
-        if( selected < 0 ) return retained;
+        if( selected < 0 )
+        {
+            return retained;
+        }
         const auto margin = std::isfinite( hysteresis ) ? std::clamp( hysteresis, 0.f, .25f ) : 0.f;
         if( previousValid && std::isfinite( direction.dotProduct( views[previous].towardCamera ) ) &&
             bestScore - direction.dotProduct( views[previous].towardCamera ) <= margin )
+        {
             return previous;
+        }
         return selected;
     }
 

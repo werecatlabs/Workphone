@@ -51,15 +51,28 @@ namespace workphone
 
     void TimerMT::beginSuspension()
     {
-        if( !isLoaded() ) return;
-        if( m_suspensionDepth == 0 ) m_suspensionPoint = TimerClock::now();
+        if( !isLoaded() )
+        {
+            return;
+        }
+        if( m_suspensionDepth == 0 )
+        {
+            m_suspensionPoint = TimerClock::now();
+        }
         ++m_suspensionDepth;
     }
 
     void TimerMT::endSuspension()
     {
-        if( m_suspensionDepth == 0 ) return;
-        if( m_suspensionDepth > 1 ) { --m_suspensionDepth; return; }
+        if( m_suspensionDepth == 0 )
+        {
+            return;
+        }
+        if( m_suspensionDepth > 1 )
+        {
+            --m_suspensionDepth;
+            return;
+        }
         excludeElapsed( durationToSeconds( TimerClock::now() - m_suspensionPoint ) );
         m_suspensionDepth = 0;
     }
@@ -200,7 +213,10 @@ namespace workphone
 
     void TimerMT::update()
     {
-        if( isSuspended() ) return;
+        if( isSuspended() )
+        {
+            return;
+        }
         WP_ASSERT( isLoaded() );
 
         // Guard: arrays must have been populated by load().
@@ -291,7 +307,10 @@ namespace workphone
 
     void TimerMT::update( f64 dt )
     {
-        if( isSuspended() ) return;
+        if( isSuspended() )
+        {
+            return;
+        }
         // Guard: arrays must have been populated by load().
         WP_ASSERT( !m_time.empty() );
         if( m_time.empty() )
@@ -345,7 +364,10 @@ namespace workphone
 
     void TimerMT::updateFixed()
     {
-        if( isSuspended() ) return;
+        if( isSuspended() )
+        {
+            return;
+        }
         // Guard: arrays must have been populated by load().
         if( m_fixedTime.empty() || m_fixedTimeInterval.empty() || m_fixedTimePoints.empty() )
         {
@@ -676,7 +698,8 @@ namespace workphone
 
     auto TimerMT::now128() const -> f64
     {
-        return durationToSeconds( ( isSuspended() ? m_suspensionPoint : TimerClock::now() ) - m_startPoint );
+        return durationToSeconds( ( isSuspended() ? m_suspensionPoint : TimerClock::now() ) -
+                                  m_startPoint );
     }
 
     auto TimerMT::getSmoothTime() const -> f64
@@ -687,7 +710,10 @@ namespace workphone
 
     auto TimerMT::getSmoothDeltaTime() const -> f64
     {
-        if( isSuspended() ) return 0.0;
+        if( isSuspended() )
+        {
+            return 0.0;
+        }
         auto task = static_cast<s32>( Thread::getCurrentTask() );
         return m_smoothDeltaTime[task];
     }
@@ -769,6 +795,7 @@ namespace workphone
 
     auto TimerMT::now() const -> f64
     {
-        return durationToSeconds( ( isSuspended() ? m_suspensionPoint : TimerClock::now() ) - m_startPoint );
+        return durationToSeconds( ( isSuspended() ? m_suspensionPoint : TimerClock::now() ) -
+                                  m_startPoint );
     }
 }  // namespace workphone

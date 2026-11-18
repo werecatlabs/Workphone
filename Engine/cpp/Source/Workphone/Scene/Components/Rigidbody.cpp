@@ -260,8 +260,8 @@ namespace workphone::scene
                 { Rigidbody::GroupMaskStr, "Collision Group", "Collision",
                   "Fallback category bits when no project collision layer matches.", "0", "", "1" },
                 { Rigidbody::CollisionLayerStr, "Collision Layer", "Collision",
-                  "Name from Project Settings. Leave blank to use the numeric collision group.",
-                  "", "", "" },
+                  "Name from Project Settings. Leave blank to use the numeric collision group.", "", "",
+                  "" },
                 { Rigidbody::CollisionMaskStr, "Collides With", "Collision",
                   "Category bits this body is allowed to collide with.", "0", "", "1" },
                 { Rigidbody::CollisionMaskOverrideStr, "Override Actor Mask", "Collision",
@@ -542,7 +542,9 @@ namespace workphone::scene
                 }
 
                 if( !m_collisionLayer.load().empty() )
+                {
                     refreshCollisionLayerFromScene( physicsMgr->getPhysicsScene().get() );
+                }
 
                 SmartPtr<physics::IPhysicsBody3> body;
                 auto transform = actor->getWorldTransform();
@@ -1103,8 +1105,13 @@ namespace workphone::scene
         const auto name = m_collisionLayer.load();
         u32 mask = 0;
         if( layers && !name.empty() )
+        {
             layers->getPropertyValue( "layer." + name, mask );
-        if( m_collisionLayerMask.load() == mask ) return;
+        }
+        if( m_collisionLayerMask.load() == mask )
+        {
+            return;
+        }
 
         const auto app = core::IApplicationManager::instancePtr();
         const auto manager = app ? app->getPhysicsManager() : nullptr;
@@ -1114,8 +1121,12 @@ namespace workphone::scene
             // Component removal locks the actor before touching physics. Snapshot its shape in that order.
             ScopedLock gameLock( game.get() );
             if( auto actor = getActorPtr() )
+            {
                 if( auto collision = actor->getComponent<Collision>() )
+                {
                     shape = collision->getShape();
+                }
+            }
         }
 
         const auto scene = manager ? manager->getPhysicsScene() : nullptr;
@@ -1126,24 +1137,38 @@ namespace workphone::scene
             const auto bodyScene = body ? body->getScene() : nullptr;
             return bodyScene && bodyScene != scene;
         };
-        if( belongsToAnotherScene( dynamic ) || belongsToAnotherScene( stationary ) ) return;
+        if( belongsToAnotherScene( dynamic ) || belongsToAnotherScene( stationary ) )
+        {
+            return;
+        }
 
         m_collisionLayerMask.store( mask );
         const auto groupMask = getGroupMask();
-        if( dynamic ) dynamic->setCollisionType( groupMask );
-        if( stationary ) stationary->setCollisionType( groupMask );
+        if( dynamic )
+        {
+            dynamic->setCollisionType( groupMask );
+        }
+        if( stationary )
+        {
+            stationary->setCollisionType( groupMask );
+        }
         if( shape )
         {
             const auto body = shape->getActor();
             if( !body || body.get() == dynamic.get() || body.get() == stationary.get() )
+            {
                 shape->setCollisionType( groupMask );
+            }
         }
     }
 
     void Rigidbody::refreshCollisionLayerFromScene( physics::IPhysicsScene3 *scene )
     {
         const bool named = !m_collisionLayer.load().empty();
-        if( !named && m_collisionLayerMask.load() == 0 ) return;
+        if( !named && m_collisionLayerMask.load() == 0 )
+        {
+            return;
+        }
         const auto layers = named && scene ? scene->getProperties() : nullptr;
         refreshCollisionLayer( layers.get() );
     }
@@ -1546,7 +1571,9 @@ namespace workphone::scene
 
             auto groupMask = m_groupMask.load();
             if( properties->getPropertyValue( GroupMaskStr, groupMask ) )
+            {
                 setGroupMask( groupMask );
+            }
 
             String collisionLayer;
             if( properties->getPropertyValue( CollisionLayerStr, collisionLayer ) )

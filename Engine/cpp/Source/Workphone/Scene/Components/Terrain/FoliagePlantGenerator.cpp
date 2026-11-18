@@ -173,8 +173,7 @@ namespace workphone::scene
             const float bend = std::min( radius * .22f, h * .10f );
             const auto trunkPoint = [&]( float t ) {
                 return lean * bend * t * t * ( .5f + .5f * t ) +
-                       bendSide * bend * .18f * std::sin( pi * t ) * t +
-                       Vector3F( 0, h * .81f * t, 0 );
+                       bendSide * bend * .18f * std::sin( pi * t ) * t + Vector3F( 0, h * .81f * t, 0 );
             };
             const auto trunkWidth = [&]( float t ) {
                 return recipe.trunkRadius * ( 1.12f - .42f * t + .06f * std::cos( t * 2 * pi ) );
@@ -202,23 +201,21 @@ namespace workphone::scene
                 const Vector3F radial( std::cos( yaw ), 0, std::sin( yaw ) );
                 const Vector3F across( -radial.z, 0, radial.x );
                 const bool young = frond % 4 == 0;
-                const float reach = radius * ( young ? .55f + .18f * unit( key + 1 )
-                                                     : .85f + .15f * unit( key + 1 ) );
-                const float rise = h * ( young ? .15f + .025f * unit( key + 2 )
-                                               : .08f + .04f * unit( key + 2 ) );
+                const float reach =
+                    radius * ( young ? .55f + .18f * unit( key + 1 ) : .85f + .15f * unit( key + 1 ) );
+                const float rise =
+                    h * ( young ? .15f + .025f * unit( key + 2 ) : .08f + .04f * unit( key + 2 ) );
                 const float droop = h * ( young ? .015f : .16f + .08f * unit( key + 3 ) );
                 const float skew = ( unit( key + 4 ) - .5f ) * .24f;
                 const auto centre = [&]( float t ) {
-                    return crown + radial * reach * t +
-                           across * reach * skew * std::sin( pi * t ) +
+                    return crown + radial * reach * t + across * reach * skew * std::sin( pi * t ) +
                            Vector3F( 0, rise * std::sin( pi * t ) - droop * t * t, 0 );
                 };
                 const auto width = [&]( float t ) {
                     return radius * ( .006f + .145f * std::sqrt( std::max( 0.f, std::sin( pi * t ) ) ) );
                 };
                 const auto fold = [&]( float t ) {
-                    return Vector3F( 0, -std::min( radius * .025f, h * .025f ) *
-                                            std::sin( pi * t ), 0 );
+                    return Vector3F( 0, -std::min( radius * .025f, h * .025f ) * std::sin( pi * t ), 0 );
                 };
                 for( u32 segment = 0; segment < frondSegments; ++segment )
                 {

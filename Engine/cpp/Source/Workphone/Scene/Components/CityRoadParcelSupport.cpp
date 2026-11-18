@@ -117,8 +117,8 @@ namespace workphone::scene
         bool triangleOverlap( const Rectangle &r, const ReservedTriangle &triangle )
         {
             const double halfX = r.width * .5, halfZ = r.depth * .5;
-            if( r.x + halfX < triangle.x0 || r.x - halfX > triangle.x1 ||
-                r.z + halfZ < triangle.z0 || r.z - halfZ > triangle.z1 )
+            if( r.x + halfX < triangle.x0 || r.x - halfX > triangle.x1 || r.z + halfZ < triangle.z0 ||
+                r.z - halfZ > triangle.z1 )
             {
                 return false;
             }
@@ -136,7 +136,10 @@ namespace workphone::scene
                     maximum = std::max( maximum, projected );
                 }
                 const double radius = std::abs( nx ) * halfX + std::abs( nz ) * halfZ;
-                if( maximum < -radius || minimum > radius ) return false;
+                if( maximum < -radius || minimum > radius )
+                {
+                    return false;
+                }
             }
             return true;
         }
@@ -147,14 +150,18 @@ namespace workphone::scene
             SourceBudgetVector<ReservedTriangle> triangles;
             const auto point = []( Vector3F p ) { return Point{ p.x, p.z }; };
             const auto append = [&]( Point a, Point b, Point c ) {
-                const double area = ( b.x - a.x ) * ( c.z - a.z ) -
-                                    ( b.z - a.z ) * ( c.x - a.x );
+                const double area = ( b.x - a.x ) * ( c.z - a.z ) - ( b.z - a.z ) * ( c.x - a.x );
                 require( std::isfinite( area ), "Parcel junction reservation is not finite." );
-                if( std::abs( area ) < 1e-10 ) return;
+                if( std::abs( area ) < 1e-10 )
+                {
+                    return;
+                }
                 require( triangles.size() < 65536, "Parcel junction reservation capacity exceeded." );
-                triangles.push_back( { { a, b, c }, std::min( { a.x, b.x, c.x } ),
-                    std::max( { a.x, b.x, c.x } ), std::min( { a.z, b.z, c.z } ),
-                    std::max( { a.z, b.z, c.z } ) } );
+                triangles.push_back( { { a, b, c },
+                                       std::min( { a.x, b.x, c.x } ),
+                                       std::max( { a.x, b.x, c.x } ),
+                                       std::min( { a.z, b.z, c.z } ),
+                                       std::max( { a.z, b.z, c.z } ) } );
             };
             for( const auto &connection : connections.junctions )
             {
@@ -164,8 +171,10 @@ namespace workphone::scene
                 };
                 require( connection.indices.size() % 3 == 0, "Parcel junction triangles are invalid." );
                 for( size_t i = 0; i < connection.indices.size(); i += 3 )
+                {
                     append( vertex( connection.indices[i] ), vertex( connection.indices[i + 1] ),
                             vertex( connection.indices[i + 2] ) );
+                }
                 for( const auto &corner : connection.corners )
                 {
                     require( corner.points.size() == corner.outward.size(),
@@ -182,7 +191,8 @@ namespace workphone::scene
                         // a disk around the junction would unnecessarily lose lots.
                         const auto ai = offset( a, na, .05 ), ao = offset( a, na, pedestrianEnvelope ),
                                    bi = offset( b, nb, .05 ), bo = offset( b, nb, pedestrianEnvelope );
-                        append( ai, ao, bo ); append( ai, bo, bi );
+                        append( ai, ao, bo );
+                        append( ai, bo, bi );
                     }
                 }
             }
@@ -506,7 +516,7 @@ namespace workphone::scene
                                  String &error )
     {
         return prepareCityRoadParcels( input, source, bake, std::move( terrain ), placement, output,
-                                      culled, supportChecks, error, {} );
+                                       culled, supportChecks, error, {} );
     }
 
     static bool prepareParcels( const OpenCityLayout &input,
@@ -656,19 +666,26 @@ namespace workphone::scene
                 std::array<std::pair<float, float>, 25> scales;
                 size_t scaleIndex = 0;
                 for( float x : { 1.f, .85f, .7f, .55f, .4f } )
+                {
                     for( float z : { 1.f, .85f, .7f, .55f, .4f } )
                     {
                         scales[scaleIndex++] = { x, z };
                     }
-                const bool frontageAlongX = lot.frontage == procedural::OpenCityLayout::Frontage::North ||
-                                            lot.frontage == procedural::OpenCityLayout::Frontage::South;
+                }
+                const bool frontageAlongX =
+                    lot.frontage == procedural::OpenCityLayout::Frontage::North ||
+                    lot.frontage == procedural::OpenCityLayout::Frontage::South;
                 std::sort( scales.begin(), scales.end(), [&]( const auto &a, const auto &b ) {
                     const float areaA = a.first * a.second, areaB = b.first * b.second;
-                    if( areaA != areaB ) return areaA > areaB;
+                    if( areaA != areaB )
+                    {
+                        return areaA > areaB;
+                    }
                     // Equal-area choices keep as much street frontage as possible.
                     return frontageAlongX ? a.first > b.first : a.second > b.second;
                 } );
-                for( size_t attempt = 0; attempt < ( options.shrinkForRelief ? scales.size() : 1 ); ++attempt )
+                for( size_t attempt = 0; attempt < ( options.shrinkForRelief ? scales.size() : 1 );
+                     ++attempt )
                 {
                     lot = original;
                     const auto scale = scales[attempt];
@@ -680,8 +697,12 @@ namespace workphone::scene
                             continue;
                         }
                         using Frontage = procedural::OpenCityLayout::Frontage;
-                        const float anchorX = lot.frontage == Frontage::West ? -1.f : lot.frontage == Frontage::East ? 1.f : 0.f;
-                        const float anchorZ = lot.frontage == Frontage::North ? -1.f : lot.frontage == Frontage::South ? 1.f : 0.f;
+                        const float anchorX = lot.frontage == Frontage::West   ? -1.f
+                                              : lot.frontage == Frontage::East ? 1.f
+                                                                               : 0.f;
+                        const float anchorZ = lot.frontage == Frontage::North   ? -1.f
+                                              : lot.frontage == Frontage::South ? 1.f
+                                                                                : 0.f;
                         lot.parcelX += anchorX * original.parcelWidth * ( 1 - scale.first ) * .5f;
                         lot.parcelZ += anchorZ * original.parcelDepth * ( 1 - scale.second ) * .5f;
                         lot.parcelWidth *= scale.first;
@@ -692,7 +713,8 @@ namespace workphone::scene
                         lot.depth *= scale.second;
                         // Recheck even these mathematical subsets so float rounding
                         // at large world coordinates cannot erode a road reservation.
-                        const Rectangle reduced{ lot.parcelX, lot.parcelZ, lot.parcelWidth, lot.parcelDepth };
+                        const Rectangle reduced{ lot.parcelX, lot.parcelZ, lot.parcelWidth,
+                                                 lot.parcelDepth };
                         if( reserved( reduced ) )
                         {
                             continue;
@@ -712,7 +734,8 @@ namespace workphone::scene
                     const auto denialBefore = sourceBudgetDenialCount();
                     procedural::CityRoadSplineBake rectangleBake;
                     CityRoadTerrainMesh surface;
-                    if( !procedural::sampleCityRoadSplines( rectangle, {}, sampler, rectangleBake, error ) ||
+                    if( !procedural::sampleCityRoadSplines( rectangle, {}, sampler, rectangleBake,
+                                                            error ) ||
                         !buildCityRoadTerrainMesh( rectangle, rectangleBake, terrain, placement, surface,
                                                    error, false ) )
                     {

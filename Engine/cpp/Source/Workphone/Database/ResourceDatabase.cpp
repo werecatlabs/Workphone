@@ -2634,8 +2634,14 @@ namespace workphone
 
         String domainAttributeOwner( const std::set<String> &columns )
         {
-            if( columns.count( "configured_actor_id" ) ) return "configured_actor_id";
-            if( columns.count( "actor_id" ) ) return "actor_id";
+            if( columns.count( "configured_actor_id" ) )
+            {
+                return "configured_actor_id";
+            }
+            if( columns.count( "actor_id" ) )
+            {
+                return "actor_id";
+            }
             throw std::runtime_error( "Domain attributes have no supported owner column." );
         }
 
@@ -2643,8 +2649,8 @@ namespace workphone
         {
             // SQLite 3.7 has no instr(). Its text length/substr stop at NUL,
             // while BLOB comparison retains every byte in the database encoding.
-            return "CAST(" + column + " AS BLOB)=CAST(substr(" + column +
-                   ",1,length(" + column + ")) AS BLOB)";
+            return "CAST(" + column + " AS BLOB)=CAST(substr(" + column + ",1,length(" + column +
+                   ")) AS BLOB)";
         }
 
         String uniqueDomainRoot( SmartPtr<IDatabaseQuery> rows )
@@ -2690,7 +2696,8 @@ namespace workphone
             }
             ScopedLock managerLock( db );
             auto connection = db->getDatabase();
-            auto bound = connection ? dynamic_cast<IParameterizedDatabase *>( connection.get() ) : nullptr;
+            auto bound =
+                connection ? dynamic_cast<IParameterizedDatabase *>( connection.get() ) : nullptr;
             DatabaseConnectionLock guard(
                 connection ? dynamic_cast<ISerializedDatabase *>( connection.get() ) : nullptr );
             if( !bound || !queryResourceValues( db, "SAVEPOINT wp_domain_read", {} ) )
@@ -2718,49 +2725,61 @@ namespace workphone
                 const bool hasUuidColumn = columns.count( "uuid" ) != 0;
                 const String identityColumn = hasUuidColumn ? "uuid" : "id";
                 auto rootId = uniqueDomainRoot( queryResourceValues(
-                    db, "SELECT id," + completeDomainText( "id" ) + " AS id_complete,"
-                        "typeof(id) AS id_type FROM configured_actors WHERE " + identityColumn +
-                        " COLLATE NOCASE=? AND typeof(" + identityColumn + ")='text' AND " +
-                        completeDomainText( identityColumn ) + " LIMIT 2", { requestedUuid } ) );
+                    db,
+                    "SELECT id," + completeDomainText( "id" ) +
+                        " AS id_complete,"
+                        "typeof(id) AS id_type FROM configured_actors WHERE " +
+                        identityColumn + " COLLATE NOCASE=? AND typeof(" + identityColumn +
+                        ")='text' AND " + completeDomainText( identityColumn ) + " LIMIT 2",
+                    { requestedUuid } ) );
                 if( !attributeOwner.empty() )
                 {
                     // The authored domain editor already stores per-actor attributes.
                     // Its reserved uuid attribute supplies identity for numeric rows.
                     const auto mappedId = uniqueDomainRoot( queryResourceValues(
-                        db, "SELECT " + attributeOwner + " AS id," + completeDomainText( attributeOwner ) +
-                            " AS id_complete,typeof(" + attributeOwner + ") AS id_type FROM attribs "
+                        db,
+                        "SELECT " + attributeOwner + " AS id," + completeDomainText( attributeOwner ) +
+                            " AS id_complete,typeof(" + attributeOwner +
+                            ") AS id_type FROM attribs "
                             "WHERE title COLLATE BINARY=? AND value COLLATE NOCASE=? AND "
-                            "typeof(value)='text' AND " + completeDomainText( "value" ) + " LIMIT 2",
+                            "typeof(value)='text' AND " +
+                            completeDomainText( "value" ) + " LIMIT 2",
                         { "uuid", requestedUuid } ) );
                     if( !mappedId.empty() )
                     {
                         if( !rootId.empty() && rootId != mappedId )
                         {
-                            throw std::runtime_error( "Domain UUID column and attribute bind different actors." );
+                            throw std::runtime_error(
+                                "Domain UUID column and attribute bind different actors." );
                         }
                         // An existing direct binding can repeat its identical UUID
                         // as metadata. A new binding requires a numeric owner.
                         if( rootId.empty() && !positiveDomainRowId( mappedId ) )
                         {
-                            throw std::runtime_error( "Domain UUID attribute requires a positive numeric actor ID." );
+                            throw std::runtime_error(
+                                "Domain UUID attribute requires a positive numeric actor ID." );
                         }
                         rootId = mappedId;
                     }
                 }
                 if( rootId.empty() )
                 {
-                    throw std::runtime_error( "Domain UUID is missing; numeric actors require an authored UUID binding." );
+                    throw std::runtime_error(
+                        "Domain UUID is missing; numeric actors require an authored UUID binding." );
                 }
                 if( hasUuidColumn )
                 {
                     auto conflicts = queryResourceValues(
-                        db, "SELECT id FROM configured_actors WHERE id=? AND uuid IS NOT NULL AND "
-                            "(typeof(uuid)<>'text' OR NOT (" + completeDomainText( "uuid" ) +
+                        db,
+                        "SELECT id FROM configured_actors WHERE id=? AND uuid IS NOT NULL AND "
+                        "(typeof(uuid)<>'text' OR NOT (" +
+                            completeDomainText( "uuid" ) +
                             ") OR (uuid<>'' AND uuid COLLATE NOCASE<>?)) LIMIT 1",
                         { rootId, requestedUuid } );
                     if( !conflicts || !conflicts->eof() )
                     {
-                        throw std::runtime_error( "Domain UUID attribute conflicts with the actor UUID column." );
+                        throw std::runtime_error(
+                            "Domain UUID attribute conflicts with the actor UUID column." );
                     }
                 }
                 std::set<String> visited;
@@ -2802,12 +2821,12 @@ namespace workphone
                     }
                     if( !attributeOwner.empty() )
                     {
-                        auto values =
-                            queryResourceValues( db,
-                                                 "SELECT title,value,typeof(value)='text' AND length(value)=36 AND " +
-                                                     completeDomainText( "value" ) + " AS uuid_text FROM attribs WHERE " +
-                                                     attributeOwner + "=? ORDER BY title LIMIT 4097",
-                                                 { id } );
+                        auto values = queryResourceValues(
+                            db,
+                            "SELECT title,value,typeof(value)='text' AND length(value)=36 AND " +
+                                completeDomainText( "value" ) + " AS uuid_text FROM attribs WHERE " +
+                                attributeOwner + "=? ORDER BY title LIMIT 4097",
+                            { id } );
                         if( !values )
                         {
                             throw std::runtime_error( "Cannot read domain attributes." );
@@ -2827,7 +2846,8 @@ namespace workphone
                                 ( values->getFieldValueAsInt( "uuid_text" ) != 1 ||
                                   StringUtil::make_lower( value ) != requestedUuid ) )
                             {
-                                throw std::runtime_error( "Domain actor has a conflicting authored UUID attribute." );
+                                throw std::runtime_error(
+                                    "Domain actor has a conflicting authored UUID attribute." );
                             }
                             account( name );
                             account( value );
@@ -2881,37 +2901,51 @@ namespace workphone
         {
             auto bound = database ? dynamic_cast<IParameterizedDatabase *>( database.get() ) : nullptr;
             auto serialized = database ? dynamic_cast<ISerializedDatabase *>( database.get() ) : nullptr;
-            auto cleanup = database ? dynamic_cast<ITransactionCleanupDatabase *>( database.get() ) : nullptr;
+            auto cleanup =
+                database ? dynamic_cast<ITransactionCleanupDatabase *>( database.get() ) : nullptr;
             if( nodeId <= 1 || !bound || !serialized || !cleanup )
             {
-                throw std::runtime_error( "Subtree deletion requires a writable domain connection and a non-root numeric actor." );
+                throw std::runtime_error(
+                    "Subtree deletion requires a writable domain connection and a non-root numeric "
+                    "actor." );
             }
             DatabaseConnectionLock lock( serialized );
             if( !bound->queryBound( "BEGIN IMMEDIATE", {} ) )
             {
                 throw std::runtime_error( "Cannot begin domain subtree deletion." );
             }
+
             struct Rollback
             {
                 ITransactionCleanupDatabase *database;
-                ~Rollback() { if( database ) database->rollbackTransaction(); }
+
+                ~Rollback()
+                {
+                    if( database )
+                    {
+                        database->rollbackTransaction();
+                    }
+                }
             } rollback{ cleanup };
 
             const auto node = StringUtil::toString( nodeId );
             String left, right;
             {
-                auto rows = bound->queryBound(
-                    "SELECT lft,rght," + completeDomainText( "lft" ) + " AS left_complete," +
-                    completeDomainText( "rght" ) + " AS right_complete FROM configured_actors "
-                    "WHERE id=CAST(? AS INTEGER) LIMIT 2", { node } );
+                auto rows = bound->queryBound( "SELECT lft,rght," + completeDomainText( "lft" ) +
+                                                   " AS left_complete," + completeDomainText( "rght" ) +
+                                                   " AS right_complete FROM configured_actors "
+                                                   "WHERE id=CAST(? AS INTEGER) LIMIT 2",
+                                               { node } );
                 if( !rows || rows->eof() )
                 {
-                    throw std::runtime_error( "Configured actor does not exist or its schema is unsupported." );
+                    throw std::runtime_error(
+                        "Configured actor does not exist or its schema is unsupported." );
                 }
                 if( rows->getFieldValueAsInt( "left_complete" ) != 1 ||
                     rows->getFieldValueAsInt( "right_complete" ) != 1 )
                 {
-                    throw std::runtime_error( "Configured actor subtree has invalid nested-set bounds." );
+                    throw std::runtime_error(
+                        "Configured actor subtree has invalid nested-set bounds." );
                 }
                 left = rows->getFieldValue( "lft" );
                 right = rows->getFieldValue( "rght" );
@@ -2931,16 +2965,21 @@ namespace workphone
             // Conversely, no child of a selected actor may survive outside those bounds.
             const String inSubtree = " BETWEEN CAST(?1 AS INTEGER) AND CAST(?2 AS INTEGER)";
             auto invalid = bound->queryBound(
-                "SELECT 1 FROM configured_actors c LEFT JOIN configured_actors p ON c.parent_id=p.id WHERE "
-                "(c.lft" + inSubtree + " AND (c.rght IS NULL OR c.rght>CAST(?2 AS INTEGER) OR c.rght<=c.lft "
-                "OR (c.id<>CAST(?3 AS INTEGER) AND (p.id IS NULL OR p.lft IS NULL OR p.rght IS NULL "
-                "OR p.lft<CAST(?1 AS INTEGER) OR p.lft>=c.lft OR p.rght<=c.rght)))) OR "
-                "((c.id=CAST(?3 AS INTEGER) OR c.lft IS NULL OR c.lft NOT" + inSubtree + ") AND p.lft" +
-                inSubtree + ") OR (c.lft<CAST(?1 AS INTEGER) AND c.rght" + inSubtree + ") LIMIT 1",
+                "SELECT 1 FROM configured_actors c LEFT JOIN configured_actors p ON c.parent_id=p.id "
+                "WHERE "
+                "(c.lft" +
+                    inSubtree +
+                    " AND (c.rght IS NULL OR c.rght>CAST(?2 AS INTEGER) OR c.rght<=c.lft "
+                    "OR (c.id<>CAST(?3 AS INTEGER) AND (p.id IS NULL OR p.lft IS NULL OR p.rght IS NULL "
+                    "OR p.lft<CAST(?1 AS INTEGER) OR p.lft>=c.lft OR p.rght<=c.rght)))) OR "
+                    "((c.id=CAST(?3 AS INTEGER) OR c.lft IS NULL OR c.lft NOT" +
+                    inSubtree + ") AND p.lft" + inSubtree +
+                    ") OR (c.lft<CAST(?1 AS INTEGER) AND c.rght" + inSubtree + ") LIMIT 1",
                 { left, right, node } );
             if( !invalid || !invalid->eof() )
             {
-                throw std::runtime_error( "Configured actor parent links disagree with nested-set bounds." );
+                throw std::runtime_error(
+                    "Configured actor parent links disagree with nested-set bounds." );
             }
             invalid = nullptr;
 
@@ -2952,8 +2991,10 @@ namespace workphone
                 const auto owner = domainAttributeOwner( attributes );
                 // A model-level actor_id can differ from the per-node owner. Use the same
                 // column as the UUID reader and preserve the attributes of surviving nodes.
-                const String owned = " FROM attribs WHERE CAST(" + owner + " AS TEXT) COLLATE BINARY IN "
-                                     "(SELECT CAST(id AS TEXT)" + selected + ")";
+                const String owned = " FROM attribs WHERE CAST(" + owner +
+                                     " AS TEXT) COLLATE BINARY IN "
+                                     "(SELECT CAST(id AS TEXT)" +
+                                     selected + ")";
                 if( !bound->queryBound( "DELETE" + owned, bounds ) )
                 {
                     throw std::runtime_error( "Cannot remove configured actor attributes." );
@@ -2979,16 +3020,19 @@ namespace workphone
             const String width = "(CAST(?2 AS INTEGER)-CAST(?1 AS INTEGER)+1)";
             for( const String &column : { String( "lft" ), String( "rght" ) } )
             {
-                auto count = bound->queryBound( "SELECT count(*) AS affected FROM configured_actors WHERE " +
-                                                column + ">CAST(? AS INTEGER)", { right } );
+                auto count =
+                    bound->queryBound( "SELECT count(*) AS affected FROM configured_actors WHERE " +
+                                           column + ">CAST(? AS INTEGER)",
+                                       { right } );
                 if( !count || count->eof() )
                 {
                     throw std::runtime_error( "Cannot count surviving configured actor bounds." );
                 }
                 const auto expected = count->getFieldValue( "affected" );
                 count = nullptr;
-                if( !bound->queryBound( "UPDATE configured_actors SET " + column + "=" + column + "-" + width +
-                                        " WHERE " + column + ">CAST(?2 AS INTEGER)", bounds ) )
+                if( !bound->queryBound( "UPDATE configured_actors SET " + column + "=" + column + "-" +
+                                            width + " WHERE " + column + ">CAST(?2 AS INTEGER)",
+                                        bounds ) )
                 {
                     throw std::runtime_error( "Cannot repair configured actor bounds." );
                 }
@@ -3773,7 +3817,8 @@ namespace workphone
             }
             else if( ApplicationUtil::isSupportedTexture( filePath ) )
             {
-                if( auto textureManager = graphicsSystem ? graphicsSystem->getTextureManager() : nullptr )
+                if( auto textureManager =
+                        graphicsSystem ? graphicsSystem->getTextureManager() : nullptr )
                 {
                     // A folder import indexes every texture. Decode on demand so unused
                     // textures do not fill the CPU streaming budget during the scan.
@@ -3784,8 +3829,10 @@ namespace workphone
                             assetDatabaseManager->getResourceEntryFromPath( filePath ) );
                         if( entry )
                         {
-                            texture = textureManager->createOrRetrieve( entry->getResourceUUID(),
-                                                                        filePath, "Texture" ).first;
+                            texture =
+                                textureManager
+                                    ->createOrRetrieve( entry->getResourceUUID(), filePath, "Texture" )
+                                    .first;
                         }
                         else
                         {

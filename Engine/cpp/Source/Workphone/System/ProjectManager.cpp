@@ -31,19 +31,21 @@ namespace workphone
         String windowsEngineRoot( const String &projectPath, const String &enginePath )
         {
             // Explicit roots and a usable project-local SDK take precedence over the Editor's SDK.
-            if( enginePath != "Engine" || hasWindowsEngineSdk( fs::u8path( projectPath.c_str() ) / "Engine" ) )
+            if( enginePath != "Engine" ||
+                hasWindowsEngineSdk( fs::u8path( projectPath.c_str() ) / "Engine" ) )
             {
                 return enginePath;
             }
 
             std::vector<wchar_t> executable( 32768 );
-            const auto length =
-                GetModuleFileNameW( nullptr, executable.data(), static_cast<DWORD>( executable.size() ) );
+            const auto length = GetModuleFileNameW( nullptr, executable.data(),
+                                                    static_cast<DWORD>( executable.size() ) );
             if( length > 0 && length < executable.size() )
             {
                 std::error_code error;
                 const auto modulePath = fs::canonical( fs::path( executable.data() ), error );
-                for( auto root = modulePath.parent_path(); root.has_relative_path(); root = root.parent_path() )
+                for( auto root = modulePath.parent_path(); root.has_relative_path();
+                     root = root.parent_path() )
                 {
                     if( hasWindowsEngineSdk( root ) )
                     {
@@ -53,7 +55,7 @@ namespace workphone
             }
             return enginePath;
         }
-    }
+    }  // namespace
 #endif
 
     ProjectManager::ProjectManager()
@@ -369,8 +371,9 @@ namespace workphone
         }
         cmakeStr += "set(WORKPHONE_ENGINE_ROOT [" + bracket + "[" + configuredEnginePath + "]" +
                     bracket + "] CACHE PATH \"Workphone checkout or C++ SDK root\")\n\n";
-        cmakeStr += "get_filename_component(WORKPHONE_ENGINE_ROOT \"${WORKPHONE_ENGINE_ROOT}\" ABSOLUTE\n"
-                    "    BASE_DIR \"${CMAKE_CURRENT_SOURCE_DIR}\")\n\n";
+        cmakeStr +=
+            "get_filename_component(WORKPHONE_ENGINE_ROOT \"${WORKPHONE_ENGINE_ROOT}\" ABSOLUTE\n"
+            "    BASE_DIR \"${CMAKE_CURRENT_SOURCE_DIR}\")\n\n";
         cmakeStr += getPlatformOptions() + newLineStr + newLineStr;
         cmakeStr += getToolsetOptions() + newLineStr + newLineStr;
         cmakeStr += "set(WP_STATIC_LINK_CRT_TYPE \"" + crtType + "\")\n\n";
@@ -380,18 +383,24 @@ namespace workphone
             "    if(NOT CMAKE_BUILD_TYPE)\n"
             "        set(CMAKE_BUILD_TYPE RelWithDebInfo)\n"
             "    endif()\n"
-            "    if(EXISTS \"${WORKPHONE_ENGINE_ROOT}/lib/cmake/WorkphoneCppSDK/WorkphoneCppSDKConfig.cmake\")\n"
+            "    if(EXISTS "
+            "\"${WORKPHONE_ENGINE_ROOT}/lib/cmake/WorkphoneCppSDK/WorkphoneCppSDKConfig.cmake\")\n"
             "        if(CMAKE_CONFIGURATION_TYPES)\n"
             "            set(CMAKE_CONFIGURATION_TYPES \"${CMAKE_BUILD_TYPE}\")\n"
             "        endif()\n"
-            "        find_package(WorkphoneCppSDK CONFIG REQUIRED PATHS \"${WORKPHONE_ENGINE_ROOT}\" NO_DEFAULT_PATH)\n"
+            "        find_package(WorkphoneCppSDK CONFIG REQUIRED PATHS \"${WORKPHONE_ENGINE_ROOT}\" "
+            "NO_DEFAULT_PATH)\n"
             "    else()\n"
-            "        set(WP_CORE_LIBRARY \"${WORKPHONE_ENGINE_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/"
+            "        set(WP_CORE_LIBRARY "
+            "\"${WORKPHONE_ENGINE_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/"
             "${WP_STATIC_LINK_CRT_TYPE}/${CMAKE_BUILD_TYPE}/Workphone.lib\")\n"
-            "        if(NOT EXISTS \"${WORKPHONE_ENGINE_ROOT}/Engine/cpp/Include/Workphone/WorkphoneConfig.hpp\" OR\n"
+            "        if(NOT EXISTS "
+            "\"${WORKPHONE_ENGINE_ROOT}/Engine/cpp/Include/Workphone/WorkphoneConfig.hpp\" OR\n"
             "           NOT EXISTS \"${WP_CORE_LIBRARY}\")\n"
-            "            message(FATAL_ERROR \"Workphone C++ SDK missing for ${WP_TOOLSET} ${WP_ARCH} ${CMAKE_BUILD_TYPE}. "
-            "Set WORKPHONE_ENGINE_ROOT to a matching checkout or installed SDK. Expected import library: ${WP_CORE_LIBRARY}\")\n"
+            "            message(FATAL_ERROR \"Workphone C++ SDK missing for ${WP_TOOLSET} ${WP_ARCH} "
+            "${CMAKE_BUILD_TYPE}. "
+            "Set WORKPHONE_ENGINE_ROOT to a matching checkout or installed SDK. Expected import "
+            "library: ${WP_CORE_LIBRARY}\")\n"
             "        endif()\n"
             "    endif()\n"
             "endif()\n\n";
@@ -450,8 +459,7 @@ namespace workphone
 
         for( auto libraryPath : libraryPaths )
         {
-            linkDirectories << libraryDirOpen + "\"" + libraryPath + "\"" + libraryDirClose +
-                                   newLineStr;
+            linkDirectories << libraryDirOpen + "\"" + libraryPath + "\"" + libraryDirClose + newLineStr;
         }
 
         linkDirectories << String( "elseif(APPLE)\n" );

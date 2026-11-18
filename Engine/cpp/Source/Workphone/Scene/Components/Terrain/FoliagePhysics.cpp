@@ -45,8 +45,8 @@ namespace workphone::scene
             const auto &q = placement.getOrientation();
             const double norm =
                 double( q.w ) * q.w + double( q.x ) * q.x + double( q.y ) * q.y + double( q.z ) * q.z;
-            return finite( placement.getPosition() ) && finite( scale ) && scale.x > 0 &&
-                   scale.y > 0 && scale.z > 0 && std::isfinite( norm ) && std::abs( norm - 1 ) <= .001;
+            return finite( placement.getPosition() ) && finite( scale ) && scale.x > 0 && scale.y > 0 &&
+                   scale.z > 0 && std::isfinite( norm ) && std::abs( norm - 1 ) <= .001;
         }
 
         bool collidable( const render::FoliageSpecies &species )
@@ -336,8 +336,7 @@ namespace workphone::scene
         return update( observers, error, false );
     }
 
-    bool FoliagePhysics::update( const Array<Vector3F> &observers, String &error,
-                                  bool publishPending )
+    bool FoliagePhysics::update( const Array<Vector3F> &observers, String &error, bool publishPending )
     {
         error.clear();
         auto &s = *m_state;
@@ -387,8 +386,12 @@ namespace workphone::scene
                 std::pair<double, u64> rank;
                 const render::FoliageInstance *instance;
 
-                bool operator<( const Candidate &other ) const { return rank < other.rank; }
+                bool operator<( const Candidate &other ) const
+                {
+                    return rank < other.rank;
+                }
             };
+
             std::priority_queue<Candidate> nearest;
             u32 eligible = 0, visitedCells = 0;
             // Local observer coordinates allow cell rejection even under translated,

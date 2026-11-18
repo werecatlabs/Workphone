@@ -64,9 +64,7 @@ namespace workphone::render
         void writePassState( Properties &properties, const MaterialPassStateData &state )
         {
             const auto &surface = state.getSurfaceState();
-            properties.setProperty(
-                MaterialTypeDataStr,
-                static_cast<s32>( surface.materialType ) );
+            properties.setProperty( MaterialTypeDataStr, static_cast<s32>( surface.materialType ) );
             const auto &colour = surface.metallicColour;
             if( colour.r != 1.0f || colour.g != 1.0f || colour.b != 1.0f || colour.a != 0.0f )
             {
@@ -258,8 +256,13 @@ namespace workphone::render
     {
         const auto changed = getMaterial() != material;
         MaterialNode<IMaterialPass>::setMaterial( material );
-        for(auto unit:m_textures)
-            if(unit&&unit->getParentPtr()==this)unit->setMaterial(material);
+        for( auto unit : m_textures )
+        {
+            if( unit && unit->getParentPtr() == this )
+            {
+                unit->setMaterial( material );
+            }
+        }
         if( changed && material )
         {
             if( auto context = getStateContextPtr() )
@@ -675,12 +678,12 @@ namespace workphone::render
         {
             // Pending texture uploads may outlive this pass and material. Detach
             // their owner links before any teardown snapshot can be refused.
-            for(auto unit:m_textures)
+            for( auto unit : m_textures )
             {
-                if(unit&&(!unit->getParentPtr()||unit->getParentPtr()==this))
+                if( unit && ( !unit->getParentPtr() || unit->getParentPtr() == this ) )
                 {
-                    unit->setMaterial(nullptr);
-                    unit->setParent(nullptr);
+                    unit->setMaterial( nullptr );
+                    unit->setParent( nullptr );
                 }
             }
             Array<SmartPtr<IMaterialTexture>> ownedUnits;

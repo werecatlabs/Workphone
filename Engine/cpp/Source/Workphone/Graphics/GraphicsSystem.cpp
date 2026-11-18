@@ -69,8 +69,9 @@ namespace workphone::render
 {
     namespace
     {
-        GraphicsSystem::AssetResidencyRelease releaseGraphicsAssets(
-            IGraphicsSystem &graphics, u32 maximumCandidates, bool automatic )
+        GraphicsSystem::AssetResidencyRelease releaseGraphicsAssets( IGraphicsSystem &graphics,
+                                                                     u32 maximumCandidates,
+                                                                     bool automatic )
         {
             GraphicsSystem::AssetResidencyRelease released;
             if( !maximumCandidates )
@@ -80,8 +81,9 @@ namespace workphone::render
 
             if( auto manager = dynamic_pointer_cast<MaterialManager>( graphics.getMaterialManager() ) )
             {
-                released.materials = automatic ? manager->releaseUnusedResourcesOnUpdate( maximumCandidates )
-                                               : manager->releaseUnusedResources( maximumCandidates );
+                released.materials = automatic
+                                         ? manager->releaseUnusedResourcesOnUpdate( maximumCandidates )
+                                         : manager->releaseUnusedResources( maximumCandidates );
             }
 
             if( auto manager = dynamic_pointer_cast<TextureManager>( graphics.getTextureManager() ) )
@@ -91,7 +93,7 @@ namespace workphone::render
 
             return released;
         }
-    }
+    }  // namespace
 
     void collectUnusedGraphicsAssets( SmartPtr<IGraphicsSystem> graphics, u32 maximumCandidates )
     {
@@ -278,15 +280,16 @@ namespace workphone::render
         return releaseUnusedAssetsImpl( maximumCandidates, false );
     }
 
-    GraphicsSystem::AssetResidencyRelease GraphicsSystem::releaseUnusedAssetsImpl(
-        u32 maximumCandidates, bool automatic )
+    GraphicsSystem::AssetResidencyRelease GraphicsSystem::releaseUnusedAssetsImpl( u32 maximumCandidates,
+                                                                                   bool automatic )
     {
         ScopedLock lifecycleLock( this );
         return releaseGraphicsAssets( *this, maximumCandidates, automatic );
     }
 
     GraphicsSystem::LoadRequest::LoadRequest( const SmartPtr<ISharedObject> &object, u64 ticket ) :
-        object( object ), ticket( ticket )
+        object( object ),
+        ticket( ticket )
     {
         if( auto listener = dynamic_cast<Factory::Listener *>( object->getSharedObjectListener() ) )
         {

@@ -66,7 +66,10 @@ namespace workphone
             auto component = native.begin();
             for( const auto &parent : root )
             {
-                if( parent.empty() ) continue;
+                if( parent.empty() )
+                {
+                    continue;
+                }
                 if( component == native.end() ||
                     packagePathAsciiLower( parent.generic_u8string().c_str() ) !=
                         packagePathAsciiLower( component->generic_u8string().c_str() ) )
@@ -122,7 +125,8 @@ namespace workphone
                 return {};
             };
 
-            auto resolved = contentOnlyFileSystem.load() == fileSystem ? String() : findExact( folderArchives );
+            auto resolved =
+                contentOnlyFileSystem.load() == fileSystem ? String() : findExact( folderArchives );
             return resolved.empty() ? findExact( fileArchives ) : resolved;
         }
 
@@ -141,7 +145,10 @@ namespace workphone
 
     void setPackageContentOnly( const FileSystem &fileSystem, bool enabled )
     {
-        if( enabled ) contentOnlyFileSystem.store( &fileSystem );
+        if( enabled )
+        {
+            contentOnlyFileSystem.store( &fileSystem );
+        }
         else
         {
             auto expected = &fileSystem;
@@ -288,11 +295,14 @@ namespace workphone
                 for( auto &archive : m_fileArchives.snapshot() )
                 {
                     if( archive && archive->exists( path, ignorePath && resolved.empty(), ignoreCase ) )
+                    {
                         return true;
+                    }
                 }
                 auto app = core::IApplicationManager::instancePtr();
-                return app && ( isPrivateRuntimePath( filename, app->getCachePath() ) ||
-                                isPrivateRuntimePath( filename, app->getSettingsPath() ) ) &&
+                return app &&
+                       ( isPrivateRuntimePath( filename, app->getCachePath() ) ||
+                         isPrivateRuntimePath( filename, app->getSettingsPath() ) ) &&
                        Path::isExistingFile( filename );
             }
             if( !resolved.empty() )
@@ -736,8 +746,9 @@ namespace workphone
     {
         try
         {
-            const auto resolved = input ? resolvePackagePath( this, filename, m_folderArchives,
-                                                               m_fileArchives ) : String();
+            const auto resolved =
+                input ? resolvePackagePath( this, filename, m_folderArchives, m_fileArchives )
+                      : String();
             const auto &filePath = resolved.empty() ? filename : resolved;
             ignorePath = ignorePath && resolved.empty();
             WP_ASSERT( !StringUtil::isNullOrEmpty( filePath ) );
@@ -756,8 +767,8 @@ namespace workphone
                 {
                     if( archive )
                     {
-                        if( auto stream = archive->open( filePath, true, binary, false,
-                                                         ignorePath, ignoreCase ) )
+                        if( auto stream =
+                                archive->open( filePath, true, binary, false, ignorePath, ignoreCase ) )
                         {
                             return stream;
                         }
@@ -798,8 +809,14 @@ namespace workphone
                                    const FileInfo *catalogEntry = nullptr ) -> SmartPtr<IStream> {
                 auto info = catalogEntry ? *catalogEntry : FileInfo{};
                 info.absolutePath = resolved.c_str();
-                if( !info.filePath.size() ) info.filePath = resolved.c_str();
-                if( !info.fileName.size() ) info.fileName = Path::getFileName( resolved ).c_str();
+                if( !info.filePath.size() )
+                {
+                    info.filePath = resolved.c_str();
+                }
+                if( !info.fileName.size() )
+                {
+                    info.fileName = Path::getFileName( resolved ).c_str();
+                }
                 stream->setFileInfo( info );
                 return stream;
             };
@@ -1346,7 +1363,8 @@ namespace workphone
             WP_ASSERT( IArchive::typeInfo() != 0 );
 
             auto applicationManager = core::IApplicationManager::instancePtr();
-            auto factoryManager = applicationManager ? applicationManager->getFactoryManagerPtr() : nullptr;
+            auto factoryManager =
+                applicationManager ? applicationManager->getFactoryManagerPtr() : nullptr;
             if( !factoryManager && type != ArchiveType::ObfuscatedZip )
             {
                 return false;
@@ -2288,12 +2306,16 @@ namespace workphone
             for( auto &archive : m_fileArchives.snapshot() )
             {
                 if( archive && archive->findFileInfo( filePath, fileInfo, ignorePath ) )
+                {
                     return true;
+                }
             }
             auto app = core::IApplicationManager::instancePtr();
             if( !app || ( !isPrivateRuntimePath( filename, app->getCachePath() ) &&
                           !isPrivateRuntimePath( filename, app->getSettingsPath() ) ) )
+            {
                 return false;
+            }
         }
         if( Path::isPathAbsolute( filePath ) )
         {

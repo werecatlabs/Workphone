@@ -18,7 +18,8 @@ namespace workphone::scene
     {
         auto properties = m_pipeline->getProperties();
         properties->setProperty( "Applies to", "Standalone game runtime", true );
-        properties->setPropertyAsEnum( "Render API", m_renderApi, { "Software", "DirectX 11", "DirectX 12" } );
+        properties->setPropertyAsEnum( "Render API", m_renderApi,
+                                       { "Software", "DirectX 11", "DirectX 12" } );
         return properties;
     }
 

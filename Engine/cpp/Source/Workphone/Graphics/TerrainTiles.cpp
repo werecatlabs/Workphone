@@ -432,10 +432,11 @@ namespace workphone::render
         return requestWithSourceBudget( std::move( data ), tiles, keys, {}, error );
     }
 
-    bool TerrainTileStream::requestWithSourceBudget(
-        TerrainSnapshot data, const Array<TerrainTileInfo> &tiles,
-        const Array<TerrainTileKey> &keys, std::shared_ptr<StreamBudgetLease> sourceBudget,
-        String &error )
+    bool TerrainTileStream::requestWithSourceBudget( TerrainSnapshot data,
+                                                     const Array<TerrainTileInfo> &tiles,
+                                                     const Array<TerrainTileKey> &keys,
+                                                     std::shared_ptr<StreamBudgetLease> sourceBudget,
+                                                     String &error )
     {
         if( !data || keys.size() > 256 || tiles.size() > 2048 )
         {
@@ -460,10 +461,9 @@ namespace workphone::render
             }
         }
         auto &p = *m_impl;
-        if( sourceBudget &&
-            ( !p.scheduler->ownsBudget( sourceBudget ) ||
-              sourceBudget->memoryClass() != StreamMemoryClass::SourceCpu ||
-              sourceBudget->bytes() < terrainSourceBytes( *data ) ) )
+        if( sourceBudget && ( !p.scheduler->ownsBudget( sourceBudget ) ||
+                              sourceBudget->memoryClass() != StreamMemoryClass::SourceCpu ||
+                              sourceBudget->bytes() < terrainSourceBytes( *data ) ) )
         {
             error = "Terrain source lease must cover this snapshot in the shared SourceCpu ledger";
             return false;
@@ -479,9 +479,9 @@ namespace workphone::render
             if( data != retained )
             {
                 auto owner = std::make_shared<Impl::SourceOwner>();
-                owner->lease = sourceBudget ? std::move( sourceBudget ) :
-                    p.scheduler->reserve( StreamMemoryClass::SourceCpu,
-                                          terrainSourceBytes( *data ), error );
+                owner->lease = sourceBudget ? std::move( sourceBudget )
+                                            : p.scheduler->reserve( StreamMemoryClass::SourceCpu,
+                                                                    terrainSourceBytes( *data ), error );
                 if( !owner->lease )
                 {
                     return false;

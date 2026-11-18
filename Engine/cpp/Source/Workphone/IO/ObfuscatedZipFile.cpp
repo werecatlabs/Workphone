@@ -97,9 +97,15 @@ namespace workphone
             return;
         }
         RecursiveMutex::ScopedLock lock( m_archive->m_mutex );
-        if( !m_zipFile ) return;
+        if( !m_zipFile )
+        {
+            return;
+        }
         const auto current = zzip_tell( m_zipFile );
-        if( current < 0 || static_cast<size_Num>( current ) > m_size ) return;
+        if( current < 0 || static_cast<size_Num>( current ) > m_size )
+        {
+            return;
+        }
         const auto position = static_cast<size_Num>( current );
         size_Num target;
         // IStream's unsigned signature also carries negative relative offsets.
@@ -107,12 +113,18 @@ namespace workphone
         if( count > std::numeric_limits<size_Num>::max() / 2 )
         {
             const auto distance = size_Num( 0 ) - count;
-            if( distance > position ) return;
+            if( distance > position )
+            {
+                return;
+            }
             target = position - distance;
         }
         else
         {
-            if( count > m_size - position ) return;
+            if( count > m_size - position )
+            {
+                return;
+            }
             target = position + count;
         }
         zzip_seek( m_zipFile, static_cast<zzip_off_t>( target ), SEEK_SET );

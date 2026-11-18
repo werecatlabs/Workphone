@@ -16,6 +16,7 @@ namespace workphone
     {
         m_eventProperties = properties;
     }
+
     WP_CLASS_REGISTER_DERIVED( workphone, InputEvent, IInputEvent );
 
     InputEvent::InputEvent() = default;

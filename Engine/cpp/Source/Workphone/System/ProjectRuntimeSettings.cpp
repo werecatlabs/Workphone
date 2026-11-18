@@ -37,7 +37,9 @@ namespace workphone
         SmartPtr<Properties> parseRuntimeSettings( const String &text )
         {
             if( !DataUtil::isValidData( text ) )
+            {
                 throw std::runtime_error( "Invalid project runtime settings JSON" );
+            }
             auto settings = workphone::make_ptr<Properties>();
             DataUtil::parse( text, settings.get() );
             return settings;
@@ -50,24 +52,29 @@ namespace workphone
             if( !app.isEditor() )
             {
                 auto graphics = settings->getChild( "Game Graphics" );
+
                 const struct
                 {
                     const char *key;
                     StreamMemoryClass category;
-                } budgets[] = {
-                    { "performance.memoryBudgetMb", StreamMemoryClass::SourceCpu },
-                    { "quality.streamingBudgetMb", StreamMemoryClass::WorkingCpu },
-                    { "performance.gpuMemoryBudgetMb", StreamMemoryClass::Gpu }
-                };
+                } budgets[] = { { "performance.memoryBudgetMb", StreamMemoryClass::SourceCpu },
+                                { "quality.streamingBudgetMb", StreamMemoryClass::WorkingCpu },
+                                { "performance.gpuMemoryBudgetMb", StreamMemoryClass::Gpu } };
+
                 for( const auto &budget : budgets )
                 {
-                    const auto *profile = settings->hasProperty( budget.key ) ? settings.get() : graphics.get();
-                    if( !profile || !profile->hasProperty( budget.key ) ) continue;
+                    const auto *profile =
+                        settings->hasProperty( budget.key ) ? settings.get() : graphics.get();
+                    if( !profile || !profile->hasProperty( budget.key ) )
+                    {
+                        continue;
+                    }
 
                     s32 megabytes = 0;
                     if( !profile->getPropertyValue( budget.key, megabytes ) || megabytes <= 0 )
                     {
-                        WP_LOG_WARNING( String( "Ignoring invalid runtime memory budget: " ) + budget.key );
+                        WP_LOG_WARNING( String( "Ignoring invalid runtime memory budget: " ) +
+                                        budget.key );
                         continue;
                     }
 
@@ -80,43 +87,62 @@ namespace workphone
                     }
                     else
                     {
-                        WP_LOG_WARNING( String( "Could not apply runtime memory budget " ) + budget.key + ": " + error );
+                        WP_LOG_WARNING( String( "Could not apply runtime memory budget " ) + budget.key +
+                                        ": " + error );
                     }
                 }
             }
             app.setPlayerSettings( settings );
         }
-    }
+    }  // namespace
 
     void loadProjectRuntimeSettings( const String &projectDirectory )
     {
         auto app = core::IApplicationManager::instancePtr();
-        if( !app ) return;
+        if( !app )
+        {
+            return;
+        }
         if( auto files = app->getFileSystem(); files && isPackageFileSystem( *files ) )
         {
             if( auto stream = files->open( "ProjectRuntime.settings", true, true, false ) )
             {
                 if( stream->size() > maxRuntimeSettingsBytes )
+                {
                     throw std::runtime_error( "Project runtime settings exceed 8 MiB" );
+                }
                 const auto text = stream->getAsString();
                 if( text.size() != stream->size() )
+                {
                     throw std::runtime_error( "Unable to read packaged project runtime settings" );
+                }
                 publishRuntimeSettings( *app, parseRuntimeSettings( text ) );
             }
             return;
         }
-        const auto path = std::filesystem::u8path( projectDirectory.c_str() ) / "ProjectRuntime.settings";
-        if( !std::filesystem::exists( path ) ) return;
+        const auto path =
+            std::filesystem::u8path( projectDirectory.c_str() ) / "ProjectRuntime.settings";
+        if( !std::filesystem::exists( path ) )
+        {
+            return;
+        }
         const auto bytes = std::filesystem::file_size( path );
         if( bytes > maxRuntimeSettingsBytes )
+        {
             throw std::runtime_error( "Project runtime settings exceed 8 MiB" );
+        }
         std::ifstream stream( path, std::ios::binary );
-        if( !stream ) throw std::runtime_error( "Unable to read project runtime settings" );
+        if( !stream )
+        {
+            throw std::runtime_error( "Unable to read project runtime settings" );
+        }
         std::ostringstream buffer;
         buffer << stream.rdbuf();
         const String text = buffer.str();
         if( stream.bad() )
+        {
             throw std::runtime_error( "Unable to read project runtime settings" );
+        }
         publishRuntimeSettings( *app, parseRuntimeSettings( text ) );
         app->setProjectPath( std::filesystem::absolute( path ).parent_path().u8string() );
     }
@@ -124,14 +150,23 @@ namespace workphone
     u32 projectWorkerCount( u32 applicationDefault )
     {
         // Explicit single-thread applications/test fixtures retain that contract.
-        if( applicationDefault == 0 ) return 0;
+        if( applicationDefault == 0 )
+        {
+            return 0;
+        }
         auto settings = activeSettings();
-        if( !settings ) return applicationDefault;
+        if( !settings )
+        {
+            return applicationDefault;
+        }
         if( !settings->getPropertyAsBool( "tasks.backgroundTasks", true ) ||
-            settings->getPropertyAsInt( "tasks.jobSystem", 0 ) == 2 ) return 0;
+            settings->getPropertyAsInt( "tasks.jobSystem", 0 ) == 2 )
+        {
+            return 0;
+        }
         return static_cast<u32>( std::clamp(
-            settings->getPropertyAsInt( "tasks.threadCount", static_cast<s32>( applicationDefault ) ),
-            1, 32 ) );
+            settings->getPropertyAsInt( "tasks.threadCount", static_cast<s32>( applicationDefault ) ), 1,
+            32 ) );
     }
 
     bool projectRunsBackgroundTasks()
@@ -144,9 +179,14 @@ namespace workphone
     bool projectLogEnabled( u32 severity )
     {
         auto settings = activeSettings();
-        if( !settings ) return true;
+        if( !settings )
+        {
+            return true;
+        }
         if( severity == 3 && !settings->getPropertyAsBool( "diagnostics.validationWarnings", true ) )
+        {
             return false;
+        }
         return severity >= static_cast<u32>( settings->getPropertyAsInt( "diagnostics.logLevel", 2 ) );
     }
 
@@ -160,104 +200,174 @@ namespace workphone
     {
         auto app = core::IApplicationManager::instancePtr();
         auto settings = app ? app->getPlayerSettings() : nullptr;
-        if( !app || !settings || !std::isfinite( timeSeconds ) ) return;
+        if( !app || !settings || !std::isfinite( timeSeconds ) )
+        {
+            return;
+        }
         const auto directory = projectDirectory.empty() ? app->getProjectPath() : projectDirectory;
-        if( directory.empty() ) return;
+        if( directory.empty() )
+        {
+            return;
+        }
+
         struct Schedule
         {
             const void *owner = nullptr;
             std::string directory;
             f64 lastTime = -1, nextWrite = 0;
         };
+
         static std::mutex mutex;
         static Schedule schedule;
         std::lock_guard<std::mutex> lock( mutex );
-        if( schedule.owner != app || schedule.directory != directory.c_str() || timeSeconds < schedule.lastTime )
+        if( schedule.owner != app || schedule.directory != directory.c_str() ||
+            timeSeconds < schedule.lastTime )
         {
             schedule.owner = app;
             schedule.directory = directory.c_str();
             schedule.nextWrite = timeSeconds + 1;
         }
         schedule.lastTime = timeSeconds;
-        if( !settings->getPropertyAsBool( "diagnostics.telemetry", false ) || timeSeconds < schedule.nextWrite ) return;
+        if( !settings->getPropertyAsBool( "diagnostics.telemetry", false ) ||
+            timeSeconds < schedule.nextWrite )
+        {
+            return;
+        }
         schedule.nextWrite = timeSeconds + 1;
         try
         {
             const auto files = app->getFileSystem();
-            const auto folder = files && isPackageFileSystem( *files )
-                                    ? std::filesystem::u8path( app->getCachePath().c_str() ) / "Diagnostics"
-                                    : std::filesystem::u8path( directory.c_str() ) / "Cache/Diagnostics";
+            const auto folder =
+                files && isPackageFileSystem( *files )
+                    ? std::filesystem::u8path( app->getCachePath().c_str() ) / "Diagnostics"
+                    : std::filesystem::u8path( directory.c_str() ) / "Cache/Diagnostics";
             std::filesystem::create_directories( folder );
             const auto path = folder / "telemetry.csv";
-            const bool header = !std::filesystem::exists( path ) || std::filesystem::file_size( path ) == 0;
+            const bool header =
+                !std::filesystem::exists( path ) || std::filesystem::file_size( path ) == 0;
             std::ofstream stream( path, std::ios::app );
             stream.exceptions( std::ios::badbit | std::ios::failbit );
-            if( header ) stream << "time_seconds,profiles,work_seconds\n";
+            if( header )
+            {
+                stream << "time_seconds,profiles,work_seconds\n";
+            }
             size_t count = 0;
             f64 total = 0;
             if( auto profiler = app->getProfiler() )
+            {
                 for( auto profile : profiler->getProfiles() )
-                    if( profile ) { ++count; total += profile->getAverageTimeTaken(); }
+                {
+                    if( profile )
+                    {
+                        ++count;
+                        total += profile->getAverageTimeTaken();
+                    }
+                }
+            }
             stream << timeSeconds << ',' << count << ',' << total << '\n';
         }
-        catch( const std::exception &error ) { WP_LOG_EXCEPTION( error ); }
+        catch( const std::exception &error )
+        {
+            WP_LOG_EXCEPTION( error );
+        }
     }
 
     void applyProjectWorkerPolicy( SmartPtr<Properties> settings, u32 workerIndex )
     {
-        if( !settings ) return;
+        if( !settings )
+        {
+            return;
+        }
 #if defined( _WIN32 )
         const s32 priority = std::clamp( settings->getPropertyAsInt( "tasks.priority", 5 ), 0, 10 );
         const int priorities[] = { THREAD_PRIORITY_LOWEST, THREAD_PRIORITY_BELOW_NORMAL,
-                                  THREAD_PRIORITY_NORMAL, THREAD_PRIORITY_ABOVE_NORMAL,
-                                  THREAD_PRIORITY_HIGHEST };
-        SetThreadPriority( GetCurrentThread(), priorities[priority < 3 ? 0 : priority < 5 ? 1 :
-                                                        priority == 5 ? 2 : priority < 8 ? 3 : 4] );
+                                   THREAD_PRIORITY_NORMAL, THREAD_PRIORITY_ABOVE_NORMAL,
+                                   THREAD_PRIORITY_HIGHEST };
+        SetThreadPriority( GetCurrentThread(), priorities[priority < 3    ? 0
+                                                          : priority < 5  ? 1
+                                                          : priority == 5 ? 2
+                                                          : priority < 8  ? 3
+                                                                          : 4] );
         const auto affinity = settings->getPropertyAsInt( "tasks.workerAffinity", 0 );
-        using GetSets = BOOL ( WINAPI * )( PSYSTEM_CPU_SET_INFORMATION, ULONG, PULONG, HANDLE, ULONG );
-        using SelectSets = BOOL ( WINAPI * )( HANDLE, const ULONG *, ULONG );
+        using GetSets = BOOL( WINAPI * )( PSYSTEM_CPU_SET_INFORMATION, ULONG, PULONG, HANDLE, ULONG );
+        using SelectSets = BOOL( WINAPI * )( HANDLE, const ULONG *, ULONG );
         auto kernel = GetModuleHandleW( L"kernel32.dll" );
-        auto getSets = reinterpret_cast<GetSets>( GetProcAddress( kernel, "GetSystemCpuSetInformation" ) );
-        auto selectSets = reinterpret_cast<SelectSets>( GetProcAddress( kernel, "SetThreadSelectedCpuSets" ) );
+        auto getSets =
+            reinterpret_cast<GetSets>( GetProcAddress( kernel, "GetSystemCpuSetInformation" ) );
+        auto selectSets =
+            reinterpret_cast<SelectSets>( GetProcAddress( kernel, "SetThreadSelectedCpuSets" ) );
         if( !getSets || !selectSets )
         {
             if( affinity == 3 )
-                SetThreadAffinityMask( GetCurrentThread(), DWORD_PTR( 1 ) <<
-                    ( workerIndex % std::min<u32>( 64, std::max<u32>( 1, Thread::hardware_concurrency() ) ) ) );
+            {
+                SetThreadAffinityMask(
+                    GetCurrentThread(),
+                    DWORD_PTR( 1 ) << ( workerIndex %
+                                        std::min<u32>(
+                                            64, std::max<u32>( 1, Thread::hardware_concurrency() ) ) ) );
+            }
             return;
         }
-        if( affinity == 0 ) { selectSets( GetCurrentThread(), nullptr, 0 ); return; }
+        if( affinity == 0 )
+        {
+            selectSets( GetCurrentThread(), nullptr, 0 );
+            return;
+        }
         ULONG bytes = 0;
         getSets( nullptr, 0, &bytes, GetCurrentProcess(), 0 );
-        if( !bytes || bytes > ( 1u << 20 ) ) return;
+        if( !bytes || bytes > ( 1u << 20 ) )
+        {
+            return;
+        }
         std::vector<unsigned char> buffer( bytes );
-        if( !getSets( reinterpret_cast<PSYSTEM_CPU_SET_INFORMATION>( buffer.data() ), bytes,
-                      &bytes, GetCurrentProcess(), 0 ) ) return;
+        if( !getSets( reinterpret_cast<PSYSTEM_CPU_SET_INFORMATION>( buffer.data() ), bytes, &bytes,
+                      GetCurrentProcess(), 0 ) )
+        {
+            return;
+        }
         std::vector<std::pair<ULONG, BYTE>> cores;
         for( ULONG offset = 0; offset + sizeof( ULONG ) * 2 <= bytes; )
         {
             auto info = reinterpret_cast<PSYSTEM_CPU_SET_INFORMATION>( buffer.data() + offset );
-            if( info->Size == 0 || info->Size > bytes - offset ) break;
+            if( info->Size == 0 || info->Size > bytes - offset )
+            {
+                break;
+            }
             if( info->Type == CpuSetInformation && !info->CpuSet.Parked &&
                 ( !info->CpuSet.Allocated || info->CpuSet.AllocatedToTargetProcess ) )
+            {
                 cores.emplace_back( info->CpuSet.Id, info->CpuSet.EfficiencyClass );
+            }
             offset += info->Size;
         }
-        if( cores.empty() ) return;
+        if( cores.empty() )
+        {
+            return;
+        }
         std::vector<ULONG> selected;
-        if( affinity == 3 ) selected.push_back( cores[workerIndex % cores.size()].first );
+        if( affinity == 3 )
+        {
+            selected.push_back( cores[workerIndex % cores.size()].first );
+        }
         else
         {
             auto efficiency = cores.front().second;
             for( const auto &core : cores )
-                efficiency = affinity == 1 ? std::max( efficiency, core.second ) :
-                                             std::min( efficiency, core.second );
+            {
+                efficiency = affinity == 1 ? std::max( efficiency, core.second )
+                                           : std::min( efficiency, core.second );
+            }
             for( const auto &core : cores )
-                if( core.second == efficiency ) selected.push_back( core.first );
+            {
+                if( core.second == efficiency )
+                {
+                    selected.push_back( core.first );
+                }
+            }
         }
         selectSets( GetCurrentThread(), selected.data(), static_cast<ULONG>( selected.size() ) );
 #else
         (void)workerIndex;
 #endif
     }
-}
+}  // namespace workphone

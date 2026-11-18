@@ -20,10 +20,16 @@ namespace workphone
 
     void LogManagerDefault::logMessage( const String &message, [[maybe_unused]] Type type )
     {
-        const u32 severity = type == Type::Trace ? 0 : type == Type::Debug ? 1 :
-                             type == Type::Info ? 2 : type == Type::Warning ? 3 :
-                             type == Type::Fatal ? 5 : 4;
-        if( !projectLogEnabled( severity ) ) return;
+        const u32 severity = type == Type::Trace     ? 0
+                             : type == Type::Debug   ? 1
+                             : type == Type::Info    ? 2
+                             : type == Type::Warning ? 3
+                             : type == Type::Fatal   ? 5
+                                                     : 4;
+        if( !projectLogEnabled( severity ) )
+        {
+            return;
+        }
         try
         {
             std::cout << message << std::endl;
@@ -66,10 +72,16 @@ namespace workphone
 
     void LogManagerDefault::logMessage( const StringW &message, Type type )
     {
-        const u32 severity = type == Type::Trace ? 0 : type == Type::Debug ? 1 :
-                             type == Type::Info ? 2 : type == Type::Warning ? 3 :
-                             type == Type::Fatal ? 5 : 4;
-        if( !projectLogEnabled( severity ) ) return;
+        const u32 severity = type == Type::Trace     ? 0
+                             : type == Type::Debug   ? 1
+                             : type == Type::Info    ? 2
+                             : type == Type::Warning ? 3
+                             : type == Type::Fatal   ? 5
+                                                     : 4;
+        if( !projectLogEnabled( severity ) )
+        {
+            return;
+        }
         try
         {
             StringW currentTimeStr = StringUtilW::getCurrentTime() + StringW( L": " );

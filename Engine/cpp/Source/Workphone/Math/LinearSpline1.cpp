@@ -68,12 +68,15 @@ namespace workphone
 
     namespace
     {
-        template<class T>
+        template <class T>
         Array<Vector3<T>> heightSplineTangents( const Array<Vector3<T>> &points,
-                                               size_t retainedCapacity )
+                                                size_t retainedCapacity )
         {
             auto tangents = makeSourceBudgetSnapshot<Vector3<T>>();
-            if( points.empty() ) return tangents;
+            if( points.empty() )
+            {
+                return tangents;
+            }
             tangents.reserve( std::max( retainedCapacity, points.size() ) );
             tangents.resize( points.size() );
             if( points.size() == 1 )
@@ -85,27 +88,33 @@ namespace workphone
             for( size_t i = 0; i < points.size(); ++i )
             {
                 if( i == 0 )
+                {
                     tangents[i] = T( 0.5 ) * ( points[1] - points[closed ? points.size() - 2 : 0] );
+                }
                 else if( i + 1 == points.size() )
+                {
                     tangents[i] = closed ? tangents[0] : T( 0.5 ) * ( points[i] - points[i - 1] );
+                }
                 else
+                {
                     tangents[i] = T( 0.5 ) * ( points[i + 1] - points[i - 1] );
+                }
             }
             return tangents;
         }
 
-        template<class T>
+        template <class T>
         void publishHeightPoints( Array<T> &oldTimes, Array<Vector3<T>> &oldPoints,
-                                  Array<Vector3<T>> &oldTangents, bool autoCalculate,
-                                  Array<T> &times, Array<Vector3<T>> &points )
+                                  Array<Vector3<T>> &oldTangents, bool autoCalculate, Array<T> &times,
+                                  Array<Vector3<T>> &points )
         {
-            auto tangents = autoCalculate ? heightSplineTangents( points, oldTangents.capacity() ) :
-                                            makeSourceBudgetSnapshot<Vector3<T>>();
+            auto tangents = autoCalculate ? heightSplineTangents( points, oldTangents.capacity() )
+                                          : makeSourceBudgetSnapshot<Vector3<T>>();
             oldTimes.swap( times );
             oldPoints.swap( points );
             oldTangents.swap( tangents );
         }
-    }
+    }  // namespace
 
     template <class T>
     void LinearSpline1<T>::setPoints( const Array<Pair<T, T>> &input )
@@ -126,11 +135,16 @@ namespace workphone
     void LinearSpline1<T>::setPoints( const Array<T> &keys, const Array<T> &input )
     {
         if( keys.size() != input.size() )
+        {
             throw std::invalid_argument( "Height spline keys and values must have equal counts" );
+        }
         auto times = makeSourceBudgetSnapshot( keys );
         auto points = makeSourceBudgetSnapshot<Vector3<T>>();
         points.reserve( input.capacity() );
-        for( const auto &p : input ) points.push_back( Vector3<T>( p, 0, 0 ) );
+        for( const auto &p : input )
+        {
+            points.push_back( Vector3<T>( p, 0, 0 ) );
+        }
         publishHeightPoints( m_times, m_points, m_tangents, m_autoCalc, times, points );
     }
 
@@ -152,10 +166,22 @@ namespace workphone
     template <class T>
     T LinearSpline1<T>::interpolate( T t )
     {
-        if( m_points.empty() ) throw std::out_of_range( "Height spline has no control points" );
-        if( !std::isfinite( t ) ) throw std::invalid_argument( "Height spline parameter must be finite" );
-        if( m_points.size() == 1 || t <= T( 0 ) ) return m_points.front().X();
-        if( t >= T( 1 ) ) return m_points.back().X();
+        if( m_points.empty() )
+        {
+            throw std::out_of_range( "Height spline has no control points" );
+        }
+        if( !std::isfinite( t ) )
+        {
+            throw std::invalid_argument( "Height spline parameter must be finite" );
+        }
+        if( m_points.size() == 1 || t <= T( 0 ) )
+        {
+            return m_points.front().X();
+        }
+        if( t >= T( 1 ) )
+        {
+            return m_points.back().X();
+        }
         const auto segment = t * static_cast<T>( m_points.size() - 1 );
         const auto index = static_cast<u32>( segment );
         return interpolate( index, segment - static_cast<T>( index ) );
@@ -165,8 +191,14 @@ namespace workphone
     T LinearSpline1<T>::interpolate( u32 fromIndex, T t ) const
     {
         // Bounds check
-        if( fromIndex >= m_points.size() ) throw std::out_of_range( "Height spline index out of bounds" );
-        if( !std::isfinite( t ) ) throw std::invalid_argument( "Height spline parameter must be finite" );
+        if( fromIndex >= m_points.size() )
+        {
+            throw std::out_of_range( "Height spline index out of bounds" );
+        }
+        if( !std::isfinite( t ) )
+        {
+            throw std::invalid_argument( "Height spline parameter must be finite" );
+        }
         t = std::clamp( t, T( 0 ), T( 1 ) );
 
         if( ( fromIndex + 1 ) == m_points.size() )
@@ -187,7 +219,9 @@ namespace workphone
         }
 
         if( m_tangents.size() != m_points.size() )
+        {
             throw std::logic_error( "Height spline tangents require recalculation" );
+        }
 
         // Real interpolation
         // Form a vector of powers of t
@@ -242,7 +276,10 @@ namespace workphone
     template <class T>
     void LinearSpline1<T>::setAutoCalculate( bool autoCalc )
     {
-        if( autoCalc && !m_autoCalc ) recalcTangents();
+        if( autoCalc && !m_autoCalc )
+        {
+            recalcTangents();
+        }
         m_autoCalc = autoCalc;
     }
 

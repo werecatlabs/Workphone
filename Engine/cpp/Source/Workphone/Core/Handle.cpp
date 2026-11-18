@@ -83,7 +83,10 @@ namespace workphone
 
     auto Handle::operator=( const Handle &other ) -> Handle &
     {
-        if( this == &other ) return *this;
+        if( this == &other )
+        {
+            return *this;
+        }
         SpinRWMutex::ScopedLock lockA( m_mutex, true );
         SpinRWMutex::ScopedLock lockB( other.m_mutex, false );
 

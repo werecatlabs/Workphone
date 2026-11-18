@@ -50,7 +50,11 @@ namespace workphone::scene
 
     void ParticleSystem::load( SmartPtr<ISharedObject> data )
     {
-        if(m_runtimeAssetsMode){loadRuntimeParticle(data);return;}
+        if( m_runtimeAssetsMode )
+        {
+            loadRuntimeParticle( data );
+            return;
+        }
         try
         {
             setLoadingState( LoadingState::Loading );
@@ -82,7 +86,13 @@ namespace workphone::scene
         {
             if( getLoadingState() == LoadingState::Unloaded )
             {
-                if(m_runtimeAssetsMode){m_runtimeAssets.reset();m_runtimeResource.reset();m_runtimeParticleUuid.clear();m_runtimeWantsPlay=m_runtimePaused=false;}
+                if( m_runtimeAssetsMode )
+                {
+                    m_runtimeAssets.reset();
+                    m_runtimeResource.reset();
+                    m_runtimeParticleUuid.clear();
+                    m_runtimeWantsPlay = m_runtimePaused = false;
+                }
                 return;
             }
 
@@ -97,7 +107,13 @@ namespace workphone::scene
             Component::unload( data );
 
             setLoadingState( LoadingState::Unloaded );
-            if(m_runtimeAssetsMode){m_runtimeAssets.reset();m_runtimeResource.reset();m_runtimeParticleUuid.clear();m_runtimeWantsPlay=m_runtimePaused=false;}
+            if( m_runtimeAssetsMode )
+            {
+                m_runtimeAssets.reset();
+                m_runtimeResource.reset();
+                m_runtimeParticleUuid.clear();
+                m_runtimeWantsPlay = m_runtimePaused = false;
+            }
         }
         catch( std::exception &e )
         {
@@ -118,7 +134,17 @@ namespace workphone::scene
 
     SmartPtr<Properties> ParticleSystem::getProperties() const
     {
-        if(m_runtimeAssetsMode){auto properties=Component::getProperties();if(properties){properties->setProperty("particleAssetUuid",m_runtimeParticleUuid,Properties::resourceStr);properties->setProperty(playOnLoadStr,m_playOnLoad);}return properties;}
+        if( m_runtimeAssetsMode )
+        {
+            auto properties = Component::getProperties();
+            if( properties )
+            {
+                properties->setProperty( "particleAssetUuid", m_runtimeParticleUuid,
+                                         Properties::resourceStr );
+                properties->setProperty( playOnLoadStr, m_playOnLoad );
+            }
+            return properties;
+        }
         auto applicationManager = core::IApplicationManager::instancePtr();
         if( !applicationManager )
         {
@@ -181,7 +207,11 @@ namespace workphone::scene
 
     void ParticleSystem::setProperties( SmartPtr<Properties> properties )
     {
-        if(m_runtimeAssetsMode){setRuntimeParticleProperties(properties);return;}
+        if( m_runtimeAssetsMode )
+        {
+            setRuntimeParticleProperties( properties );
+            return;
+        }
         if( !properties )
         {
             return;
@@ -364,9 +394,17 @@ namespace workphone::scene
         {
             if( auto particleSystem = getParticleSystem() )
             {
-                const bool visible=isEnabled()&&actor->isEnabledInScene()&&(!m_runtimeAssetsMode||detail::runtimeActorPublished(getActor()));
-                particleSystem->setVisible(visible);
-                if(m_runtimeAssetsMode)particleSystem->setState(!m_runtimeWantsPlay?render::ParticleSystemState::Stopped:visible&&!m_runtimePaused?render::ParticleSystemState::Started:render::ParticleSystemState::Paused);
+                const bool visible =
+                    isEnabled() && actor->isEnabledInScene() &&
+                    ( !m_runtimeAssetsMode || detail::runtimeActorPublished( getActor() ) );
+                particleSystem->setVisible( visible );
+                if( m_runtimeAssetsMode )
+                {
+                    particleSystem->setState( !m_runtimeWantsPlay ? render::ParticleSystemState::Stopped
+                                              : visible && !m_runtimePaused
+                                                  ? render::ParticleSystemState::Started
+                                                  : render::ParticleSystemState::Paused );
+                }
             }
         }
     }
@@ -448,7 +486,18 @@ namespace workphone::scene
 
     void ParticleSystem::play()
     {
-        if(m_runtimeAssetsMode){if(!m_runtimeAssets||!m_particleSystem)throw std::runtime_error("Runtime particles require captured reconfiguration before play");m_runtimeWantsPlay=true;m_runtimePaused=false;updateVisibility();return;}
+        if( m_runtimeAssetsMode )
+        {
+            if( !m_runtimeAssets || !m_particleSystem )
+            {
+                throw std::runtime_error(
+                    "Runtime particles require captured reconfiguration before play" );
+            }
+            m_runtimeWantsPlay = true;
+            m_runtimePaused = false;
+            updateVisibility();
+            return;
+        }
         try
         {
             if( !getParticleSystem() )
@@ -480,7 +529,13 @@ namespace workphone::scene
 
     void ParticleSystem::stop()
     {
-        if(m_runtimeAssetsMode){m_runtimeWantsPlay=false;m_runtimePaused=false;updateVisibility();return;}
+        if( m_runtimeAssetsMode )
+        {
+            m_runtimeWantsPlay = false;
+            m_runtimePaused = false;
+            updateVisibility();
+            return;
+        }
         try
         {
             if( auto particleSystem = getParticleSystem() )
@@ -497,7 +552,12 @@ namespace workphone::scene
 
     void ParticleSystem::pause()
     {
-        if(m_runtimeAssetsMode){m_runtimePaused=true;updateVisibility();return;}
+        if( m_runtimeAssetsMode )
+        {
+            m_runtimePaused = true;
+            updateVisibility();
+            return;
+        }
         try
         {
             if( auto particleSystem = getParticleSystem() )
@@ -519,7 +579,11 @@ namespace workphone::scene
 
     void ParticleSystem::rebuild()
     {
-        if(m_runtimeAssetsMode)throw std::runtime_error("Captured particles require typed resource replacement instead of template rebuild");
+        if( m_runtimeAssetsMode )
+        {
+            throw std::runtime_error(
+                "Captured particles require typed resource replacement instead of template rebuild" );
+        }
         const auto wasPlaying = isPlaying();
         destroyGraphicsParticleSystem();
         createGraphicsParticleSystem();
@@ -538,7 +602,10 @@ namespace workphone::scene
 
     void ParticleSystem::createGraphicsParticleSystem()
     {
-        if(m_runtimeAssetsMode)return;
+        if( m_runtimeAssetsMode )
+        {
+            return;
+        }
         if( auto particleSystem = getParticleSystem() )
         {
             return;
@@ -641,16 +708,26 @@ namespace workphone::scene
 
     void ParticleSystem::destroyGraphicsParticleSystem()
     {
-        auto app=core::IApplicationManager::instancePtr();auto graphics=app?app->getGraphicsSystem():nullptr;
-        std::unique_lock<ISharedObject> runtimeLock;if(m_runtimeAssetsMode&&graphics)runtimeLock=std::unique_lock<ISharedObject>(*graphics);
+        auto app = core::IApplicationManager::instancePtr();
+        auto graphics = app ? app->getGraphicsSystem() : nullptr;
+        std::unique_lock<ISharedObject> runtimeLock;
+        if( m_runtimeAssetsMode && graphics )
+        {
+            runtimeLock = std::unique_lock<ISharedObject>( *graphics );
+        }
         try
         {
             if( auto particleSystem = getParticleSystem() )
             {
                 // GraphicsObject::unload clears its creator. Keep the owning
                 // scene alive until its inventory has removed this system.
-                auto creator=particleSystem->getCreator();
-                if(m_runtimeAssetsMode){particleSystem->setVisible(false);particleSystem->setState(render::ParticleSystemState::Stopped);particleSystem->unload(nullptr);}
+                auto creator = particleSystem->getCreator();
+                if( m_runtimeAssetsMode )
+                {
+                    particleSystem->setVisible( false );
+                    particleSystem->setState( render::ParticleSystemState::Stopped );
+                    particleSystem->unload( nullptr );
+                }
                 if( auto graphicsNode = getGraphicsNode() )
                 {
                     graphicsNode->detachObject( particleSystem );
@@ -698,7 +775,10 @@ namespace workphone::scene
 
     void ParticleSystem::applyParticleSystemProperties()
     {
-        if(m_runtimeAssetsMode)return;
+        if( m_runtimeAssetsMode )
+        {
+            return;
+        }
         if( auto particleSystem = getParticleSystem() )
         {
             particleSystem->setTemplateName( getTemplateName() );
@@ -710,7 +790,10 @@ namespace workphone::scene
 
     void ParticleSystem::applyRendererProperties()
     {
-        if(m_runtimeAssetsMode)return;
+        if( m_runtimeAssetsMode )
+        {
+            return;
+        }
         auto particleSystem = getParticleSystem();
         if( !particleSystem )
         {

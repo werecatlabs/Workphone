@@ -70,7 +70,7 @@ namespace workphone::scene
             auto renderLock = tasks ? tasks->lockTask( TaskId::Render ) : TaskLock();
             auto physicsLock = tasks ? tasks->lockTask( TaskId::Physics ) : TaskLock();
             std::lock_guard<std::recursive_mutex> lock( m_generationMutex );
-            
+
             if( m_activationPending )
             {
                 try

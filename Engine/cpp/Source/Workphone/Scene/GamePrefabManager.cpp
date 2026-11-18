@@ -549,21 +549,33 @@ namespace workphone::scene
             WP_ASSERT( fileSystem );
 
             const bool streamingWrapper = isStreamingWorldOwner( prefab );
+
             struct SaveFlagsRollback
             {
                 Array<Pair<SmartPtr<IGameActor>, u32>> actors;
                 bool published = false;
+
                 ~SaveFlagsRollback()
                 {
                     if( !published )
+                    {
                         for( auto &entry : actors )
+                        {
                             entry.first->setFlags( entry.second );
+                        }
+                    }
                 }
             } flags;
+
             const auto captureFlags = [&]( auto &&self, SmartPtr<IGameActor> actor ) -> void {
                 flags.actors.emplace_back( actor, actor->getFlags() );
                 if( !isStreamingWorldOwner( actor ) )
-                    for( auto child : actor->getChildren() ) self( self, child );
+                {
+                    for( auto child : actor->getChildren() )
+                    {
+                        self( self, child );
+                    }
+                }
             };
             captureFlags( captureFlags, prefab );
             // Resident cell roots belong to their world generation and remain
@@ -576,7 +588,10 @@ namespace workphone::scene
             {
                 const auto previous = fileSystem->readAllText( filePath );
                 const auto first = previous.find_first_not_of( " \t\r\n" );
-                if( first != String::npos ) fmt = previous[first] == '<' ? DataFormat::XML : DataFormat::JSON;
+                if( first != String::npos )
+                {
+                    fmt = previous[first] == '<' ? DataFormat::XML : DataFormat::JSON;
+                }
             }
 
             auto data = PrefabInstanceService::makeTemplateData( prefab );
@@ -596,6 +611,7 @@ namespace workphone::scene
                 SmartPtr<IGameActor> actor;
                 SmartPtr<PrefabInstance> added;
                 bool published = false;
+
                 ~AdoptionRollback()
                 {
                     if( added && !published )
@@ -608,11 +624,13 @@ namespace workphone::scene
                         }
                         catch( const std::exception &e )
                         {
-                            WP_LOG_ERROR( String( "Could not remove failed prefab source link: " ) + e.what() );
+                            WP_LOG_ERROR( String( "Could not remove failed prefab source link: " ) +
+                                          e.what() );
                         }
                     }
                 }
             } adoption{ prefab };
+
             if( applicationManager->isEditor() && !applicationManager->isPlaying() &&
                 !prefab->getComponent<PrefabInstance>() )
             {

@@ -24,17 +24,22 @@ namespace workphone::scene
             SmartPtr<render::IGraphicsSystem> graphics;
             ScopedLock<IGameManager> managerLock;
             ScopedLock<render::IGraphicsSystem> graphicsLock;
+
             ImposterPublicationLock() :
                 manager( core::IApplicationManager::instancePtr()
-                    ? core::IApplicationManager::instancePtr()->getGameManager() : nullptr ),
+                             ? core::IApplicationManager::instancePtr()->getGameManager()
+                             : nullptr ),
                 graphics( core::IApplicationManager::instancePtr()
-                    ? core::IApplicationManager::instancePtr()->getGraphicsSystem() : nullptr ),
-                managerLock( manager ), graphicsLock( graphics )
+                              ? core::IApplicationManager::instancePtr()->getGraphicsSystem()
+                              : nullptr ),
+                managerLock( manager ),
+                graphicsLock( graphics )
             {
             }
         };
 
-        template <class T> bool finiteVector( const Vector3<T> &value )
+        template <class T>
+        bool finiteVector( const Vector3<T> &value )
         {
             return std::isfinite( value.x ) && std::isfinite( value.y ) && std::isfinite( value.z );
         }
@@ -46,45 +51,64 @@ namespace workphone::scene
 
         bool validView( const MeshImposterView &view )
         {
-            return finiteVector( view.right ) && finiteVector( view.up ) && finiteVector( view.towardCamera ) &&
-                std::abs( view.right.lengthSquared() - 1.f ) <= .001f &&
-                std::abs( view.up.lengthSquared() - 1.f ) <= .001f &&
-                std::abs( view.towardCamera.lengthSquared() - 1.f ) <= .001f &&
-                std::abs( view.right.dotProduct( view.up ) ) <= .001f &&
-                view.right.crossProduct( view.up ).dotProduct( view.towardCamera ) >= .999f &&
-                std::isfinite( view.minimum.x ) && std::isfinite( view.minimum.y ) &&
-                std::isfinite( view.maximum.x ) && std::isfinite( view.maximum.y ) &&
-                std::isfinite( view.maximum.x - view.minimum.x ) &&
-                std::isfinite( view.maximum.y - view.minimum.y ) &&
-                std::isfinite( view.maximumDepth ) &&
-                view.maximum.x > view.minimum.x && view.maximum.y > view.minimum.y &&
-                std::isfinite( view.uvMinimum.x ) && std::isfinite( view.uvMinimum.y ) &&
-                std::isfinite( view.uvMaximum.x ) && std::isfinite( view.uvMaximum.y ) &&
-                view.uvMinimum.x >= 0 && view.uvMinimum.y >= 0 &&
-                view.uvMaximum.x <= 1 && view.uvMaximum.y <= 1 &&
-                view.uvMaximum.x > view.uvMinimum.x && view.uvMaximum.y > view.uvMinimum.y;
+            return finiteVector( view.right ) && finiteVector( view.up ) &&
+                   finiteVector( view.towardCamera ) &&
+                   std::abs( view.right.lengthSquared() - 1.f ) <= .001f &&
+                   std::abs( view.up.lengthSquared() - 1.f ) <= .001f &&
+                   std::abs( view.towardCamera.lengthSquared() - 1.f ) <= .001f &&
+                   std::abs( view.right.dotProduct( view.up ) ) <= .001f &&
+                   view.right.crossProduct( view.up ).dotProduct( view.towardCamera ) >= .999f &&
+                   std::isfinite( view.minimum.x ) && std::isfinite( view.minimum.y ) &&
+                   std::isfinite( view.maximum.x ) && std::isfinite( view.maximum.y ) &&
+                   std::isfinite( view.maximum.x - view.minimum.x ) &&
+                   std::isfinite( view.maximum.y - view.minimum.y ) &&
+                   std::isfinite( view.maximumDepth ) && view.maximum.x > view.minimum.x &&
+                   view.maximum.y > view.minimum.y && std::isfinite( view.uvMinimum.x ) &&
+                   std::isfinite( view.uvMinimum.y ) && std::isfinite( view.uvMaximum.x ) &&
+                   std::isfinite( view.uvMaximum.y ) && view.uvMinimum.x >= 0 && view.uvMinimum.y >= 0 &&
+                   view.uvMaximum.x <= 1 && view.uvMaximum.y <= 1 &&
+                   view.uvMaximum.x > view.uvMinimum.x && view.uvMaximum.y > view.uvMinimum.y;
         }
-    }
+    }  // namespace
 
     WP_CLASS_REGISTER_DERIVED( workphone::scene, MeshImposter, Component );
 
-    MeshImposter::MeshImposter() : m_storage( MeshImposterSystem::instance().create() ) {}
-    MeshImposter::~MeshImposter() { MeshImposterSystem::instance().destroy( m_storage ); }
+    MeshImposter::MeshImposter() : m_storage( MeshImposterSystem::instance().create() )
+    {
+    }
+
+    MeshImposter::~MeshImposter()
+    {
+        MeshImposterSystem::instance().destroy( m_storage );
+    }
 
     void MeshImposter::load( SmartPtr<ISharedObject> data )
     {
-        if( isLoaded() ) return;
+        if( isLoaded() )
+        {
+            return;
+        }
         setLoadingState( LoadingState::Loading );
         Component::load( data );
         // Actor reconstruction usually registers before load. Direct Editor
         // unload/load cycles also need to rejoin the manager-owned roster.
         if( !getComponentSystem() )
+        {
             if( auto app = core::IApplicationManager::instancePtr() )
-                if( auto manager = app->getGameManager() ) manager->addComponent( this );
+            {
+                if( auto manager = app->getGameManager() )
+                {
+                    manager->addComponent( this );
+                }
+            }
+        }
         {
             ImposterPublicationLock publication;
             auto state = MeshImposterSystem::instance().access( m_storage );
-            if( !state.views.empty() ) applyView( state.selectedView >= 0 ? state.selectedView : 0 );
+            if( !state.views.empty() )
+            {
+                applyView( state.selectedView >= 0 ? state.selectedView : 0 );
+            }
         }
         setLoadingState( LoadingState::Loaded );
     }
@@ -92,7 +116,10 @@ namespace workphone::scene
     void MeshImposter::unload( SmartPtr<ISharedObject> data )
     {
         ImposterPublicationLock publication;
-        if( publication.manager ) publication.manager->unregisterAllComponent( this );
+        if( publication.manager )
+        {
+            publication.manager->unregisterAllComponent( this );
+        }
         setLoadingState( LoadingState::Unloading );
         // Keep authoring/runtime configuration across Editor stop/play reloads,
         // just as LODGroup retains its levels. Destruction releases these owners.
@@ -104,16 +131,25 @@ namespace workphone::scene
                                   SmartPtr<render::IMaterial> material )
     {
         if( !material || !finiteVector( centre ) || views.empty() || views.size() > 256 )
-            throw std::invalid_argument( "Mesh imposter requires a material, finite centre and 1..256 views." );
+        {
+            throw std::invalid_argument(
+                "Mesh imposter requires a material, finite centre and 1..256 views." );
+        }
         for( const auto &view : views )
         {
             if( !validView( view ) )
-                throw std::invalid_argument( "Mesh imposter view requires orthonormal capture axes, bounds and a valid UV rectangle." );
+            {
+                throw std::invalid_argument(
+                    "Mesh imposter view requires orthonormal capture axes, bounds and a valid UV "
+                    "rectangle." );
+            }
             const auto midpoint = view.minimum + ( view.maximum - view.minimum ) * .5f;
             const auto projectedCentre = centre + view.right * midpoint.x + view.up * midpoint.y;
             if( !finiteVector( projectedCentre ) ||
                 !finiteVector( projectedCentre + view.towardCamera * view.maximumDepth ) )
+            {
                 throw std::invalid_argument( "Mesh imposter projected centre must remain finite." );
+            }
         }
         auto admitted = makeSourceBudgetSnapshot( views );
         ImposterPublicationLock publication;
@@ -139,53 +175,75 @@ namespace workphone::scene
                                  : updateForCamera( view.position );
     }
 
-    bool MeshImposter::updateFromCameraVector( const Vector3<real_Num> &worldVector,
-                                               bool directionOnly )
+    bool MeshImposter::updateFromCameraVector( const Vector3<real_Num> &worldVector, bool directionOnly )
     {
-        if( !finiteVector( worldVector ) ) return false;
+        if( !finiteVector( worldVector ) )
+        {
+            return false;
+        }
         ImposterPublicationLock publication;
         auto state = MeshImposterSystem::instance().access( m_storage );
         auto actor = getActor();
-        if( !actor || state.views.empty() || !state.material ) return false;
+        if( !actor || state.views.empty() || !state.material )
+        {
+            return false;
+        }
         auto localVector = worldVector;
         if( !actor->getFlag( IGameActor::ActorFlagWorldSpaceTransform ) )
+        {
             if( const auto parent = actor->getParent() )
             {
                 const auto pose = parent->getWorldTransform();
                 const auto scale = pose.getScale();
                 const auto orientation = pose.getOrientation();
-                const double orientationNorm = double( orientation.w ) * orientation.w +
-                    double( orientation.x ) * orientation.x + double( orientation.y ) * orientation.y +
-                    double( orientation.z ) * orientation.z;
+                const double orientationNorm =
+                    double( orientation.w ) * orientation.w + double( orientation.x ) * orientation.x +
+                    double( orientation.y ) * orientation.y + double( orientation.z ) * orientation.z;
                 if( !finiteVector( pose.getPosition() ) || !finiteVector( scale ) ||
-                    std::abs( scale.x ) < 1e-8 || std::abs( scale.y ) < 1e-8 || std::abs( scale.z ) < 1e-8 ||
-                    !std::isfinite( orientation.w ) || !std::isfinite( orientation.x ) ||
-                    !std::isfinite( orientation.y ) || !std::isfinite( orientation.z ) ||
-                    !std::isfinite( orientationNorm ) || std::abs( orientationNorm - 1. ) > .001 ) return false;
+                    std::abs( scale.x ) < 1e-8 || std::abs( scale.y ) < 1e-8 ||
+                    std::abs( scale.z ) < 1e-8 || !std::isfinite( orientation.w ) ||
+                    !std::isfinite( orientation.x ) || !std::isfinite( orientation.y ) ||
+                    !std::isfinite( orientation.z ) || !std::isfinite( orientationNorm ) ||
+                    std::abs( orientationNorm - 1. ) > .001 )
+                {
+                    return false;
+                }
                 localVector = orientation.inverse() *
-                    ( directionOnly ? worldVector : worldVector - pose.getPosition() );
+                              ( directionOnly ? worldVector : worldVector - pose.getPosition() );
                 localVector.x /= scale.x;
                 localVector.y /= scale.y;
                 localVector.z /= scale.z;
             }
-        const auto localDirection = directionOnly ? localVector : localVector - realVector( state.centre );
-        const Vector3F direction( f32( localDirection.x ), f32( localDirection.y ), f32( localDirection.z ) );
+        }
+        const auto localDirection =
+            directionOnly ? localVector : localVector - realVector( state.centre );
+        const Vector3F direction( f32( localDirection.x ), f32( localDirection.y ),
+                                  f32( localDirection.z ) );
         const auto directionLengthSquared = direction.lengthSquared();
-        if( !finiteVector( direction ) || !std::isfinite( directionLengthSquared ) || directionLengthSquared < 1e-12f ) return false;
+        if( !finiteVector( direction ) || !std::isfinite( directionLengthSquared ) ||
+            directionLengthSquared < 1e-12f )
+        {
+            return false;
+        }
         const auto selected = selectMeshImposterView( state.views, direction, state.selectedView );
-        if( selected < 0 ) return false;
+        if( selected < 0 )
+        {
+            return false;
+        }
         // The supporting plane's ray-preserving placement changes as the eye
         // moves, even while angular hysteresis retains the same atlas frame.
         return applyView( selected, &localVector, directionOnly );
     }
 
-    bool MeshImposter::applyView( s32 selected, const Vector3<real_Num> *localCamera,
-                                  bool orthographic )
+    bool MeshImposter::applyView( s32 selected, const Vector3<real_Num> *localCamera, bool orthographic )
     {
         auto state = MeshImposterSystem::instance().access( m_storage );
         auto actor = getActor();
         auto transform = actor ? actor->getTransform() : nullptr;
-        if( !transform || !state.material || selected < 0 || size_t( selected ) >= state.views.size() ) return false;
+        if( !transform || !state.material || selected < 0 || size_t( selected ) >= state.views.size() )
+        {
+            return false;
+        }
         const auto &view = state.views[size_t( selected )];
         const auto midpoint = view.minimum + ( view.maximum - view.minimum ) * .5f;
         const auto centre = realVector( state.centre + view.right * midpoint.x + view.up * midpoint.y );
@@ -200,7 +258,9 @@ namespace workphone::scene
             toward.normalise();
             const auto alignment = toward.dotProduct( normal );
             if( std::isfinite( alignment ) && alignment > 1e-6 )
+            {
                 projectedCentre += toward * ( real_Num( view.maximumDepth ) / alignment );
+            }
         }
         else if( localCamera )
         {
@@ -218,8 +278,12 @@ namespace workphone::scene
             // This is a distant representation: normal LOD detail covers near use.
         }
         const Vector3<real_Num> scale( real_Num( view.maximum.x - view.minimum.x ) * projectionScale,
-                                       real_Num( view.maximum.y - view.minimum.y ) * projectionScale, 1 );
-        if( !finiteVector( projectedCentre ) || !finiteVector( scale ) || scale.x <= 0 || scale.y <= 0 ) return false;
+                                       real_Num( view.maximum.y - view.minimum.y ) * projectionScale,
+                                       1 );
+        if( !finiteVector( projectedCentre ) || !finiteVector( scale ) || scale.x <= 0 || scale.y <= 0 )
+        {
+            return false;
+        }
         const Quaternion<real_Num> orientation( realVector( view.right ), realVector( view.up ),
                                                 realVector( view.towardCamera ) );
         const Transform3<real_Num> pose( projectedCentre, orientation, scale );
@@ -234,7 +298,10 @@ namespace workphone::scene
             transform->setDirty( true );
             actor->updateTransform();
         }
-        if( state.selectedView >= 0 && state.selectedView != selected ) ++state.selectionChanges;
+        if( state.selectedView >= 0 && state.selectedView != selected )
+        {
+            ++state.selectionChanges;
+        }
         state.selectedView = selected;
         return true;
     }
@@ -249,13 +316,17 @@ namespace workphone::scene
     {
         auto state = MeshImposterSystem::instance().access( m_storage );
         return state.selectedView >= 0 && size_t( state.selectedView ) < state.views.size()
-            ? state.views[size_t( state.selectedView )].towardCamera : Vector3F::zero();
+                   ? state.views[size_t( state.selectedView )].towardCamera
+                   : Vector3F::zero();
     }
 
     bool MeshImposter::getSelectedFrame( MeshImposterView &view ) const
     {
         auto state = MeshImposterSystem::instance().access( m_storage );
-        if( state.selectedView < 0 || size_t( state.selectedView ) >= state.views.size() ) return false;
+        if( state.selectedView < 0 || size_t( state.selectedView ) >= state.views.size() )
+        {
+            return false;
+        }
         view = state.views[size_t( state.selectedView )];
         return true;
     }
@@ -277,4 +348,4 @@ namespace workphone::scene
         auto state = MeshImposterSystem::instance().access( m_storage );
         return state.selectionChanges;
     }
-}
+}  // namespace workphone::scene

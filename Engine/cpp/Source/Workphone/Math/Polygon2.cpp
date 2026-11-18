@@ -345,8 +345,8 @@ namespace workphone
                     {
                         return 1.L;
                     }
-                    const int exponent = std::max( std::ilogb( magnitude ) + 1,
-                                                   std::numeric_limits<T>::min_exponent );
+                    const int exponent =
+                        std::max( std::ilogb( magnitude ) + 1, std::numeric_limits<T>::min_exponent );
                     return std::ldexp( 1.L, exponent - std::numeric_limits<T>::digits );
                 };
                 unitX = unit( a.x, b.x );
@@ -371,7 +371,10 @@ namespace workphone
             const auto step = static_cast<s64>( std::round( fraction * steps ) );
             const Vector2<T> point{ static_cast<T>( a.x + ( ix / steps ) * step * unitX ),
                                     static_cast<T>( a.y + ( iy / steps ) * step * unitY ) };
-            if( orientation( a, b, point ) != 0 ) return fraction < .5L ? a : b;
+            if( orientation( a, b, point ) != 0 )
+            {
+                return fraction < .5L ? a : b;
+            }
             return point;
         }
 
@@ -515,7 +518,10 @@ namespace workphone
                 {
                     const auto &c = ring[hit], &d = ring[( hit + 1 ) % ring.size()];
                     const auto q = pointOnEdge( c, d, hitFraction, area );
-                    if( tryChord( edge, p, hit, q ) ) return;
+                    if( tryChord( edge, p, hit, q ) )
+                    {
+                        return;
+                    }
                     // The nearest lattice point can be an endpoint on the starting
                     // edge. The far endpoint may still be a valid diagonal.
                     if( samePoint( q, c ) && tryChord( edge, p, hit, d ) )
@@ -906,9 +912,14 @@ namespace workphone
     {
         const auto count = points.size();
         if( count > std::numeric_limits<size_t>::max() - m_points.size() )
+        {
             throw std::length_error( "Polygon point count overflow" );
+        }
         m_points.reserve( m_points.size() + count );
-        for( size_t i = 0; i < count; ++i ) m_points.push_back( points[i] );
+        for( size_t i = 0; i < count; ++i )
+        {
+            m_points.push_back( points[i] );
+        }
     }
 
     template <class T>

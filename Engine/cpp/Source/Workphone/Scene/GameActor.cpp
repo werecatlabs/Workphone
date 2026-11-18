@@ -2752,15 +2752,24 @@ namespace workphone::scene
     void GameActor::clearTags()
     {
         ScopedLock lock( &m_metadataMutex );
-        if( !m_metadata ) return;
+        if( !m_metadata )
+        {
+            return;
+        }
         m_metadata->tags.clear();
-        if( m_metadata->layer.empty() ) m_metadata.reset();
+        if( m_metadata->layer.empty() )
+        {
+            m_metadata.reset();
+        }
     }
 
     bool GameActor::hasTag( const String &tag ) const
     {
         ScopedLock lock( &m_metadataMutex, false );
-        if( !m_metadata ) return false;
+        if( !m_metadata )
+        {
+            return false;
+        }
         const auto &tags = m_metadata->tags;
         return std::find( tags.begin(), tags.end(), tag ) != tags.end();
     }
@@ -2768,10 +2777,16 @@ namespace workphone::scene
     void GameActor::removeTag( const String &tag )
     {
         ScopedLock lock( &m_metadataMutex );
-        if( !m_metadata ) return;
+        if( !m_metadata )
+        {
+            return;
+        }
         auto &tags = m_metadata->tags;
         tags.erase( std::remove( tags.begin(), tags.end(), tag ), tags.end() );
-        if( tags.empty() && m_metadata->layer.empty() ) m_metadata.reset();
+        if( tags.empty() && m_metadata->layer.empty() )
+        {
+            m_metadata.reset();
+        }
     }
 
     void GameActor::addTag( const String &tag )
@@ -2780,7 +2795,10 @@ namespace workphone::scene
         if( m_metadata )
         {
             auto &tags = m_metadata->tags;
-            if( std::find( tags.begin(), tags.end(), tag ) == tags.end() ) tags.push_back( tag );
+            if( std::find( tags.begin(), tags.end(), tag ) == tags.end() )
+            {
+                tags.push_back( tag );
+            }
             return;
         }
         // Unlike setTags, addTag retains whitespace and permits an empty tag.
@@ -2805,12 +2823,21 @@ namespace workphone::scene
         ScopedLock lock( &m_metadataMutex );
         if( replacement.empty() )
         {
-            if( !m_metadata ) return;
+            if( !m_metadata )
+            {
+                return;
+            }
             m_metadata->tags = std::move( replacement );
-            if( m_metadata->layer.empty() ) m_metadata.reset();
+            if( m_metadata->layer.empty() )
+            {
+                m_metadata.reset();
+            }
             return;
         }
-        if( !m_metadata ) m_metadata = std::make_unique<Metadata>();
+        if( !m_metadata )
+        {
+            m_metadata = std::make_unique<Metadata>();
+        }
         m_metadata->tags = std::move( replacement );
     }
 
@@ -2821,7 +2848,10 @@ namespace workphone::scene
         if( m_metadata )
         {
             tags.reserve( m_metadata->tags.size() );
-            for( const auto &tag : m_metadata->tags ) tags.push_back( tag );
+            for( const auto &tag : m_metadata->tags )
+            {
+                tags.push_back( tag );
+            }
         }
         return tags;
     }
@@ -2829,7 +2859,10 @@ namespace workphone::scene
     String GameActor::getLayer() const
     {
         ScopedLock lock( &m_metadataMutex, false );
-        if( !m_metadata ) return {};
+        if( !m_metadata )
+        {
+            return {};
+        }
         return m_metadata->layer.str();
     }
 
@@ -2839,12 +2872,21 @@ namespace workphone::scene
         ScopedLock lock( &m_metadataMutex );
         if( replacement.empty() )
         {
-            if( !m_metadata ) return;
+            if( !m_metadata )
+            {
+                return;
+            }
             m_metadata->layer = replacement;
-            if( m_metadata->tags.empty() ) m_metadata.reset();
+            if( m_metadata->tags.empty() )
+            {
+                m_metadata.reset();
+            }
             return;
         }
-        if( !m_metadata ) m_metadata = std::make_unique<Metadata>();
+        if( !m_metadata )
+        {
+            m_metadata = std::make_unique<Metadata>();
+        }
         m_metadata->layer = replacement;
     }
 

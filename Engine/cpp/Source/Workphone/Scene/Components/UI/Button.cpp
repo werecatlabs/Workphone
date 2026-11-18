@@ -562,7 +562,8 @@ namespace workphone::scene
         {
             const auto application = core::IApplicationManager::instance();
             const auto actorVisible = actor->isEnabledInScene() &&
-                ( application->isPlaying() || actor->isVisible() ) && getUseNativeUI();
+                                      ( application->isPlaying() || actor->isVisible() ) &&
+                                      getUseNativeUI();
             if( auto element = getElement() )
             {
                 element->setEnabled( isEnabled() && actorVisible, false );

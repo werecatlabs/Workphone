@@ -52,8 +52,8 @@ namespace workphone::scene
             {
                 if( auto fileSystem = application->getFileSystem() )
                 {
-                    auto input = fileSystem->open( String( path.generic_u8string().c_str() ),
-                                                   true, true, false, false, true );
+                    auto input = fileSystem->open( String( path.generic_u8string().c_str() ), true, true,
+                                                   false, false, true );
                     if( !input || input->size() > limit )
                     {
                         throw std::runtime_error( "World file missing or exceeds its admission limit" );
@@ -207,20 +207,25 @@ namespace workphone::scene
                                 Array<String> &objectIds, Definitions &definitions,
                                 const Allocator<const Properties *> &scratchAllocator = {} )
         {
-            visitDefinitions( root, [&]( const Properties &definition, bool actor ) {
-                const auto uuid = definition.hasProperty( GameActorUtil::uuidStr )
-                                      ? definition.getPropertyObject( GameActorUtil::uuidStr ).getValue()
-                                      : String();
-                if( !validObjectId( uuid ) || !definitions.insert( uuid ).second )
-                {
-                    throw std::runtime_error( "Missing, invalid or duplicate world object identity" );
-                }
-                if( actor )
-                {
-                    actorIds.push_back( uuid );
-                }
-                objectIds.push_back( uuid );
-            }, scratchAllocator );
+            visitDefinitions(
+                root,
+                [&]( const Properties &definition, bool actor ) {
+                    const auto uuid =
+                        definition.hasProperty( GameActorUtil::uuidStr )
+                            ? definition.getPropertyObject( GameActorUtil::uuidStr ).getValue()
+                            : String();
+                    if( !validObjectId( uuid ) || !definitions.insert( uuid ).second )
+                    {
+                        throw std::runtime_error(
+                            "Missing, invalid or duplicate world object identity" );
+                    }
+                    if( actor )
+                    {
+                        actorIds.push_back( uuid );
+                    }
+                    objectIds.push_back( uuid );
+                },
+                scratchAllocator );
         }
 
         void readIdentities( const Properties &entry, const char *name, Array<String> &identities )
@@ -246,12 +251,15 @@ namespace workphone::scene
                          const Allocator<const Properties *> &scratchAllocator = {} )
         {
             u32 count = 0;
-            visitDefinitions( root, [&]( const Properties &, bool actor ) {
-                if( actor )
-                {
-                    ++count;
-                }
-            }, scratchAllocator );
+            visitDefinitions(
+                root,
+                [&]( const Properties &, bool actor ) {
+                    if( actor )
+                    {
+                        ++count;
+                    }
+                },
+                scratchAllocator );
             return count;
         }
 
@@ -967,7 +975,10 @@ namespace workphone::scene
             auto data = make_ptr<Properties>();
             if( !PropertiesBinarySerializer::deserialize( bytes, *data, &error ) )
             {
-                if( sourceBudgetDenialCount() != admissionEpoch ) error = "Out of memory";
+                if( sourceBudgetDenialCount() != admissionEpoch )
+                {
+                    error = "Out of memory";
+                }
                 return nullptr;
             }
             u32 version = 0, count = 0;
@@ -1006,7 +1017,10 @@ namespace workphone::scene
             }
             // Legacy property adapters can return empty data after admission
             // fails. Never publish a partially validated cell in that case.
-            if( sourceBudgetDenialCount() != admissionEpoch ) throw std::bad_alloc();
+            if( sourceBudgetDenialCount() != admissionEpoch )
+            {
+                throw std::bad_alloc();
+            }
             return data;
         }
         catch( const std::bad_alloc & )

@@ -99,7 +99,8 @@ namespace workphone::scene
         const Transform3<real_Num> *parentWorldTransformPtr = nullptr;
         auto canUpdateTransform = true;
 
-        if( auto actor = getActor(); actor && !actor->getFlag( IGameActor::ActorFlagWorldSpaceTransform ) )
+        if( auto actor = getActor();
+            actor && !actor->getFlag( IGameActor::ActorFlagWorldSpaceTransform ) )
         {
             if( auto parent = actor->getParent() )
             {
@@ -415,7 +416,8 @@ namespace workphone::scene
             const Transform3<real_Num> *parentWorldTransformPtr = nullptr;
             auto canUpdateTransform = true;
 
-            if( auto actor = getActor(); actor && !actor->getFlag( IGameActor::ActorFlagWorldSpaceTransform ) )
+            if( auto actor = getActor();
+                actor && !actor->getFlag( IGameActor::ActorFlagWorldSpaceTransform ) )
             {
                 auto parent = actor->getParent();
                 if( parent )

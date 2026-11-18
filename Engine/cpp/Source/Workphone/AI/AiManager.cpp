@@ -2575,7 +2575,8 @@ launchFlightSimulator()
         {
             if( statusCode == 401 || statusCode == 403 )
             {
-                return "OpenAI authentication or access failed. Check the key in File > Settings > Editor "
+                return "OpenAI authentication or access failed. Check the key in File > Settings > "
+                       "Editor "
                        "(or OPENAI_API_KEY) and model access.";
             }
             if( statusCode == 429 )
@@ -2599,23 +2600,35 @@ launchFlightSimulator()
                         const auto code = field( "code" );
                         const auto type = field( "type" );
                         if( code == "credit_balance_exhausted" )
+                        {
                             return "OpenAI API credits are exhausted. Add credits in your OpenAI "
                                    "API billing settings before trying again.";
+                        }
                         if( code == "organization_spend_limit_exceeded" )
+                        {
                             return "OpenAI organization spending limit reached. Review the spending "
                                    "limit in your OpenAI API organization settings.";
+                        }
                         if( code == "project_spend_limit_exceeded" )
+                        {
                             return "OpenAI project spending limit reached. Review the spending "
                                    "limit in your OpenAI API project settings.";
+                        }
                         if( code == "organization_usage_limit_exceeded" )
+                        {
                             return "OpenAI organization usage limit reached. Request a higher "
                                    "approved usage limit in your OpenAI API organization settings.";
+                        }
                         if( code == "insufficient_quota" || type == "insufficient_quota" )
+                        {
                             return "OpenAI API quota is exhausted. Check your API credit balance "
                                    "and organization/project limits before trying again.";
+                        }
                         if( code == "rate_limit_exceeded" || code == "slow_down" ||
                             type == "rate_limit_error" || type == "rate_limit_exceeded" )
+                        {
                             return "OpenAI is rate limiting requests. Wait before trying again.";
+                        }
                     }
                 }
                 return "OpenAI request limit reached (HTTP 429). Check your API billing and limits; "
@@ -3020,8 +3033,7 @@ launchFlightSimulator()
             result.error = "The image prompt exceeds the 32000-byte limit.";
             return result;
         }
-        if( options.size != "1024x1024" && options.size != "1536x1024" &&
-            options.size != "1024x1536" )
+        if( options.size != "1024x1024" && options.size != "1536x1024" && options.size != "1024x1536" )
         {
             result.error = "Choose a supported image size: 1024x1024, 1536x1024 or 1024x1536.";
             return result;
@@ -3034,11 +3046,13 @@ launchFlightSimulator()
         try
         {
             const auto configuredModel = std::getenv( "OPENAI_IMAGE_MODEL" );
-            const String model = configuredModel && *configuredModel ? configuredModel : "gpt-image-2.5-flare";
+            const String model =
+                configuredModel && *configuredModel ? configuredModel : "gpt-image-2.5-flare";
             if( model.size() > 128 || model.find_first_not_of( " \t\r\n" ) == String::npos ||
                 model.find_first_of( "\r\n" ) != String::npos )
             {
-                result.error = "OPENAI_IMAGE_MODEL must contain a valid model name of at most 128 bytes.";
+                result.error =
+                    "OPENAI_IMAGE_MODEL must contain a valid model name of at most 128 bytes.";
                 return result;
             }
             json::object request;
@@ -3054,22 +3068,30 @@ launchFlightSimulator()
             if( !requestOpenAIImage( json::serialize( request ), body, statusCode, error ) )
             {
                 result.error = error.empty()
-                                   ? String( "Could not complete image generation. Check your network "
-                                             "connection and try again; the request may have timed out." )
+                                   ? String(
+                                         "Could not complete image generation. Check your network "
+                                         "connection and try again; the request may have timed out." )
                                    : error;
                 return result;
             }
             if( statusCode < 200 || statusCode >= 300 )
             {
                 if( statusCode == 401 || statusCode == 403 || statusCode == 429 )
+                {
                     result.error = openAIHttpError( statusCode, body );
+                }
                 else if( statusCode == 400 )
-                    result.error = "OpenAI could not generate this image. Check the prompt, "
-                                   "OPENAI_IMAGE_MODEL and your model access.";
+                {
+                    result.error =
+                        "OpenAI could not generate this image. Check the prompt, "
+                        "OPENAI_IMAGE_MODEL and your model access.";
+                }
                 else
+                {
                     result.error = "OpenAI image generation failed (HTTP " +
                                    StringUtil::toString( statusCode ) +
                                    "). Check OPENAI_IMAGE_MODEL and try again.";
+                }
                 return result;
             }
             if( body.size() > image_generation::maximumResponseSize )
@@ -3079,7 +3101,8 @@ launchFlightSimulator()
             }
             json::value value;
             if( !parseUniqueJSON<image_generation::maximumResponseSize>(
-                    json::string_view( body.data(), body.size() ), value ) || !value.is_object() )
+                    json::string_view( body.data(), body.size() ), value ) ||
+                !value.is_object() )
             {
                 result.error = "OpenAI returned an invalid image response.";
                 return result;
@@ -3087,8 +3110,9 @@ launchFlightSimulator()
             const auto &root = value.as_object();
             if( const auto failure = root.if_contains( "error" ); failure && !failure->is_null() )
             {
-                result.error = "OpenAI could not generate this image. Try another prompt or check "
-                               "your API account and model access.";
+                result.error =
+                    "OpenAI could not generate this image. Try another prompt or check "
+                    "your API account and model access.";
                 return result;
             }
             const auto data = root.if_contains( "data" );
@@ -3111,7 +3135,8 @@ launchFlightSimulator()
         catch( const std::exception & )
         {
             result.pngBytes.clear();
-            result.error = "Image generation failed. Check your network connection and API configuration.";
+            result.error =
+                "Image generation failed. Check your network connection and API configuration.";
         }
 #else
         result.error = "Image generation requires a build with Boost enabled.";
@@ -3122,20 +3147,20 @@ launchFlightSimulator()
     bool AiManager::requestOpenAI( const String &requestBody, String &responseBody, u32 &statusCode,
                                    String &error ) const
     {
-        return requestOpenAIEndpoint( "/v1/responses", 120000, 1024 * 1024,
-                                      requestBody, responseBody, statusCode, error );
+        return requestOpenAIEndpoint( "/v1/responses", 120000, 1024 * 1024, requestBody, responseBody,
+                                      statusCode, error );
     }
 
-    bool AiManager::requestOpenAIImage( const String &requestBody, String &responseBody,
-                                        u32 &statusCode, String &error ) const
+    bool AiManager::requestOpenAIImage( const String &requestBody, String &responseBody, u32 &statusCode,
+                                        String &error ) const
     {
-        return requestOpenAIEndpoint( "/v1/images/generations", 300000, 32 * 1024 * 1024,
-                                      requestBody, responseBody, statusCode, error );
+        return requestOpenAIEndpoint( "/v1/images/generations", 300000, 32 * 1024 * 1024, requestBody,
+                                      responseBody, statusCode, error );
     }
 
     bool AiManager::requestOpenAIEndpoint( const char *endpoint, int timeoutMilliseconds,
-                                          size_t maximumResponseSize, const String &requestBody,
-                                          String &responseBody, u32 &statusCode, String &error ) const
+                                           size_t maximumResponseSize, const String &requestBody,
+                                           String &responseBody, u32 &statusCode, String &error ) const
     {
         responseBody.clear();
         statusCode = 0;
@@ -3154,8 +3179,8 @@ launchFlightSimulator()
         {
             return false;
         }
-        if( !WinHttpSetTimeouts( session, timeoutMilliseconds, timeoutMilliseconds,
-                                 timeoutMilliseconds, timeoutMilliseconds ) )
+        if( !WinHttpSetTimeouts( session, timeoutMilliseconds, timeoutMilliseconds, timeoutMilliseconds,
+                                 timeoutMilliseconds ) )
         {
             return false;
         }
@@ -3201,13 +3226,20 @@ launchFlightSimulator()
         }
         // The limit classifier needs error.code/type from the response. Keep this
         // small and fall back to the HTTP status if the error body is unavailable.
-        if( limitError ) maximumResponseSize = std::min<size_t>( maximumResponseSize, 64 * 1024 );
+        if( limitError )
+        {
+            maximumResponseSize = std::min<size_t>( maximumResponseSize, 64 * 1024 );
+        }
         for( ;; )
         {
             DWORD available = 0;
             if( !WinHttpQueryDataAvailable( request, &available ) )
             {
-                if( limitError ) { responseBody.clear(); return true; }
+                if( limitError )
+                {
+                    responseBody.clear();
+                    return true;
+                }
                 return false;
             }
             if( available == 0 )
@@ -3216,7 +3248,11 @@ launchFlightSimulator()
             }
             if( available > maximumResponseSize - responseBody.size() )
             {
-                if( limitError ) { responseBody.clear(); return true; }
+                if( limitError )
+                {
+                    responseBody.clear();
+                    return true;
+                }
                 error = "OpenAI response exceeded the size limit.";
                 return false;
             }
@@ -3225,7 +3261,11 @@ launchFlightSimulator()
             DWORD bytesRead = 0;
             if( !WinHttpReadData( request, responseBody.data() + offset, available, &bytesRead ) )
             {
-                if( limitError ) { responseBody.clear(); return true; }
+                if( limitError )
+                {
+                    responseBody.clear();
+                    return true;
+                }
                 return false;
             }
             responseBody.resize( offset + bytesRead );

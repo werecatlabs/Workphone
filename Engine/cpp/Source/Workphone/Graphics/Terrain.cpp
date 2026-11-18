@@ -316,7 +316,7 @@ namespace workphone::render
     }
 
     bool Terrain::prepareTerrainEditRenderer( TerrainSnapshot, std::function<void()> &commitRenderer,
-                                               String &error )
+                                              String &error )
     {
         if( isTerrainPublicationDeferred() )
         {
@@ -329,10 +329,10 @@ namespace workphone::render
     }
 
     bool Terrain::publishPreparedTerrainEdit( TerrainSnapshot expected, TerrainSnapshot candidate,
-                                               const Transform3<real_Num> &placement,
-                                               const std::function<void()> &commitRenderer,
-                                               const TerrainPublication &publishDependents,
-                                               String &error )
+                                              const Transform3<real_Num> &placement,
+                                              const std::function<void()> &commitRenderer,
+                                              const TerrainPublication &publishDependents,
+                                              String &error )
     {
         SmartPtr<IMesh> retiredMesh;
         std::lock_guard<std::mutex> lock( m_terrainDataMutex );

@@ -76,7 +76,11 @@ namespace workphone::scene
             }
             catch( ... )
             {
-                if( entry.second ) { m_grid.erase( entry.first ); m_cellUpdates.erase( key ); }
+                if( entry.second )
+                {
+                    m_grid.erase( entry.first );
+                    m_cellUpdates.erase( key );
+                }
                 throw;
             }
         }
@@ -193,7 +197,9 @@ namespace workphone::scene
         };
 
         real_Num m_cellSize;
-        SourceBudgetMap<GridKey, std::vector<SmartPtr<IGameActor>, SourceBudgetAllocator<SmartPtr<IGameActor>>>> m_grid;
+        SourceBudgetMap<GridKey,
+                        std::vector<SmartPtr<IGameActor>, SourceBudgetAllocator<SmartPtr<IGameActor>>>>
+            m_grid;
         SourceBudgetMap<GridKey, float> m_cellUpdates;
     };
 
@@ -389,7 +395,10 @@ namespace workphone::scene
             void clear()
             {
                 actors.clear();
-                for( auto &child : children ) child.reset();
+                for( auto &child : children )
+                {
+                    child.reset();
+                }
                 isLeaf = true;
                 updateAccumulator = 0.0f;
             }
@@ -410,7 +419,10 @@ namespace workphone::scene
                 {
                     staged[getChildIndex( actor->getWorldTransform().getPosition() )]->insert( actor );
                 }
-                for( int i = 0; i < 8; ++i ) children[i] = std::move( staged[i] );
+                for( int i = 0; i < 8; ++i )
+                {
+                    children[i] = std::move( staged[i] );
+                }
                 isLeaf = false;
                 actors.clear();
             }
@@ -447,7 +459,10 @@ namespace workphone::scene
         ScopedLock lock( this, true );
         // A callback can re-enter load while an update owns a borrowed row.
         // Keep that row alive until the update's existing load lock leaves.
-        if( isLoadLocked() ) return;
+        if( isLoadLocked() )
+        {
+            return;
+        }
         const auto previous = getLoadingState();
         try
         {
@@ -456,15 +471,26 @@ namespace workphone::scene
             candidate.resize( static_cast<size_t>( Thread::UpdateState::Count ) );
             for( size_t phase = 0; phase < candidate.size(); ++phase )
             {
-                candidate[phase] = UpdateTasks( GrowthPolicy::Default, 1, Allocator<UpdateActors>( sourceBudget ) );
+                candidate[phase] =
+                    UpdateTasks( GrowthPolicy::Default, 1, Allocator<UpdateActors>( sourceBudget ) );
                 candidate[phase].resize( static_cast<size_t>( TaskId::Count ) );
                 for( size_t task = 0; task < candidate[phase].size(); ++task )
                 {
                     auto &row = candidate[phase][task];
-                    row = UpdateActors( GrowthPolicy::Default, 1, Allocator<SmartPtr<IGameActor>>( sourceBudget ) );
-                    const bool existing = phase < m_updateObjects.size() && task < m_updateObjects[phase].size();
-                    row.reserve( existing ? std::max<size_t>( WP_MAX_ACTORS, m_updateObjects[phase][task].capacity() ) : WP_MAX_ACTORS );
-                    if( existing ) for( const auto &actor : m_updateObjects[phase][task] ) row.push_back( actor );
+                    row = UpdateActors( GrowthPolicy::Default, 1,
+                                        Allocator<SmartPtr<IGameActor>>( sourceBudget ) );
+                    const bool existing =
+                        phase < m_updateObjects.size() && task < m_updateObjects[phase].size();
+                    row.reserve( existing ? std::max<size_t>( WP_MAX_ACTORS,
+                                                              m_updateObjects[phase][task].capacity() )
+                                          : WP_MAX_ACTORS );
+                    if( existing )
+                    {
+                        for( const auto &actor : m_updateObjects[phase][task] )
+                        {
+                            row.push_back( actor );
+                        }
+                    }
                 }
             }
             m_updateObjects = std::move( candidate );
@@ -686,7 +712,8 @@ namespace workphone::scene
             {
                 for( u32 y = 0; y < m_updateObjects[x].size(); ++y )
                 {
-                    m_updateObjects[x][y] = UpdateActors( GrowthPolicy::Default, 1, Allocator<SmartPtr<IGameActor>>( sourceBudget ) );
+                    m_updateObjects[x][y] = UpdateActors(
+                        GrowthPolicy::Default, 1, Allocator<SmartPtr<IGameActor>>( sourceBudget ) );
                 }
             }
 
@@ -908,7 +935,10 @@ namespace workphone::scene
                     }
 
                     reserveUpdateSlots( actor );
-                    if( m_partitioner ) m_partitioner->addActor( actor );
+                    if( m_partitioner )
+                    {
+                        m_partitioner->addActor( actor );
+                    }
                     actor->setScene( this );
                     m_actors.push_back( actor );
 
@@ -1038,7 +1068,8 @@ namespace workphone::scene
     Array<SmartPtr<IGameActor>> GameScene::getActors() const
     {
         auto actors = m_actors.readLocked();
-        return Array<SmartPtr<IGameActor>>( actors.begin(), actors.end(), Allocator<SmartPtr<IGameActor>>( sourceBudget ) );
+        return Array<SmartPtr<IGameActor>>( actors.begin(), actors.end(),
+                                            Allocator<SmartPtr<IGameActor>>( sourceBudget ) );
     }
 
     void GameScene::setActors( const Array<SmartPtr<IGameActor>> &actors )
@@ -1108,15 +1139,27 @@ namespace workphone::scene
 
     void GameScene::reserveUpdateSlots( SmartPtr<IGameActor> actor, s32 task, s32 phase )
     {
-        if( !actor ) return;
+        if( !actor )
+        {
+            return;
+        }
         for( size_t p = 0; p < m_updateObjects.size(); ++p )
         {
-            if( phase >= 0 && p != static_cast<size_t>( phase ) ) continue;
+            if( phase >= 0 && p != static_cast<size_t>( phase ) )
+            {
+                continue;
+            }
             for( size_t t = 0; t < m_updateObjects[p].size(); ++t )
             {
-                if( task >= 0 && t != static_cast<size_t>( task ) ) continue;
+                if( task >= 0 && t != static_cast<size_t>( task ) )
+                {
+                    continue;
+                }
                 auto &row = m_updateObjects[p][t];
-                if( std::find( row.begin(), row.end(), actor ) == row.end() ) row.reserve( row.size() + 1 );
+                if( std::find( row.begin(), row.end(), actor ) == row.end() )
+                {
+                    row.reserve( row.size() + 1 );
+                }
             }
         }
     }
@@ -1149,8 +1192,11 @@ namespace workphone::scene
     {
         ScopedLock sceneLock( this );
         // Admit all three phases before publishing any membership.
-        for( auto phase : { Thread::UpdateState::PreUpdate, Thread::UpdateState::Update, Thread::UpdateState::PostUpdate } )
+        for( auto phase : { Thread::UpdateState::PreUpdate, Thread::UpdateState::Update,
+                            Thread::UpdateState::PostUpdate } )
+        {
             reserveUpdateSlots( actor, static_cast<s32>( taskId ), static_cast<s32>( phase ) );
+        }
         registerUpdate( taskId, Thread::UpdateState::PreUpdate, actor );
         registerUpdate( taskId, Thread::UpdateState::Update, actor );
         registerUpdate( taskId, Thread::UpdateState::PostUpdate, actor );
@@ -1419,12 +1465,19 @@ namespace workphone::scene
 
         ScopedLock sceneLock( this );
         auto &destination = m_updateObjects[static_cast<s32>( updateState )][static_cast<s32>( task )];
-        if( &destination == &objects ) return;
-        UpdateActors candidate( GrowthPolicy::Default, 1, Allocator<SmartPtr<IGameActor>>( sourceBudget ) );
+        if( &destination == &objects )
+        {
+            return;
+        }
+        UpdateActors candidate( GrowthPolicy::Default, 1,
+                                Allocator<SmartPtr<IGameActor>>( sourceBudget ) );
         {
             ScopedLock sourceLock( &objects, false );
             candidate.reserve( objects.capacity() );
-            for( const auto &actor : objects ) candidate.push_back( actor );
+            for( const auto &actor : objects )
+            {
+                candidate.push_back( actor );
+            }
         }
         destination = std::move( candidate );
     }
@@ -1547,14 +1600,17 @@ namespace workphone::scene
         auto factoryManager = applicationManager->getFactoryManagerPtr();
 
         const bool threaded = threadPool && threadPool->getNumThreads() > 0;
-        ConcurrentQueue<SmartPtr<IGameActor>> candidate( 0, GrowthPolicy::Double, 64,
-            Allocator<SmartPtr<IGameActor>>( sourceBudget ) );
+        ConcurrentQueue<SmartPtr<IGameActor>> candidate(
+            0, GrowthPolicy::Double, 64, Allocator<SmartPtr<IGameActor>>( sourceBudget ) );
         if( threaded && ( state == State::Edit || state == State::Play ) )
         {
             auto actors = m_actors.readLocked();
             const auto capacity = state == State::Edit ? m_editQueue.capacity() : m_playQueue.capacity();
             candidate.reserve( std::max<size_t>( actors.size(), capacity ) );
-            for( const auto &actor : actors ) candidate.push( actor );
+            for( const auto &actor : actors )
+            {
+                candidate.push( actor );
+            }
         }
 
         // A queued transition can outlive a rapid play/stop request. Discard
@@ -1690,10 +1746,16 @@ namespace workphone::scene
     {
         auto application = core::IApplicationManager::instancePtr();
         auto manager = application ? application->getGameManager() : nullptr;
-        if( !manager ) return false;
+        if( !manager )
+        {
+            return false;
+        }
         ScopedLock lock( manager );
         if( !isLoaded() || getLoadGeneration() != generation ||
-            getSceneLoadingState() != SceneLoadingState::Failed ) return false;
+            getSceneLoadingState() != SceneLoadingState::Failed )
+        {
+            return false;
+        }
         // The caller retained its previous ready graph and the append job has
         // retired only staged actors. Avoid replaying successful-load events.
         m_sceneLoadingState = SceneLoadingState::Loaded;

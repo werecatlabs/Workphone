@@ -275,13 +275,20 @@ namespace workphone
             }
             request.status = "running";
         }
+
         // Busy/finished describe the whole job, including bounded history work.
         struct Finished
         {
             ResourcePackageJob *job;
             ResourcePackageJobState &request;
-            ~Finished() { job->setState(IJob::State::Finish); request.finished = true; }
-        } finished{this, request};
+
+            ~Finished()
+            {
+                job->setState( IJob::State::Finish );
+                request.finished = true;
+            }
+        } finished{ this, request };
+
         if( request.cancel )
         {
             complete( "cancelled", "Cancelled before execution", 3 );
@@ -359,9 +366,11 @@ namespace workphone
             }
             ownsLog = true;
             PackageProcessHandle pipeRead, pipeWrite;
-            if(!CreatePipe(&pipeRead.value,&pipeWrite.value,&security,65536) ||
-                !SetHandleInformation(pipeRead.value,HANDLE_FLAG_INHERIT,0))
-                throw std::runtime_error("Cannot create bounded package output pipe");
+            if( !CreatePipe( &pipeRead.value, &pipeWrite.value, &security, 65536 ) ||
+                !SetHandleInformation( pipeRead.value, HANDLE_FLAG_INHERIT, 0 ) )
+            {
+                throw std::runtime_error( "Cannot create bounded package output pipe" );
+            }
             PackageProcessHandle group{ CreateJobObjectW( nullptr, nullptr ) };
             JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
             limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
@@ -421,7 +430,8 @@ namespace workphone
                 throw std::runtime_error( "Cannot launch WorkphoneResourcePackage beside the Editor" );
             }
             PackageProcessHandle child{ process.hProcess }, thread{ process.hThread };
-            CloseHandle(pipeWrite.value); pipeWrite.value = nullptr;
+            CloseHandle( pipeWrite.value );
+            pipeWrite.value = nullptr;
             if( !AssignProcessToJobObject( group.value, child.value ) )
             {
                 TerminateProcess( child.value, 1 );
@@ -439,31 +449,55 @@ namespace workphone
             u64 loggedBytes = 0;
             auto drainOutput = [&] {
                 char buffer[16384];
-                for(unsigned pass=0;pass<16;++pass)
+                for( unsigned pass = 0; pass < 16; ++pass )
                 {
-                    DWORD available=0, count=0;
-                    if(!PeekNamedPipe(pipeRead.value,nullptr,0,nullptr,&available,nullptr))
+                    DWORD available = 0, count = 0;
+                    if( !PeekNamedPipe( pipeRead.value, nullptr, 0, nullptr, &available, nullptr ) )
                     {
-                        if(GetLastError()==ERROR_BROKEN_PIPE) return;
-                        retainSnapshot=true; throw std::runtime_error("Cannot inspect package output pipe");
+                        if( GetLastError() == ERROR_BROKEN_PIPE )
+                        {
+                            return;
+                        }
+                        retainSnapshot = true;
+                        throw std::runtime_error( "Cannot inspect package output pipe" );
                     }
-                    if(!available) return;
-                    if(!ReadFile(pipeRead.value,buffer,std::min<DWORD>(available,sizeof(buffer)),&count,nullptr))
+                    if( !available )
                     {
-                        if(GetLastError()==ERROR_BROKEN_PIPE) return;
-                        retainSnapshot=true; throw std::runtime_error("Cannot read package output pipe");
+                        return;
                     }
-                    DWORD allowed=count;
-                    if(request.maximumLogBytes)
-                        allowed=static_cast<DWORD>(std::min<u64>(count,loggedBytes<request.maximumLogBytes ? request.maximumLogBytes-loggedBytes : 0));
-                    if(allowed)
+                    if( !ReadFile( pipeRead.value, buffer,
+                                   std::min<DWORD>( available, sizeof( buffer ) ), &count, nullptr ) )
                     {
-                        DWORD written=0;
-                        if(!WriteFile(output.value,buffer,allowed,&written,nullptr)||written!=allowed)
-                        { retainSnapshot=true; throw std::runtime_error("Cannot write package diagnostic log"); }
-                        loggedBytes+=written;
+                        if( GetLastError() == ERROR_BROKEN_PIPE )
+                        {
+                            return;
+                        }
+                        retainSnapshot = true;
+                        throw std::runtime_error( "Cannot read package output pipe" );
                     }
-                    if(allowed<count) logTruncated=true;
+                    DWORD allowed = count;
+                    if( request.maximumLogBytes )
+                    {
+                        allowed = static_cast<DWORD>(
+                            std::min<u64>( count, loggedBytes < request.maximumLogBytes
+                                                      ? request.maximumLogBytes - loggedBytes
+                                                      : 0 ) );
+                    }
+                    if( allowed )
+                    {
+                        DWORD written = 0;
+                        if( !WriteFile( output.value, buffer, allowed, &written, nullptr ) ||
+                            written != allowed )
+                        {
+                            retainSnapshot = true;
+                            throw std::runtime_error( "Cannot write package diagnostic log" );
+                        }
+                        loggedBytes += written;
+                    }
+                    if( allowed < count )
+                    {
+                        logTruncated = true;
+                    }
                 }
             };
             for( ;; )
@@ -480,9 +514,9 @@ namespace workphone
                     throw std::runtime_error( "Cannot wait for package child" );
                 }
                 const auto now = GetTickCount64();
-                if( !cancellationPending &&
-                    ( request.cancel || logTruncated || ( request.maximumRunMilliseconds &&
-                                          now - started >= request.maximumRunMilliseconds ) ) )
+                if( !cancellationPending && ( request.cancel || logTruncated ||
+                                              ( request.maximumRunMilliseconds &&
+                                                now - started >= request.maximumRunMilliseconds ) ) )
                 {
                     expired = !request.cancel && !logTruncated;
                     logLimited = !request.cancel && logTruncated;
@@ -492,8 +526,9 @@ namespace workphone
                         std::lock_guard<std::mutex> lock( request.mutex );
                         request.status = expired ? "timing out" : "cancelling";
                         request.diagnostic =
-                            String( logLimited ? "Diagnostic byte budget reached" :
-                                (expired ? "Child deadline reached" : "Cancellation requested") ) +
+                            String( logLimited ? "Diagnostic byte budget reached"
+                                               : ( expired ? "Child deadline reached"
+                                                           : "Cancellation requested" ) ) +
                             ( request.cancelGraceMilliseconds
                                   ? "; waiting for cooperative exit before forced interruption"
                                   : "; forced interruption is disabled" );
@@ -526,14 +561,17 @@ namespace workphone
                 }
             }
             drainOutput();
-            if(logTruncated && loggedBytes)
+            if( logTruncated && loggedBytes )
             {
-                const std::string footer="\n[log truncated by package job]\n";
-                const auto count=static_cast<DWORD>(std::min<u64>(footer.size(),loggedBytes));
-                LARGE_INTEGER offset{}; offset.QuadPart=static_cast<LONGLONG>(loggedBytes-count);
-                DWORD written=0;
-                if(SetFilePointerEx(output.value,offset,nullptr,FILE_BEGIN))
-                    WriteFile(output.value,footer.data(),count,&written,nullptr);
+                const std::string footer = "\n[log truncated by package job]\n";
+                const auto count = static_cast<DWORD>( std::min<u64>( footer.size(), loggedBytes ) );
+                LARGE_INTEGER offset{};
+                offset.QuadPart = static_cast<LONGLONG>( loggedBytes - count );
+                DWORD written = 0;
+                if( SetFilePointerEx( output.value, offset, nullptr, FILE_BEGIN ) )
+                {
+                    WriteFile( output.value, footer.data(), count, &written, nullptr );
+                }
             }
             DWORD exitCode = 1;
             if( !GetExitCodeProcess( child.value, &exitCode ) )
@@ -546,10 +584,13 @@ namespace workphone
                 retainSnapshot = true;
                 complete(
                     "interrupted",
-                    String( forced ? ( logLimited ? "Package diagnostic budget and cancellation grace expired" :
-                        (expired ? "Package child deadline and grace period expired"
-                                               : "Package child cancellation grace period expired") )
-                                   : "Package child exited unexpectedly" ) +
+                    String(
+                        forced
+                            ? ( logLimited
+                                    ? "Package diagnostic budget and cancellation grace expired"
+                                    : ( expired ? "Package child deadline and grace period expired"
+                                                : "Package child cancellation grace period expired" ) )
+                            : "Package child exited unexpectedly" ) +
                         "; publication outcome is unknown. Captured request retained; inspect output "
                         "before retrying",
                     static_cast<int>( exitCode ) );
@@ -562,14 +603,21 @@ namespace workphone
                                 ? "Published checked resource directory"
                                 : "Previewed checked closure; package output was not touched" )
                         : ( exitCode == 3
-                                ? ( logLimited ? "Diagnostic byte budget reached; cancelled before package publication" : (expired
-                                        ? "Child deadline reached; cancelled before package publication"
-                                        : "Cancelled before package publication") )
+                                ? ( logLimited ? "Diagnostic byte budget reached; cancelled before "
+                                                 "package publication"
+                                               : ( expired ? "Child deadline reached; cancelled before "
+                                                             "package publication"
+                                                           : "Cancelled before package publication" ) )
                                 : "Package failed; inspect the job log" );
-                if(logTruncated) message += "; diagnostic log truncated at its captured byte budget";
+                if( logTruncated )
+                {
+                    message += "; diagnostic log truncated at its captured byte budget";
+                }
                 complete( exitCode == 0
                               ? "succeeded"
-                              : ( exitCode == 3 ? ( expired ? "timed out" : (logLimited ? "failed" : "cancelled") ) : "failed" ),
+                              : ( exitCode == 3 ? ( expired ? "timed out"
+                                                            : ( logLimited ? "failed" : "cancelled" ) )
+                                                : "failed" ),
                           message, static_cast<int>( exitCode ) );
             }
 #else
@@ -587,15 +635,22 @@ namespace workphone
                 1 );
         }
         bool recorded = false;
-        if(ownsSnapshot && ownsLog && !retainSnapshot)
+        if( ownsSnapshot && ownsLog && !retainSnapshot )
         {
             String status;
-            { std::lock_guard<std::mutex> lock(request.mutex); status = request.status; }
+            {
+                std::lock_guard<std::mutex> lock( request.mutex );
+                status = request.status;
+            }
             String error;
-            recorded = recordResourcePackageCompletion(request.projectRoot, request.snapshotPath,
-                request.logPath, request.previewPath, status, error);
-            if(!recorded) { std::lock_guard<std::mutex> lock(request.mutex);
-                request.diagnostic += "; history receipt unavailable: " + error; }
+            recorded =
+                recordResourcePackageCompletion( request.projectRoot, request.snapshotPath,
+                                                 request.logPath, request.previewPath, status, error );
+            if( !recorded )
+            {
+                std::lock_guard<std::mutex> lock( request.mutex );
+                request.diagnostic += "; history receipt unavailable: " + error;
+            }
         }
         std::error_code ignored;
         if( ownsSnapshot && !retainSnapshot )
@@ -611,18 +666,24 @@ namespace workphone
                 ownerPath( std::filesystem::u8path( request.snapshotPath.c_str() ) ), ignored );
         }
 #endif
-        if(recorded && request.historyKeepCount && request.historyMaximumBytes)
+        if( recorded && request.historyKeepCount && request.historyMaximumBytes )
         {
-            ResourcePackageHistoryResult history; String error;
-            const auto id = std::filesystem::u8path(request.snapshotPath.c_str()).stem().u8string();
-            const bool ok = pruneResourcePackageHistory(request.projectRoot, request.historyKeepCount,
-                request.historyMaximumBytes, false, id.c_str(), history, error);
-            if(!ok || !history.removed.empty() || !history.warnings.empty())
+            ResourcePackageHistoryResult history;
+            String error;
+            const auto id = std::filesystem::u8path( request.snapshotPath.c_str() ).stem().u8string();
+            const bool ok = pruneResourcePackageHistory( request.projectRoot, request.historyKeepCount,
+                                                         request.historyMaximumBytes, false, id.c_str(),
+                                                         history, error );
+            if( !ok || !history.removed.empty() || !history.warnings.empty() )
             {
-                std::lock_guard<std::mutex> lock(request.mutex);
-                request.diagnostic += "; history retention: " + StringUtil::toString(history.removed.size()) +
-                    " pruned, " + StringUtil::toString(history.warnings.size()) + " warnings";
-                if(!ok) request.diagnostic += ": " + error;
+                std::lock_guard<std::mutex> lock( request.mutex );
+                request.diagnostic +=
+                    "; history retention: " + StringUtil::toString( history.removed.size() ) +
+                    " pruned, " + StringUtil::toString( history.warnings.size() ) + " warnings";
+                if( !ok )
+                {
+                    request.diagnostic += ": " + error;
+                }
             }
         }
     }

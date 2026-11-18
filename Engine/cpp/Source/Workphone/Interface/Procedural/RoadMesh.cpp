@@ -56,12 +56,12 @@ namespace workphone
             if( vertices.capacity() < vertices.size() + vertexCount )
             {
                 vertices.reserve( std::max( vertices.size() + vertexCount,
-                    vertices.capacity() + vertices.capacity() / 2 ) );
+                                            vertices.capacity() + vertices.capacity() / 2 ) );
             }
             if( indices.capacity() < indices.size() + indexCount )
             {
                 indices.reserve( std::max( indices.size() + indexCount,
-                    indices.capacity() + indices.capacity() / 2 ) );
+                                           indices.capacity() + indices.capacity() / 2 ) );
             }
             for( size_t i = 0; i < vertexCount; ++i )
             {
@@ -144,8 +144,8 @@ namespace workphone
             }
             if( indices.capacity() - indices.size() < 3 )
             {
-                indices.reserve( std::max( indices.size() + 3,
-                    indices.capacity() + indices.capacity() / 2 ) );
+                indices.reserve(
+                    std::max( indices.size() + 3, indices.capacity() + indices.capacity() / 2 ) );
             }
             indices.push_back( a );
             indices.push_back( b );

@@ -382,16 +382,20 @@ namespace workphone::procedural
             flatten( m, bcd, cd, d, depth + 1, o, out, total );
         }
 
-        void grade( Vector3F a, Vector3F b, const CityRoadSpline &road,
-                    float station, const char *part )
+        void grade( Vector3F a, Vector3F b, const CityRoadSpline &road, float station, const char *part )
         {
             const float run = std::hypot( b.x - a.x, b.z - a.z );
-            if( run > 1e-5f && std::abs( b.y - a.y ) <= road.maxGrade * run + 1e-5f ) return;
+            if( run > 1e-5f && std::abs( b.y - a.y ) <= road.maxGrade * run + 1e-5f )
+            {
+                return;
+            }
             char message[320];
-            std::snprintf( message, sizeof( message ),
+            std::snprintf(
+                message, sizeof( message ),
                 "Road profile exceeds grade. Road %s %s near %.3g m is %.3g%% (limit %.3g%%); "
-                "smooth the terrain or lengthen the climb.", road.id.c_str(), part,
-                double( station ), double( run > 1e-5f ? std::abs( b.y - a.y ) / run * 100 : 0 ),
+                "smooth the terrain or lengthen the climb.",
+                road.id.c_str(), part, double( station ),
+                double( run > 1e-5f ? std::abs( b.y - a.y ) / run * 100 : 0 ),
                 double( road.maxGrade * 100 ) );
             require( run > 1e-5f, "Road profile has zero horizontal span." );
             throw std::runtime_error( message );
@@ -404,15 +408,21 @@ namespace workphone::procedural
             // A zero first derivative does not mean the endpoint direction is
             // the first sampled chord. Use the first nonzero control difference:
             // the exact limiting Bezier direction, independent of subdivision.
-            const auto directions = atStart
-                ? std::array<Vector3F, 3>{ a.outHandle, b.position + b.inHandle - a.position,
-                                          b.position - a.position }
-                : std::array<Vector3F, 3>{ -b.inHandle, b.position - a.position - a.outHandle,
-                                          b.position - a.position };
+            const auto directions =
+                atStart ? std::array<Vector3F, 3>{ a.outHandle, b.position + b.inHandle - a.position,
+                                                   b.position - a.position }
+                        : std::array<Vector3F, 3>{ -b.inHandle, b.position - a.position - a.outHandle,
+                                                   b.position - a.position };
             for( auto direction : directions )
             {
-                if( road.heightMode == CityRoadHeightMode::Drape ) direction.y = 0;
-                if( direction.lengthSquared() > 1e-10f ) return direction;
+                if( road.heightMode == CityRoadHeightMode::Drape )
+                {
+                    direction.y = 0;
+                }
+                if( direction.lengthSquared() > 1e-10f )
+                {
+                    return direction;
+                }
             }
             return {};
         }
@@ -711,7 +721,10 @@ namespace workphone::procedural
                 const auto authoredPoint = [&]( Vector3F point ) {
                     // Drape retains the source controls, but their Y is not part
                     // of the road's plan shape or its subdivision budget.
-                    if( r.heightMode == CityRoadHeightMode::Drape ) point.y = 0;
+                    if( r.heightMode == CityRoadHeightMode::Drape )
+                    {
+                        point.y = 0;
+                    }
                     return point;
                 };
                 CityRoadSplineSample first;
@@ -722,8 +735,8 @@ namespace workphone::procedural
                 {
                     const auto &a = r.knots[i], &b = r.knots[( i + 1 ) % r.knots.size()];
                     flatten( authoredPoint( a.position ), authoredPoint( a.position + a.outHandle ),
-                             authoredPoint( b.position + b.inHandle ), authoredPoint( b.position ),
-                             0, o, result.points, total );
+                             authoredPoint( b.position + b.inHandle ), authoredPoint( b.position ), 0, o,
+                             result.points, total );
                 }
                 const auto fit = [&]( Vector3F &p ) {
                     if( r.heightMode == CityRoadHeightMode::Drape )
@@ -789,9 +802,9 @@ namespace workphone::procedural
                         {
                             char message[256];
                             std::snprintf( message, sizeof( message ),
-                                "Road %s (width %.3g m) folds an offset edge near %.3g m; "
-                                "smooth the corner or reduce width.", r.id.c_str(), double( r.width ),
-                                double( a.distance ) );
+                                           "Road %s (width %.3g m) folds an offset edge near %.3g m; "
+                                           "smooth the corner or reduce width.",
+                                           r.id.c_str(), double( r.width ), double( a.distance ) );
                             throw std::runtime_error( message );
                         }
                         grade( a.position, p.position, r, a.distance, "centre grade" );

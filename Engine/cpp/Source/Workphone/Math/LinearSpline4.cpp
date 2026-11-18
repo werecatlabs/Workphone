@@ -17,7 +17,8 @@ namespace workphone
 
     template <class T>
     LinearSpline4<T>::LinearSpline4( const LinearSpline4 &other ) :
-        ISharedObject(), m_points( makeSourceBudgetSnapshot( other.m_points ) )
+        ISharedObject(),
+        m_points( makeSourceBudgetSnapshot( other.m_points ) )
     {
     }
 
@@ -53,9 +54,18 @@ namespace workphone
             throw std::out_of_range( "LinearSpline4 requires at least 2 points for interpolation" );
         }
 
-        if( !std::isfinite( t ) ) throw std::invalid_argument( "Spline parameter must be finite" );
-        if( t <= T( 0 ) ) return m_points.front();
-        if( t >= T( 1 ) ) return m_points.back();
+        if( !std::isfinite( t ) )
+        {
+            throw std::invalid_argument( "Spline parameter must be finite" );
+        }
+        if( t <= T( 0 ) )
+        {
+            return m_points.front();
+        }
+        if( t >= T( 1 ) )
+        {
+            return m_points.back();
+        }
 
         // Find the segment in which 't' lies
         auto numSegments = m_points.size() - 1;

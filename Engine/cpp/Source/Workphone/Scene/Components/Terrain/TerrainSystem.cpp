@@ -553,8 +553,7 @@ namespace workphone::scene
         // Callback copies may outlive both a queued native terrain and this pooled
         // component. Revoke before taking any component/publication locks, then
         // wait for an already-entered callback to leave component storage.
-        auto owner = std::atomic_exchange( &m_publicationOwner,
-                                          std::shared_ptr<PublicationOwner>{} );
+        auto owner = std::atomic_exchange( &m_publicationOwner, std::shared_ptr<PublicationOwner>{} );
         if( owner )
         {
             std::lock_guard<std::recursive_mutex> guard( owner->mutex );
@@ -569,7 +568,11 @@ namespace workphone::scene
 
     void TerrainSystem::load( SmartPtr<ISharedObject> data )
     {
-        if(m_runtimeAssetsMode){loadRuntimeTerrain(data);return;}
+        if( m_runtimeAssetsMode )
+        {
+            loadRuntimeTerrain( data );
+            return;
+        }
         try
         {
             setLoadingState( LoadingState::Loading );
@@ -636,7 +639,7 @@ namespace workphone::scene
             {
                 WP_LOG_WARNING( strokeError );
             }
-            if( isLoaded() || (m_runtimeAssetsMode && getLoadingState()!=LoadingState::Unloaded) )
+            if( isLoaded() || ( m_runtimeAssetsMode && getLoadingState() != LoadingState::Unloaded ) )
             {
                 setLoadingState( LoadingState::Unloading );
 
@@ -648,7 +651,10 @@ namespace workphone::scene
                 if( auto graphicsSystem = applicationManager->getGraphicsSystem() )
                 {
                     std::unique_lock<ISharedObject> graphicsLock;
-                    if(m_runtimeAssetsMode)graphicsLock=std::unique_lock<ISharedObject>(*graphicsSystem);
+                    if( m_runtimeAssetsMode )
+                    {
+                        graphicsLock = std::unique_lock<ISharedObject>( *graphicsSystem );
+                    }
                     auto smgr = graphicsSystem->getGraphicsScene();
                     WP_ASSERT( smgr );
 
@@ -666,7 +672,10 @@ namespace workphone::scene
                     if( m_terrain )
                     {
                         m_terrain->setVisible( false );
-                        if(m_runtimeAssetsMode)m_terrain->unload(nullptr);
+                        if( m_runtimeAssetsMode )
+                        {
+                            m_terrain->unload( nullptr );
+                        }
 
                         smgr->removeGraphicsObject( m_terrain );
                         m_terrain = nullptr;
@@ -688,7 +697,16 @@ namespace workphone::scene
             m_integrationDetached = true;
             notice.serial = ++m_integrationSerial;
         }
-        if(m_runtimeAssetsMode){m_runtimeAssets.reset();m_runtimeTerrainResource.reset();m_runtimeTerrainUuid.clear();m_runtimeFoliageUuid.clear();std::lock_guard<std::mutex> guard(m_terrainDataMutex);m_terrainData.reset();m_activeTerrainData.reset();}
+        if( m_runtimeAssetsMode )
+        {
+            m_runtimeAssets.reset();
+            m_runtimeTerrainResource.reset();
+            m_runtimeTerrainUuid.clear();
+            m_runtimeFoliageUuid.clear();
+            std::lock_guard<std::mutex> guard( m_terrainDataMutex );
+            m_terrainData.reset();
+            m_activeTerrainData.reset();
+        }
     }
 
     void TerrainSystem::update()
@@ -809,7 +827,7 @@ namespace workphone::scene
             return false;
         }
         const bool admitted = paged ? m_foliagePhysics->setPagedSource( paged, placement, error )
-                                   : m_foliagePhysics->setSource( snapshot, placement, error );
+                                    : m_foliagePhysics->setSource( snapshot, placement, error );
         if( !admitted || !m_foliagePhysics->update( observers, error ) )
         {
             return false;
@@ -823,7 +841,12 @@ namespace workphone::scene
 
     void TerrainSystem::updateFlags( u32 flags, u32 oldFlags )
     {
-        if(m_runtimeAssetsMode){Component::updateFlags(flags,oldFlags);updateVisibility();return;}
+        if( m_runtimeAssetsMode )
+        {
+            Component::updateFlags( flags, oldFlags );
+            updateVisibility();
+            return;
+        }
         if( auto actor = getActor() )
         {
             auto applicationManager = core::IApplicationManager::instance();
@@ -837,7 +860,9 @@ namespace workphone::scene
                 WP_ASSERT( smgr );
 
                 auto rootNode = smgr->getRootSceneNode();
-                auto visible = isEnabled() && actor->isEnabledInScene() && (!m_runtimeAssetsMode || actor->getFlag(IGameActor::ActorFlagInScene));
+                auto visible =
+                    isEnabled() && actor->isEnabledInScene() &&
+                    ( !m_runtimeAssetsMode || actor->getFlag( IGameActor::ActorFlagInScene ) );
 
                 if( BitUtil::getFlagValue( flags, IGameActor::ActorFlagInScene ) !=
                     BitUtil::getFlagValue( oldFlags, IGameActor::ActorFlagInScene ) )
@@ -863,7 +888,19 @@ namespace workphone::scene
 
     SmartPtr<Properties> TerrainSystem::getProperties() const
     {
-        if(m_runtimeAssetsMode){auto properties=Component::getProperties();if(properties){properties->setProperty("terrainAssetUuid",m_runtimeTerrainUuid,Properties::resourceStr);properties->setProperty("foliageWorldAssetUuid",m_runtimeFoliageUuid,Properties::resourceStr);properties->setProperty(ShowWireframeStr,m_showWireframe);}return properties;}
+        if( m_runtimeAssetsMode )
+        {
+            auto properties = Component::getProperties();
+            if( properties )
+            {
+                properties->setProperty( "terrainAssetUuid", m_runtimeTerrainUuid,
+                                         Properties::resourceStr );
+                properties->setProperty( "foliageWorldAssetUuid", m_runtimeFoliageUuid,
+                                         Properties::resourceStr );
+                properties->setProperty( ShowWireframeStr, m_showWireframe );
+            }
+            return properties;
+        }
         auto applicationManager = core::IApplicationManager::instancePtr();
         auto factoryManager = applicationManager->getFactoryManagerPtr();
 
@@ -1004,7 +1041,11 @@ namespace workphone::scene
 
     void TerrainSystem::setProperties( SmartPtr<Properties> properties )
     {
-        if(m_runtimeAssetsMode){setRuntimeTerrainProperties(properties);return;}
+        if( m_runtimeAssetsMode )
+        {
+            setRuntimeTerrainProperties( properties );
+            return;
+        }
         if( !properties )
         {
             WP_LOG_WARNING( "TerrainSystem::setProperties: null properties supplied." );
@@ -1421,7 +1462,10 @@ namespace workphone::scene
 
     void TerrainSystem::createTerrain()
     {
-        if(m_runtimeAssetsMode)return;
+        if( m_runtimeAssetsMode )
+        {
+            return;
+        }
         if( m_terrain )
         {
             return;
@@ -1474,7 +1518,12 @@ namespace workphone::scene
 
     void TerrainSystem::rebuild()
     {
-        if(m_runtimeAssetsMode){updateTransform();updateVisibility();return;}
+        if( m_runtimeAssetsMode )
+        {
+            updateTransform();
+            updateVisibility();
+            return;
+        }
         createTerrain();
 
         if( auto terrain = getTerrain() )
@@ -1496,7 +1545,8 @@ namespace workphone::scene
     {
         if( auto actor = getActor() )
         {
-            auto visible = isEnabled() && actor->isEnabledInScene() && (!m_runtimeAssetsMode || detail::runtimeActorPublished(actor));
+            auto visible = isEnabled() && actor->isEnabledInScene() &&
+                           ( !m_runtimeAssetsMode || detail::runtimeActorPublished( actor ) );
 
             if( m_terrain )
             {
@@ -1507,7 +1557,11 @@ namespace workphone::scene
 
     FSMReturnType TerrainSystem::handleComponentEvent( u32 state, FSMEvent eventType )
     {
-        if(m_runtimeAssetsMode){updateVisibility();return FSMReturnType::Ok;}
+        if( m_runtimeAssetsMode )
+        {
+            updateVisibility();
+            return FSMReturnType::Ok;
+        }
         switch( eventType )
         {
         case FSMEvent::Change:
@@ -1575,7 +1629,10 @@ namespace workphone::scene
 
     SmartPtr<IGamePrefab> TerrainSystem::getTreePrefab( s32 idx ) const
     {
-        if(m_runtimeAssetsMode)throw std::runtime_error("Captured terrain does not load authoring tree prefabs");
+        if( m_runtimeAssetsMode )
+        {
+            throw std::runtime_error( "Captured terrain does not load authoring tree prefabs" );
+        }
         auto applicationManager = core::IApplicationManager::instancePtr();
         auto prefabManager = applicationManager->getPrefabManager();
 
@@ -1586,7 +1643,10 @@ namespace workphone::scene
 
     void TerrainSystem::generateHeightMap()
     {
-        if(m_runtimeAssetsMode)throw std::runtime_error("Captured terrain does not generate authoring height maps");
+        if( m_runtimeAssetsMode )
+        {
+            throw std::runtime_error( "Captured terrain does not generate authoring height maps" );
+        }
         try
         {
             auto terrain = getTerrain();
@@ -1669,7 +1729,10 @@ namespace workphone::scene
 
     void TerrainSystem::resizeLayermap()
     {
-        if(m_runtimeAssetsMode)return;
+        if( m_runtimeAssetsMode )
+        {
+            return;
+        }
         //m_layermap.resize( m_num_layers );
         m_layers.resize( getNumLayers() );
 
@@ -1704,7 +1767,10 @@ namespace workphone::scene
 
     void TerrainSystem::updateLayers()
     {
-        if(m_runtimeAssetsMode)return;
+        if( m_runtimeAssetsMode )
+        {
+            return;
+        }
         if( m_terrain )
         {
             auto layers = getSubComponentsByType<TerrainLayer>();
@@ -1814,8 +1880,7 @@ namespace workphone::scene
             concrete->setFoliagePublicationGate(
                 [owner, concrete]( render::FoliageSnapshot requested, const Transform3<real_Num> &pose,
                                    const std::function<void()> &commit, String &failure ) {
-                    std::unique_lock<std::recursive_mutex> lifetime( owner->mutex,
-                                                                     std::try_to_lock );
+                    std::unique_lock<std::recursive_mutex> lifetime( owner->mutex, std::try_to_lock );
                     if( !lifetime.owns_lock() )
                     {
                         failure = "Foliage source lifecycle is changing.";
@@ -1844,8 +1909,7 @@ namespace workphone::scene
                 [owner, concrete]( render::TerrainSnapshot requested,
                                    const render::Terrain::TerrainPublication &publish,
                                    String &failure ) {
-                    std::unique_lock<std::recursive_mutex> lifetime( owner->mutex,
-                                                                     std::try_to_lock );
+                    std::unique_lock<std::recursive_mutex> lifetime( owner->mutex, std::try_to_lock );
                     if( !lifetime.owns_lock() )
                     {
                         failure = "Terrain source lifecycle is changing.";
@@ -2046,7 +2110,10 @@ namespace workphone::scene
 
     SmartPtr<ISharedObject> TerrainSystem::toData() const
     {
-        if(m_runtimeAssetsMode)return Component::toData();
+        if( m_runtimeAssetsMode )
+        {
+            return Component::toData();
+        }
         auto data = Component::toData();
         if( auto properties = dynamic_cast<Properties *>( data.get() ) )
         {
@@ -2076,7 +2143,8 @@ namespace workphone::scene
 
     u64 TerrainSystem::getTerrainRevision() const
     {
-        auto snapshot=getTerrainSnapshot();return snapshot?snapshot->revision:0;
+        auto snapshot = getTerrainSnapshot();
+        return snapshot ? snapshot->revision : 0;
     }
 
     bool TerrainSystem::publishTerrainRoadEdit( render::TerrainSnapshot expected,
@@ -2088,7 +2156,9 @@ namespace workphone::scene
         if( Thread::getCurrentTask() == TaskId::Render || Thread::getCurrentTask() == TaskId::Physics ||
             terrainIntegrationIsNotifying( this ) || m_runtimeAssetsMode || m_editStroke )
         {
-            error = "Road grading requires editable terrain on the Application task with no active brush stroke.";
+            error =
+                "Road grading requires editable terrain on the Application task with no active brush "
+                "stroke.";
             return false;
         }
         if( !expected || !candidate || !publishRoad ||
@@ -2102,8 +2172,8 @@ namespace workphone::scene
             candidate->origin != expected->origin || candidate->heightScale != expected->heightScale ||
             candidate->layers != expected->layers || candidate->layerWeights != expected->layerWeights ||
             !( candidate->appearance == expected->appearance ) ||
-            !( candidate->autoMaterial == expected->autoMaterial ) || candidate->holes != expected->holes ||
-            candidate->surfaceMasks != expected->surfaceMasks )
+            !( candidate->autoMaterial == expected->autoMaterial ) ||
+            candidate->holes != expected->holes || candidate->surfaceMasks != expected->surfaceMasks )
         {
             error = "Road grading can only change terrain heights.";
             return false;
@@ -2121,8 +2191,8 @@ namespace workphone::scene
             }
             std::lock_guard<std::mutex> guard( m_terrainDataMutex );
             if( m_terrainData != expected || m_activeTerrainData != expected ||
-                m_integrationPlacement != placement || !m_integrationAvailable || m_integrationDetached ||
-                m_integrationSerial == std::numeric_limits<u64>::max() )
+                m_integrationPlacement != placement || !m_integrationAvailable ||
+                m_integrationDetached || m_integrationSerial == std::numeric_limits<u64>::max() )
             {
                 error = "Terrain changed during road grading or another terrain publication is pending.";
                 return false;
@@ -2143,14 +2213,15 @@ namespace workphone::scene
                                           : Array<SmartPtr<CollisionTerrain>>{};
             TerrainPhysicsBoundary boundary;
             if( !validateTerrainCollisionRequest( collisions, *candidate, error ) ||
-                !boundary.acquire( true, error ) ||
-                !validateTerrainBodyCapacity( collisions, error ) )
+                !boundary.acquire( true, error ) || !validateTerrainBodyCapacity( collisions, error ) )
             {
                 return false;
             }
+
             struct TerrainPreparation
             {
                 Array<SmartPtr<CollisionTerrain>> prepared;
+
                 ~TerrainPreparation()
                 {
                     for( auto collision : prepared )
@@ -2159,6 +2230,7 @@ namespace workphone::scene
                     }
                 }
             } preparation;
+
             Array<SmartPtr<physics::IPhysicsScene3>> scenes;
             if( auto scene = boundary.manager->getPhysicsScene() )
             {
@@ -2240,9 +2312,10 @@ namespace workphone::scene
                         },
                         serial, failure );
                 };
-            const bool published = renderer ? renderer->publishPreparedTerrainEdit(
-                                                   expected, candidate, placement, commitRenderer, publish, error )
-                                             : publish( {}, error );
+            const bool published =
+                renderer ? renderer->publishPreparedTerrainEdit( expected, candidate, placement,
+                                                                 commitRenderer, publish, error )
+                         : publish( {}, error );
             if( !notice.ready )
             {
                 if( published || error.empty() )
@@ -2464,12 +2537,16 @@ namespace workphone::scene
 
     String TerrainSystem::exportTerrainData() const
     {
-        auto snapshot=getTerrainSnapshot();return snapshot?render::serializeTerrainData(*snapshot):String{};
+        auto snapshot = getTerrainSnapshot();
+        return snapshot ? render::serializeTerrainData( *snapshot ) : String{};
     }
 
     SmartPtr<FoliageAuthoring> TerrainSystem::getFoliageAuthoring()
     {
-        if(m_runtimeAssetsMode)throw std::runtime_error("Captured terrain does not create a foliage authoring helper");
+        if( m_runtimeAssetsMode )
+        {
+            throw std::runtime_error( "Captured terrain does not create a foliage authoring helper" );
+        }
         std::lock_guard<std::mutex> guard( m_foliageAuthoringMutex );
         if( !m_foliageAuthoring )
         {
@@ -2480,7 +2557,11 @@ namespace workphone::scene
 
     bool TerrainSystem::generateFoliage( String &error )
     {
-        if(m_runtimeAssetsMode){error="Captured foliage is loaded from its typed world resource";return false;}
+        if( m_runtimeAssetsMode )
+        {
+            error = "Captured foliage is loaded from its typed world resource";
+            return false;
+        }
         SmartPtr<FoliageAuthoring> existing;
         {
             std::lock_guard<std::mutex> guard( m_foliageAuthoringMutex );
@@ -2495,8 +2576,10 @@ namespace workphone::scene
             if( customPrefab || customCount || !getSubComponentsByType<TerrainTreeLayer>().empty() ||
                 !getSubComponentsByType<TerrainGrassLayer>().empty() )
             {
-                error = "Legacy terrain foliage requires explicit migration. Import the intended meshes "
-                        "as foliage species, then set placement density per square metre in the Foliage tab.";
+                error =
+                    "Legacy terrain foliage requires explicit migration. Import the intended meshes "
+                    "as foliage species, then set placement density per square metre in the Foliage "
+                    "tab.";
                 return false;
             }
         }
@@ -2553,7 +2636,11 @@ namespace workphone::scene
 
     bool TerrainSystem::refreshFoliage( String &error )
     {
-        if(m_runtimeAssetsMode){error.clear();return true;}
+        if( m_runtimeAssetsMode )
+        {
+            error.clear();
+            return true;
+        }
         std::unique_lock<std::mutex> refresh( m_foliageRefreshMutex, std::try_to_lock );
         if( !refresh.owns_lock() )
         {
@@ -2671,7 +2758,11 @@ namespace workphone::scene
 
     bool TerrainSystem::importFoliageData( const String &json, String &error )
     {
-        if(m_runtimeAssetsMode){error="Captured foliage does not accept inline authoring data";return false;}
+        if( m_runtimeAssetsMode )
+        {
+            error = "Captured foliage does not accept inline authoring data";
+            return false;
+        }
         auto candidate = make_ptr<FoliageAuthoring>();
         if( !candidate->deserialize( json, error ) )
         {

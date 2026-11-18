@@ -71,8 +71,12 @@ namespace workphone::render
         ScopedLock lock( m_mutex );
         auto properties = workphone::make_ptr<Properties>();
         if( m_projectSettings )
+        {
             for( const auto &property : m_projectSettings->getPropertiesAsArray() )
+            {
                 properties->addProperty( property );
+            }
+        }
         properties->setProperty( "Applies to", "Software renderer main window", true );
         properties->setProperty( "Pipeline support", "Software main window only", true );
         properties->setProperty( "Quality presets", "Changing quality resets effect options", true );
@@ -102,12 +106,22 @@ namespace workphone::render
         // A different project replaces its profile. Inspector/Apply requests
         // keep their existing patch semantics. This command is never persisted.
         if( properties->getPropertyAsBool( "Replace project settings", false ) )
+        {
             m_projectSettings = nullptr;
-        if( !m_projectSettings ) m_projectSettings = workphone::make_ptr<Properties>();
+        }
+        if( !m_projectSettings )
+        {
+            m_projectSettings = workphone::make_ptr<Properties>();
+        }
         for( const auto &property : properties->getPropertiesAsArray() )
-            if( property.getName().find( "graphics." ) == 0 || property.getName().find( "quality." ) == 0 ||
+        {
+            if( property.getName().find( "graphics." ) == 0 ||
+                property.getName().find( "quality." ) == 0 ||
                 property.getName().find( "performance." ) == 0 )
+            {
                 m_projectSettings->addProperty( property );
+            }
+        }
         s32 quality = static_cast<s32>( getQualityLevel() );
         if( readPipelineValue( *properties, "Quality", quality, 0, 4 ) )
         {
@@ -177,18 +191,20 @@ namespace workphone::render
         const bool inheritEffects = hasPreset || options.hasProperty( "graphics.postProcessing" );
         settings->bloom =
             post && options.getPropertyAsBool( "graphics.bloom", inheritEffects && m_bloomEnabled );
-        settings->motionBlur = post && options.getPropertyAsBool(
-                                           "graphics.motionBlur", inheritEffects && m_motionBlurEnabled );
-        settings->ambientOcclusion = post && options.getPropertyAsBool(
-                                                 "graphics.ambientOcclusion", inheritEffects && m_gtaoEnabled );
+        settings->motionBlur =
+            post &&
+            options.getPropertyAsBool( "graphics.motionBlur", inheritEffects && m_motionBlurEnabled );
+        settings->ambientOcclusion =
+            post &&
+            options.getPropertyAsBool( "graphics.ambientOcclusion", inheritEffects && m_gtaoEnabled );
         settings->antiAliasing =
             options.getPropertyAsInt( "graphics.antiAliasing", hasPreset && m_taaEnabled ? 2 : 0 );
         settings->renderPipeline = options.getPropertyAsInt( "graphics.renderPipeline" );
         settings->localLights = options.hasProperty( "graphics.renderPipeline" ) ||
                                 options.getPropertyAsInt( "graphics.lightingMode" ) == 3;
         settings->clusteredLights = options.getPropertyAsInt( "graphics.lightingMode", 1 ) == 3;
-        settings->tiledLights = settings->clusteredLights ||
-                               options.getPropertyAsInt( "graphics.renderPipeline", 1 ) == 1;
+        settings->tiledLights =
+            settings->clusteredLights || options.getPropertyAsInt( "graphics.renderPipeline", 1 ) == 1;
         options.getPropertyValue( "graphics.renderScale", settings->renderScale );
         settings->legacyToneMapping = m_hdrSettings.m_enableAgxToneMapping;
         const auto requestedTone = options.getPropertyAsInt( "graphics.tonemapping", -1 );
@@ -917,7 +933,9 @@ namespace workphone::render
     {
         ScopedLock lock( m_mutex );
         if( m_hdrSettings.m_enableAgxToneMapping != settings.m_enableAgxToneMapping )
+        {
             m_renderSettings.reset();
+        }
         m_hdrSettings = settings;
     }
 
@@ -984,14 +1002,20 @@ namespace workphone::render
     void GraphicsPipeline::enableTAA( bool enabled )
     {
         ScopedLock lock( m_mutex );
-        if( m_taaEnabled != enabled ) m_renderSettings.reset();
+        if( m_taaEnabled != enabled )
+        {
+            m_renderSettings.reset();
+        }
         m_taaEnabled = enabled;
     }
 
     void GraphicsPipeline::enableGTAO( bool enabled )
     {
         ScopedLock lock( m_mutex );
-        if( m_gtaoEnabled != enabled ) m_renderSettings.reset();
+        if( m_gtaoEnabled != enabled )
+        {
+            m_renderSettings.reset();
+        }
         m_gtaoEnabled = enabled;
     }
 
@@ -1016,7 +1040,10 @@ namespace workphone::render
     void GraphicsPipeline::enableBloom( bool enabled )
     {
         ScopedLock lock( m_mutex );
-        if( m_bloomEnabled != enabled ) m_renderSettings.reset();
+        if( m_bloomEnabled != enabled )
+        {
+            m_renderSettings.reset();
+        }
         m_bloomEnabled = enabled;
     }
 
@@ -1029,7 +1056,10 @@ namespace workphone::render
     void GraphicsPipeline::enableMotionBlur( bool enabled )
     {
         ScopedLock lock( m_mutex );
-        if( m_motionBlurEnabled != enabled ) m_renderSettings.reset();
+        if( m_motionBlurEnabled != enabled )
+        {
+            m_renderSettings.reset();
+        }
         m_motionBlurEnabled = enabled;
     }
 

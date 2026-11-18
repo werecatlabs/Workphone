@@ -262,7 +262,8 @@ namespace workphone
             Array<String> files;
             if( packaged )
             {
-                for( const auto &entry : fileSystem->getFilesWithExtension( ApplicationUtil::meshbinExt ) )
+                for( const auto &entry :
+                     fileSystem->getFilesWithExtension( ApplicationUtil::meshbinExt ) )
                 {
                     const String path = entry.filePath.c_str();
                     if( path.rfind( "Cache/", 0 ) == 0 )

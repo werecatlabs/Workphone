@@ -1161,9 +1161,15 @@ namespace workphone
         bool singleEntry = false;
         {
             ScopedLock lock( &m_states, false );
-            if( m_states.empty() ) return nullptr;
+            if( m_states.empty() )
+            {
+                return nullptr;
+            }
             singleEntry = m_states.size() == 1;
-            if( singleEntry ) single = *m_states.cbegin();
+            if( singleEntry )
+            {
+                single = *m_states.cbegin();
+            }
         }
         if( singleEntry )
         {

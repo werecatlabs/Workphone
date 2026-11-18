@@ -261,7 +261,10 @@ namespace workphone
         break;
         default:
         {
-            if( !projectRunsBackgroundTasks() ) break;
+            if( !projectRunsBackgroundTasks() )
+            {
+                break;
+            }
             SmartPtr<IJob> job;
             if( m_jobs.try_pop( job ) )
             {

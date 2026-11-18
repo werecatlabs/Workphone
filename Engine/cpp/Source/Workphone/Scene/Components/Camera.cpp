@@ -29,8 +29,8 @@ namespace workphone::scene
         const String manualActivation = "manualActivation";
 
         SmartPtr<RenderTexture> resolveRenderTexture( const Properties &properties, const String &key,
-                                                       const SmartPtr<IGameActor> &owner,
-                                                       const SmartPtr<RenderTexture> &previous )
+                                                      const SmartPtr<IGameActor> &owner,
+                                                      const SmartPtr<RenderTexture> &previous )
         {
             const auto value = properties.getPropertyObject( key ).getValue();
             if( value.empty() )
@@ -46,7 +46,10 @@ namespace workphone::scene
 
             const auto scene = owner ? owner->getScene() : nullptr;
             const auto belongsToScene = [&]( const SmartPtr<RenderTexture> &texture ) {
-                if( !scene ) return true;
+                if( !scene )
+                {
+                    return true;
+                }
                 const auto textureOwner = texture->getActor();
                 return textureOwner && textureOwner->getScene() == scene;
             };
@@ -82,7 +85,7 @@ namespace workphone::scene
             }
             return nullptr;
         }
-    }
+    }  // namespace
 
     const String Camera::s_zOrderStr = "zOrder";
     const String Camera::s_isActiveStr = "isActive";
@@ -142,30 +145,47 @@ namespace workphone::scene
         m_outputRenderTexture = nullptr;
     }
 
-    void Camera::configureRuntimeAssets(std::shared_ptr<const resource::RuntimeAssetContext> context)
+    void Camera::configureRuntimeAssets( std::shared_ptr<const resource::RuntimeAssetContext> context )
     {
-        if(!context||!context->resolve||isLoaded()||getLoadingState()==LoadingState::Loading||
-           getLoadingState()==LoadingState::Unloading||(m_runtimeAssets&&m_runtimeAssets!=context))
-            throw std::runtime_error("Camera runtime assets require an unloaded component and resolver");
-        m_runtimeAssets=std::move(context);m_runtimeAssetsMode=true;
+        if( !context || !context->resolve || isLoaded() || getLoadingState() == LoadingState::Loading ||
+            getLoadingState() == LoadingState::Unloading ||
+            ( m_runtimeAssets && m_runtimeAssets != context ) )
+        {
+            throw std::runtime_error(
+                "Camera runtime assets require an unloaded component and resolver" );
+        }
+        m_runtimeAssets = std::move( context );
+        m_runtimeAssetsMode = true;
     }
 
     void Camera::load( SmartPtr<ISharedObject> data )
     {
-        if(m_runtimeAssetsMode&&!m_runtimeAssets)throw std::runtime_error("Camera runtime assets must be reconfigured before load");
-        if(m_runtimeAssetsMode&&isLoaded())return;
+        if( m_runtimeAssetsMode && !m_runtimeAssets )
+        {
+            throw std::runtime_error( "Camera runtime assets must be reconfigured before load" );
+        }
+        if( m_runtimeAssetsMode && isLoaded() )
+        {
+            return;
+        }
         try
         {
             setLoadingState( LoadingState::Loading );
 
             auto applicationManager = core::IApplicationManager::instancePtr();
             auto sceneManager = applicationManager->getGameManagerPtr();
-            if(m_runtimeAssetsMode&&(!sceneManager||!getActor()))throw std::runtime_error("Runtime camera requires its actor and game manager");
+            if( m_runtimeAssetsMode && ( !sceneManager || !getActor() ) )
+            {
+                throw std::runtime_error( "Runtime camera requires its actor and game manager" );
+            }
 
             Component::load( data );
 
             createRenderCamera();
-            if(m_runtimeAssetsMode&&(!m_camera||!m_node))throw std::runtime_error("Runtime camera native allocation failed");
+            if( m_runtimeAssetsMode && ( !m_camera || !m_node ) )
+            {
+                throw std::runtime_error( "Runtime camera native allocation failed" );
+            }
 
             sceneManager->registerComponentUpdate( TaskId::Render, Thread::UpdateState::Transform,
                                                    this );
@@ -175,7 +195,11 @@ namespace workphone::scene
         catch( std::exception &e )
         {
             WP_LOG_EXCEPTION( e );
-            if(m_runtimeAssetsMode){unload(nullptr);throw;}
+            if( m_runtimeAssetsMode )
+            {
+                unload( nullptr );
+                throw;
+            }
         }
     }
 
@@ -238,8 +262,8 @@ namespace workphone::scene
 
     void Camera::refreshTargetTexture()
     {
-        auto targetTexture = m_outputRenderTexture ? m_outputRenderTexture->getTexture()
-                                                   : m_defaultTargetTexture;
+        auto targetTexture =
+            m_outputRenderTexture ? m_outputRenderTexture->getTexture() : m_defaultTargetTexture;
         if( m_targetTexture == targetTexture &&
             ( !m_viewport || !m_camera || m_viewport->getRenderTarget() == getRenderTarget() ) )
         {
@@ -298,7 +322,8 @@ namespace workphone::scene
             for( const auto &extent : { s_orthoWidthStr, s_orthoHeightStr } )
             {
                 properties->getPropertyObject( extent ).setAttribute(
-                    "description", "World units. Zero derives this axis from the other. Two zeros use perspective." );
+                    "description",
+                    "World units. Zero derives this axis from the other. Two zeros use perspective." );
             }
             properties->setProperty(
                 s_outputRenderTextureStr,
@@ -307,8 +332,10 @@ namespace workphone::scene
                 .setAttribute( "resourceType", "RenderTexture" );
             properties->setProperty( s_postProcessEnabledStr, m_postProcessSettings.enabled );
             properties->setProperty( s_postProcessWorkspaceStr, m_postProcessSettings.workspace );
-            properties->getPropertyObject( s_postProcessWorkspaceStr ).setAttribute(
-                "description", "Optional project-relative JSON preset overriding the camera's post-processing values." );
+            properties->getPropertyObject( s_postProcessWorkspaceStr )
+                .setAttribute( "description",
+                               "Optional project-relative JSON preset overriding the camera's "
+                               "post-processing values." );
             properties->setProperty( s_fxaaStr, m_postProcessSettings.fxaa );
             properties->setProperty( s_bloomStr, m_postProcessSettings.bloom );
             properties->setProperty( s_exposureStr, m_postProcessSettings.exposure );
@@ -348,30 +375,72 @@ namespace workphone::scene
             return;
         }
 
-        if(m_runtimeAssetsMode)
+        if( m_runtimeAssetsMode )
         {
-            if(!m_runtimeAssets)throw std::runtime_error("Runtime camera properties require a configured context");
-            if(!properties->getProperty(s_outputRenderTextureStr).empty()||properties->isButtonPressed(s_resetStr)||
-               properties->isButtonPressed(s_updateActiveStateStr))throw std::runtime_error("Runtime camera does not support render-texture references or authoring commands");
-            auto workspace=m_postProcessSettings.workspace;properties->getPropertyValue(s_postProcessWorkspaceStr,workspace);
-            if(!workspace.empty())throw std::runtime_error("Runtime camera post-processing workspace paths are unsupported");
-            auto fov=m_fov,nearClip=m_nearClip,farClip=m_farClip,width=m_orthoWidth,height=m_orthoHeight;
-            properties->getPropertyValue(s_fovStr,fov);properties->getPropertyValue(s_nearClipStr,nearClip);
-            properties->getPropertyValue(s_farClipStr,farClip);properties->getPropertyValue(s_orthoWidthStr,width);properties->getPropertyValue(s_orthoHeightStr,height);
-            if(!std::isfinite(fov)||fov<=0||fov>=180||!std::isfinite(nearClip)||nearClip<=0||!std::isfinite(farClip)||farClip<=nearClip||
-               !std::isfinite(width)||!std::isfinite(height)||width<0||height<0||
-               width>10000000||height>10000000)
-                throw std::runtime_error("Runtime camera projection values are invalid");
-            auto colour=m_viewportBackgroundColour;properties->getPropertyValue(s_viewportBackgroundColourStr,colour);
-            if(!std::isfinite(colour.r)||!std::isfinite(colour.g)||!std::isfinite(colour.b)||!std::isfinite(colour.a)||
-               colour.r<0||colour.g<0||colour.b<0||colour.a<0||colour.r>1||colour.g>1||colour.b>1||colour.a>1)
-                throw std::runtime_error("Runtime camera background colour is invalid");
-            const auto check=[&](const String &key,f32 initial,f32 minimum,f32 maximum){properties->getPropertyValue(key,initial);if(!std::isfinite(initial)||initial<minimum||initial>maximum)throw std::runtime_error("Runtime camera post-processing value is invalid");};
-            check(s_exposureStr,m_postProcessSettings.exposure,-32,32);check(s_gammaStr,m_postProcessSettings.gamma,0.01f,16);
-            check(s_contrastStr,m_postProcessSettings.contrast,0,16);check(s_saturationStr,m_postProcessSettings.saturation,0,16);
-            check(s_bloomIntensityStr,m_postProcessSettings.bloomIntensity,0,64);check(s_bloomThresholdStr,m_postProcessSettings.bloomThreshold,0,64);check(s_vignetteStr,m_postProcessSettings.vignette,0,1);
-            for(u32 i=0;i<4;++i){const auto prefix=s_compositeLayerPrefix+StringUtil::toString(i);bool enabled=false;properties->getPropertyValue(prefix+".enabled",enabled);
-                if(enabled||!properties->getProperty(prefix+".renderTexture").empty())throw std::runtime_error("Runtime camera compositing references are unsupported");}
+            if( !m_runtimeAssets )
+            {
+                throw std::runtime_error( "Runtime camera properties require a configured context" );
+            }
+            if( !properties->getProperty( s_outputRenderTextureStr ).empty() ||
+                properties->isButtonPressed( s_resetStr ) ||
+                properties->isButtonPressed( s_updateActiveStateStr ) )
+            {
+                throw std::runtime_error(
+                    "Runtime camera does not support render-texture references or authoring commands" );
+            }
+            auto workspace = m_postProcessSettings.workspace;
+            properties->getPropertyValue( s_postProcessWorkspaceStr, workspace );
+            if( !workspace.empty() )
+            {
+                throw std::runtime_error(
+                    "Runtime camera post-processing workspace paths are unsupported" );
+            }
+            auto fov = m_fov, nearClip = m_nearClip, farClip = m_farClip, width = m_orthoWidth,
+                 height = m_orthoHeight;
+            properties->getPropertyValue( s_fovStr, fov );
+            properties->getPropertyValue( s_nearClipStr, nearClip );
+            properties->getPropertyValue( s_farClipStr, farClip );
+            properties->getPropertyValue( s_orthoWidthStr, width );
+            properties->getPropertyValue( s_orthoHeightStr, height );
+            if( !std::isfinite( fov ) || fov <= 0 || fov >= 180 || !std::isfinite( nearClip ) ||
+                nearClip <= 0 || !std::isfinite( farClip ) || farClip <= nearClip ||
+                !std::isfinite( width ) || !std::isfinite( height ) || width < 0 || height < 0 ||
+                width > 10000000 || height > 10000000 )
+            {
+                throw std::runtime_error( "Runtime camera projection values are invalid" );
+            }
+            auto colour = m_viewportBackgroundColour;
+            properties->getPropertyValue( s_viewportBackgroundColourStr, colour );
+            if( !std::isfinite( colour.r ) || !std::isfinite( colour.g ) || !std::isfinite( colour.b ) ||
+                !std::isfinite( colour.a ) || colour.r < 0 || colour.g < 0 || colour.b < 0 ||
+                colour.a < 0 || colour.r > 1 || colour.g > 1 || colour.b > 1 || colour.a > 1 )
+            {
+                throw std::runtime_error( "Runtime camera background colour is invalid" );
+            }
+            const auto check = [&]( const String &key, f32 initial, f32 minimum, f32 maximum ) {
+                properties->getPropertyValue( key, initial );
+                if( !std::isfinite( initial ) || initial < minimum || initial > maximum )
+                {
+                    throw std::runtime_error( "Runtime camera post-processing value is invalid" );
+                }
+            };
+            check( s_exposureStr, m_postProcessSettings.exposure, -32, 32 );
+            check( s_gammaStr, m_postProcessSettings.gamma, 0.01f, 16 );
+            check( s_contrastStr, m_postProcessSettings.contrast, 0, 16 );
+            check( s_saturationStr, m_postProcessSettings.saturation, 0, 16 );
+            check( s_bloomIntensityStr, m_postProcessSettings.bloomIntensity, 0, 64 );
+            check( s_bloomThresholdStr, m_postProcessSettings.bloomThreshold, 0, 64 );
+            check( s_vignetteStr, m_postProcessSettings.vignette, 0, 1 );
+            for( u32 i = 0; i < 4; ++i )
+            {
+                const auto prefix = s_compositeLayerPrefix + StringUtil::toString( i );
+                bool enabled = false;
+                properties->getPropertyValue( prefix + ".enabled", enabled );
+                if( enabled || !properties->getProperty( prefix + ".renderTexture" ).empty() )
+                {
+                    throw std::runtime_error( "Runtime camera compositing references are unsupported" );
+                }
+            }
         }
 
         auto applicationManager = core::IApplicationManager::instancePtr();
@@ -390,8 +459,8 @@ namespace workphone::scene
         if( properties->getPropertyValue( s_isActiveStr, active ) )
         {
             const auto previousOverride = m_activationOverride;
-            const auto mode = properties->getPropertyObject( s_isActiveStr ).getAttribute(
-                manualActivation );
+            const auto mode =
+                properties->getPropertyObject( s_isActiveStr ).getAttribute( manualActivation );
             if( mode == "true" )
             {
                 m_activationOverride = active;
@@ -454,8 +523,7 @@ namespace workphone::scene
             properties->getPropertyValue( prefix + ".opacity", m_compositeOpacities[i] );
             properties->getPropertyValue( prefix + ".enabled", layerEnabled );
             setCompositeRenderTexture(
-                i, component,
-                static_cast<render::IGraphicsCamera::CompositeBlendMode>( blendMode ),
+                i, component, static_cast<render::IGraphicsCamera::CompositeBlendMode>( blendMode ),
                 m_compositeOpacities[i], layerEnabled );
         }
 
@@ -498,10 +566,11 @@ namespace workphone::scene
         // Staged package actors are not published yet. Resetting the shared
         // camera manager here would change last-good camera flags/targets even
         // if a later component constructor rejects this append.
-        const bool mayResetManager=!m_runtimeAssetsMode||detail::runtimeActorPublished(actor);
+        const bool mayResetManager = !m_runtimeAssetsMode || detail::runtimeActorPublished( actor );
 
         if( cameraManager && mayResetManager &&
-            ( reset || activationChanged || wasEnabled != enabled || previousOutput != m_outputRenderTexture ) )
+            ( reset || activationChanged || wasEnabled != enabled ||
+              previousOutput != m_outputRenderTexture ) )
         {
             cameraManager->reset();
         }
@@ -896,17 +965,35 @@ namespace workphone::scene
             }
 
             auto window = graphicsSystem->getDefaultWindow();
-            if(!m_runtimeAssetsMode)WP_ASSERT( window );
+            if( !m_runtimeAssetsMode )
+            {
+                WP_ASSERT( window );
+            }
 
             auto smgr = graphicsSystem->getGraphicsScenePtr();
-            if(m_runtimeAssetsMode&&!smgr)throw std::runtime_error("Runtime camera requires a graphics scene");
+            if( m_runtimeAssetsMode && !smgr )
+            {
+                throw std::runtime_error( "Runtime camera requires a graphics scene" );
+            }
             WP_ASSERT( smgr );
 
             auto camera = smgr->addGraphicsObjectByType<render::IGraphicsCamera>();
-            if(m_runtimeAssetsMode&&!camera)throw std::runtime_error("Cannot allocate runtime camera");
+            if( m_runtimeAssetsMode && !camera )
+            {
+                throw std::runtime_error( "Cannot allocate runtime camera" );
+            }
             WP_ASSERT( camera );
-            m_camera=camera;
-            if(m_runtimeAssetsMode){camera->load(nullptr);void *native=nullptr;camera->_getObject(&native);if(!native)throw std::runtime_error("Cannot allocate native runtime camera");}
+            m_camera = camera;
+            if( m_runtimeAssetsMode )
+            {
+                camera->load( nullptr );
+                void *native = nullptr;
+                camera->_getObject( &native );
+                if( !native )
+                {
+                    throw std::runtime_error( "Cannot allocate native runtime camera" );
+                }
+            }
 
             auto cameraName = String( "Camera" ) + StringUtil::toString( m_nameExt++ );
 
@@ -970,7 +1057,10 @@ namespace workphone::scene
         if( auto graphicsSystem = applicationManager->getGraphicsSystemPtr() )
         {
             auto window = graphicsSystem->getDefaultWindow();
-            if(!m_runtimeAssetsMode)WP_ASSERT( window );
+            if( !m_runtimeAssetsMode )
+            {
+                WP_ASSERT( window );
+            }
 
             auto smgr = graphicsSystem->getGraphicsScene();
             WP_ASSERT( smgr );
@@ -1065,12 +1155,14 @@ namespace workphone::scene
                 auto taskManager = applicationManager->getTaskManagerPtr();
                 auto factoryManager = applicationManager->getFactoryManagerPtr();
                 auto cameraManager = applicationManager->getCameraManager();
-                const bool mayResetManager=!m_runtimeAssetsMode||detail::runtimeActorPublished(getActor())||BitUtil::getFlagValue(oldFlags,IGameActor::ActorFlagInScene);
+                const bool mayResetManager =
+                    !m_runtimeAssetsMode || detail::runtimeActorPublished( getActor() ) ||
+                    BitUtil::getFlagValue( oldFlags, IGameActor::ActorFlagInScene );
 
                 if( BitUtil::getFlagValue( flags, IGameActor::ActorFlagInScene ) !=
                     BitUtil::getFlagValue( oldFlags, IGameActor::ActorFlagInScene ) )
                 {
-                    if( taskManager&&mayResetManager )
+                    if( taskManager && mayResetManager )
                     {
                         if( auto applicationTask = taskManager->getTask( TaskId::Application ) )
                         {
@@ -1082,7 +1174,7 @@ namespace workphone::scene
                 else if( BitUtil::getFlagValue( flags, IGameActor::ActorFlagEnabled ) !=
                          BitUtil::getFlagValue( oldFlags, IGameActor::ActorFlagEnabled ) )
                 {
-                    if( taskManager&&mayResetManager )
+                    if( taskManager && mayResetManager )
                     {
                         if( auto applicationTask = taskManager->getTask( TaskId::Application ) )
                         {
@@ -1124,7 +1216,8 @@ namespace workphone::scene
         WP_ASSERT( smgr );
 
         auto cameraManager = applicationManager->getCameraManager();
-        const auto actor=getActor();const bool mayResetManager=!m_runtimeAssetsMode||detail::runtimeActorPublished(actor);
+        const auto actor = getActor();
+        const bool mayResetManager = !m_runtimeAssetsMode || detail::runtimeActorPublished( actor );
 
         switch( eventType )
         {
@@ -1146,9 +1239,12 @@ namespace workphone::scene
                 auto active = isActive();
                 updateActiveState( active );
 
-                if(mayResetManager){auto applicationTask = taskManager->getTaskPtr( TaskId::Application );
+                if( mayResetManager )
+                {
+                    auto applicationTask = taskManager->getTaskPtr( TaskId::Application );
                     auto cameraManagerResetJob = factoryManager->make_ptr<CameraManagerReset>();
-                    applicationTask->addJob( cameraManagerResetJob );}
+                    applicationTask->addJob( cameraManagerResetJob );
+                }
             }
             break;
             case State::Play:
@@ -1160,9 +1256,12 @@ namespace workphone::scene
                 auto active = isActive();
                 updateActiveState( active );
 
-                if(mayResetManager){auto applicationTask = taskManager->getTaskPtr( TaskId::Application );
+                if( mayResetManager )
+                {
+                    auto applicationTask = taskManager->getTaskPtr( TaskId::Application );
                     auto cameraManagerResetJob = factoryManager->make_ptr<CameraManagerReset>();
-                    applicationTask->addJob( cameraManagerResetJob );}
+                    applicationTask->addJob( cameraManagerResetJob );
+                }
             }
             break;
             default:
@@ -1487,7 +1586,10 @@ namespace workphone::scene
 
     void Camera::setPostProcessSettings( const render::IGraphicsCamera::PostProcessSettings &settings )
     {
-        if(m_runtimeAssetsMode&&!settings.workspace.empty())throw std::runtime_error("Runtime camera workspace paths are unsupported");
+        if( m_runtimeAssetsMode && !settings.workspace.empty() )
+        {
+            throw std::runtime_error( "Runtime camera workspace paths are unsupported" );
+        }
         m_postProcessSettings = settings;
         if( m_camera )
         {
@@ -1548,9 +1650,9 @@ namespace workphone::scene
             }
 
             // Render-target resources may be replaced independently of a static transform.
-            const auto hasComposite = std::any_of(
-                m_compositeRenderTextures.begin(), m_compositeRenderTextures.end(),
-                []( const auto &layer ) { return static_cast<bool>( layer ); } );
+            const auto hasComposite =
+                std::any_of( m_compositeRenderTextures.begin(), m_compositeRenderTextures.end(),
+                             []( const auto &layer ) { return static_cast<bool>( layer ); } );
             if( !isstatic || m_outputRenderTexture || hasComposite )
             {
                 sceneManager->registerComponentUpdate( TaskId::Render, Thread::UpdateState::Transform,

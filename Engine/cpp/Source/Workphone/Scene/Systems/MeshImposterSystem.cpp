@@ -210,7 +210,7 @@ namespace workphone::scene
             }
 
             m_nextUpdates[slot] = now + ( 1.0 / 3.0 );
-            
+
             // Respect the enclosing LOD group's owner, including explicit view
             // overrides supplied by applications using a raw render camera.
             for( auto owner = actor; owner; owner = owner->getParent() )

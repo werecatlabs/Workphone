@@ -653,7 +653,10 @@ namespace workphone
             queue.pending.push_back( state.getSharedFromThis<MaterialPassStateData>() );
             // With no hash collision every queued identity is already unique.
             // Keep the full sort/unique fallback for colliding large updates.
-            if( queue.recent[slot] ) queue.needsDeduplication = true;
+            if( queue.recent[slot] )
+            {
+                queue.needsDeduplication = true;
+            }
             queue.recent[slot] = &state;
             return true;
         }
@@ -729,9 +732,10 @@ namespace workphone
             std::sort( pending.begin(), pending.end(), []( const auto &a, const auto &b ) {
                 return std::less<MaterialPassStateData *>{}( a.get(), b.get() );
             } );
-            pending.erase( std::unique( pending.begin(), pending.end(),
-                                        []( const auto &a, const auto &b ) { return a.get() == b.get(); } ),
-                           pending.end() );
+            pending.erase(
+                std::unique( pending.begin(), pending.end(),
+                             []( const auto &a, const auto &b ) { return a.get() == b.get(); } ),
+                pending.end() );
         }
         for( auto &state : pending )
         {

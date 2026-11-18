@@ -18,14 +18,12 @@ namespace workphone::scene
 {
     namespace
     {
-        constexpr std::array cityBuildingMeshProperties{
-            "City Wall Mesh", "City Window Mesh", "City Entrance Mesh", "City Corner Mesh",
-            "City Roof Mesh"
-        };
+        constexpr std::array cityBuildingMeshProperties{ "City Wall Mesh", "City Window Mesh",
+                                                         "City Entrance Mesh", "City Corner Mesh",
+                                                         "City Roof Mesh" };
         constexpr std::array cityFoliageDistanceProperties{
-            "City Tree LOD0 Distance", "City Tree LOD1 Distance",
-            "City Shrub LOD0 Distance", "City Shrub LOD1 Distance",
-            "City Grass LOD0 Distance", "City Grass LOD1 Distance"
+            "City Tree LOD0 Distance",  "City Tree LOD1 Distance",  "City Shrub LOD0 Distance",
+            "City Shrub LOD1 Distance", "City Grass LOD0 Distance", "City Grass LOD1 Distance"
         };
         constexpr std::array<u32, 4> cityImpostorResolutions{ 0, 64, 128, 256 };
         constexpr char cityImpostorResolutionLabels[] = "Auto;64 px;128 px;256 px;";
@@ -52,7 +50,8 @@ namespace workphone::scene
                 }
                 if( auto component = actor->getComponent<T>() )
                 {
-                    if( auto handle = component->getHandle(); handle && handle->getUUIDAsString() == uuid )
+                    if( auto handle = component->getHandle();
+                        handle && handle->getUUIDAsString() == uuid )
                     {
                         return component;
                     }
@@ -77,7 +76,8 @@ namespace workphone::scene
         }
         catch( const std::exception &failure )
         {
-            error = String( "Cannot raise the shared source memory budget for this city: " ) + failure.what();
+            error = String( "Cannot raise the shared source memory budget for this city: " ) +
+                    failure.what();
             return false;
         }
     }
@@ -141,8 +141,8 @@ namespace workphone::scene
             m_terrain = m_roadAuthoring->getTerrain();
             if( !m_terrain || !inCurrentScene( m_terrain->getActor(), scene.get() ) )
             {
-                m_terrain = findSceneAnchor<TerrainSystem>( manager,
-                                                          m_roadAuthoring->getTerrainBindingUUID() );
+                m_terrain =
+                    findSceneAnchor<TerrainSystem>( manager, m_roadAuthoring->getTerrainBindingUUID() );
             }
             if( !m_terrain )
             {
@@ -173,8 +173,10 @@ namespace workphone::scene
         assets.cityDebugBlocks = m_debugBlocks;
         assets.cityDebugLots = m_debugLots;
         assets.cityFoliageLODDistances = m_foliageLODDistances;
-        assets.cityFoliageImpostorResolution = cityImpostorResolutions[size_t( m_foliageImpostorResolution )];
-        assets.cityBuildingImpostorResolution = cityImpostorResolutions[size_t( m_buildingImpostorResolution )];
+        assets.cityFoliageImpostorResolution =
+            cityImpostorResolutions[size_t( m_foliageImpostorResolution )];
+        assets.cityBuildingImpostorResolution =
+            cityImpostorResolutions[size_t( m_buildingImpostorResolution )];
         assets.cityTerrainRelief = m_terrainRelief;
         assets.cityBuildingStyle = m_buildingStyle;
         assets.cityBuildingMeshes = m_buildingMeshes;
@@ -194,7 +196,8 @@ namespace workphone::scene
         retainBindings( assets );
         if( !assets.roadAuthoring || !assets.roadTerrain || m_roadAuthoringUUID.empty() )
         {
-            throw std::runtime_error( "The terrain city build did not publish its road and terrain anchors." );
+            throw std::runtime_error(
+                "The terrain city build did not publish its road and terrain anchors." );
         }
         m_lastRefreshAttemptRevision = assets.cityAppliedSourceRevision;
         m_builtTerrain = m_roadAuthoring->getTerrainSnapshot();
@@ -264,10 +267,10 @@ namespace workphone::scene
         const auto snapshot = m_roadAuthoring->getTerrainSnapshot();
         const auto placement = m_roadAuthoring->getTerrainPlacement();
         const bool changed = assets.roadAuthoring != m_roadAuthoring ||
-                             revision != assets.cityAppliedSourceRevision || snapshot != m_builtTerrain ||
-                             placement != m_builtTerrainPlacement;
-        const bool attempted = revision == m_lastRefreshAttemptRevision && snapshot == m_lastAttemptTerrain &&
-                               placement == m_lastAttemptPlacement;
+                             revision != assets.cityAppliedSourceRevision ||
+                             snapshot != m_builtTerrain || placement != m_builtTerrainPlacement;
+        const bool attempted = revision == m_lastRefreshAttemptRevision &&
+                               snapshot == m_lastAttemptTerrain && placement == m_lastAttemptPlacement;
         if( changed && !attempted )
         {
             m_lastRefreshAttemptRevision = revision;
@@ -279,7 +282,7 @@ namespace workphone::scene
     }
 
     void ProceduralCityConfiguration::writeProperties( Properties &properties,
-                                                      const race::SceneAssets &assets ) const
+                                                       const race::SceneAssets &assets ) const
     {
         if( !m_alwaysOpen )
         {
@@ -291,45 +294,62 @@ namespace workphone::scene
         properties.setProperty( "City Streaming", m_streamingEnabled );
         properties.setProperty( "City Stream Load Radius", m_streamLoadRadius );
         properties.setProperty( "City Stream Retain Radius", m_streamRetainRadius );
-        properties.getPropertyObject( "City Stream Load Radius" ).setAttribute( "description",
-            "Load detailed city patches within this distance in metres." );
-        properties.getPropertyObject( "City Stream Retain Radius" ).setAttribute( "description",
-            "Keep detailed patches until this distance in metres. Use at least the load radius." );
+        properties.getPropertyObject( "City Stream Load Radius" )
+            .setAttribute( "description", "Load detailed city patches within this distance in metres." );
+        properties.getPropertyObject( "City Stream Retain Radius" )
+            .setAttribute(
+                "description",
+                "Keep detailed patches until this distance in metres. Use at least the load radius." );
         properties.setProperty( "City Source Memory MiB", m_sourceMemoryMiB );
         auto &sourceMemory = properties.getPropertyObject( "City Source Memory MiB" );
         sourceMemory.setAttribute( "min", StringUtil::toString( race::minimumCitySourceMemoryMiB ) );
         sourceMemory.setAttribute( "max", StringUtil::toString( race::maximumCitySourceMemoryMiB ) );
-        sourceMemory.setAttribute( "description", "Minimum shared CPU source memory available to the city." );
+        sourceMemory.setAttribute( "description",
+                                   "Minimum shared CPU source memory available to the city." );
         properties.setProperty( "City Natural Roads", m_naturalRoads );
         properties.setProperty( "City Terrain Roads", m_terrainRoads );
         properties.setProperty( "City Terrain Relief", m_terrainRelief );
-        properties.getPropertyObject( "City Terrain Relief" ).setAttribute( "description",
-            "Initial terrain hills (0 to 2). Edit existing ground with the Terrain tools." );
+        properties.getPropertyObject( "City Terrain Relief" )
+            .setAttribute(
+                "description",
+                "Initial terrain hills (0 to 2). Edit existing ground with the Terrain tools." );
         properties.setProperty( "City Street Detail", m_streetDetail );
         properties.setProperty( "City Street Prop Density", m_streetPropDensity );
         auto &propDensity = properties.getPropertyObject( "City Street Prop Density" );
         propDensity.setAttribute( "min", "0" );
         propDensity.setAttribute( "max", "200" );
-        propDensity.setAttribute( "description", "0 removes optional street furniture; 100 keeps the previous spacing and count; 200 doubles the target count where the pavement has safe space." );
+        propDensity.setAttribute(
+            "description",
+            "0 removes optional street furniture; 100 keeps the previous spacing and count; 200 doubles "
+            "the target count where the pavement has safe space." );
         properties.setProperty( "City Building Density", m_buildingDensity );
         auto &density = properties.getPropertyObject( "City Building Density" );
         density.setAttribute( "min", "0" );
         density.setAttribute( "max", "200" );
-        density.setAttribute( "description", "100 keeps the existing city. Lower values landscape vacant lots; higher values split suitable street-facing parcels for extra buildings." );
+        density.setAttribute( "description",
+                              "100 keeps the existing city. Lower values landscape vacant lots; higher "
+                              "values split suitable street-facing parcels for extra buildings." );
         properties.setProperty( "City Traffic Density", m_trafficDensity );
         auto &trafficDensity = properties.getPropertyObject( "City Traffic Density" );
         trafficDensity.setAttribute( "min", "0" );
         trafficDensity.setAttribute( "max", "100" );
-        trafficDensity.setAttribute( "description", "Share of the bounded city traffic fleet to spawn. Zero disables traffic. Press Regenerate to apply." );
+        trafficDensity.setAttribute( "description",
+                                     "Share of the bounded city traffic fleet to spawn. Zero disables "
+                                     "traffic. Press Regenerate to apply." );
         properties.setProperty( "Traffic Drive On Left", m_trafficDriveOnLeft );
-        properties.getPropertyObject( "Traffic Drive On Left" ).setAttribute( "description",
-            "Use the left lane for city traffic. Press Regenerate to apply." );
+        properties.getPropertyObject( "Traffic Drive On Left" )
+            .setAttribute( "description",
+                           "Use the left lane for city traffic. Press Regenerate to apply." );
         properties.setProperty( "City Debug Blocks", m_debugBlocks );
-        properties.getPropertyObject( "City Debug Blocks" ).setAttribute( "description",
-            "Show generated road-enclosed blocks, or planning cells on a grid city. Press Regenerate." );
+        properties.getPropertyObject( "City Debug Blocks" )
+            .setAttribute( "description",
+                           "Show generated road-enclosed blocks, or planning cells on a grid city. "
+                           "Press Regenerate." );
         properties.setProperty( "City Debug Lots", m_debugLots );
-        properties.getPropertyObject( "City Debug Lots" ).setAttribute( "description",
-            "Show parcel boundaries and occupied building footprints. Press Regenerate." );
+        properties.getPropertyObject( "City Debug Lots" )
+            .setAttribute(
+                "description",
+                "Show parcel boundaries and occupied building footprints. Press Regenerate." );
         properties.setProperty( "City Debug Block Count", assets.cityDebugBlockCount, true );
         properties.setProperty( "City Debug Lot Count", assets.cityDebugLotCount, true );
         for( size_t i = 0; i < cityFoliageDistanceProperties.size(); ++i )
@@ -339,9 +359,12 @@ namespace workphone::scene
             auto &property = properties.getPropertyObject( name );
             property.setAttribute( "min", "1" );
             property.setAttribute( "max", "2000" );
-            property.setAttribute( "description", i % 2 == 0 ?
-                "Metres from the active camera where detailed foliage starts blending to reduced geometry." :
-                "Metres from the active camera where reduced geometry starts blending to the far LOD. Must exceed LOD0 distance." );
+            property.setAttribute( "description",
+                                   i % 2 == 0
+                                       ? "Metres from the active camera where detailed foliage starts "
+                                         "blending to reduced geometry."
+                                       : "Metres from the active camera where reduced geometry starts "
+                                         "blending to the far LOD. Must exceed LOD0 distance." );
         }
         const auto resolutionProperty = [&]( const char *name, s32 value, const char *description ) {
             properties.setProperty( name, value );
@@ -351,9 +374,11 @@ namespace workphone::scene
             property.setAttribute( "description", description );
         };
         resolutionProperty( "City Foliage Impostor Resolution", m_foliageImpostorResolution,
-            "Pixels per directional foliage sprite. Auto uses 64 px in Preview or 128 px otherwise. Higher sizes require more shared CPU and GPU memory." );
+                            "Pixels per directional foliage sprite. Auto uses 64 px in Preview or 128 "
+                            "px otherwise. Higher sizes require more shared CPU and GPU memory." );
         resolutionProperty( "City Building Impostor Resolution", m_buildingImpostorResolution,
-            "Pixels per directional building sprite. Auto uses 64 px in Preview or 128 px otherwise. 256 px may require a larger City Source Memory MiB budget." );
+                            "Pixels per directional building sprite. Auto uses 64 px in Preview or 128 "
+                            "px otherwise. 256 px may require a larger City Source Memory MiB budget." );
         properties.setProperty( "City Building Style", m_buildingStyle );
         auto &buildingStyle = properties.getPropertyObject( "City Building Style" );
         buildingStyle.setTypeName( Properties::enumTypeStr );
@@ -365,7 +390,9 @@ namespace workphone::scene
             auto &property = properties.getPropertyObject( name );
             property.setAttribute( Properties::resourceTypeStr, "Mesh" );
             property.setAttribute( "allowResourcePath", "true" );
-            property.setAttribute( "description", "Choose a mesh asset, or enter a file path. Clear to use the built-in module." );
+            property.setAttribute(
+                "description",
+                "Choose a mesh asset, or enter a file path. Clear to use the built-in module." );
         }
         properties.setProperty( "City Building Kit Status", assets.cityBuildingKitDiagnostic, true );
         properties.setProperty( "City Road Authoring UUID", m_roadAuthoringUUID );
@@ -383,37 +410,43 @@ namespace workphone::scene
         properties.getPropertyValue( "City Streaming", m_streamingEnabled );
         float loadRadius = m_streamLoadRadius, retainRadius = m_streamRetainRadius;
         const bool hasLoadRadius = properties.getPropertyValue( "City Stream Load Radius", loadRadius );
-        const bool hasRetainRadius = properties.getPropertyValue( "City Stream Retain Radius", retainRadius );
+        const bool hasRetainRadius =
+            properties.getPropertyValue( "City Stream Retain Radius", retainRadius );
         if( hasLoadRadius || hasRetainRadius )
         {
-            if( std::isfinite( loadRadius ) && std::isfinite( retainRadius ) &&
-                loadRadius > 0 && retainRadius >= loadRadius )
+            if( std::isfinite( loadRadius ) && std::isfinite( retainRadius ) && loadRadius > 0 &&
+                retainRadius >= loadRadius )
             {
                 m_streamLoadRadius = loadRadius;
                 m_streamRetainRadius = retainRadius;
             }
             else if( error.empty() )
             {
-                error = "City streaming requires a positive load radius and a finite retain radius at least as large.";
+                error =
+                    "City streaming requires a positive load radius and a finite retain radius at least "
+                    "as large.";
             }
         }
         s32 sourceMemory = m_sourceMemoryMiB;
         if( properties.getPropertyValue( "City Source Memory MiB", sourceMemory ) )
         {
             m_sourceMemoryMiB = std::clamp( sourceMemory, race::minimumCitySourceMemoryMiB,
-                                           race::maximumCitySourceMemoryMiB );
+                                            race::maximumCitySourceMemoryMiB );
         }
         properties.getPropertyValue( "City Natural Roads", m_naturalRoads );
         f32 terrainRelief = m_terrainRelief;
         if( properties.getPropertyValue( "City Terrain Relief", terrainRelief ) &&
             std::isfinite( terrainRelief ) )
+        {
             m_terrainRelief = std::clamp( terrainRelief, 0.f, 2.f );
+        }
         bool terrainMode = m_terrainRoads;
         properties.getPropertyValue( "City Terrain Roads", terrainMode );
         if( !terrainMode && m_terrainRoads && ( m_roadAuthoring || !m_roadAuthoringUUID.empty() ) )
         {
-            error = "Leaving terrain-city mode while its saved road/terrain anchors are active is "
-                    "unavailable; use a separate scene for the flat city.";
+            error =
+                "Leaving terrain-city mode while its saved road/terrain anchors are active is "
+                "unavailable; use a separate scene for the flat city.";
         }
         else
         {
@@ -440,20 +473,38 @@ namespace workphone::scene
         s32 streetPropDensity = m_streetPropDensity;
         if( properties.getPropertyValue( "City Street Prop Density", streetPropDensity ) )
         {
-            if( streetPropDensity >= 0 && streetPropDensity <= 200 ) m_streetPropDensity = streetPropDensity;
-            else if( error.empty() ) error = "City Street Prop Density must be between 0 and 200.";
+            if( streetPropDensity >= 0 && streetPropDensity <= 200 )
+            {
+                m_streetPropDensity = streetPropDensity;
+            }
+            else if( error.empty() )
+            {
+                error = "City Street Prop Density must be between 0 and 200.";
+            }
         }
         s32 buildingDensity = m_buildingDensity;
         if( properties.getPropertyValue( "City Building Density", buildingDensity ) )
         {
-            if( buildingDensity >= 0 && buildingDensity <= 200 ) m_buildingDensity = buildingDensity;
-            else if( error.empty() ) error = "City Building Density must be between 0 and 200.";
+            if( buildingDensity >= 0 && buildingDensity <= 200 )
+            {
+                m_buildingDensity = buildingDensity;
+            }
+            else if( error.empty() )
+            {
+                error = "City Building Density must be between 0 and 200.";
+            }
         }
         s32 trafficDensity = m_trafficDensity;
         if( properties.getPropertyValue( "City Traffic Density", trafficDensity ) )
         {
-            if( trafficDensity >= 0 && trafficDensity <= 100 ) m_trafficDensity = trafficDensity;
-            else if( error.empty() ) error = "City Traffic Density must be between 0 and 100.";
+            if( trafficDensity >= 0 && trafficDensity <= 100 )
+            {
+                m_trafficDensity = trafficDensity;
+            }
+            else if( error.empty() )
+            {
+                error = "City Traffic Density must be between 0 and 100.";
+            }
         }
         properties.getPropertyValue( "Traffic Drive On Left", m_trafficDriveOnLeft );
         properties.getPropertyValue( "City Debug Blocks", m_debugBlocks );
@@ -461,22 +512,44 @@ namespace workphone::scene
         auto distances = m_foliageLODDistances;
         bool changedDistances = false;
         for( size_t i = 0; i < cityFoliageDistanceProperties.size(); ++i )
-            changedDistances |= properties.getPropertyValue( cityFoliageDistanceProperties[i], distances[i] );
+        {
+            changedDistances |=
+                properties.getPropertyValue( cityFoliageDistanceProperties[i], distances[i] );
+        }
         if( changedDistances )
         {
             bool valid = true;
             for( size_t i = 0; i < distances.size(); i += 2 )
+            {
                 valid &= std::isfinite( distances[i] ) && std::isfinite( distances[i + 1] ) &&
                          distances[i] >= 1 && distances[i + 1] > distances[i] &&
                          distances[i + 1] <= 2000;
-            if( valid ) m_foliageLODDistances = distances;
-            else if( error.empty() ) error = "City foliage LOD distances must be finite metres between 1 and 2000, with LOD1 farther than LOD0.";
+            }
+            if( valid )
+            {
+                m_foliageLODDistances = distances;
+            }
+            else if( error.empty() )
+            {
+                error =
+                    "City foliage LOD distances must be finite metres between 1 and 2000, with LOD1 "
+                    "farther than LOD0.";
+            }
         }
         const auto readResolution = [&]( const char *name, s32 &current ) {
             s32 selected = current;
-            if( !properties.getPropertyValue( name, selected ) ) return;
-            if( selected >= 0 && selected < s32( cityImpostorResolutions.size() ) ) current = selected;
-            else if( error.empty() ) error = String( name ) + " must be Auto, 64, 128 or 256 px.";
+            if( !properties.getPropertyValue( name, selected ) )
+            {
+                return;
+            }
+            if( selected >= 0 && selected < s32( cityImpostorResolutions.size() ) )
+            {
+                current = selected;
+            }
+            else if( error.empty() )
+            {
+                error = String( name ) + " must be Auto, 64, 128 or 256 px.";
+            }
         };
         readResolution( "City Foliage Impostor Resolution", m_foliageImpostorResolution );
         readResolution( "City Building Impostor Resolution", m_buildingImpostorResolution );

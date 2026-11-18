@@ -37,12 +37,17 @@ namespace workphone::scene
 
     Light::Light() = default;
 
-    void Light::configureRuntimeAssets(std::shared_ptr<const resource::RuntimeAssetContext> context)
+    void Light::configureRuntimeAssets( std::shared_ptr<const resource::RuntimeAssetContext> context )
     {
-        if(!context||!context->resolve||isLoaded()||getLoadingState()==LoadingState::Loading||
-           getLoadingState()==LoadingState::Unloading||(m_runtimeAssets&&m_runtimeAssets!=context))
-            throw std::runtime_error("Light runtime assets require an unloaded component and resolver");
-        m_runtimeAssets=std::move(context);m_runtimeAssetsMode=true;
+        if( !context || !context->resolve || isLoaded() || getLoadingState() == LoadingState::Loading ||
+            getLoadingState() == LoadingState::Unloading ||
+            ( m_runtimeAssets && m_runtimeAssets != context ) )
+        {
+            throw std::runtime_error(
+                "Light runtime assets require an unloaded component and resolver" );
+        }
+        m_runtimeAssets = std::move( context );
+        m_runtimeAssetsMode = true;
     }
 
     Light::~Light()
@@ -52,8 +57,14 @@ namespace workphone::scene
 
     void Light::load( SmartPtr<ISharedObject> data )
     {
-        if(m_runtimeAssetsMode&&!m_runtimeAssets)throw std::runtime_error("Light runtime assets must be reconfigured before load");
-        if(m_runtimeAssetsMode&&isLoaded())return;
+        if( m_runtimeAssetsMode && !m_runtimeAssets )
+        {
+            throw std::runtime_error( "Light runtime assets must be reconfigured before load" );
+        }
+        if( m_runtimeAssetsMode && isLoaded() )
+        {
+            return;
+        }
         try
         {
             setLoadingState( LoadingState::Loading );
@@ -64,13 +75,19 @@ namespace workphone::scene
             WP_ASSERT( applicationManager );
 
             auto sceneManager = applicationManager->getGameManager();
-            if(m_runtimeAssetsMode&&(!sceneManager||!getActor()))throw std::runtime_error("Runtime light requires its actor and game manager");
+            if( m_runtimeAssetsMode && ( !sceneManager || !getActor() ) )
+            {
+                throw std::runtime_error( "Runtime light requires its actor and game manager" );
+            }
 
             auto graphicsSystem = applicationManager->getGraphicsSystem();
             if( graphicsSystem )
             {
                 auto smgr = graphicsSystem->getGraphicsScene();
-                if(m_runtimeAssetsMode&&!smgr)throw std::runtime_error("Runtime light requires a graphics scene");
+                if( m_runtimeAssetsMode && !smgr )
+                {
+                    throw std::runtime_error( "Runtime light requires a graphics scene" );
+                }
                 WP_ASSERT( smgr );
 
                 auto name = String( "Light" ) + StringUtil::toString( m_nameExt++ );
@@ -78,7 +95,18 @@ namespace workphone::scene
                 if( auto light = smgr->addGraphicsObjectByType<render::IGraphicsLight>() )
                 {
                     setLight( light );
-                    if(m_runtimeAssetsMode){light->setVisible(false);light->load(nullptr);light->setVisible(false);void *native=nullptr;light->_getObject(&native);if(!native)throw std::runtime_error("Cannot allocate native runtime light");}
+                    if( m_runtimeAssetsMode )
+                    {
+                        light->setVisible( false );
+                        light->load( nullptr );
+                        light->setVisible( false );
+                        void *native = nullptr;
+                        light->_getObject( &native );
+                        if( !native )
+                        {
+                            throw std::runtime_error( "Cannot allocate native runtime light" );
+                        }
+                    }
                     light->setName( name );
 
                     light->setType( m_lightType );
@@ -88,11 +116,17 @@ namespace workphone::scene
                     light->setAttenuation( m_range, m_constant, m_linear, m_quadratic );
 
                     auto rootSceneNode = smgr->getRootSceneNode();
-                    if(m_runtimeAssetsMode&&!rootSceneNode)throw std::runtime_error("Runtime light requires a root scene node");
+                    if( m_runtimeAssetsMode && !rootSceneNode )
+                    {
+                        throw std::runtime_error( "Runtime light requires a root scene node" );
+                    }
                     WP_ASSERT( rootSceneNode );
 
                     auto sceneNode = rootSceneNode->addChildSceneNode( name );
-                    if(m_runtimeAssetsMode&&!sceneNode)throw std::runtime_error("Cannot allocate runtime light scene node");
+                    if( m_runtimeAssetsMode && !sceneNode )
+                    {
+                        throw std::runtime_error( "Cannot allocate runtime light scene node" );
+                    }
                     WP_ASSERT( sceneNode );
                     setSceneNode( sceneNode );
 
@@ -102,17 +136,27 @@ namespace workphone::scene
                 }
             }
 
-            if(m_runtimeAssetsMode&&(!getLight()||!getSceneNode()))throw std::runtime_error("Runtime light native allocation failed");
+            if( m_runtimeAssetsMode && ( !getLight() || !getSceneNode() ) )
+            {
+                throw std::runtime_error( "Runtime light native allocation failed" );
+            }
 
             sceneManager->registerComponentUpdate( TaskId::Render, Thread::UpdateState::Transform,
                                                    this );
             setLoadingState( LoadingState::Loaded );
-            if(m_runtimeAssetsMode)setVisible(true);
+            if( m_runtimeAssetsMode )
+            {
+                setVisible( true );
+            }
         }
         catch( std::exception &e )
         {
             WP_LOG_EXCEPTION( e );
-            if(m_runtimeAssetsMode){unload(nullptr);throw;}
+            if( m_runtimeAssetsMode )
+            {
+                unload( nullptr );
+                throw;
+            }
         }
     }
 
@@ -122,13 +166,19 @@ namespace workphone::scene
         try
         {
             const auto &loadingState = getLoadingState();
-            if( loadingState != LoadingState::Unloaded||getLight()||getSceneNode() )
+            if( loadingState != LoadingState::Unloaded || getLight() || getSceneNode() )
             {
                 setLoadingState( LoadingState::Unloading );
 
                 auto applicationManager = core::IApplicationManager::instance();
                 WP_ASSERT( applicationManager );
-                if(m_runtimeAssetsMode)if(auto manager=applicationManager->getGameManager())manager->unregisterAllComponent(this);
+                if( m_runtimeAssetsMode )
+                {
+                    if( auto manager = applicationManager->getGameManager() )
+                    {
+                        manager->unregisterAllComponent( this );
+                    }
+                }
 
                 auto graphicsSystem = applicationManager->getGraphicsSystem();
                 if( graphicsSystem )
@@ -181,7 +231,15 @@ namespace workphone::scene
 
     void Light::updateFlags( u32 flags, u32 oldFlags )
     {
-        if(m_runtimeAssetsMode){setVisible(true);if(auto node=getSceneNode())node->makeDirty();return;}
+        if( m_runtimeAssetsMode )
+        {
+            setVisible( true );
+            if( auto node = getSceneNode() )
+            {
+                node->makeDirty();
+            }
+            return;
+        }
         if( auto actor = getActor() )
         {
             auto applicationManager = core::IApplicationManager::instance();
@@ -230,8 +288,14 @@ namespace workphone::scene
 
     void Light::updateVisibility()
     {
-        if(m_runtimeAssetsMode)setVisible(true);
-        else Component::updateVisibility();
+        if( m_runtimeAssetsMode )
+        {
+            setVisible( true );
+        }
+        else
+        {
+            Component::updateVisibility();
+        }
     }
 
     Array<SmartPtr<ISharedObject>> Light::getChildObjects() const
@@ -263,21 +327,44 @@ namespace workphone::scene
 
     void Light::setProperties( SmartPtr<Properties> properties )
     {
-        if(!properties)return;
-        if(m_runtimeAssetsMode)
+        if( !properties )
         {
-            if(!m_runtimeAssets)throw std::runtime_error("Runtime light properties require a configured context");
-            auto range=m_range,constant=m_constant,linear=m_linear,quadratic=m_quadratic,intensity=m_intensity;
-            properties->getPropertyValue(rangeStr,range);properties->getPropertyValue(constantStr,constant);properties->getPropertyValue(linearStr,linear);
-            properties->getPropertyValue(quadraticStr,quadratic);properties->getPropertyValue(intensityStr,intensity);
-            u32 type=static_cast<u32>(m_lightType);properties->getPropertyValue(lightTypeStr,type);
-            if(!std::isfinite(range)||range<=0||!std::isfinite(constant)||constant<0||!std::isfinite(linear)||linear<0||
-               !std::isfinite(quadratic)||quadratic<0||!(constant>0||linear>0||quadratic>0)||!std::isfinite(intensity)||intensity<0||type>2)
-                throw std::runtime_error("Runtime light type, intensity, or attenuation is invalid");
-            for(const auto &key:{diffuseColourStr,specularColourStr}){auto colour=key==diffuseColourStr?m_diffuseColour:m_specularColour;properties->getPropertyValue(key,colour);
-                if(!std::isfinite(colour.r)||!std::isfinite(colour.g)||!std::isfinite(colour.b)||!std::isfinite(colour.a)||
-                   colour.r<0||colour.g<0||colour.b<0||colour.a<0||colour.r>1||colour.g>1||colour.b>1||colour.a>1)
-                    throw std::runtime_error("Runtime light colour is invalid");}
+            return;
+        }
+        if( m_runtimeAssetsMode )
+        {
+            if( !m_runtimeAssets )
+            {
+                throw std::runtime_error( "Runtime light properties require a configured context" );
+            }
+            auto range = m_range, constant = m_constant, linear = m_linear, quadratic = m_quadratic,
+                 intensity = m_intensity;
+            properties->getPropertyValue( rangeStr, range );
+            properties->getPropertyValue( constantStr, constant );
+            properties->getPropertyValue( linearStr, linear );
+            properties->getPropertyValue( quadraticStr, quadratic );
+            properties->getPropertyValue( intensityStr, intensity );
+            u32 type = static_cast<u32>( m_lightType );
+            properties->getPropertyValue( lightTypeStr, type );
+            if( !std::isfinite( range ) || range <= 0 || !std::isfinite( constant ) || constant < 0 ||
+                !std::isfinite( linear ) || linear < 0 || !std::isfinite( quadratic ) || quadratic < 0 ||
+                !( constant > 0 || linear > 0 || quadratic > 0 ) || !std::isfinite( intensity ) ||
+                intensity < 0 || type > 2 )
+            {
+                throw std::runtime_error( "Runtime light type, intensity, or attenuation is invalid" );
+            }
+            for( const auto &key : { diffuseColourStr, specularColourStr } )
+            {
+                auto colour = key == diffuseColourStr ? m_diffuseColour : m_specularColour;
+                properties->getPropertyValue( key, colour );
+                if( !std::isfinite( colour.r ) || !std::isfinite( colour.g ) ||
+                    !std::isfinite( colour.b ) || !std::isfinite( colour.a ) || colour.r < 0 ||
+                    colour.g < 0 || colour.b < 0 || colour.a < 0 || colour.r > 1 || colour.g > 1 ||
+                    colour.b > 1 || colour.a > 1 )
+                {
+                    throw std::runtime_error( "Runtime light colour is invalid" );
+                }
+            }
         }
         Component::setProperties( properties );
 
@@ -301,8 +388,8 @@ namespace workphone::scene
         if( auto light = getLight() )
         {
             auto actor = getActor();
-            auto visible = isEnabled() && actor && actor->isEnabledInScene()&&
-                (!m_runtimeAssetsMode||detail::runtimeActorPublished(actor));
+            auto visible = isEnabled() && actor && actor->isEnabledInScene() &&
+                           ( !m_runtimeAssetsMode || detail::runtimeActorPublished( actor ) );
 
             light->setVisible( visible );
             light->setDiffuseColour( m_diffuseColour );
@@ -638,7 +725,12 @@ namespace workphone::scene
 
     void Light::setVisible( bool visible )
     {
-        if(m_runtimeAssetsMode){auto actor=getActor();visible=visible&&isEnabled()&&actor&&actor->isEnabledInScene()&&detail::runtimeActorPublished(actor);}
+        if( m_runtimeAssetsMode )
+        {
+            auto actor = getActor();
+            visible = visible && isEnabled() && actor && actor->isEnabledInScene() &&
+                      detail::runtimeActorPublished( actor );
+        }
         if( m_light )
         {
             m_light->setVisible( visible );

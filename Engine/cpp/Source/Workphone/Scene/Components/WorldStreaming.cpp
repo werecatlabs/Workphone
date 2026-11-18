@@ -62,7 +62,7 @@ namespace workphone::scene
     }  // namespace
 
     WP_CLASS_REGISTER_DERIVED( workphone::scene, WorldStreaming, Component );
-    
+
     WorldStreaming::WorldStreaming() = default;
 
     WorldStreaming::~WorldStreaming()
@@ -156,21 +156,25 @@ namespace workphone::scene
                     auto retired = replaceStreamer( this, m_streamer );
                     return;
                 }
-                const auto path = Path::isPathAbsolute( m_manifestPath )
-                                      ? m_manifestPath
-                                      : String( ( std::filesystem::u8path( app->getProjectPath().c_str() ) /
-                                                  std::filesystem::u8path( m_manifestPath.c_str() ) )
-                                                    .lexically_normal()
-                                                    .generic_u8string()
-                                                    .c_str() );
+                const auto path =
+                    Path::isPathAbsolute( m_manifestPath )
+                        ? m_manifestPath
+                        : String( ( std::filesystem::u8path( app->getProjectPath().c_str() ) /
+                                    std::filesystem::u8path( m_manifestPath.c_str() ) )
+                                      .lexically_normal()
+                                      .generic_u8string()
+                                      .c_str() );
                 String error;
                 const auto admissionEpoch = sourceBudgetDenialCount();
                 if( active && active->isOpen() && m_openPath == path )
                 {
-                    if( !active->open( path, actor->getScene(), m_options, m_instanceWorld ? actor : nullptr,
-                                       error ) )
+                    if( !active->open( path, actor->getScene(), m_options,
+                                       m_instanceWorld ? actor : nullptr, error ) )
                     {
-                        if( sourceBudgetDenialCount() != admissionEpoch ) throw std::bad_alloc();
+                        if( sourceBudgetDenialCount() != admissionEpoch )
+                        {
+                            throw std::bad_alloc();
+                        }
                         m_error = error;
                         WP_LOG_ERROR( "WorldStreaming: " + error );
                         return;
@@ -197,7 +201,10 @@ namespace workphone::scene
                     if( !candidate->open( path, actor->getScene(), m_options,
                                           m_instanceWorld ? actor : nullptr, error ) )
                     {
-                        if( sourceBudgetDenialCount() != admissionEpoch ) throw std::bad_alloc();
+                        if( sourceBudgetDenialCount() != admissionEpoch )
+                        {
+                            throw std::bad_alloc();
+                        }
                         m_error = error;
                         WP_LOG_ERROR( "WorldStreaming: " + error );
                         return;

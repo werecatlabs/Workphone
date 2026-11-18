@@ -370,8 +370,8 @@ namespace workphone
                         WP_LOG_ERROR( "Incomplete read for file: " + fileInfo.absolutePath.str() );
                     }
 
-                    auto result = factoryManager->make_ptr<MemoryFile>( buffer, size,
-                                                                       fileInfo.absolutePath.str(), true );
+                    auto result = factoryManager->make_ptr<MemoryFile>(
+                        buffer, size, fileInfo.absolutePath.str(), true );
                     result->setFileInfo( fileInfo );
                     return result;
                 }

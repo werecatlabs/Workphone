@@ -31,7 +31,11 @@ namespace workphone
     void Profile::start()
     {
         ScopedLock lock( this );
-        if( !projectProfilingEnabled() ) { m_start = 0; return; }
+        if( !projectProfilingEnabled() )
+        {
+            m_start = 0;
+            return;
+        }
 
         m_start = std::chrono::high_resolution_clock::now().time_since_epoch().count();
     }
@@ -39,7 +43,11 @@ namespace workphone
     void Profile::end()
     {
         ScopedLock lock( this );
-        if( !projectProfilingEnabled() || m_start == 0 ) { m_start = 0; return; }
+        if( !projectProfilingEnabled() || m_start == 0 )
+        {
+            m_start = 0;
+            return;
+        }
 
         auto applicationManager = core::IApplicationManager::instance();
         auto timer = applicationManager->getTimer();
@@ -97,7 +105,10 @@ namespace workphone
 
     void Profile::setTimeTaken( float timeTaken )
     {
-        if( !projectProfilingEnabled() ) return;
+        if( !projectProfilingEnabled() )
+        {
+            return;
+        }
         ScopedLock lock( this );
 
         m_timeTaken = timeTaken;

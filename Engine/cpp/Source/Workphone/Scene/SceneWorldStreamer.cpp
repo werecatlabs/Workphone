@@ -45,6 +45,7 @@ namespace workphone::scene
             const IGameScene *scene = nullptr;
             ClosingGraph *next = nullptr;
         };
+
         std::mutex closingGraphsMutex;
         ClosingGraph *closingGraphs = nullptr;
 
@@ -52,7 +53,12 @@ namespace workphone::scene
         {
             std::lock_guard<std::mutex> lock( closingGraphsMutex );
             for( auto *ticket = closingGraphs; ticket; ticket = ticket->next )
-                if( ticket->scene == scene ) return true;
+            {
+                if( ticket->scene == scene )
+                {
+                    return true;
+                }
+            }
             return false;
         }
 
@@ -78,22 +84,46 @@ namespace workphone::scene
 
             CellRequest( const WorldCell &source, const String &path,
                          std::function<StreamBudget( StreamMemoryClass, u64, String & )> reserve ) :
-                cell{ source.id, source.file, source.minimum, source.maximum, source.key,
-                      source.bytes, source.decodedBytes, source.detailKey, source.proxyKey,
-                      source.actors, copyIds( source.actorIds ), copyIds( source.objectIds ) },
-                path( path ), reserve( std::move( reserve ) ),
-                payload( std::allocate_shared<CellPayload>( SourceBudgetAllocator<CellPayload>{} ) ) {}
+                cell{ source.id,
+                      source.file,
+                      source.minimum,
+                      source.maximum,
+                      source.key,
+                      source.bytes,
+                      source.decodedBytes,
+                      source.detailKey,
+                      source.proxyKey,
+                      source.actors,
+                      copyIds( source.actorIds ),
+                      copyIds( source.objectIds ) },
+                path( path ),
+                reserve( std::move( reserve ) ),
+                payload( std::allocate_shared<CellPayload>( SourceBudgetAllocator<CellPayload>{} ) )
+            {
+            }
 
             WorldStreamResult operator()( const StreamCancellation &cancel ) const
             {
                 WorldStreamResult result;
-                if( cancel.cancelled() ) return result;
+                if( cancel.cancelled() )
+                {
+                    return result;
+                }
                 String error;
                 auto source = reserve( StreamMemoryClass::SourceCpu, cell.bytes, error );
-                if( !source ) throw std::runtime_error( error.c_str() );
+                if( !source )
+                {
+                    throw std::runtime_error( error.c_str() );
+                }
                 auto data = SceneWorld::readCell( path, cell, error );
-                if( !data ) throw std::runtime_error( error.c_str() );
-                if( cancel.cancelled() ) return result;
+                if( !data )
+                {
+                    throw std::runtime_error( error.c_str() );
+                }
+                if( cancel.cancelled() )
+                {
+                    return result;
+                }
                 payload->data = data;
                 result.payload = payload;
                 result.bytes = cell.decodedBytes;
@@ -235,8 +265,11 @@ namespace workphone::scene
 
         struct Retired
         {
-            Array<SmartPtr<render::IGraphicsObject>> objects{ Allocator<SmartPtr<render::IGraphicsObject>>( workphone::sourceBudget ) };
-            Array<SmartPtr<IMeshResource>> meshes{ Allocator<SmartPtr<IMeshResource>>( workphone::sourceBudget ) };
+            Array<SmartPtr<render::IGraphicsObject>> objects{
+                Allocator<SmartPtr<render::IGraphicsObject>>( workphone::sourceBudget )
+            };
+            Array<SmartPtr<IMeshResource>> meshes{ Allocator<SmartPtr<IMeshResource>>(
+                workphone::sourceBudget ) };
             StreamBudget sourceBudget;
         };
 
@@ -297,6 +330,7 @@ namespace workphone::scene
         {
             using SourceBudgetObject::operator new;
             using SourceBudgetObject::operator delete;
+
             explicit RetirementRegistration( std::shared_ptr<Impl> state ) : state( std::move( state ) )
             {
                 setPrimary( true );
@@ -334,9 +368,15 @@ namespace workphone::scene
                 auto app = core::IApplicationManager::instancePtr();
                 auto manager = app ? app->getGameManager() : nullptr;
                 if( manager )
+                {
                     for( auto &resident : residents )
+                    {
                         for( auto &actor : resident.second.actors )
+                        {
                             manager->destroyActor( actor );
+                        }
+                    }
+                }
             }
             unmarkClosingGraph();
         }
@@ -356,8 +396,14 @@ namespace workphone::scene
         {
             std::lock_guard<std::mutex> lock( closingGraphsMutex );
             auto **link = &closingGraphs;
-            while( *link && *link != &closingGraph ) link = &( *link )->next;
-            if( *link ) *link = closingGraph.next;
+            while( *link && *link != &closingGraph )
+            {
+                link = &( *link )->next;
+            }
+            if( *link )
+            {
+                *link = closingGraph.next;
+            }
             closingGraph = {};
         }
 
@@ -366,7 +412,10 @@ namespace workphone::scene
             if( auto cleanup = closingCleanup )
             {
                 cleanup->reclaim();
-                if( closingCleanup == cleanup && !cleanup->hasRetirementWork() ) closingCleanup.reset();
+                if( closingCleanup == cleanup && !cleanup->hasRetirementWork() )
+                {
+                    closingCleanup.reset();
+                }
             }
         }
 
@@ -410,9 +459,9 @@ namespace workphone::scene
             if( producer )
             {
                 auto p = producer->stats();
-                snapshot.pendingCells =
-                    p.pending + p.active + p.ready + static_cast<u32>( ready.size() ) +
-                    ( hasPendingResult ? 1u : 0u );
+                snapshot.pendingCells = p.pending + p.active + p.ready +
+                                        static_cast<u32>( ready.size() ) +
+                                        ( hasPendingResult ? 1u : 0u );
             }
             // UI/render readers never inspect owner-thread containers, and this
             // short lock is never held while pausing render or running callbacks.
@@ -657,7 +706,8 @@ namespace workphone::scene
             {
                 return;
             }
-            Array<std::pair<Resident *, bool>> changes{ Allocator<std::pair<Resident *, bool>>( sourceBudget ) };
+            Array<std::pair<Resident *, bool>> changes{ Allocator<std::pair<Resident *, bool>>(
+                sourceBudget ) };
             for( const auto &target : representationTargets )
             {
                 const auto &detail = manifest.cells[index.byKey.at( target.first )];
@@ -764,8 +814,12 @@ namespace workphone::scene
             // Stage all inventories before detaching a live source lease or actor.
             retired.reserve( retired.size() + 1 );
             for( const auto &actor : resident.actors )
+            {
                 if( actor && actor->getLoadingState() != LoadingState::Unloaded )
+                {
                     collectObjects( actor, retirement );
+                }
+            }
             auto app = core::IApplicationManager::instancePtr();
             if( !retirementManager.lock() && app )
             {
@@ -791,12 +845,30 @@ namespace workphone::scene
 
         void reclaim()
         {
-            if( reclaiming ) return;
+            if( reclaiming )
+            {
+                return;
+            }
             reclaiming = true;
-            struct Reclaiming { bool &value; ~Reclaiming() { value = false; } } guard{ reclaiming };
+
+            struct Reclaiming
+            {
+                bool &value;
+
+                ~Reclaiming()
+                {
+                    value = false;
+                }
+            } guard{ reclaiming };
+
             retryClosingCleanup();
-            try { reclaimAdmitted(); }
-            catch( const std::bad_alloc & ) { /* Retain retirement work for retry. */ }
+            try
+            {
+                reclaimAdmitted();
+            }
+            catch( const std::bad_alloc & )
+            { /* Retain retirement work for retry. */
+            }
         }
 
         void reclaimAdmitted()
@@ -804,11 +876,17 @@ namespace workphone::scene
             for( auto it = residents.begin(); it != residents.end(); )
             {
                 // Only detached cleanup states retire their complete graph here.
-                if( producer ) break;
+                if( producer )
+                {
+                    break;
+                }
                 retire( it->second );
                 it = residents.erase( it );
             }
-            if( !producer && residents.empty() ) unmarkClosingGraph();
+            if( !producer && residents.empty() )
+            {
+                unmarkClosingGraph();
+            }
             for( auto it = retired.begin(); it != retired.end(); )
             {
                 if( std::any_of( it->objects.begin(), it->objects.end(), []( const auto &object ) {
@@ -819,7 +897,9 @@ namespace workphone::scene
                     continue;
                 }
                 for( const auto &mesh : it->meshes )
+                {
                     meshCandidates[mesh->getHandle()->getUUIDAsString()] = mesh.get();
+                }
                 // A denied insertion above retains this entire retirement record.
                 // Array's middle erase rebuilds storage. Compact with moves and
                 // pop the tail so acknowledged retirement needs no new buffer.
@@ -910,7 +990,17 @@ namespace workphone::scene
         }
         Impl::PublishOnExit publish{ s };
         s.opening = true;
-        struct Opening { bool &value; ~Opening() { value = false; } } opening{ s.opening };
+
+        struct Opening
+        {
+            bool &value;
+
+            ~Opening()
+            {
+                value = false;
+            }
+        } opening{ s.opening };
+
         try
         {
             s.retryClosingCleanup();
@@ -1193,7 +1283,10 @@ namespace workphone::scene
                     s.retire( it->second );
                     it = s.residents.erase( it );
                 }
-                else ++it;
+                else
+                {
+                    ++it;
+                }
             }
             // Authored static content can become gameplay content at runtime.
             // Promote its ownership before distance eviction can destroy it.
@@ -1457,8 +1550,14 @@ namespace workphone::scene
                 {
                     for( auto it = s.ready.begin(); it != s.ready.end(); )
                     {
-                        if( !desired.count( it->first ) ) it = s.ready.erase( it );
-                        else ++it;
+                        if( !desired.count( it->first ) )
+                        {
+                            it = s.ready.erase( it );
+                        }
+                        else
+                        {
+                            ++it;
+                        }
                     }
                     s.failed.clear();
                     s.failure.clear();
@@ -1492,7 +1591,10 @@ namespace workphone::scene
             }
             while( s.hasPendingResult || s.producer->take( s.pendingResult ) )
             {
-                if( !s.hasPendingResult ) ++s.stats.cellReads;
+                if( !s.hasPendingResult )
+                {
+                    ++s.stats.cellReads;
+                }
                 s.hasPendingResult = true;
                 auto &result = s.pendingResult;
                 if( !s.demand.count( result.key ) )
@@ -1678,7 +1780,10 @@ namespace workphone::scene
                         throw std::runtime_error( "Streaming world was closed during cell activation" );
                     }
                     resident.baseline = fingerprint( *s.snapshot( resident ) );
-                    if( sourceBudgetDenialCount() != admissionEpoch ) throw std::bad_alloc();
+                    if( sourceBudgetDenialCount() != admissionEpoch )
+                    {
+                        throw std::bad_alloc();
+                    }
                     ++s.stats.installedCells;
                     ++installed;
                 }
@@ -1691,8 +1796,13 @@ namespace workphone::scene
                         s.retire( resident );
                         s.residents.erase( residentSlot );
                     }
-                    catch( const std::bad_alloc & ) {}
-                    if( denied ) throw std::bad_alloc();
+                    catch( const std::bad_alloc & )
+                    {
+                    }
+                    if( denied )
+                    {
+                        throw std::bad_alloc();
+                    }
                     s.ready.erase( ready );
                     s.failed.insert( admittedFailure.extract( cell.key ) );
                     ++s.stats.failedCells;
@@ -1824,15 +1934,26 @@ namespace workphone::scene
                 bool deferred = false;
                 if( queue && queue->isRunning() )
                 {
-                    try { queue->addJob( registration ); }
-                    catch( const std::bad_alloc & ) {}
+                    try
+                    {
+                        queue->addJob( registration );
+                    }
+                    catch( const std::bad_alloc & )
+                    {
+                    }
                     deferred = registration->getState() != IJob::State::Ready;
                 }
                 if( !deferred )
                 {
                     const auto passes = ( cleanup->meshCandidates.size() + 31 ) / 32 + 1;
-                    for( size_t i = 0; i < passes; ++i ) cleanup->reclaim();
-                    if( cleanup->hasRetirementWork() ) s.closingCleanup = cleanup;
+                    for( size_t i = 0; i < passes; ++i )
+                    {
+                        cleanup->reclaim();
+                    }
+                    if( cleanup->hasRetirementWork() )
+                    {
+                        s.closingCleanup = cleanup;
+                    }
                 }
             }
         }

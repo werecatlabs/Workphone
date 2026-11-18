@@ -12,7 +12,7 @@ namespace workphone::openai_credentials
         {
             return detail::CredentialStore( detail::openAI.editorTarget, detail::openAI );
         }
-    }
+    }  // namespace
 
     bool saveEditorKey( const String &key, String &error )
     {
@@ -81,7 +81,10 @@ namespace workphone::openai_credentials
                     return editorStore().read( saved, failure );
                 },
                 std::getenv( "OPENAI_API_KEY" ), secret, diagnostic );
-            if( found ) key.assign( secret.data(), secret.size() );
+            if( found )
+            {
+                key.assign( secret.data(), secret.size() );
+            }
             error = diagnostic.c_str();
             return found;
         }
@@ -92,4 +95,4 @@ namespace workphone::openai_credentials
             return false;
         }
     }
-}
+}  // namespace workphone::openai_credentials

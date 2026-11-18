@@ -170,11 +170,9 @@ namespace workphone::render
             return std::isfinite( value ) && value >= low && value <= high;
         };
         const auto &rules = data.autoMaterial;
-        if( !inRange( rules.seaLevel, -1000000, 1000000 ) ||
-            !inRange( rules.beachHeight, 0, 1000000 ) ||
-            !inRange( rules.beachTransition, .001f, 1000000 ) ||
-            !inRange( rules.rockSlope, 0, 90 ) || !inRange( rules.rockTransition, .001f, 90 ) ||
-            !inRange( rules.soilHeight, 0, 1000000 ) ||
+        if( !inRange( rules.seaLevel, -1000000, 1000000 ) || !inRange( rules.beachHeight, 0, 1000000 ) ||
+            !inRange( rules.beachTransition, .001f, 1000000 ) || !inRange( rules.rockSlope, 0, 90 ) ||
+            !inRange( rules.rockTransition, .001f, 90 ) || !inRange( rules.soilHeight, 0, 1000000 ) ||
             !inRange( rules.soilTransition, .001f, 1000000 ) )
         {
             return fail( error, "Terrain auto material rules exceed their finite supported ranges" );
@@ -402,10 +400,9 @@ namespace workphone::render
         return true;
     }
 
-    static bool sampleTerrainHeightfield( const TerrainData &data,
-                                         const Transform3<real_Num> &transform,
-                                         const Vector3<real_Num> &worldPosition, f32 &worldHeight,
-                                         bool includeHoleCells )
+    static bool sampleTerrainHeightfield( const TerrainData &data, const Transform3<real_Num> &transform,
+                                          const Vector3<real_Num> &worldPosition, f32 &worldHeight,
+                                          bool includeHoleCells )
     {
         worldHeight = 0;
         String error;
@@ -453,17 +450,15 @@ namespace workphone::render
         return sampleTerrainHeightfield( data, transform, worldPosition, worldHeight, false );
     }
 
-    bool sampleTerrainHeightForAuthoring( const TerrainData &data,
-                                          const Transform3<real_Num> &transform,
+    bool sampleTerrainHeightForAuthoring( const TerrainData &data, const Transform3<real_Num> &transform,
                                           const Vector3<real_Num> &worldPosition, f32 &worldHeight )
     {
         return sampleTerrainHeightfield( data, transform, worldPosition, worldHeight, true );
     }
 
     static bool intersectTerrainHeightfield( const TerrainData &data,
-                                            const Transform3<real_Num> &transform,
-                                            const Ray3F &ray, Vector3<real_Num> &worldHit,
-                                            bool includeHoleCells )
+                                             const Transform3<real_Num> &transform, const Ray3F &ray,
+                                             Vector3<real_Num> &worldHit, bool includeHoleCells )
     {
         worldHit = Vector3<real_Num>::zero();
         String error;
@@ -612,8 +607,8 @@ namespace workphone::render
     }
 
     bool intersectTerrainHeightfieldForAuthoring( const TerrainData &data,
-                                                 const Transform3<real_Num> &transform,
-                                                 const Ray3F &ray, Vector3<real_Num> &worldHit )
+                                                  const Transform3<real_Num> &transform,
+                                                  const Ray3F &ray, Vector3<real_Num> &worldHit )
     {
         return intersectTerrainHeightfield( data, transform, ray, worldHit, true );
     }
@@ -709,21 +704,22 @@ namespace workphone::render
                     const auto left = std::max( 0, x - 1 ), right = std::min( width - 1, x + 1 );
                     const auto down = std::max( 0, z - 1 ), up = std::min( depth - 1, z + 1 );
                     const auto dx = ( double( data.heights[size_t( z ) * width + right] ) -
-                                      data.heights[size_t( z ) * width + left] ) * data.heightScale /
-                                    ( double( right - left ) * data.spacing.x );
+                                      data.heights[size_t( z ) * width + left] ) *
+                                    data.heightScale / ( double( right - left ) * data.spacing.x );
                     const auto dz = ( double( data.heights[size_t( up ) * width + x] ) -
-                                      data.heights[size_t( down ) * width + x] ) * data.heightScale /
-                                    ( double( up - down ) * data.spacing.y );
+                                      data.heights[size_t( down ) * width + x] ) *
+                                    data.heightScale / ( double( up - down ) * data.spacing.y );
                     const auto slope = std::atan( std::hypot( dx, dz ) ) * 180 / 3.141592653589793;
                     const auto index = size_t( z ) * width + x;
-                    const auto height = double( data.heights[index] ) * data.heightScale - rules.seaLevel;
+                    const auto height =
+                        double( data.heights[index] ) * data.heightScale - rules.seaLevel;
                     const auto rock = transition( slope, rules.rockSlope, rules.rockTransition );
                     const auto upland = transition( height, rules.beachHeight, rules.beachTransition );
                     const auto soil = transition( height, rules.soilHeight, rules.soilTransition );
-                    weights[index] = normalizeTerrainWeights(
-                        { f32( ( 1 - rock ) * ( 1 - upland ) ),
-                          f32( ( 1 - rock ) * upland * ( 1 - soil ) ), f32( rock ),
-                          f32( ( 1 - rock ) * upland * soil ) } );
+                    weights[index] =
+                        normalizeTerrainWeights( { f32( ( 1 - rock ) * ( 1 - upland ) ),
+                                                   f32( ( 1 - rock ) * upland * ( 1 - soil ) ),
+                                                   f32( rock ), f32( ( 1 - rock ) * upland * soil ) } );
                 }
             }
             data.layerWeights = std::move( weights );
@@ -1118,13 +1114,14 @@ namespace workphone::render
                         return fail( error, "Terrain auto material object or enabled flag is invalid" );
                     }
                     rules.enabled = cJSON_IsTrue( enabled );
-                    for( const auto &entry : { std::make_pair( "seaLevel", &rules.seaLevel ),
-                                               std::make_pair( "beachHeight", &rules.beachHeight ),
-                                               std::make_pair( "beachTransition", &rules.beachTransition ),
-                                               std::make_pair( "rockSlope", &rules.rockSlope ),
-                                               std::make_pair( "rockTransition", &rules.rockTransition ),
-                                               std::make_pair( "soilHeight", &rules.soilHeight ),
-                                               std::make_pair( "soilTransition", &rules.soilTransition ) } )
+                    for( const auto &entry :
+                         { std::make_pair( "seaLevel", &rules.seaLevel ),
+                           std::make_pair( "beachHeight", &rules.beachHeight ),
+                           std::make_pair( "beachTransition", &rules.beachTransition ),
+                           std::make_pair( "rockSlope", &rules.rockSlope ),
+                           std::make_pair( "rockTransition", &rules.rockTransition ),
+                           std::make_pair( "soilHeight", &rules.soilHeight ),
+                           std::make_pair( "soilTransition", &rules.soilTransition ) } )
                     {
                         const auto value = cJSON_GetObjectItemCaseSensitive( object, entry.first );
                         if( !number( value ) )

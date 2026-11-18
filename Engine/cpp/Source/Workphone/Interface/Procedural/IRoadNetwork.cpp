@@ -10,7 +10,7 @@ namespace workphone::procedural
     IRoadNetwork::~IRoadNetwork() = default;
 
     void IRoadNetwork::appendGenerated( const Array<SmartPtr<IRoad>> &,
-                                       const Array<SmartPtr<IRoadConnection>> & )
+                                        const Array<SmartPtr<IRoadConnection>> & )
     {
         throw std::logic_error( "This road network does not support atomic generated publication" );
     }

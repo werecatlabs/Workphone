@@ -456,14 +456,17 @@ namespace workphone
 
     void SceneLoadJob::setPreparedData( SmartPtr<Properties> data )
     {
-        if( !data || m_prepared ) throw std::invalid_argument("Scene preparation is already sealed or empty");
-        m_preparedData = std::move(data);
+        if( !data || m_prepared )
+        {
+            throw std::invalid_argument( "Scene preparation is already sealed or empty" );
+        }
+        m_preparedData = std::move( data );
         m_prepared = true;
     }
 
     void SceneLoadJob::setRuntimeAssets( std::shared_ptr<const resource::RuntimeAssetContext> context )
     {
-        m_runtimeAssets = std::move(context);
+        m_runtimeAssets = std::move( context );
     }
 
     String SceneLoadJob::getLoadDiagnostic() const

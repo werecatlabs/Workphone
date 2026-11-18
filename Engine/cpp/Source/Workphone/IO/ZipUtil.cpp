@@ -213,8 +213,8 @@ namespace workphone
     namespace
     {
         constexpr unsigned char archiveXor = 13;
-        constexpr auto maxPackedSize = static_cast<ZPOS64_T>(
-            ( std::numeric_limits<zzip_off_t>::max )() );
+        constexpr auto maxPackedSize =
+            static_cast<ZPOS64_T>( ( std::numeric_limits<zzip_off_t>::max )() );
         constexpr size_t maxPackedEntries = 65534;
         constexpr uLong utf8Names = 1 << 11;
 
@@ -223,8 +223,7 @@ namespace workphone
             return _wfopen( static_cast<const wchar_t *>( path ), L"wb" );
         }
 
-        uLong ZCALLBACK writeObfuscatedZip( voidpf, voidpf stream, const void *data,
-                                            uLong size )
+        uLong ZCALLBACK writeObfuscatedZip( voidpf, voidpf stream, const void *data, uLong size )
         {
             auto file = static_cast<FILE *>( stream );
             const auto position = _ftelli64( file );
@@ -238,8 +237,7 @@ namespace workphone
             uLong written = 0;
             while( written < size )
             {
-                const auto count = ( std::min )( static_cast<size_t>( size - written ),
-                                                buffer.size() );
+                const auto count = (std::min)( static_cast<size_t>( size - written ), buffer.size() );
                 for( size_t i = 0; i < count; ++i )
                 {
                     buffer[i] = source[written + i] ^ archiveXor;
@@ -273,10 +271,10 @@ namespace workphone
 
             constexpr auto zip32MaxSize = 0xffffffffULL;
             zip_fileinfo info{};
-            auto result = zipOpenNewFileInZip4_64(
-                archive, name.c_str(), &info, nullptr, 0, nullptr, 0, nullptr, Z_DEFLATED,
-                compression, 0, -MAX_WBITS, 8, Z_DEFAULT_STRATEGY, nullptr, 0, 0, utf8Names,
-                fileSize >= zip32MaxSize ? 1 : 0 );
+            auto result =
+                zipOpenNewFileInZip4_64( archive, name.c_str(), &info, nullptr, 0, nullptr, 0, nullptr,
+                                         Z_DEFLATED, compression, 0, -MAX_WBITS, 8, Z_DEFAULT_STRATEGY,
+                                         nullptr, 0, 0, utf8Names, fileSize >= zip32MaxSize ? 1 : 0 );
             if( result != ZIP_OK )
             {
                 return result;
@@ -297,7 +295,7 @@ namespace workphone
                 if( count > 0 )
                 {
                     result = zipWriteInFileInZip( archive, buffer.data(),
-                                                   static_cast<unsigned int>( count ) );
+                                                  static_cast<unsigned int>( count ) );
                 }
             }
 
@@ -310,8 +308,8 @@ namespace workphone
         }
 
         auto createZip( const StringW &destinationPath, const Array<StringW> &paths,
-                        const StringW &rootDir, bool relativePaths, int compression,
-                        bool obfuscate, const std::function<bool()> &shouldCancel = {} ) -> int
+                        const StringW &rootDir, bool relativePaths, int compression, bool obfuscate,
+                        const std::function<bool()> &shouldCancel = {} ) -> int
         {
             if( destinationPath.empty() || compression < -1 || compression > 9 ||
                 ( relativePaths && rootDir.empty() ) ||
@@ -326,6 +324,7 @@ namespace workphone
                 const auto suffix = L"." + StringUtil::generateUUID().to_wstring() + L".partial";
                 auto temporary = destination;
                 temporary += suffix.c_str();
+
                 struct RemoveTemporary
                 {
                     const std::filesystem::path &path;
@@ -363,26 +362,27 @@ namespace workphone
                 for( const auto &path : paths )
                 {
                     const auto source = std::filesystem::path( path.c_str() );
-                    const auto entry = relativePaths ? std::filesystem::absolute( source )
-                                                            .lexically_normal()
-                                                            .lexically_relative( root ) :
-                                                       source.filename();
+                    const auto entry =
+                        relativePaths
+                            ? std::filesystem::absolute( source ).lexically_normal().lexically_relative(
+                                  root )
+                            : source.filename();
                     if( entry.empty() || entry == L"." || entry.begin()->native() == L".." )
                     {
                         return ZIP_PARAMERROR;
                     }
 
                     const auto entryUtf8 = entry.generic_u8string();
-                    const auto name = std::string(
-                        reinterpret_cast<const char *>( entryUtf8.data() ), entryUtf8.size() );
+                    const auto name = std::string( reinterpret_cast<const char *>( entryUtf8.data() ),
+                                                   entryUtf8.size() );
                     if( obfuscate &&
                         ( name.size() >= WP_MAX_PATH || !packedNames.insert( name ).second ) )
                     {
                         return ZIP_PARAMERROR;
                     }
 
-                    const auto result =
-                        writeZipEntry( archive.get(), source, name, compression, obfuscate, shouldCancel );
+                    const auto result = writeZipEntry( archive.get(), source, name, compression,
+                                                       obfuscate, shouldCancel );
                     if( result != ZIP_OK )
                     {
                         return result;
@@ -400,9 +400,9 @@ namespace workphone
                 }
 
                 return MoveFileExW( temporary.c_str(), destination.c_str(),
-                                    MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH ) ?
-                           ZIP_OK :
-                           ZIP_ERRNO;
+                                    MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH )
+                           ? ZIP_OK
+                           : ZIP_ERRNO;
             }
             catch( const std::exception & )
             {
@@ -420,8 +420,7 @@ namespace workphone
     auto ZipUtil::createZipFileFromPath( const StringW &destinationPath, const Array<StringW> &paths,
                                          const StringW &rootDir, bool useRelativePaths ) -> int
     {
-        return createZip( destinationPath, paths, rootDir, useRelativePaths, m_compressionLevel,
-                          false );
+        return createZip( destinationPath, paths, rootDir, useRelativePaths, m_compressionLevel, false );
     }
 
     auto ZipUtil::createZipFileFromPath( const StringW &destinationPath, const Array<StringW> &paths,
@@ -451,8 +450,8 @@ namespace workphone
     }
 
     auto writeGamePackageArchive( const StringW &destination, const Array<StringW> &files,
-                                  const StringW &projectRoot,
-                                  const std::function<bool()> &shouldCancel ) -> int
+                                  const StringW &projectRoot, const std::function<bool()> &shouldCancel )
+        -> int
     {
         return createZip( destination, files, projectRoot, true, Z_DEFAULT_COMPRESSION, true,
                           shouldCancel );
@@ -629,7 +628,8 @@ namespace workphone
         return 1;
     }
 
-    int ZipUtil::createZipFileFromPath( const StringW &, const Array<StringW> &, const StringW &, bool, int )
+    int ZipUtil::createZipFileFromPath( const StringW &, const Array<StringW> &, const StringW &, bool,
+                                        int )
     {
         return 1;
     }
@@ -647,13 +647,13 @@ namespace workphone
     }
 
     int ZipUtil::createObfuscatedZipFileFromPath( const StringW &, const Array<StringW> &,
-                                                   const StringW &, bool )
+                                                  const StringW &, bool )
     {
         return 1;
     }
 
     int writeGamePackageArchive( const StringW &, const Array<StringW> &, const StringW &,
-                                  const std::function<bool()> & )
+                                 const std::function<bool()> & )
     {
         return 1;
     }

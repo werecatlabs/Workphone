@@ -38,21 +38,40 @@ namespace workphone::scene
 
     Script::~Script() = default;
 
-    void Script::configureRuntimeAssets(std::shared_ptr<const resource::RuntimeAssetContext> context)
+    void Script::configureRuntimeAssets( std::shared_ptr<const resource::RuntimeAssetContext> context )
     {
-        if(getScriptData())throw std::logic_error("An active Script instance cannot change its runtime closure");
-        if(context&&(!context->resolve||!context->scripts||!context->scripts->isLoaded()))
-            throw std::invalid_argument("A runtime Script requires a loaded private script manager");
-        if(!context&&m_runtimeAssetsMode)throw std::logic_error("Runtime Script cannot fall back to authoring mode");
-        m_runtimeAssets=std::move(context);m_runtimeAssetsMode=bool(m_runtimeAssets);
+        if( getScriptData() )
+        {
+            throw std::logic_error( "An active Script instance cannot change its runtime closure" );
+        }
+        if( context && ( !context->resolve || !context->scripts || !context->scripts->isLoaded() ) )
+        {
+            throw std::invalid_argument( "A runtime Script requires a loaded private script manager" );
+        }
+        if( !context && m_runtimeAssetsMode )
+        {
+            throw std::logic_error( "Runtime Script cannot fall back to authoring mode" );
+        }
+        m_runtimeAssets = std::move( context );
+        m_runtimeAssetsMode = bool( m_runtimeAssets );
     }
+
     SmartPtr<IScriptManager> Script::getRuntimeScriptManager() const
-    {return m_runtimeAssets?m_runtimeAssets->scripts:nullptr;}
-    bool Script::hasRuntimeAssets() const {return m_runtimeAssetsMode;}
+    {
+        return m_runtimeAssets ? m_runtimeAssets->scripts : nullptr;
+    }
+
+    bool Script::hasRuntimeAssets() const
+    {
+        return m_runtimeAssetsMode;
+    }
 
     void Script::load( SmartPtr<ISharedObject> data )
     {
-        if(m_runtimeAssetsMode&&!m_runtimeAssets)throw std::logic_error("Runtime Script requires a captured context before reload");
+        if( m_runtimeAssetsMode && !m_runtimeAssets )
+        {
+            throw std::logic_error( "Runtime Script requires a captured context before reload" );
+        }
         try
         {
             setLoadingState( LoadingState::Loading );
@@ -115,7 +134,10 @@ namespace workphone::scene
         {
             WP_LOG_EXCEPTION( e );
             setLoadingState( LoadingState::Error );
-            if(m_runtimeAssetsMode)throw;
+            if( m_runtimeAssetsMode )
+            {
+                throw;
+            }
         }
     }
 
@@ -143,7 +165,9 @@ namespace workphone::scene
 
             Component::unload( data );
 
-            setScriptData(nullptr);m_scriptClass=nullptr;m_runtimeAssets.reset();
+            setScriptData( nullptr );
+            m_scriptClass = nullptr;
+            m_runtimeAssets.reset();
 
             setLoadingState( LoadingState::Unloaded );
         }
@@ -174,13 +198,27 @@ namespace workphone::scene
         if( auto actor = getActor() )
         {
             if( auto scene = dynamic_pointer_cast<GameScene>( actor->getScene() );
-                scene && scene->isEditorPrefabScene() ) return;
+                scene && scene->isEditorPrefabScene() )
+            {
+                return;
+            }
             // Transaction validation also creates detached, tagged actor graphs.
             for( auto ancestor = actor; ancestor; ancestor = ancestor->getParent() )
-                if( ancestor->hasTag( "__WorkphonePrefabEditing" ) ) return;
+            {
+                if( ancestor->hasTag( "__WorkphonePrefabEditing" ) )
+                {
+                    return;
+                }
+            }
         }
-        if( !m_runtimeAssetsMode && !projectScriptExecutionEnabled() ) return;
-        if( !getScriptData() ) createScriptData();
+        if( !m_runtimeAssetsMode && !projectScriptExecutionEnabled() )
+        {
+            return;
+        }
+        if( !getScriptData() )
+        {
+            createScriptData();
+        }
         auto state = getState();
         if( state == State::Play || getUpdateInEditMode() )
         {
@@ -291,7 +329,11 @@ namespace workphone::scene
             properties->getPropertyValue( updateInPlayModeStr, updateInPlayMode );
             if( className != getClassName() || scriptAssetUuid != getScriptAssetUuid() )
             {
-                if(m_runtimeAssetsMode&&getScriptData())throw std::logic_error("An active runtime Script requires a new instance for retargeting");
+                if( m_runtimeAssetsMode && getScriptData() )
+                {
+                    throw std::logic_error(
+                        "An active runtime Script requires a new instance for retargeting" );
+                }
                 destroyScriptData();
                 setClassName( className );
                 setScriptAssetUuid( scriptAssetUuid );
@@ -355,7 +397,10 @@ namespace workphone::scene
         catch( std::exception &e )
         {
             WP_LOG_EXCEPTION( e );
-            if(m_runtimeAssetsMode)throw;
+            if( m_runtimeAssetsMode )
+            {
+                throw;
+            }
         }
     }
 
@@ -514,7 +559,10 @@ namespace workphone::scene
 
     void Script::createScriptData()
     {
-        if( !m_runtimeAssetsMode && !projectScriptExecutionEnabled() ) return;
+        if( !m_runtimeAssetsMode && !projectScriptExecutionEnabled() )
+        {
+            return;
+        }
         auto scriptData = getScriptData();
         if( !scriptData )
         {
@@ -533,12 +581,21 @@ namespace workphone::scene
                     if( !m_scriptAssetUuid.empty() &&
                         !scriptManager->loadScriptAsset( m_scriptAssetUuid ) )
                     {
-                        if(m_runtimeAssets)throw std::runtime_error(("Pinned Script asset could not be installed: "+m_scriptAssetUuid).c_str());
+                        if( m_runtimeAssets )
+                        {
+                            throw std::runtime_error(
+                                ( "Pinned Script asset could not be installed: " + m_scriptAssetUuid )
+                                    .c_str() );
+                        }
                         WP_LOG_ERROR( "Cannot load Lua script asset: " + m_scriptAssetUuid );
                         return;
                     }
                     m_scriptClass = scriptManager->createObject( className, this );
-                    if(m_runtimeAssets&&!getScriptData())throw std::runtime_error(("Runtime Script construction failed: "+className).c_str());
+                    if( m_runtimeAssets && !getScriptData() )
+                    {
+                        throw std::runtime_error(
+                            ( "Runtime Script construction failed: " + className ).c_str() );
+                    }
                 }
             }
         }

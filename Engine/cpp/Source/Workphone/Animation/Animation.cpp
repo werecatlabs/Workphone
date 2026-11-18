@@ -651,11 +651,25 @@ namespace workphone
                         }
                         if( !StringUtil::isNullOrEmpty( boneName ) )
                         {
-                            auto target=skeleton->getBone(boneName);auto influence=weight;
-                            if(blendMask){if(!target||target->getBoneHandle()>=blendMask->size())continue;
-                                const auto masked=(*blendMask)[target->getBoneHandle()];
-                                if(!std::isfinite(masked)||masked<=0)continue;influence*=std::min(masked,1.0f);}
-                            if(influence>0)actorTrack->applyToBone(target,timeIndex,influence,scale);
+                            auto target = skeleton->getBone( boneName );
+                            auto influence = weight;
+                            if( blendMask )
+                            {
+                                if( !target || target->getBoneHandle() >= blendMask->size() )
+                                {
+                                    continue;
+                                }
+                                const auto masked = ( *blendMask )[target->getBoneHandle()];
+                                if( !std::isfinite( masked ) || masked <= 0 )
+                                {
+                                    continue;
+                                }
+                                influence *= std::min( masked, 1.0f );
+                            }
+                            if( influence > 0 )
+                            {
+                                actorTrack->applyToBone( target, timeIndex, influence, scale );
+                            }
                         }
                         // A missing binding must not animate the original imported skeleton.
                         continue;

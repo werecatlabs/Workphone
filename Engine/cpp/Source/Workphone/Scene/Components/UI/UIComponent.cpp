@@ -32,7 +32,7 @@
 #include <Workphone/System/RuntimeAssetContext.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
 #if WP_TYPED_ANIMATION_RESOURCE
-#include <Workphone/System/UIResource.hpp>
+#    include <Workphone/System/UIResource.hpp>
 #endif
 #include <thread>
 #include <stdexcept>
@@ -43,11 +43,20 @@ namespace workphone::scene
     {
         SmartPtr<ITask> runtimeUIRenderTask()
         {
-            auto app=core::IApplicationManager::instancePtr();
-            if(app)if(auto tasks=app->getTaskManager())
-                if(auto task=tasks->getTask(TaskId::Render);task&&task->isLoaded())return task;
+            auto app = core::IApplicationManager::instancePtr();
+            if( app )
+            {
+                if( auto tasks = app->getTaskManager() )
+                {
+                    if( auto task = tasks->getTask( TaskId::Render ); task && task->isLoaded() )
+                    {
+                        return task;
+                    }
+                }
+            }
             return nullptr;
         }
+
         // Reuse EventJob's shutdown cleanup while targeting just this weak scene listener.
         class UIEventJob final : public EventJob
         {
@@ -103,14 +112,21 @@ namespace workphone::scene
             StreamBudget budget;
             SmartPtr<ui::IUIManager> manager;
             SmartPtr<ui::IUIElement> element;
-            ~Host(){
-                auto app=core::IApplicationManager::instancePtr();
-                TaskLock pause(runtimeUIRenderTask());
-                auto graphics=app?app->getGraphicsSystem():nullptr;ScopedLock lock(graphics);
-                if(manager&&element)manager->removeElement(element);
+
+            ~Host()
+            {
+                auto app = core::IApplicationManager::instancePtr();
+                TaskLock pause( runtimeUIRenderTask() );
+                auto graphics = app ? app->getGraphicsSystem() : nullptr;
+                ScopedLock lock( graphics );
+                if( manager && element )
+                {
+                    manager->removeElement( element );
+                }
             }
         };
-        std::thread::id owner=std::this_thread::get_id();
+
+        std::thread::id owner = std::this_thread::get_id();
         std::shared_ptr<Host> host;
         std::shared_ptr<const resource::RuntimeResource> resource;
 #if WP_TYPED_ANIMATION_RESOURCE
@@ -135,33 +151,61 @@ namespace workphone::scene
 
     UIComponent::~UIComponent()
     {
-        if(m_runtimeUI){
-            auto app=core::IApplicationManager::instancePtr();TaskLock pause(runtimeUIRenderTask());
-            auto graphics=app?app->getGraphicsSystem():nullptr;ScopedLock lock(graphics);
-            if(auto element=getElement())element->setOwner(nullptr);setElement(nullptr);m_runtimeUI.reset();
+        if( m_runtimeUI )
+        {
+            auto app = core::IApplicationManager::instancePtr();
+            TaskLock pause( runtimeUIRenderTask() );
+            auto graphics = app ? app->getGraphicsSystem() : nullptr;
+            ScopedLock lock( graphics );
+            if( auto element = getElement() )
+            {
+                element->setOwner( nullptr );
+            }
+            setElement( nullptr );
+            m_runtimeUI.reset();
         }
     }
 
-    void UIComponent::configureRuntimeAssets(std::shared_ptr<const resource::RuntimeAssetContext> context)
+    void UIComponent::configureRuntimeAssets(
+        std::shared_ptr<const resource::RuntimeAssetContext> context )
     {
-        if(!context||!context->resolve||getTypeInfo()!=UIComponent::typeInfo()||isLoaded()||
-            getLoadingState()==LoadingState::Loading||getLoadingState()==LoadingState::Unloading||
-            (m_runtimeAssets&&m_runtimeAssets!=context)||getElement())
-            throw std::logic_error("Cooked UI requires an unloaded base UIComponent and captured resolver");
-        auto staged=std::make_shared<RuntimeUIState>();
-        m_runtimeUI=std::move(staged);m_runtimeAssets=std::move(context);m_runtimeAssetsMode=true;
+        if( !context || !context->resolve || getTypeInfo() != UIComponent::typeInfo() || isLoaded() ||
+            getLoadingState() == LoadingState::Loading || getLoadingState() == LoadingState::Unloading ||
+            ( m_runtimeAssets && m_runtimeAssets != context ) || getElement() )
+        {
+            throw std::logic_error(
+                "Cooked UI requires an unloaded base UIComponent and captured resolver" );
+        }
+        auto staged = std::make_shared<RuntimeUIState>();
+        m_runtimeUI = std::move( staged );
+        m_runtimeAssets = std::move( context );
+        m_runtimeAssetsMode = true;
     }
-    String UIComponent::getRuntimeDiagnostic() const {return m_runtimeDiagnostic;}
+
+    String UIComponent::getRuntimeDiagnostic() const
+    {
+        return m_runtimeDiagnostic;
+    }
 
     void UIComponent::load( SmartPtr<ISharedObject> data )
     {
-        if(m_runtimeAssetsMode){
-            if(!m_runtimeAssets||!m_runtimeUI||m_runtimeUI->owner!=std::this_thread::get_id())throw std::logic_error("Runtime UI requires its captured context and UI owner before load");
-            setLoadingState(LoadingState::Loading);Component::load(data);
+        if( m_runtimeAssetsMode )
+        {
+            if( !m_runtimeAssets || !m_runtimeUI || m_runtimeUI->owner != std::this_thread::get_id() )
+            {
+                throw std::logic_error(
+                    "Runtime UI requires its captured context and UI owner before load" );
+            }
+            setLoadingState( LoadingState::Loading );
+            Component::load( data );
 #if WP_TYPED_ANIMATION_RESOURCE
-            if(!m_runtimeUI->instance)throw std::runtime_error("Runtime UIComponent requires uiAssetUuid");
+            if( !m_runtimeUI->instance )
+            {
+                throw std::runtime_error( "Runtime UIComponent requires uiAssetUuid" );
+            }
 #endif
-            setLoadingState(LoadingState::Loaded);return;
+            setLoadingState( LoadingState::Loaded );
+            return;
         }
         Component::load( data );
         createUI();
@@ -169,13 +213,27 @@ namespace workphone::scene
 
     void UIComponent::unload( SmartPtr<ISharedObject> data )
     {
-        if(m_runtimeAssetsMode){
-            if(m_runtimeUI&&m_runtimeUI->owner!=std::this_thread::get_id())throw std::logic_error("Runtime UI retirement requires its UI owner");
-            auto app=core::IApplicationManager::instancePtr();TaskLock pause(runtimeUIRenderTask());
-            auto graphics=app?app->getGraphicsSystem():nullptr;ScopedLock lock(graphics);
-            if(auto element=getElement())element->setOwner(nullptr);
-            setElement(nullptr);m_runtimeUI.reset();m_runtimeAssets.reset();setCanvas(nullptr);
-            Component::unload(data);setLoadingState(LoadingState::Unloaded);return;
+        if( m_runtimeAssetsMode )
+        {
+            if( m_runtimeUI && m_runtimeUI->owner != std::this_thread::get_id() )
+            {
+                throw std::logic_error( "Runtime UI retirement requires its UI owner" );
+            }
+            auto app = core::IApplicationManager::instancePtr();
+            TaskLock pause( runtimeUIRenderTask() );
+            auto graphics = app ? app->getGraphicsSystem() : nullptr;
+            ScopedLock lock( graphics );
+            if( auto element = getElement() )
+            {
+                element->setOwner( nullptr );
+            }
+            setElement( nullptr );
+            m_runtimeUI.reset();
+            m_runtimeAssets.reset();
+            setCanvas( nullptr );
+            Component::unload( data );
+            setLoadingState( LoadingState::Unloaded );
+            return;
         }
         try
         {
@@ -279,13 +337,20 @@ namespace workphone::scene
 
     SmartPtr<Properties> UIComponent::getProperties() const
     {
-        if(m_runtimeAssetsMode){auto properties=Component::getProperties();properties->setProperty("uiAssetUuid",m_uiAssetUuid,Properties::resourceStr);properties->setProperty("uiLocale",m_uiLocale);properties->setProperty("runtimeUIDiagnostic",m_runtimeDiagnostic,true);return properties;}
+        if( m_runtimeAssetsMode )
+        {
+            auto properties = Component::getProperties();
+            properties->setProperty( "uiAssetUuid", m_uiAssetUuid, Properties::resourceStr );
+            properties->setProperty( "uiLocale", m_uiLocale );
+            properties->setProperty( "runtimeUIDiagnostic", m_runtimeDiagnostic, true );
+            return properties;
+        }
         ScopedLock lock( this, false );
 
         if( auto properties = Component::getProperties() )
         {
-            properties->setProperty("uiAssetUuid",m_uiAssetUuid,Properties::resourceStr);
-            properties->setProperty("uiLocale",m_uiLocale);
+            properties->setProperty( "uiAssetUuid", m_uiAssetUuid, Properties::resourceStr );
+            properties->setProperty( "uiLocale", m_uiLocale );
             auto cascadeInput = getCascadeInput();
             auto handleInputEvents = getHandleInputEvents();
             auto showLabel = getShowLabel();
@@ -322,52 +387,144 @@ namespace workphone::scene
 
     void UIComponent::setProperties( SmartPtr<Properties> properties )
     {
-        if(m_runtimeAssetsMode){
-            if(!properties||!m_runtimeAssets||!m_runtimeUI||m_runtimeUI->owner!=std::this_thread::get_id())throw std::logic_error("Runtime UI properties require its captured UI owner/context");
-#if WP_TYPED_ANIMATION_RESOURCE
-            String uuid=m_uiAssetUuid,locale=m_uiLocale,error;properties->getPropertyValue("uiAssetUuid",uuid);properties->getPropertyValue("uiLocale",locale);
-            if(locale.size()>35||locale.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-")!=String::npos)throw std::runtime_error("Invalid captured UI locale tag");
-            auto resource=m_runtimeAssets->resolve(uuid,error);
-            if(!resource)throw std::runtime_error(error.empty()?"UIComponent requires a captured uiAssetUuid":error.c_str());
-            if(resource!=m_runtimeUI->resource||locale!=m_uiLocale){
-                auto app=core::IApplicationManager::instancePtr();auto graphics=app?app->getGraphicsSystem():nullptr;
-                SmartPtr<ITask> renderTask;if(app)if(auto tasks=app->getTaskManager())if(auto task=tasks->getTask(TaskId::Render);task&&task->isLoaded())renderTask=task;
-                TaskLock renderPause(renderTask);
-                ScopedLock graphicsLock(graphics);
-                auto manager=app?app->getRenderUI():SmartPtr<ui::IUIManager>();
-                if(!manager||!manager->isLoaded())throw std::runtime_error("Runtime native UI manager is unavailable");
-                auto next=std::make_shared<RuntimeUIState>();next->host=m_runtimeUI->host;
-                if(!next->host){
-                    next->host=std::make_shared<RuntimeUIState::Host>();next->host->manager=manager;
-                    next->host->budget=WorldStreamingScheduler::shared()->reserve(StreamMemoryClass::SourceCpu,32768,error);
-                    if(!next->host->budget)throw std::runtime_error("Runtime UI host residency budget exhausted");
-                    next->host->element=manager->addElementByType<ui::IUILayoutContainer>();
-                    if(!next->host->element)throw std::runtime_error("Native UI backend does not support the cooked document host");
-                    next->host->element->setVisible(false,false);
-                }else if(next->host->manager!=manager)throw std::logic_error("Runtime UI cannot retarget its captured native manager");
-                ui::UIResourceInstallOptions options;options.mount=m_runtimeAssets->mount;options.target=m_runtimeAssets->target;options.packagedBuild=m_runtimeAssets->packagedBuild;options.locale=locale;
-                next->instance=ui::stageUIResource(manager,resource,error,options);
-                if(!next->instance){m_runtimeDiagnostic=error;throw std::runtime_error(error.c_str());}
-                struct RestoreElement {UIComponent *component;SmartPtr<ui::IUIElement> host;bool attached=false,committed=false;
-                    ~RestoreElement(){if(attached&&!committed)try{host->setOwner(nullptr);component->setElement(nullptr);}catch(...){}}
-                } cleanup{this,next->host->element};
-                if(!getElement()){cleanup.attached=true;setElement(next->host->element);}
-                if(!next->instance->publish(next->host->element,error,m_runtimeUI->instance.get())){
-                    m_runtimeDiagnostic=error;throw std::runtime_error(error.c_str());
-                }
-                next->host->element->setVisible(true,false);
-                next->resource=std::move(resource);m_uiAssetUuid=std::move(uuid);m_uiLocale=std::move(locale);m_runtimeUI=std::move(next);m_runtimeDiagnostic.clear();
-                cleanup.committed=true;
+        if( m_runtimeAssetsMode )
+        {
+            if( !properties || !m_runtimeAssets || !m_runtimeUI ||
+                m_runtimeUI->owner != std::this_thread::get_id() )
+            {
+                throw std::logic_error( "Runtime UI properties require its captured UI owner/context" );
             }
-            Component::setProperties(properties);updateVisibility();return;
+#if WP_TYPED_ANIMATION_RESOURCE
+            String uuid = m_uiAssetUuid, locale = m_uiLocale, error;
+            properties->getPropertyValue( "uiAssetUuid", uuid );
+            properties->getPropertyValue( "uiLocale", locale );
+            if( locale.size() > 35 ||
+                locale.find_first_not_of(
+                    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-" ) != String::npos )
+            {
+                throw std::runtime_error( "Invalid captured UI locale tag" );
+            }
+            auto resource = m_runtimeAssets->resolve( uuid, error );
+            if( !resource )
+            {
+                throw std::runtime_error( error.empty() ? "UIComponent requires a captured uiAssetUuid"
+                                                        : error.c_str() );
+            }
+            if( resource != m_runtimeUI->resource || locale != m_uiLocale )
+            {
+                auto app = core::IApplicationManager::instancePtr();
+                auto graphics = app ? app->getGraphicsSystem() : nullptr;
+                SmartPtr<ITask> renderTask;
+                if( app )
+                {
+                    if( auto tasks = app->getTaskManager() )
+                    {
+                        if( auto task = tasks->getTask( TaskId::Render ); task && task->isLoaded() )
+                        {
+                            renderTask = task;
+                        }
+                    }
+                }
+                TaskLock renderPause( renderTask );
+                ScopedLock graphicsLock( graphics );
+                auto manager = app ? app->getRenderUI() : SmartPtr<ui::IUIManager>();
+                if( !manager || !manager->isLoaded() )
+                {
+                    throw std::runtime_error( "Runtime native UI manager is unavailable" );
+                }
+                auto next = std::make_shared<RuntimeUIState>();
+                next->host = m_runtimeUI->host;
+                if( !next->host )
+                {
+                    next->host = std::make_shared<RuntimeUIState::Host>();
+                    next->host->manager = manager;
+                    next->host->budget = WorldStreamingScheduler::shared()->reserve(
+                        StreamMemoryClass::SourceCpu, 32768, error );
+                    if( !next->host->budget )
+                    {
+                        throw std::runtime_error( "Runtime UI host residency budget exhausted" );
+                    }
+                    next->host->element = manager->addElementByType<ui::IUILayoutContainer>();
+                    if( !next->host->element )
+                    {
+                        throw std::runtime_error(
+                            "Native UI backend does not support the cooked document host" );
+                    }
+                    next->host->element->setVisible( false, false );
+                }
+                else if( next->host->manager != manager )
+                {
+                    throw std::logic_error( "Runtime UI cannot retarget its captured native manager" );
+                }
+                ui::UIResourceInstallOptions options;
+                options.mount = m_runtimeAssets->mount;
+                options.target = m_runtimeAssets->target;
+                options.packagedBuild = m_runtimeAssets->packagedBuild;
+                options.locale = locale;
+                next->instance = ui::stageUIResource( manager, resource, error, options );
+                if( !next->instance )
+                {
+                    m_runtimeDiagnostic = error;
+                    throw std::runtime_error( error.c_str() );
+                }
+
+                struct RestoreElement
+                {
+                    UIComponent *component;
+                    SmartPtr<ui::IUIElement> host;
+                    bool attached = false, committed = false;
+
+                    ~RestoreElement()
+                    {
+                        if( attached && !committed )
+                        {
+                            try
+                            {
+                                host->setOwner( nullptr );
+                                component->setElement( nullptr );
+                            }
+                            catch( ... )
+                            {
+                            }
+                        }
+                    }
+                } cleanup{ this, next->host->element };
+
+                if( !getElement() )
+                {
+                    cleanup.attached = true;
+                    setElement( next->host->element );
+                }
+                if( !next->instance->publish( next->host->element, error, m_runtimeUI->instance.get() ) )
+                {
+                    m_runtimeDiagnostic = error;
+                    throw std::runtime_error( error.c_str() );
+                }
+                next->host->element->setVisible( true, false );
+                next->resource = std::move( resource );
+                m_uiAssetUuid = std::move( uuid );
+                m_uiLocale = std::move( locale );
+                m_runtimeUI = std::move( next );
+                m_runtimeDiagnostic.clear();
+                cleanup.committed = true;
+            }
+            Component::setProperties( properties );
+            updateVisibility();
+            return;
 #else
-            throw std::runtime_error("Cooked UI resources are unavailable in this build");
+            throw std::runtime_error( "Cooked UI resources are unavailable in this build" );
 #endif
         }
         ScopedLock lock( this, true );
 
-        if(properties)properties->getPropertyValue("uiAssetUuid",m_uiAssetUuid);
-        if(properties)properties->getPropertyValue("uiLocale",m_uiLocale);
+        if( properties )
+        {
+            properties->getPropertyValue( "uiAssetUuid", m_uiAssetUuid );
+        }
+        if( properties )
+        {
+            properties->getPropertyValue( "uiLocale", m_uiLocale );
+        }
         Component::setProperties( properties );
 
         auto actor = getActorPtr();
@@ -487,9 +644,15 @@ namespace workphone::scene
 
     void UIComponent::updateFlags( u32 flags, u32 oldFlags )
     {
-        if(m_runtimeAssetsMode){
-            Component::updateFlags(flags,oldFlags);
-            if((flags^oldFlags)&(IGameActor::ActorFlagEnabled|IGameActor::ActorFlagEnabledInScene|IGameActor::ActorFlagInScene))updateVisibility();
+        if( m_runtimeAssetsMode )
+        {
+            Component::updateFlags( flags, oldFlags );
+            if( ( flags ^ oldFlags ) &
+                ( IGameActor::ActorFlagEnabled | IGameActor::ActorFlagEnabledInScene |
+                  IGameActor::ActorFlagInScene ) )
+            {
+                updateVisibility();
+            }
             return;
         }
         if( auto actor = getActor() )
@@ -628,7 +791,10 @@ namespace workphone::scene
                                         SmartPtr<ISharedObject> sender, SmartPtr<ISharedObject> object,
                                         SmartPtr<IEvent> event )
     {
-        if(m_runtimeAssetsMode)return Component::handleEvent(eventType,eventValue,arguments,sender,object,event);
+        if( m_runtimeAssetsMode )
+        {
+            return Component::handleEvent( eventType, eventValue, arguments, sender, object, event );
+        }
         ScopedLock lock( this, true );
 
         if( eventValue == IEvent::loadingStateChanged )
@@ -1003,7 +1169,12 @@ namespace workphone::scene
 
     FSMReturnType UIComponent::handleComponentEvent( u32 state, FSMEvent eventType )
     {
-        if(m_runtimeAssetsMode){Component::handleComponentEvent(state,eventType);updateVisibility();return FSMReturnType::Ok;}
+        if( m_runtimeAssetsMode )
+        {
+            Component::handleComponentEvent( state, eventType );
+            updateVisibility();
+            return FSMReturnType::Ok;
+        }
         ScopedLock lock( this, true );
 
         Component::handleComponentEvent( state, eventType );
@@ -1161,7 +1332,10 @@ namespace workphone::scene
             {
                 for( auto child : actor->getChildren() )
                 {
-                    if( child ) child->updateOrder();
+                    if( child )
+                    {
+                        child->updateOrder();
+                    }
                 }
             }
         }
@@ -1228,15 +1402,29 @@ namespace workphone::scene
 
     void UIComponent::updateElementVisibility( bool elementActive )
     {
-        if(m_runtimeAssetsMode){
+        if( m_runtimeAssetsMode )
+        {
 #if WP_TYPED_ANIMATION_RESOURCE
-            if(m_runtimeUI&&m_runtimeUI->instance){
-                if(m_runtimeUI->owner!=std::this_thread::get_id())throw std::logic_error("Runtime UI activation requires its UI owner");
-                auto app=core::IApplicationManager::instancePtr();TaskLock pause(runtimeUIRenderTask());
-                auto graphics=app?app->getGraphicsSystem():nullptr;ScopedLock lock(graphics);
-                auto actor=getActor();String error;
-                const bool sceneEnabled=detail::runtimeActorPublished(actor)&&actor->isEnabledInScene();
-                if(!m_runtimeUI->instance->setActive(isVisible()&&sceneEnabled,isEnabled()&&sceneEnabled,error))throw std::runtime_error(error.c_str());}
+            if( m_runtimeUI && m_runtimeUI->instance )
+            {
+                if( m_runtimeUI->owner != std::this_thread::get_id() )
+                {
+                    throw std::logic_error( "Runtime UI activation requires its UI owner" );
+                }
+                auto app = core::IApplicationManager::instancePtr();
+                TaskLock pause( runtimeUIRenderTask() );
+                auto graphics = app ? app->getGraphicsSystem() : nullptr;
+                ScopedLock lock( graphics );
+                auto actor = getActor();
+                String error;
+                const bool sceneEnabled =
+                    detail::runtimeActorPublished( actor ) && actor->isEnabledInScene();
+                if( !m_runtimeUI->instance->setActive( isVisible() && sceneEnabled,
+                                                       isEnabled() && sceneEnabled, error ) )
+                {
+                    throw std::runtime_error( error.c_str() );
+                }
+            }
 #endif
             return;
         }
@@ -1575,7 +1763,10 @@ namespace workphone::scene
     void UIComponent::setVisible( bool visible )
     {
         m_visible = visible;
-        if(m_runtimeAssetsMode)updateVisibility();
+        if( m_runtimeAssetsMode )
+        {
+            updateVisibility();
+        }
     }
 
     bool UIComponent::isVisible() const

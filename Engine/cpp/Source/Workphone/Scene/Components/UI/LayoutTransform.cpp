@@ -23,15 +23,27 @@ namespace workphone::scene
 {
     namespace
     {
-        template<class Callback>
+        template <class Callback>
         void visitChildLayoutTransforms( IGameActor *actor, const Callback &callback )
         {
             for( auto child : actor->getChildren() )
             {
-                if( !child ) continue;
+                if( !child )
+                {
+                    continue;
+                }
                 const auto transforms = child->getComponentsByType<LayoutTransform>();
-                if( transforms.empty() ) visitChildLayoutTransforms( child.get(), callback );
-                else for( auto transform : transforms ) callback( transform.get() );
+                if( transforms.empty() )
+                {
+                    visitChildLayoutTransforms( child.get(), callback );
+                }
+                else
+                {
+                    for( auto transform : transforms )
+                    {
+                        callback( transform.get() );
+                    }
+                }
             }
         }
 
@@ -126,7 +138,8 @@ namespace workphone::scene
 
             if( actor )
             {
-                visitChildLayoutTransforms( actor, []( LayoutTransform *child ) { child->updateTransform(); } );
+                visitChildLayoutTransforms( actor,
+                                            []( LayoutTransform *child ) { child->updateTransform(); } );
             }
 
             if( auto componentSystem = getComponentSystemPtr() )
@@ -134,8 +147,13 @@ namespace workphone::scene
                 // Descendants were visited above. Avoid re-enqueuing every
                 // descendant again through LayoutTransformSystem's cascade.
                 if( auto layoutSystem = dynamic_cast<LayoutTransformSystem *>( componentSystem ) )
+                {
                     layoutSystem->ComponentSystem::addDirtyComponent( this );
-                else componentSystem->addDirtyComponent( this );
+                }
+                else
+                {
+                    componentSystem->addDirtyComponent( this );
+                }
             }
         }
         break;
@@ -394,14 +412,18 @@ namespace workphone::scene
 
             if( auto actor = getActor() )
             {
-                visitChildLayoutTransforms( actor.get(), []( LayoutTransform *child ) { child->updateAnchorFromAlignment(); } );
+                visitChildLayoutTransforms(
+                    actor.get(), []( LayoutTransform *child ) { child->updateAnchorFromAlignment(); } );
             }
         }
     }
 
     void LayoutTransform::updateOrder()
     {
-        if( ui_hierarchy::actorOwnsOrderWalk() ) return;
+        if( ui_hierarchy::actorOwnsOrderWalk() )
+        {
+            return;
+        }
         if( auto actor = getActor() )
         {
             actor->updateOrder();
@@ -421,7 +443,9 @@ namespace workphone::scene
         {
             if( auto actor = getActor() )
             {
-                visitChildLayoutTransforms( actor.get(), [zOrder]( LayoutTransform *child ) { child->setZOrder( zOrder + 1, true ); } );
+                visitChildLayoutTransforms( actor.get(), [zOrder]( LayoutTransform *child ) {
+                    child->setZOrder( zOrder + 1, true );
+                } );
             }
         }
     }
@@ -435,7 +459,9 @@ namespace workphone::scene
         {
             if( auto actor = getActor() )
             {
-                visitChildLayoutTransforms( actor.get(), [autoCalculateOrder]( LayoutTransform *child ) { child->setAutoCalculateOrder( autoCalculateOrder, true ); } );
+                visitChildLayoutTransforms( actor.get(), [autoCalculateOrder]( LayoutTransform *child ) {
+                    child->setAutoCalculateOrder( autoCalculateOrder, true );
+                } );
             }
         }
     }

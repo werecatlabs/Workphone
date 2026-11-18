@@ -226,7 +226,7 @@ namespace workphone
         {
             auto taskCount = 0;
             const auto numThreads = std::min( threadPool->getNumThreads(),
-                                               projectWorkerCount( threadPool->getNumThreads() ) );
+                                              projectWorkerCount( threadPool->getNumThreads() ) );
             const auto numTasks = static_cast<u32>( TaskId::Count );
 
             for( u32 i = 0; i < numTasks; ++i )
@@ -302,22 +302,38 @@ namespace workphone
             calculateTaskAffinity();
 
             auto threadId = Thread::getCurrentThreadId();
-            const auto workerCount = threadPool ? std::min( threadPool->getNumThreads(),
-                projectWorkerCount( threadPool->getNumThreads() ) ) : 0;
+            const auto workerCount = threadPool
+                                         ? std::min( threadPool->getNumThreads(),
+                                                     projectWorkerCount( threadPool->getNumThreads() ) )
+                                         : 0;
             if( threadId != Thread::ThreadId::Primary &&
                 ( !projectRunsBackgroundTasks() || static_cast<u32>( threadId ) >= workerCount ) )
+            {
                 return;
+            }
             auto settings = applicationManager->getPlayerSettings();
-            const bool primaryRender = settings && !settings->getPropertyAsBool( "tasks.renderThread", true );
+            const bool primaryRender =
+                settings && !settings->getPropertyAsBool( "tasks.renderThread", true );
             if( threadId == Thread::ThreadId::Primary && settings )
             {
                 if( settings->hasProperty( "graphics.frameRateLimit" ) )
+                {
                     for( auto id : { TaskId::Primary, TaskId::Application, TaskId::Render } )
+                    {
                         if( auto task = getTask( id ) )
-                            task->setTargetFPS( settings->getPropertyAsInt( "graphics.frameRateLimit", 60 ) );
+                        {
+                            task->setTargetFPS(
+                                settings->getPropertyAsInt( "graphics.frameRateLimit", 60 ) );
+                        }
+                    }
+                }
                 if( settings->hasProperty( "physics.simulationRate" ) )
+                {
                     if( auto task = getTask( TaskId::Physics ) )
+                    {
                         task->setTargetFPS( settings->getPropertyAsInt( "physics.simulationRate", 60 ) );
+                    }
+                }
             }
 
             switch( threadId )
@@ -443,7 +459,9 @@ namespace workphone
                                     continue;
                                 }
                                 if( primaryRender && i == static_cast<size_t>( TaskId::Render ) )
+                                {
                                     continue;
+                                }
 
                                 if( i >= tasks.size() )
                                 {

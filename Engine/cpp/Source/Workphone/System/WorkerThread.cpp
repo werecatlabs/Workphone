@@ -36,20 +36,31 @@ namespace workphone
             auto settings = app ? app->getPlayerSettings() : nullptr;
             if( settings && settings->getPropertyAsInt( "tasks.jobSystem", 0 ) == 1 )
             {
-                auto work = CreateThreadpoolWork( []( PTP_CALLBACK_INSTANCE callback, void *owner, PTP_WORK ) {
-                    CallbackMayRunLong( callback );
-                    const int priority = GetThreadPriority( GetCurrentThread() );
-                    GROUP_AFFINITY affinity = {};
-                    GetThreadGroupAffinity( GetCurrentThread(), &affinity );
-                    static_cast<WorkerThread *>( owner )->run();
-                    SetThreadPriority( GetCurrentThread(), priority );
-                    if( affinity.Mask ) SetThreadGroupAffinity( GetCurrentThread(), &affinity, nullptr );
-                    using SelectSets = BOOL ( WINAPI * )( HANDLE, const ULONG *, ULONG );
-                    auto selectSets = reinterpret_cast<SelectSets>( GetProcAddress(
-                        GetModuleHandleW( L"kernel32.dll" ), "SetThreadSelectedCpuSets" ) );
-                    if( selectSets ) selectSets( GetCurrentThread(), nullptr, 0 );
-                }, this, nullptr );
-                if( !work ) throw std::runtime_error( "Unable to create a platform worker" );
+                auto work = CreateThreadpoolWork(
+                    []( PTP_CALLBACK_INSTANCE callback, void *owner, PTP_WORK ) {
+                        CallbackMayRunLong( callback );
+                        const int priority = GetThreadPriority( GetCurrentThread() );
+                        GROUP_AFFINITY affinity = {};
+                        GetThreadGroupAffinity( GetCurrentThread(), &affinity );
+                        static_cast<WorkerThread *>( owner )->run();
+                        SetThreadPriority( GetCurrentThread(), priority );
+                        if( affinity.Mask )
+                        {
+                            SetThreadGroupAffinity( GetCurrentThread(), &affinity, nullptr );
+                        }
+                        using SelectSets = BOOL( WINAPI * )( HANDLE, const ULONG *, ULONG );
+                        auto selectSets = reinterpret_cast<SelectSets>( GetProcAddress(
+                            GetModuleHandleW( L"kernel32.dll" ), "SetThreadSelectedCpuSets" ) );
+                        if( selectSets )
+                        {
+                            selectSets( GetCurrentThread(), nullptr, 0 );
+                        }
+                    },
+                    this, nullptr );
+                if( !work )
+                {
+                    throw std::runtime_error( "Unable to create a platform worker" );
+                }
                 m_platformWork = work;
                 SubmitThreadpoolWork( work );
             }
@@ -118,7 +129,8 @@ namespace workphone
             WP_ASSERT( timer );
 
             SmartPtr<Properties> previousPolicy;
-            while( !m_shutdownRequested && applicationManager->isRunning() && !applicationManager->getQuit() )
+            while( !m_shutdownRequested && applicationManager->isRunning() &&
+                   !applicationManager->getQuit() )
             {
                 switch( auto state = getState() )
                 {
@@ -126,8 +138,8 @@ namespace workphone
                 {
                     Thread::setCurrentThreadId( m_workerThreadId );
 
-                    while( !m_shutdownRequested && applicationManager->isRunning() && !applicationManager->getQuit() &&
-                           getState() != State::Stop )
+                    while( !m_shutdownRequested && applicationManager->isRunning() &&
+                           !applicationManager->getQuit() && getState() != State::Stop )
                     {
                         auto policy = applicationManager->getPlayerSettings();
                         if( policy.get() != previousPolicy.get() )
@@ -136,9 +148,12 @@ namespace workphone
                             previousPolicy = policy;
                         }
                         auto pool = applicationManager->getThreadPool();
-                        const auto activeWorkers = pool ? std::min( pool->getNumThreads(),
-                            projectWorkerCount( pool->getNumThreads() ) ) : 0;
-                        if( !projectRunsBackgroundTasks() || static_cast<u32>( getThreadId() ) >= activeWorkers )
+                        const auto activeWorkers =
+                            pool ? std::min( pool->getNumThreads(),
+                                             projectWorkerCount( pool->getNumThreads() ) )
+                                 : 0;
+                        if( !projectRunsBackgroundTasks() ||
+                            static_cast<u32>( getThreadId() ) >= activeWorkers )
                         {
                             Thread::sleep( 0.01 );
                             continue;

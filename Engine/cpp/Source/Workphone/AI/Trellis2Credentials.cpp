@@ -7,13 +7,14 @@
 namespace workphone::trellis2_credentials
 {
     namespace detail = api_credentials::detail;
+
     namespace
     {
         detail::CredentialStore editorStore()
         {
             return detail::CredentialStore( detail::trellis2.editorTarget, detail::trellis2 );
         }
-    }
+    }  // namespace
 
     bool saveEditorKey( const String &key, String &error )
     {
@@ -82,7 +83,10 @@ namespace workphone::trellis2_credentials
                     return editorStore().read( saved, failure );
                 },
                 std::getenv( "FAL_KEY" ), secret, diagnostic, detail::trellis2 );
-            if( found ) key.assign( secret.data(), secret.size() );
+            if( found )
+            {
+                key.assign( secret.data(), secret.size() );
+            }
             error = diagnostic.c_str();
             return found;
         }
@@ -93,4 +97,4 @@ namespace workphone::trellis2_credentials
             return false;
         }
     }
-}
+}  // namespace workphone::trellis2_credentials

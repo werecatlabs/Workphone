@@ -40,9 +40,14 @@ namespace workphone
     {
         const auto count = points.size();
         if( count > std::numeric_limits<size_t>::max() - m_points.size() )
+        {
             throw std::length_error( "Polygon point count overflow" );
+        }
         m_points.reserve( m_points.size() + count );
-        for( size_t i = 0; i < count; ++i ) m_points.push_back( points[i] );
+        for( size_t i = 0; i < count; ++i )
+        {
+            m_points.push_back( points[i] );
+        }
     }
 
     template <class T>
@@ -112,7 +117,8 @@ namespace workphone
 
         auto storage = makeSourceBudgetArray<s32>( n );
         auto V = storage.get();
-        auto candidate = makeSourceBudgetSnapshot( triangles ); /* we want a counter-clockwise polygon in V */
+        auto candidate =
+            makeSourceBudgetSnapshot( triangles ); /* we want a counter-clockwise polygon in V */
         if( 0.0f < area( contour ) )
         {
             for( size_t v = 0; v < n; v++ )

@@ -570,7 +570,8 @@ namespace workphone::scene
 
     auto Component::getChildObjects() const -> Array<SmartPtr<ISharedObject>>
     {
-        Array<SmartPtr<ISharedObject>> childObjects{ Allocator<SmartPtr<ISharedObject>>( sourceBudget ) };
+        Array<SmartPtr<ISharedObject>> childObjects{ Allocator<SmartPtr<ISharedObject>>(
+            sourceBudget ) };
         childObjects.reserve( 12 );
 
         childObjects.emplace_back( getFsm() );
@@ -765,7 +766,10 @@ namespace workphone::scene
         ScopedLock lock( &m_children, false );
         Array<SmartPtr<ISubComponent>> result{ Allocator<SmartPtr<ISubComponent>>( sourceBudget ) };
         result.reserve( m_children.capacity() );
-        for( const auto &value : m_children ) result.push_back( value );
+        for( const auto &value : m_children )
+        {
+            result.push_back( value );
+        }
         return result;
     }
 
@@ -915,7 +919,10 @@ namespace workphone::scene
         ScopedLock lock( &m_componentStates, false );
         Array<SmartPtr<ISharedObject>> result{ Allocator<SmartPtr<ISharedObject>>( sourceBudget ) };
         result.reserve( m_componentStates.capacity() );
-        for( const auto &value : m_componentStates ) result.push_back( value );
+        for( const auto &value : m_componentStates )
+        {
+            result.push_back( value );
+        }
         return result;
     }
 

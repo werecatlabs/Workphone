@@ -53,27 +53,36 @@ namespace workphone::render
             const auto passCount = technique.getNumPasses();
             for( u32 index = 0; index < passCount; ++index )
             {
-                if( auto pass = technique.getPass( index ); pass && pass->getMaterial().get() != &material )
+                if( auto pass = technique.getPass( index );
+                    pass && pass->getMaterial().get() != &material )
                 {
                     pass->setMaterial( &material );
                 }
             }
         }
 
-        SinglePassEdit singlePassEdit( const IMaterial &material,
-                                      const std::atomic<u64> &graphRevision )
+        SinglePassEdit singlePassEdit( const IMaterial &material, const std::atomic<u64> &graphRevision )
         {
             const auto revision = graphRevision.load( std::memory_order_acquire );
-            if( material.getNumTechniques() != 1 ) return {};
+            if( material.getNumTechniques() != 1 )
+            {
+                return {};
+            }
             auto technique = material.getTechnique( 0 );
-            if( !technique || technique->getNumPasses() != 1 ) return {};
+            if( !technique || technique->getNumPasses() != 1 )
+            {
+                return {};
+            }
             auto pass = technique->getPass( 0 );
-            if( graphRevision.load( std::memory_order_acquire ) != revision ) return {};
+            if( graphRevision.load( std::memory_order_acquire ) != revision )
+            {
+                return {};
+            }
             // Pin both owners, then invoke the virtual setter outside container
             // locks. A callback may replace/detach the selected graph.
             return { std::move( technique ), std::move( pass ) };
         }
-    }
+    }  // namespace
 
     const String Material::materialTypeStr = String( "Material Type" );
     const String Material::materialTypeDataStr = String( "materialType" );
@@ -668,12 +677,36 @@ namespace workphone::render
         invalidateRenderState();
         try
         {
-            auto cachedTechnique=m_technique.load();auto cachedPass=m_pass.load();
-            m_technique=nullptr;setPass(nullptr);
-            if(cachedTechnique){auto owner=cachedTechnique->getMaterial();if(!owner||owner.get()==this)cachedTechnique->unload(data);}
-            if(cachedPass){auto owner=cachedPass->getMaterial();if(!owner||owner.get()==this)cachedPass->unload(data);}
-            for(auto technique:m_techniques)if(technique) {
-                auto owner=technique->getMaterial();if(!owner||owner.get()==this)technique->unload(data);
+            auto cachedTechnique = m_technique.load();
+            auto cachedPass = m_pass.load();
+            m_technique = nullptr;
+            setPass( nullptr );
+            if( cachedTechnique )
+            {
+                auto owner = cachedTechnique->getMaterial();
+                if( !owner || owner.get() == this )
+                {
+                    cachedTechnique->unload( data );
+                }
+            }
+            if( cachedPass )
+            {
+                auto owner = cachedPass->getMaterial();
+                if( !owner || owner.get() == this )
+                {
+                    cachedPass->unload( data );
+                }
+            }
+            for( auto technique : m_techniques )
+            {
+                if( technique )
+                {
+                    auto owner = technique->getMaterial();
+                    if( !owner || owner.get() == this )
+                    {
+                        technique->unload( data );
+                    }
+                }
             }
             m_techniques.releaseStorage();
             if( auto context = getStateContext() )
@@ -1213,13 +1246,22 @@ namespace workphone::render
     void Material::removeTechnique( SmartPtr<IMaterialTechnique> technique )
     {
         invalidateRenderState();
-        if(technique&&std::find(m_techniques.begin(),m_techniques.end(),technique)!=m_techniques.end()) {
-            auto owner=technique->getMaterial();if(!owner||owner.get()==this)technique->setMaterial(nullptr);
-            setPass(nullptr);
+        if( technique &&
+            std::find( m_techniques.begin(), m_techniques.end(), technique ) != m_techniques.end() )
+        {
+            auto owner = technique->getMaterial();
+            if( !owner || owner.get() == this )
+            {
+                technique->setMaterial( nullptr );
+            }
+            setPass( nullptr );
         }
         m_techniques.erase( std::remove( m_techniques.begin(), m_techniques.end(), technique ),
                             m_techniques.end() );
-        if(m_technique==technique)m_technique=m_techniques.empty()?nullptr:m_techniques[0];
+        if( m_technique == technique )
+        {
+            m_technique = m_techniques.empty() ? nullptr : m_techniques[0];
+        }
         invalidateRenderState();
     }
 
@@ -1227,16 +1269,28 @@ namespace workphone::render
     {
         SourceBudgetConcurrentArray<SmartPtr<IMaterialTechnique>> next( techniques.begin(),
                                                                         techniques.end() );
-        for(auto previous:m_techniques)if(previous) {
-            auto owner=previous->getMaterial();if(!owner||owner.get()==this)previous->setMaterial(nullptr);
+        for( auto previous : m_techniques )
+        {
+            if( previous )
+            {
+                auto owner = previous->getMaterial();
+                if( !owner || owner.get() == this )
+                {
+                    previous->setMaterial( nullptr );
+                }
+            }
         }
         m_techniques = std::move( next );
-        m_technique=techniques.empty()?nullptr:techniques.front();setPass(nullptr);
+        m_technique = techniques.empty() ? nullptr : techniques.front();
+        setPass( nullptr );
         for( auto technique : techniques )
         {
             if( technique )
             {
-                if(auto previous=technique->getMaterial();previous&&previous.get()!=this)previous->removeTechnique(technique);
+                if( auto previous = technique->getMaterial(); previous && previous.get() != this )
+                {
+                    previous->removeTechnique( technique );
+                }
                 attachTechnique( *technique, *this );
             }
         }
@@ -1246,10 +1300,19 @@ namespace workphone::render
     void Material::removeAllTechniques()
     {
         invalidateRenderState();
-        for(auto technique:m_techniques)if(technique) {
-            auto owner=technique->getMaterial();if(!owner||owner.get()==this)technique->setMaterial(nullptr);
+        for( auto technique : m_techniques )
+        {
+            if( technique )
+            {
+                auto owner = technique->getMaterial();
+                if( !owner || owner.get() == this )
+                {
+                    technique->setMaterial( nullptr );
+                }
+            }
         }
-        m_technique=nullptr;setPass(nullptr);
+        m_technique = nullptr;
+        setPass( nullptr );
         m_techniques.clear();
         invalidateRenderState();
     }
@@ -1574,8 +1637,17 @@ namespace workphone::render
 
     void Material::addTechnique( SmartPtr<IMaterialTechnique> technique )
     {
-        if(m_techniques.size()==m_techniques.capacity())m_techniques.reserve(std::max(size_t(1),m_techniques.capacity()*2));
-        if(technique)if(auto previous=technique->getMaterial();previous&&previous.get()!=this)previous->removeTechnique(technique);
+        if( m_techniques.size() == m_techniques.capacity() )
+        {
+            m_techniques.reserve( std::max( size_t( 1 ), m_techniques.capacity() * 2 ) );
+        }
+        if( technique )
+        {
+            if( auto previous = technique->getMaterial(); previous && previous.get() != this )
+            {
+                previous->removeTechnique( technique );
+            }
+        }
         m_techniques.push_back( technique );
         if( technique )
         {
@@ -1739,8 +1811,8 @@ namespace workphone::render
                         SmartPtr<IResource> resource;
                         if( resourceDatabase && !sUUID.empty() )
                         {
-                            resource = resourceDatabase->loadResourceById(
-                                StringUtil::parseUUID( sUUID ) );
+                            resource =
+                                resourceDatabase->loadResourceById( StringUtil::parseUUID( sUUID ) );
                         }
                         auto texture = dynamic_pointer_cast<ITexture>( resource );
                         if( resourceDatabase && !resource )
@@ -1752,9 +1824,16 @@ namespace workphone::render
                             const auto relative = std::filesystem::u8path( path.c_str() );
                             bool projectRelative = !path.empty() && !relative.has_root_path();
                             for( const auto &part : relative )
-                                if( part == ".." ) projectRelative = false;
+                            {
+                                if( part == ".." )
+                                {
+                                    projectRelative = false;
+                                }
+                            }
                             if( projectRelative )
+                            {
                                 texture = resourceDatabase->loadResourceByType<ITexture>( path );
+                            }
                         }
                         if( textureCount < textures.size() )
                         {

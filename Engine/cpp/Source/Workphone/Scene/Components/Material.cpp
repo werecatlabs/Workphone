@@ -48,17 +48,25 @@ namespace workphone::scene
         unload( nullptr );
     }
 
-    void Material::configureRuntimeAssets(std::shared_ptr<const resource::RuntimeAssetContext> context)
+    void Material::configureRuntimeAssets( std::shared_ptr<const resource::RuntimeAssetContext> context )
     {
-        if(!context||!context->resolve||isLoaded()||getLoadingState()==LoadingState::Loading||
-           getLoadingState()==LoadingState::Unloading||(m_runtimeAssets&&m_runtimeAssets!=context))
-            throw std::runtime_error("Material runtime assets require an unloaded component and resolver");
-        m_runtimeAssets=std::move(context);m_runtimeAssetsMode=true;
+        if( !context || !context->resolve || isLoaded() || getLoadingState() == LoadingState::Loading ||
+            getLoadingState() == LoadingState::Unloading ||
+            ( m_runtimeAssets && m_runtimeAssets != context ) )
+        {
+            throw std::runtime_error(
+                "Material runtime assets require an unloaded component and resolver" );
+        }
+        m_runtimeAssets = std::move( context );
+        m_runtimeAssetsMode = true;
     }
 
     void Material::load( SmartPtr<ISharedObject> data )
     {
-        if(m_runtimeAssetsMode&&!m_runtimeAssets)throw std::runtime_error("Material runtime assets must be reconfigured before load");
+        if( m_runtimeAssetsMode && !m_runtimeAssets )
+        {
+            throw std::runtime_error( "Material runtime assets must be reconfigured before load" );
+        }
         try
         {
             if( isLoaded() )
@@ -78,7 +86,10 @@ namespace workphone::scene
             }
 
             Component::load( data );
-            if(m_runtimeAssetsMode&&(!m_material||!m_runtimeResource))throw std::runtime_error("Runtime material requires a captured matres UUID");
+            if( m_runtimeAssetsMode && ( !m_material || !m_runtimeResource ) )
+            {
+                throw std::runtime_error( "Runtime material requires a captured matres UUID" );
+            }
 
             updateMaterial();
             updateImageComponent();
@@ -90,7 +101,11 @@ namespace workphone::scene
         catch( std::exception &e )
         {
             WP_LOG_EXCEPTION( e );
-            if(m_runtimeAssetsMode){unload(nullptr);throw;}
+            if( m_runtimeAssetsMode )
+            {
+                unload( nullptr );
+                throw;
+            }
         }
     }
 
@@ -99,7 +114,7 @@ namespace workphone::scene
         try
         {
             const auto &loadingState = getLoadingState();
-            if( loadingState != LoadingState::Unloaded||(m_runtimeAssetsMode&&m_material) )
+            if( loadingState != LoadingState::Unloaded || ( m_runtimeAssetsMode && m_material ) )
             {
                 setLoadingState( LoadingState::Unloading );
 
@@ -140,7 +155,9 @@ namespace workphone::scene
         {
             WP_LOG_EXCEPTION( e );
         }
-        m_runtimeResource.reset();m_runtimeAssets.reset();m_runtimeMaterialUuid.clear();
+        m_runtimeResource.reset();
+        m_runtimeAssets.reset();
+        m_runtimeMaterialUuid.clear();
     }
 
     void Material::updateFlags( u32 flags, u32 oldFlags )
@@ -230,8 +247,14 @@ namespace workphone::scene
 
         auto materialPath = getMaterialPath();
 
-        if(m_runtimeAssetsMode)properties->setProperty(getMaterialStr(),m_runtimeMaterialUuid);
-        else properties->setProperty( getMaterialStr(), m_material );
+        if( m_runtimeAssetsMode )
+        {
+            properties->setProperty( getMaterialStr(), m_runtimeMaterialUuid );
+        }
+        else
+        {
+            properties->setProperty( getMaterialStr(), m_material );
+        }
         properties->setProperty( getMaterialPathStr(), materialPath );
         properties->setProperty( getIndexStr(), m_index );
 
@@ -240,24 +263,60 @@ namespace workphone::scene
 
     void Material::setProperties( SmartPtr<Properties> properties )
     {
-        if(m_runtimeAssetsMode)
+        if( m_runtimeAssetsMode )
         {
-            if(!properties)return;
-            if(!m_runtimeAssets)throw std::runtime_error("Runtime material properties require a configured context");
-            String identity=m_runtimeMaterialUuid,path;properties->getPropertyValue(getMaterialStr(),identity);properties->getPropertyValue(getMaterialPathStr(),path);
-            if(!path.empty()||identity.empty())throw std::runtime_error("Runtime material requires a captured UUID and no authoring path");
-            identity=StringUtil::make_lower(identity);String error;
-            auto resource=m_runtimeAssets->resolve(identity,error);
-            if(!resource||resource->header.resourceType!=workphone::resource::ResourceTypeID("matres"))throw std::runtime_error(error.empty()?"Material UUID requires a matres resource":error.c_str());
-            auto app=core::IApplicationManager::instancePtr();auto graphics=app?app->getGraphicsSystemPtr():nullptr;
-            if(!graphics)throw std::runtime_error("Runtime material requires its graphics system");
-            ScopedLock owner(graphics);
-            auto candidate=resource==m_runtimeResource?m_material:graphics->createRuntimeMaterial(resource,error,m_runtimeAssets->target,m_runtimeAssets->packagedBuild,m_runtimeAssets->mount);
-            if(!candidate||!candidate->isLoaded())throw std::runtime_error(error.empty()?"Cannot stage runtime material":error.c_str());
-            auto index=getIndex();properties->getPropertyValue(getIndexStr(),index);
-            Component::setProperties(properties);m_index=index;m_materialPath=String();
-            setMaterial(candidate);m_runtimeResource=std::move(resource);m_runtimeMaterialUuid=std::move(identity);
-            updateDependentComponents();return;
+            if( !properties )
+            {
+                return;
+            }
+            if( !m_runtimeAssets )
+            {
+                throw std::runtime_error( "Runtime material properties require a configured context" );
+            }
+            String identity = m_runtimeMaterialUuid, path;
+            properties->getPropertyValue( getMaterialStr(), identity );
+            properties->getPropertyValue( getMaterialPathStr(), path );
+            if( !path.empty() || identity.empty() )
+            {
+                throw std::runtime_error(
+                    "Runtime material requires a captured UUID and no authoring path" );
+            }
+            identity = StringUtil::make_lower( identity );
+            String error;
+            auto resource = m_runtimeAssets->resolve( identity, error );
+            if( !resource ||
+                resource->header.resourceType != workphone::resource::ResourceTypeID( "matres" ) )
+            {
+                throw std::runtime_error( error.empty() ? "Material UUID requires a matres resource"
+                                                        : error.c_str() );
+            }
+            auto app = core::IApplicationManager::instancePtr();
+            auto graphics = app ? app->getGraphicsSystemPtr() : nullptr;
+            if( !graphics )
+            {
+                throw std::runtime_error( "Runtime material requires its graphics system" );
+            }
+            ScopedLock owner( graphics );
+            auto candidate = resource == m_runtimeResource
+                                 ? m_material
+                                 : graphics->createRuntimeMaterial(
+                                       resource, error, m_runtimeAssets->target,
+                                       m_runtimeAssets->packagedBuild, m_runtimeAssets->mount );
+            if( !candidate || !candidate->isLoaded() )
+            {
+                throw std::runtime_error( error.empty() ? "Cannot stage runtime material"
+                                                        : error.c_str() );
+            }
+            auto index = getIndex();
+            properties->getPropertyValue( getIndexStr(), index );
+            Component::setProperties( properties );
+            m_index = index;
+            m_materialPath = String();
+            setMaterial( candidate );
+            m_runtimeResource = std::move( resource );
+            m_runtimeMaterialUuid = std::move( identity );
+            updateDependentComponents();
+            return;
         }
         try
         {
@@ -347,7 +406,15 @@ namespace workphone::scene
 
     void Material::setMaterialPath( const String &materialPath )
     {
-        if(m_runtimeAssetsMode){if(!materialPath.empty())throw std::runtime_error("Runtime material paths cannot load authoring files");m_materialPath=String();return;}
+        if( m_runtimeAssetsMode )
+        {
+            if( !materialPath.empty() )
+            {
+                throw std::runtime_error( "Runtime material paths cannot load authoring files" );
+            }
+            m_materialPath = String();
+            return;
+        }
         m_materialPath = materialPath;
 
         auto applicationManager = core::IApplicationManager::instance();
@@ -434,7 +501,10 @@ namespace workphone::scene
 
     void Material::updateMaterial()
     {
-        if(m_runtimeAssetsMode)return;
+        if( m_runtimeAssetsMode )
+        {
+            return;
+        }
         auto applicationManager = core::IApplicationManager::instancePtr();
         WP_ASSERT( applicationManager );
 
@@ -493,7 +563,10 @@ namespace workphone::scene
 
     void Material::updateImageComponent()
     {
-        if(m_runtimeAssetsMode)return;
+        if( m_runtimeAssetsMode )
+        {
+            return;
+        }
         if( auto material = getMaterial() )
         {
             if( auto actor = getActor() )

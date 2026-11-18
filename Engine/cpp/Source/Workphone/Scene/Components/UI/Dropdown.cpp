@@ -255,7 +255,10 @@ namespace workphone::scene
 
         setButton( button );
         if( button && properties->hasProperty( "textSize" ) )
-            button->setTextSize( static_cast<u32>( std::clamp( properties->getPropertyAsInt( "textSize", 13 ), 1, 255 ) ) );
+        {
+            button->setTextSize( static_cast<u32>(
+                std::clamp( properties->getPropertyAsInt( "textSize", 13 ), 1, 255 ) ) );
+        }
 
         m_options.clear();
 
@@ -372,7 +375,10 @@ namespace workphone::scene
         {
             auto previous = getButton();
             m_button = button;
-            if( previous ) previous->setCallbackFunction( {} );
+            if( previous )
+            {
+                previous->setCallbackFunction( {} );
+            }
 
             if( button )
             {
@@ -384,13 +390,21 @@ namespace workphone::scene
 
                     ~TriggerBinding()
                     {
-                        if( auto dropdown = owner.lock(); dropdown && dropdown->m_button.get() == identity )
+                        if( auto dropdown = owner.lock();
+                            dropdown && dropdown->m_button.get() == identity )
                         {
-                            if( auto button = trigger.lock() ) dropdown->m_button = nullptr;
-                            else dropdown->m_button.forceReset();
+                            if( auto button = trigger.lock() )
+                            {
+                                dropdown->m_button = nullptr;
+                            }
+                            else
+                            {
+                                dropdown->m_button.forceReset();
+                            }
                         }
                     }
                 };
+
                 auto binding = std::make_shared<TriggerBinding>();
                 binding->owner = this;
                 binding->trigger = button;
@@ -398,7 +412,10 @@ namespace workphone::scene
                 button->setCallbackFunction( [binding]( hash_type value ) {
                     auto dropdown = binding->owner.lock();
                     auto button = binding->trigger.lock();
-                    if( !dropdown || !button || dropdown->getButton() != button ) return;
+                    if( !dropdown || !button || dropdown->getButton() != button )
+                    {
+                        return;
+                    }
 
                     if( auto actor = dropdown->getActorPtr();
                         actor && dropdown->isEnabled() && actor->isEnabledInScene() )
@@ -913,7 +930,7 @@ namespace workphone::scene
                 if( selected < options.size() )
                 {
                     setLabel( options[selected] );
-                    
+
                     if( auto button = getButton() )
                     {
                         button->setTextStr( options[selected] );

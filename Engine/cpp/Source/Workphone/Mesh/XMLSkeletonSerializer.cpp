@@ -114,21 +114,36 @@ namespace workphone
 
     XMLSkeletonSerializer::~XMLSkeletonSerializer() = default;
 
-    bool XMLSkeletonSerializer::importSkeletonData(const String &text,MeshSkeleton *skeleton,String &error)
+    bool XMLSkeletonSerializer::importSkeletonData( const String &text, MeshSkeleton *skeleton,
+                                                    String &error )
     {
-        if(!skeleton) { error="Missing skeleton candidate"; return false; }
-        TiXmlDocument document; document.Parse(text.c_str(),nullptr,TIXML_ENCODING_UTF8);
-        const auto root=document.RootElement();
-        if(document.Error() || !root || String(root->Value())!="skeleton")
-        { error="Invalid skeleton XML"; return false; }
-        const auto epoch=sourceBudgetDenialCount();
-        skeleton->setBlendMode(root->Attribute("blendmode") && String(root->Attribute("blendmode"))=="cumulative" ?
-            SkeletonAnimationBlendMode::ANIMBLEND_CUMULATIVE : SkeletonAnimationBlendMode::ANIMBLEND_AVERAGE);
-        readBones(skeleton,root->FirstChildElement("bones"));
-        createHierarchy(skeleton,root->FirstChildElement("bonehierarchy"));
-        readBones2(skeleton,root->FirstChildElement("bones"));
-        readAnimations(skeleton,root->FirstChildElement("animations"));
-        if(sourceBudgetDenialCount()!=epoch) { error="Skeleton installation memory budget exhausted"; return false; }
+        if( !skeleton )
+        {
+            error = "Missing skeleton candidate";
+            return false;
+        }
+        TiXmlDocument document;
+        document.Parse( text.c_str(), nullptr, TIXML_ENCODING_UTF8 );
+        const auto root = document.RootElement();
+        if( document.Error() || !root || String( root->Value() ) != "skeleton" )
+        {
+            error = "Invalid skeleton XML";
+            return false;
+        }
+        const auto epoch = sourceBudgetDenialCount();
+        skeleton->setBlendMode( root->Attribute( "blendmode" ) &&
+                                        String( root->Attribute( "blendmode" ) ) == "cumulative"
+                                    ? SkeletonAnimationBlendMode::ANIMBLEND_CUMULATIVE
+                                    : SkeletonAnimationBlendMode::ANIMBLEND_AVERAGE );
+        readBones( skeleton, root->FirstChildElement( "bones" ) );
+        createHierarchy( skeleton, root->FirstChildElement( "bonehierarchy" ) );
+        readBones2( skeleton, root->FirstChildElement( "bones" ) );
+        readAnimations( skeleton, root->FirstChildElement( "animations" ) );
+        if( sourceBudgetDenialCount() != epoch )
+        {
+            error = "Skeleton installation memory budget exhausted";
+            return false;
+        }
         return true;
     }
 

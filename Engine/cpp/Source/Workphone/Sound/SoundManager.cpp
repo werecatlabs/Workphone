@@ -46,16 +46,27 @@ namespace workphone
 
     void SoundManager::setProperties( SmartPtr<Properties> properties )
     {
-        if( !properties ) return;
+        if( !properties )
+        {
+            return;
+        }
         s32 volume = 0;
         if( properties->getPropertyValue( "sound.masterVolume", volume ) )
+        {
             setVolume( std::clamp( volume, 0, 100 ) / 100.0f );
+        }
         if( properties->getPropertyValue( "sound.musicVolume", volume ) )
+        {
             m_musicGain = std::clamp( volume, 0, 100 ) / 100.0f;
+        }
         if( properties->getPropertyValue( "sound.sfxVolume", volume ) )
+        {
             m_sfxGain = std::clamp( volume, 0, 100 ) / 100.0f;
+        }
         if( properties->getPropertyValue( "sound.voiceVolume", volume ) )
+        {
             m_voiceGain = std::clamp( volume, 0, 100 ) / 100.0f;
+        }
         properties->getPropertyValue( "sound.sampleRate", m_playbackSampleRate );
         properties->getPropertyValue( "sound.bufferSize", m_playbackBufferFrames );
         properties->getPropertyValue( "sound.voiceLimit", m_voiceLimit );
@@ -68,30 +79,52 @@ namespace workphone
         m_playbackSampleRate = std::clamp( m_playbackSampleRate, 22050u, 96000u );
         m_playbackBufferFrames = std::clamp( m_playbackBufferFrames, 128u, 4096u );
         for( auto &sound : m_sounds.snapshot() )
-            if( sound && sound->isLoaded() ) sound->setVolume( sound->getVolume() );
+        {
+            if( sound && sound->isLoaded() )
+            {
+                sound->setVolume( sound->getVolume() );
+            }
+        }
     }
 
     bool SoundManager::admitVoice( const ISound *sound ) const
     {
         u32 active = 0;
         for( const auto &candidate : m_sounds.snapshot() )
-            if( candidate && candidate.get() != sound && candidate->isPlaying() ) ++active;
+        {
+            if( candidate && candidate.get() != sound && candidate->isPlaying() )
+            {
+                ++active;
+            }
+        }
         return active < m_voiceLimit;
     }
 
     void SoundManager::getMixParameters( ISound *sound, f32 &gain, f32 &pan ) const
     {
-        if( !sound ) { gain = pan = 0; return; }
+        if( !sound )
+        {
+            gain = pan = 0;
+            return;
+        }
         gain = sound->getVolume();
         auto concrete = dynamic_cast<Sound *>( sound );
         pan = concrete ? concrete->getPan() : 0.0f;
         if( concrete )
-            gain *= concrete->getCategory() == "music" ? m_musicGain :
-                    concrete->getCategory() == "voice" ? m_voiceGain : m_sfxGain;
-        if( sound->getFlag( ISound::SOUND_FLAG_MUTE ) ) gain = 0.0f;
+        {
+            gain *= concrete->getCategory() == "music"   ? m_musicGain
+                    : concrete->getCategory() == "voice" ? m_voiceGain
+                                                         : m_sfxGain;
+        }
+        if( sound->getFlag( ISound::SOUND_FLAG_MUTE ) )
+        {
+            gain = 0.0f;
+        }
         const auto listeners = m_listeners.snapshot();
         if( !m_spatializationEnabled || !sound->getFlag( ISound::SOUND_FLAG_3D ) || listeners.empty() )
+        {
             return;
+        }
         const auto listener = listeners.front();
         const auto offset = sound->getPosition() - listener->getPosition();
         const auto distance = static_cast<f32>( offset.length() );
@@ -101,7 +134,8 @@ namespace workphone
         gain *= std::clamp( 1.0f - ( distance - minimum ) / ( maximum - minimum ), 0.0f, 1.0f );
         if( distance > 0.001f )
         {
-            const auto right = listener->getForwardVector().crossProduct( Vector3<real_Num>::unitY() ).normaliseCopy();
+            const auto right =
+                listener->getForwardVector().crossProduct( Vector3<real_Num>::unitY() ).normaliseCopy();
             pan = std::clamp( static_cast<f32>( offset.dotProduct( right ) / distance ), -1.0f, 1.0f );
         }
         if( m_occlusionEnabled && distance > 0.1f )
@@ -114,15 +148,22 @@ namespace workphone
                 ScopedLock lock( scene.get() );
                 Vector3<real_Num> point, normal;
                 SmartPtr<ISharedObject> object;
-                if( scene->intersects( listener->getPosition(), sound->getPosition(), point, normal, object ) &&
-                    ( point - listener->getPosition() ).length() < distance - 0.05f ) gain *= 0.25f;
+                if( scene->intersects( listener->getPosition(), sound->getPosition(), point, normal,
+                                       object ) &&
+                    ( point - listener->getPosition() ).length() < distance - 0.05f )
+                {
+                    gain *= 0.25f;
+                }
             }
         }
     }
 
     void SoundManager::load( SmartPtr<ISharedObject> data )
     {
-        if( auto app = core::IApplicationManager::instancePtr() ) setProperties( app->getPlayerSettings() );
+        if( auto app = core::IApplicationManager::instancePtr() )
+        {
+            setProperties( app->getPlayerSettings() );
+        }
         m_sounds.reserve( 100 );
     }
 
@@ -155,7 +196,12 @@ namespace workphone
             }
         }
         for( auto sound : m_sounds.snapshot() )
-            if( sound && sound->isPlaying() ) sound->setVolume( sound->getVolume() );
+        {
+            if( sound && sound->isPlaying() )
+            {
+                sound->setVolume( sound->getVolume() );
+            }
+        }
     }
 
     void SoundManager::destroyResource( SmartPtr<IResource> resource )

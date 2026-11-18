@@ -342,19 +342,19 @@ namespace workphone::scene
                    []( SmartPtr<IComponent> a, SmartPtr<IComponent> b ) {
                        auto componentA = (LayoutTransform *)a.get();
                        auto componentB = (LayoutTransform *)b.get();
-            if( componentA && componentB )
-            {
-                const auto depthA = getHierarchyDepth( componentA );
-                const auto depthB = getHierarchyDepth( componentB );
-                if( depthA != depthB )
-                {
-                    return depthA < depthB;
-                }
+                       if( componentA && componentB )
+                       {
+                           const auto depthA = getHierarchyDepth( componentA );
+                           const auto depthB = getHierarchyDepth( componentB );
+                           if( depthA != depthB )
+                           {
+                               return depthA < depthB;
+                           }
 
-                return componentA->getZOrder() < componentB->getZOrder();
-            }
-            return false;
-        } );
+                           return componentA->getZOrder() < componentB->getZOrder();
+                       }
+                       return false;
+                   } );
 
         for( auto component : dirtyComponents )
         {
@@ -392,7 +392,7 @@ namespace workphone::scene
                 continue;
             }
 
-            auto canvasTransform = workphone::static_pointer_cast<LayoutTransform>(component);
+            auto canvasTransform = workphone::static_pointer_cast<LayoutTransform>( component );
             layoutState->owner = canvasTransform.get();
 
             auto actor = canvasTransform->getActorPtr();
@@ -523,15 +523,15 @@ namespace workphone::scene
 
         std::sort( dirtyComponents.begin(), dirtyComponents.end(),
                    []( SmartPtr<IComponent> a, SmartPtr<IComponent> b ) {
-            auto componentA = (LayoutTransform *)a.get();
-            auto componentB = (LayoutTransform *)b.get();
-            if( componentA && componentB )
-            {
-                return componentA->getZOrder() < componentB->getZOrder();
-            }
+                       auto componentA = (LayoutTransform *)a.get();
+                       auto componentB = (LayoutTransform *)b.get();
+                       if( componentA && componentB )
+                       {
+                           return componentA->getZOrder() < componentB->getZOrder();
+                       }
 
-            return false;
-        } );
+                       return false;
+                   } );
 
         for( auto component : dirtyComponents )
         {

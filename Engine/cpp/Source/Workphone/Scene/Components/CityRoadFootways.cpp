@@ -222,58 +222,74 @@ namespace workphone::scene
             }
 
             template <class F>
-            void exposedOutline( Point a, Point b, u64 &work,
-                                 SourceBudgetVector<OutlineEvent> &events, F emit )
+            void exposedOutline( Point a, Point b, u64 &work, SourceBudgetVector<OutlineEvent> &events,
+                                 F emit )
             {
                 // Terrain clipping has independent F32 tessellations on each
                 // side of a cell diagonal. Its unmatched triangle edges are not
                 // necessarily pavement boundaries. Classify them against the
                 // outlines of fully supported input footprints instead.
                 constexpr double tolerance = .0002;
-                const double dx = b.x - a.x, dz = b.z - a.z,
-                             squared = dx * dx + dz * dz, length = std::sqrt( squared );
-                if( length < .0001 ) return;
+                const double dx = b.x - a.x, dz = b.z - a.z, squared = dx * dx + dz * dz,
+                             length = std::sqrt( squared );
+                if( length < .0001 )
+                {
+                    return;
+                }
                 events.clear();
                 ++stamp;
-                const Bounds bounds{ std::min( a.x, b.x ) - tolerance,
-                                     std::min( a.z, b.z ) - tolerance,
+                const Bounds bounds{ std::min( a.x, b.x ) - tolerance, std::min( a.z, b.z ) - tolerance,
                                      std::max( a.x, b.x ) + tolerance,
                                      std::max( a.z, b.z ) + tolerance };
                 cellsFor( bounds, [&]( auto key ) {
                     charge( work );
                     const auto found = cells.find( key );
-                    if( found == cells.end() ) return;
+                    if( found == cells.end() )
+                    {
+                        return;
+                    }
                     for( const auto id : found->second )
                     {
                         auto &q = quads[id];
-                        if( q.stamp == stamp ) continue;
+                        if( q.stamp == stamp )
+                        {
+                            continue;
+                        }
                         q.stamp = stamp;
                         charge( work );
                         if( q.bounds.x0 > bounds.x1 || q.bounds.x1 < bounds.x0 ||
-                            q.bounds.z0 > bounds.z1 || q.bounds.z1 < bounds.z0 ) continue;
+                            q.bounds.z0 > bounds.z1 || q.bounds.z1 < bounds.z0 )
+                        {
+                            continue;
+                        }
                         for( size_t i = 0; i < q.points.size(); ++i )
                         {
                             charge( work );
                             const auto p = q.points[i], n = q.points[( i + 1 ) % 4];
                             const double span = std::hypot( n.x - p.x, n.z - p.z );
                             if( std::abs( cross( p, n, a ) ) > tolerance * span ||
-                                std::abs( cross( p, n, b ) ) > tolerance * span ) continue;
+                                std::abs( cross( p, n, b ) ) > tolerance * span )
+                            {
+                                continue;
+                            }
                             const double t0 = ( ( p.x - a.x ) * dx + ( p.z - a.z ) * dz ) / squared,
                                          t1 = ( ( n.x - a.x ) * dx + ( n.z - a.z ) * dz ) / squared;
                             const double begin = std::max( 0., std::min( t0, t1 ) ),
                                          end = std::min( 1., std::max( t0, t1 ) );
-                            if( ( end - begin ) * length <= .0001 ) continue;
-                            const bool positive = cross( p, n, q.points[( i + 2 ) % 4] ) *
-                                                  ( t1 - t0 ) > 0;
+                            if( ( end - begin ) * length <= .0001 )
+                            {
+                                continue;
+                            }
+                            const bool positive =
+                                cross( p, n, q.points[( i + 2 ) % 4] ) * ( t1 - t0 ) > 0;
                             events.push_back( { begin, positive ? 1 : 0, positive ? 0 : 1 } );
                             events.push_back( { end, positive ? -1 : 0, positive ? 0 : -1 } );
                         }
                     }
                 } );
                 charge( work, u64( events.size() ) * ( 1 + u64( std::log2( events.size() + 1 ) ) ) );
-                std::sort( events.begin(), events.end(), []( const auto &a, const auto &b ) {
-                    return a.station < b.station;
-                } );
+                std::sort( events.begin(), events.end(),
+                           []( const auto &a, const auto &b ) { return a.station < b.station; } );
                 int positive = 0, negative = 0;
                 double previous = 0;
                 for( const auto &event : events )
@@ -547,31 +563,36 @@ namespace workphone::scene
                     {
                         const auto start = mesh.vertices[edge.a].position,
                                    end = mesh.vertices[edge.b].position;
-                        supported.exposedOutline( point( start ), point( end ), work, outlineEvents,
+                        supported.exposedOutline(
+                            point( start ), point( end ), work, outlineEvents,
                             [&]( double first, double last, bool reverse ) {
                                 const auto lerp = [&]( double t ) {
-                                    return Vector3F( float( start.x + ( double( end.x ) - start.x ) * t ),
-                                                     float( start.y + ( double( end.y ) - start.y ) * t ),
-                                                     float( start.z + ( double( end.z ) - start.z ) * t ) );
+                                    return Vector3F(
+                                        float( start.x + ( double( end.x ) - start.x ) * t ),
+                                        float( start.y + ( double( end.y ) - start.y ) * t ),
+                                        float( start.z + ( double( end.z ) - start.z ) * t ) );
                                 };
                                 const auto a = lerp( reverse ? last : first ),
                                            b = lerp( reverse ? first : last ), delta = b - a;
                                 const double length = std::hypot( delta.x, delta.z );
-                                if( length < .0001 ) return;
+                                if( length < .0001 )
+                                {
+                                    return;
+                                }
                                 const Vector3F normal{ float( -delta.z / length ), 0,
                                                        float( delta.x / length ) };
                                 const auto na = topology.node( a, work ), nb = topology.node( b, work );
                                 const auto ta = skirtVertex( a, normal, na, 1 ),
-                                           ba =
-                                               skirtVertex( a - Vector3F( 0, float( lift ), 0 ), normal, na, 0 );
-                                const auto bb =
-                                               skirtVertex( b - Vector3F( 0, float( lift ), 0 ), normal, nb, 0 ),
+                                           ba = skirtVertex( a - Vector3F( 0, float( lift ), 0 ), normal,
+                                                             na, 0 );
+                                const auto bb = skirtVertex( b - Vector3F( 0, float( lift ), 0 ), normal,
+                                                             nb, 0 ),
                                            tb = skirtVertex( b, normal, nb, 1 );
                                 mesh.indices.insert( mesh.indices.end(), { ta, ba, bb, ta, bb, tb } );
                                 mesh.triangleKinds.insert( mesh.triangleKinds.end(), 2,
                                                            CityRoadTerrainTriangleKind::Kerb );
                                 charge( work );
-                                } );
+                            } );
                     }
                 }
             }
@@ -708,17 +729,17 @@ namespace workphone::scene
                         samples.points[1].distance = span;
                         // Retain the exact F32 footprint passed to the terrain
                         // fitter, rather than a higher precision precursor.
-                        footprints.push_back( quad( point( samples.points[0].left ),
-                            point( samples.points[0].right ), point( samples.points[1].right ),
-                            point( samples.points[1].left ) ) );
+                        footprints.push_back(
+                            quad( point( samples.points[0].left ), point( samples.points[0].right ),
+                                  point( samples.points[1].right ), point( samples.points[1].left ) ) );
                         strip.roads.push_back( std::move( road ) );
                         stripBake.roads.push_back( std::move( samples ) );
                         i = next;
                     }
                     String error;
                     const auto denials = sourceBudgetDenialCount();
-                    supported =
-                        buildCityRoadTerrainMesh( strip, stripBake, terrain, placement, surface, error, false );
+                    supported = buildCityRoadTerrainMesh( strip, stripBake, terrain, placement, surface,
+                                                          error, false );
                     if( !supported && !unsupportedTerrain( error, denials ) )
                     {
                         throw std::runtime_error( error.c_str() );
@@ -726,7 +747,10 @@ namespace workphone::scene
                 }
                 if( supported )
                 {
-                    for( const auto &footprint : footprints ) this->supported.insert( footprint, work );
+                    for( const auto &footprint : footprints )
+                    {
+                        this->supported.insert( footprint, work );
+                    }
                     append( surface );
                     return;
                 }
@@ -799,13 +823,17 @@ namespace workphone::scene
                                p1 = point( mesh.vertices[triangle[1]].position ),
                                p2 = point( mesh.vertices[triangle[2]].position );
                     const double longest = std::max( { std::hypot( p1.x - p0.x, p1.z - p0.z ),
-                        std::hypot( p2.x - p1.x, p2.z - p1.z ), std::hypot( p0.x - p2.x, p0.z - p2.z ) } );
+                                                       std::hypot( p2.x - p1.x, p2.z - p1.z ),
+                                                       std::hypot( p0.x - p2.x, p0.z - p2.z ) } );
                     // Cell-diagonal clipping can produce three distinct, nearly
                     // collinear F32 vertices. Retain the exact rendered/collision
                     // triangle above, but collapse its boundary consistently with
                     // the existing 0.2 mm endpoint-matching tolerance. Otherwise
                     // that sliver counts the shared diagonal a third time.
-                    if( std::abs( cross( p0, p1, p2 ) ) <= longest * .0002 ) continue;
+                    if( std::abs( cross( p0, p1, p2 ) ) <= longest * .0002 )
+                    {
+                        continue;
+                    }
                     for( size_t j = 0; j < 3; ++j )
                     {
                         const auto a = triangle[j], b = triangle[( j + 1 ) % 3];
@@ -826,7 +854,8 @@ namespace workphone::scene
                         {
                             const auto pa = mesh.vertices[a].position, pb = mesh.vertices[b].position;
                             const auto pc = mesh.vertices[triangle[( j + 2 ) % 3]].position;
-                            throw std::runtime_error( "Footway supported pieces overlap or have nonmanifold edges: (" +
+                            throw std::runtime_error(
+                                "Footway supported pieces overlap or have nonmanifold edges: (" +
                                 std::to_string( pa.x ) + "," + std::to_string( pa.z ) + ")-(" +
                                 std::to_string( pb.x ) + "," + std::to_string( pb.z ) + "), third=(" +
                                 std::to_string( pc.x ) + "," + std::to_string( pc.z ) + ")." );
@@ -905,7 +934,8 @@ namespace workphone::scene
             {
                 throw std::runtime_error( error.c_str() );
             }
-            const auto terminals = buildCityRoadTerminals( source, bake, connections, *terrain, placement );
+            const auto terminals =
+                buildCityRoadTerminals( source, bake, connections, *terrain, placement );
             for( size_t r = 0; r < connections.roadRuns.size(); ++r )
             {
                 const auto &samples = connections.roadRuns[r];
@@ -927,11 +957,13 @@ namespace workphone::scene
                 };
                 for( size_t i = 0; i < connection.indices.size(); i += 3 )
                 {
-                    const auto a = vertex( connection.indices[i] ), b = vertex( connection.indices[i + 1] ),
+                    const auto a = vertex( connection.indices[i] ),
+                               b = vertex( connection.indices[i + 1] ),
                                c = vertex( connection.indices[i + 2] );
                     // A triangle with a collinear fourth vertex uses the same
                     // bounded convex obstacle index as road ribbons.
-                    builder.obstacles.insert( quad( a, b, interpolate( b, c, .5 ), c, true ), builder.work );
+                    builder.obstacles.insert( quad( a, b, interpolate( b, c, .5 ), c, true ),
+                                              builder.work );
                 }
             }
             for( const auto &terminal : terminals )
@@ -940,7 +972,8 @@ namespace workphone::scene
                 for( size_t i = 1; i < terminal.edge.size(); ++i )
                 {
                     const auto a = point( terminal.edge[i - 1] ), b = point( terminal.edge[i] );
-                    builder.obstacles.insert( quad( center, a, interpolate( a, b, .5 ), b, true ), builder.work );
+                    builder.obstacles.insert( quad( center, a, interpolate( a, b, .5 ), b, true ),
+                                              builder.work );
                 }
             }
             for( const auto &junction : source.roundabouts )
@@ -1006,8 +1039,8 @@ namespace workphone::scene
                 {
                     const auto a = point( terminal.edge[i - 1] ), b = point( terminal.edge[i] );
                     const auto na = point( terminal.outward[i - 1] ), nb = point( terminal.outward[i] );
-                    strip( add( a, na, gap ), add( a, na, gap + width ),
-                           add( b, nb, gap ), add( b, nb, gap + width ), source.roads[terminal.roadIndex].maxGrade );
+                    strip( add( a, na, gap ), add( a, na, gap + width ), add( b, nb, gap ),
+                           add( b, nb, gap + width ), source.roads[terminal.roadIndex].maxGrade );
                 }
             }
             for( const auto &connection : connections.junctions )
@@ -1020,8 +1053,8 @@ namespace workphone::scene
                     {
                         const auto a = point( corner.points[i - 1] ), b = point( corner.points[i] ),
                                    na = point( corner.outward[i - 1] ), nb = point( corner.outward[i] );
-                        strip( add( a, na, gap ), add( a, na, gap + width ),
-                               add( b, nb, gap ), add( b, nb, gap + width ), connection.maxGrade );
+                        strip( add( a, na, gap ), add( a, na, gap + width ), add( b, nb, gap ),
+                               add( b, nb, gap + width ), connection.maxGrade );
                     }
                 }
             }
@@ -1065,15 +1098,26 @@ namespace workphone::scene
                     double alignment = 0, closest = .0002;
                     for( const auto &roadRun : connections.roadRuns )
                     {
-                        if( source.roads[roadRun.roadIndex].id != port.approachId || roadRun.points.size() < 2 ) continue;
+                        if( source.roads[roadRun.roadIndex].id != port.approachId ||
+                            roadRun.points.size() < 2 )
+                        {
+                            continue;
+                        }
                         for( const auto *sample : { &roadRun.points.front(), &roadRun.points.back() } )
                         {
                             const double error = std::hypot( double( sample->position.x ) - end.x,
                                                              double( sample->position.z ) - end.z );
-                            if( error > closest || std::abs( sectionSpan( *sample ) - port.width ) > .003 ) continue;
+                            if( error > closest ||
+                                std::abs( sectionSpan( *sample ) - port.width ) > .003 )
+                            {
+                                continue;
+                            }
                             const auto across = sectionAcross( *sample );
                             const double dot = across.x * walk.across.x + across.z * walk.across.z;
-                            if( std::abs( dot ) <= .99998 ) continue;
+                            if( std::abs( dot ) <= .99998 )
+                            {
+                                continue;
+                            }
                             runEnd = sample;
                             runAcross = across;
                             alignment = dot;
@@ -1098,7 +1142,8 @@ namespace workphone::scene
                             outerEnd = add( margin, runAcross, direction * ( gap + width ) );
                         }
                         // Both circular and straight domains share this exact skew cross section.
-                        strip( walk.inner[index], walk.outer[index], innerEnd, outerEnd, junction.maxGrade );
+                        strip( walk.inner[index], walk.outer[index], innerEnd, outerEnd,
+                               junction.maxGrade );
                     }
                 }
                 const size_t portCount = junction.ports.size();

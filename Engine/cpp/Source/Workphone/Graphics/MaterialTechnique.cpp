@@ -61,8 +61,8 @@ namespace workphone::render
             // owner links even if allocating a teardown snapshot is denied.
             for( auto child : m_children )
             {
-                auto pass=workphone::dynamic_pointer_cast<IMaterialPass>(child);
-                if( pass&&(!pass->getParentPtr()||pass->getParentPtr()==this) )
+                auto pass = workphone::dynamic_pointer_cast<IMaterialPass>( child );
+                if( pass && ( !pass->getParentPtr() || pass->getParentPtr() == this ) )
                 {
                     pass->unload( nullptr );
                 }
@@ -143,7 +143,7 @@ namespace workphone::render
 
     void MaterialTechnique::addPass( SmartPtr<IMaterialPass> pass )
     {
-        addChild(pass);
+        addChild( pass );
 
         // Authored graphs may assemble passes before attaching the technique to
         // a material (including catalog document serialization).
@@ -155,8 +155,11 @@ namespace workphone::render
 
     void MaterialTechnique::removePass( SmartPtr<IMaterialPass> pass )
     {
-        if(pass&&std::find(m_children.begin(),m_children.end(),pass)!=m_children.end()&&
-            (!pass->getParentPtr()||pass->getParentPtr()==this))pass->setParent(nullptr);
+        if( pass && std::find( m_children.begin(), m_children.end(), pass ) != m_children.end() &&
+            ( !pass->getParentPtr() || pass->getParentPtr() == this ) )
+        {
+            pass->setParent( nullptr );
+        }
         m_children.erase( std::remove( m_children.begin(), m_children.end(), pass ), m_children.end() );
         if( auto material = getMaterial() )
         {
@@ -191,9 +194,13 @@ namespace workphone::render
 
     void MaterialTechnique::setPasses( Array<SmartPtr<IMaterialPass>> passes )
     {
-        Array<SmartPtr<IMaterialNode>> nodes{Allocator<SmartPtr<IMaterialNode>>(sourceBudget)};
-        nodes.reserve(passes.size());for(auto pass:passes)nodes.push_back(pass);
-        setChildren(nodes);
+        Array<SmartPtr<IMaterialNode>> nodes{ Allocator<SmartPtr<IMaterialNode>>( sourceBudget ) };
+        nodes.reserve( passes.size() );
+        for( auto pass : passes )
+        {
+            nodes.push_back( pass );
+        }
+        setChildren( nodes );
         if( auto material = getMaterial() )
         {
             material->setPass( nullptr );

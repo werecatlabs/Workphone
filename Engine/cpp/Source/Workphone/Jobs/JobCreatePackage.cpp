@@ -286,9 +286,9 @@ namespace workphone
             // SQLite's Windows backend has a shorter filename limit than native
             // file copies, and backupTo appends another unique suffix. Snapshot
             // in a short temporary directory before copying to the content tree.
-            BuildStagingDirectory snapshot{
-                fs::temp_directory_path() /
-                fs::u8path( "wp-game-catalog-" + std::string( StringUtil::getUUID().c_str() ) ) };
+            BuildStagingDirectory snapshot{ fs::temp_directory_path() /
+                                            fs::u8path( "wp-game-catalog-" +
+                                                        std::string( StringUtil::getUUID().c_str() ) ) };
             if( !fs::create_directory( snapshot.path ) )
             {
                 throw std::runtime_error( "Cannot create the catalog snapshot folder" );
@@ -308,12 +308,11 @@ namespace workphone
         void writeDescriptor( const fs::path &file, const fs::path &scene,
                               const boost::json::array &archives )
         {
-            const boost::json::object descriptor{ { "projectPath", "." },
-                                                  { "currentScenePath", scene.generic_u8string() },
-                                                  { "applicationType", "Desktop" },
-                                                  { "archive", true },
-                                                  { "packageFormatVersion", 2 },
-                                                  { "packageArchives", archives } };
+            const boost::json::object descriptor{
+                { "projectPath", "." },           { "currentScenePath", scene.generic_u8string() },
+                { "applicationType", "Desktop" }, { "archive", true },
+                { "packageFormatVersion", 2 },    { "packageArchives", archives }
+            };
             std::ofstream output( file, std::ios::binary );
             output << boost::json::serialize( descriptor ) << '\n';
             output.close();
@@ -570,8 +569,8 @@ namespace workphone
                 checkCancelled();
                 if( entry.is_regular_file() )
                 {
-                    stagedFiles.insert(
-                        contentInput / entry.path().lexically_relative( nativeContentInput ) );
+                    stagedFiles.insert( contentInput /
+                                        entry.path().lexically_relative( nativeContentInput ) );
                 }
             }
 

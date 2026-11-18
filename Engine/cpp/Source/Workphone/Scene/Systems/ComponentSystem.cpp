@@ -248,9 +248,12 @@ namespace workphone::scene
     void ComponentSystem::setComponents( const Array<SmartPtr<IComponent>> &components )
     {
         decltype( m_components ) candidate( GrowthPolicy::Default, 1,
-            Allocator<SmartPtr<IComponent>>( sourceBudget ) );
+                                            Allocator<SmartPtr<IComponent>>( sourceBudget ) );
         candidate.reserve( components.capacity() );
-        for( const auto &component : components ) candidate.push_back( component );
+        for( const auto &component : components )
+        {
+            candidate.push_back( component );
+        }
         ScopedLock lock( this );
         m_components = std::move( candidate );
     }
@@ -306,9 +309,12 @@ namespace workphone::scene
     void ComponentSystem::setDirtyComponents( const Array<SmartPtr<IComponent>> &dirtyComponents )
     {
         decltype( m_dirtyComponents ) candidate( GrowthPolicy::Default, 1,
-            Allocator<SmartPtr<IComponent>>( sourceBudget ) );
+                                                 Allocator<SmartPtr<IComponent>>( sourceBudget ) );
         candidate.reserve( dirtyComponents.capacity() );
-        for( const auto &component : dirtyComponents ) candidate.push_back( component );
+        for( const auto &component : dirtyComponents )
+        {
+            candidate.push_back( component );
+        }
         ScopedLock lock( this );
         m_dirtyComponents = std::move( candidate );
     }
