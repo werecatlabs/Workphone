@@ -3,7 +3,7 @@
 
 namespace workphone::scene::race
 {
-    namespace sceneBuild
+    namespace scene_build
     {
 #include "Workphone/Procedural/CityDaylightSky.hpp"
 

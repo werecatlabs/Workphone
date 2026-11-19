@@ -3,7 +3,7 @@
 
 namespace workphone::scene::race
 {
-    using namespace sceneBuild;
+    using namespace scene_build;
 
     namespace
     {
@@ -11,7 +11,7 @@ namespace workphone::scene::race
         #include "Workphone/Procedural/CityRoundaboutLandscape.hpp"
     }
 
-    namespace sceneBuild
+    namespace scene_build
     {
 #include "Workphone/Procedural/CityCarriagewayUtilities.hpp"
 #include "Workphone/Procedural/CityRoadEdgeSurface.hpp"

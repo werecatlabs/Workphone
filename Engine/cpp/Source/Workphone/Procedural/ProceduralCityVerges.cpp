@@ -3,14 +3,14 @@
 
 namespace workphone::scene::race
 {
-    using namespace sceneBuild;
+    using namespace scene_build;
 
     namespace
     {
         #include "Workphone/Procedural/CityVergeTransitions.hpp"
     }
 
-    namespace sceneBuild
+    namespace scene_build
     {
         void buildTerrainCityVerges( SceneAssets &assets, const CityRoadTerrainMesh &walks, u32 seed,
                                      VehicleAppearanceQuality quality )

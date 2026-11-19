@@ -3,7 +3,7 @@
 
 namespace workphone::scene::race
 {
-    namespace sceneBuild
+    namespace scene_build
     {
         void buildCityLayoutDebug( SceneAssets &assets, const OpenCityLayout &city,
                                    const CityRoadBlockFaces *terrainBlocks )

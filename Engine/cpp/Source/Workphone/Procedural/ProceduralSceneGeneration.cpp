@@ -3,7 +3,7 @@
 
 namespace workphone::scene::race
 {
-    using namespace sceneBuild;
+    using namespace scene_build;
 
     bool activateGeneratedScene( const SceneAssets &assets, SmartPtr<scene::IGameActor> owner,
                                  String &error )

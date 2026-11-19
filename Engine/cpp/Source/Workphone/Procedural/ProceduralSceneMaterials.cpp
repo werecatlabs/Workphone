@@ -3,7 +3,7 @@
 
 namespace workphone::scene::race
 {
-    namespace sceneBuild
+    namespace scene_build
     {
         SmartPtr<render::IMaterial> material( SceneAssets &assets, ColourF colour, float roughness,
                                               float metalness )

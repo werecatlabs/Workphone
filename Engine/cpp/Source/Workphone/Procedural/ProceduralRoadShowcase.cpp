@@ -3,7 +3,7 @@
 
 namespace workphone::scene::race
 {
-    namespace sceneBuild
+    namespace scene_build
     {
         void buildRoadAuthoringShowcase( SceneAssets &assets, SmartPtr<scene::IGameActor> vehicle, u32,
                                          VehicleAppearanceQuality )

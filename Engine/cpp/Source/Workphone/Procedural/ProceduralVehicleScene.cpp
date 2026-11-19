@@ -3,7 +3,7 @@
 
 namespace workphone::scene::race
 {
-    namespace sceneBuild
+    namespace scene_build
     {
         void buildCar( SceneAssets &assets, SmartPtr<scene::IGameActor> actor, u32 seed,
                        VehicleAppearanceQuality quality )

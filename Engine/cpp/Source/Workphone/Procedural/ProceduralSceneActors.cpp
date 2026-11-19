@@ -3,7 +3,7 @@
 
 namespace workphone::scene::race
 {
-    namespace sceneBuild
+    namespace scene_build
     {
         SmartPtr<scene::IGameActor> publishMesh( SceneAssets &assets, const String &name,
                                                  SmartPtr<IMesh> generated, size_t triangles,

@@ -3,7 +3,7 @@
 
 namespace workphone::scene::race
 {
-    namespace sceneBuild
+    namespace scene_build
     {
         void buildCityTraffic( SceneAssets &assets, const OpenCityLayout &city,
                                SmartPtr<IGameActor> player, u32 seed )

@@ -62,7 +62,7 @@
 // Builders and helpers shared between the scene generation units. The city component
 // headers (Workphone/Scene/Components/City*.hpp) are code fragments that are included
 // into this namespace by the unit that owns them.
-namespace workphone::scene::race::sceneBuild
+namespace workphone::scene::race::scene_build
 {
 	using namespace procedural;
 	constexpr float pi = 3.14159265358979323846f;

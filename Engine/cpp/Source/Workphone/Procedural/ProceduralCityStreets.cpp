@@ -3,7 +3,7 @@
 
 namespace workphone::scene::race
 {
-    namespace sceneBuild
+    namespace scene_build
     {
         void buildCityStreetDressing( SceneAssets &assets, const OpenCityLayout &city,
                                       VehicleAppearanceQuality quality )

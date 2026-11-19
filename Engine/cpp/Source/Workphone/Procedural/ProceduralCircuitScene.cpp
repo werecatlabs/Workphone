@@ -3,7 +3,7 @@
 
 namespace workphone::scene::race
 {
-    namespace sceneBuild
+    namespace scene_build
     {
         void pineGeometry( Geometry &trunks, Geometry &leaves, Vector3F p, float h, u32 seed = 0 )
         {
