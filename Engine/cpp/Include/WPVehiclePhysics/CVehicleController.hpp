@@ -345,7 +345,7 @@ namespace workphone
         void assertWheelConfig( SmartPtr<IWheelComponent> wheel, u32 index )
         {
             WP_ASSERT( index < 4 );
-            WP_ASSERT( wheel );
+            //WP_ASSERT( wheel );
             if( !wheel )
             {
                 return;

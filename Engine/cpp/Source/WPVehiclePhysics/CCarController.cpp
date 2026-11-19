@@ -42,6 +42,11 @@ namespace workphone
 
     void CCarController::update()
     {
+        if( !isLoaded() )
+        {
+            return;
+        }
+
         auto state = getState();
         switch( state )
         {
