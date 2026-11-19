@@ -5,7 +5,7 @@
 #include <Workphone/Scene/Components/VehicleController.hpp>
 #include <WPVehiclePhysics/CAircraft.hpp>
 #include <WPVehiclePhysics/CAircraftBody.hpp>
-#include "../../Engine/cpp/Source/Workphone/Scene/Components/AircraftControllerInput.hpp"
+#include <Workphone/Scene/Components/AircraftControllerInput.hpp>
 #include <cstdio>
 #include <cmath>
 #include <limits>

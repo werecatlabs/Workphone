@@ -92,7 +92,7 @@ namespace procedural_object_body_budget_contracts
         owner<CVehicleAppearance>(budget); owner<CVehicleDamage>(budget); owner<CVehicleDynamics>(budget);
         owner<CVehicleEffects>(budget); owner<CVehicleGenerator>(budget); owner<CVehicleGeometry>(budget);
         owner<CVehiclePhysics>(budget); owner<CVehiclePresentation>(budget);
-        body<CCollisionManager>(budget); body<WPProcedural>(budget);
+        body<WPProcedural>(budget);
         body<ProceduralComponent>(budget);
         body<PlanarGraph<Vector2<real_Num>>>(budget);
         body<SCityOptions>(budget); body<STerrainGeneratorOptions>(budget);

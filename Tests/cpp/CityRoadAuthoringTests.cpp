@@ -1,5 +1,5 @@
 #include <Workphone/Workphone.hpp>
-#include <Workphone/Procedural/CityRoadAuthoring.hpp>
+#include <Workphone/Scene/Components/CityRoadAuthoring.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
 #include <Workphone/Scene/GameActor.hpp>
 #include <Workphone/Scene/GameManager.hpp>

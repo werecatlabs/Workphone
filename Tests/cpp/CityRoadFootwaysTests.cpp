@@ -3,7 +3,7 @@
 #include <Workphone/Interface/Procedural/OpenCityLayout.hpp>
 #include <Workphone/Interface/Procedural/OpenCityRoadSource.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
-#include "../../Engine/cpp/Source/Workphone/Procedural/CityRoadCrossings.hpp"
+#include <Workphone/Procedural/CityRoadCrossings.hpp>
 #include <algorithm>
 #include <cmath>
 #include <cstring>

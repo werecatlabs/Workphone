@@ -18,7 +18,7 @@
 #include <Workphone/Database/AssetDatabaseManager.hpp>
 #include <Workphone/Mesh/MeshUtil.hpp>
 #include <Workphone/Mesh/MeshSerializer.hpp>
-#include "../../../Engine/cpp/Source/Workphone/Scene/SceneWorldIndex.hpp"
+#include <Workphone/Scene/SceneWorldIndex.hpp>
 #include <boost/test/unit_test.hpp>
 #include <filesystem>
 #include <chrono>

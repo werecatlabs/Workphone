@@ -3,7 +3,7 @@
 
 #include "TestGuard.hpp"
 #include <Workphone/Scene/Components/UI/LayoutTransform.hpp>
-#include <Workphone/Scene/Systems/UI/LayoutTransformSystem.hpp>
+#include <Workphone/Scene/Systems/LayoutTransformSystem.hpp>
 
 // UnitTests::setupGame installs managers directly; Application::load normally installs this
 // system. Keep these factory tests on the same state allocation path as the application.

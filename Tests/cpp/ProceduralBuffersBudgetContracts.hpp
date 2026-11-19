@@ -14,7 +14,7 @@ namespace procedural_buffers_budget_contracts
 {
     using namespace workphone;
     using namespace workphone::procedural;
-    using namespace workphone::scene::race;
+    using namespace workphone::scene::procedural_scene;
     inline void require(bool value,const char *message)
     { if(!value) throw std::runtime_error(message); }
     struct Budget
