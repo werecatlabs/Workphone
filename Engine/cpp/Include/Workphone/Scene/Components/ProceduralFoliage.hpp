@@ -1,9 +1,11 @@
 #pragma once
+
 #include <Workphone/Scene/Components/ProceduralMesh.hpp>
 #include <Workphone/Scene/Components/Terrain/FoliagePresets.hpp>
 
 namespace workphone::scene
 {
+
     /// An editable standalone plant using the same generator as terrain foliage.
     class WPCore_API ProceduralFoliage : public ProceduralMesh
     {
@@ -25,7 +27,6 @@ namespace workphone::scene
         SmartPtr<IMesh> buildMesh() override;
         void applyGeneratedMaterials() override;
 
-    private:
         Preset m_preset = Preset::Oak;
         FoliagePlantRecipe m_recipe;
         u32 m_lod = 0;

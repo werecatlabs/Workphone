@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Workphone/Scene/Components/ProceduralScene.hpp>
-
 #include <memory>
 
 namespace workphone::scene
@@ -27,7 +26,6 @@ namespace workphone::scene
         void buildGeneratedScene() override;
         void generationFailed() override;
 
-    private:
         std::unique_ptr<ProceduralCityConfiguration> m_city;
     };
 }  // namespace workphone::scene

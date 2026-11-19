@@ -465,12 +465,8 @@ namespace workphone::scene
         template <class Lots>
         bool overlapsExistingLot( const Lots &lots, const OpenCityLayout::Lot &lot )
         {
-            // The padding keeps a pedestrian/service gap between neighbouring parcels.
             return std::any_of( lots.begin(), lots.end(), [&]( const auto &other ) {
-                return std::abs( lot.parcelX - other.parcelX ) <
-                           ( lot.parcelWidth + other.parcelWidth ) * .5f + .75f &&
-                       std::abs( lot.parcelZ - other.parcelZ ) <
-                           ( lot.parcelDepth + other.parcelDepth ) * .5f + .75f;
+                return OpenCityLayout::parcelsOverlap( lot, other );
             } );
         }
 

@@ -4,6 +4,7 @@
 
 namespace workphone::scene::procedural_properties
 {
+
     inline void setEnum( SmartPtr<Properties> p, const String &key, s32 selected,
                          std::initializer_list<const char *> labels )
     {
@@ -39,4 +40,5 @@ namespace workphone::scene::procedural_properties
         }
         return selected;
     }
+
 }  // namespace workphone::scene::procedural_properties
