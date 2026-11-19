@@ -11,6 +11,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string_view>
+#include <utility>
 
 namespace workphone::scene
 {
@@ -32,6 +33,16 @@ namespace workphone::scene
         // Match CityRoadFootways'0.05m carriageway gap +2.4m walk. Full parcel
         // foundations must reserve the pedestrian surface as well as the road.
         constexpr double pedestrianEnvelope = .05 + 2.4;
+
+        constexpr size_t maxInputParcels = 400;
+        constexpr size_t maxRoadSamples = 65536;
+        constexpr size_t maxJunctionTriangles = 65536;
+        constexpr u64 maxClearanceVisits = 32000000;
+        constexpr u64 maxFittedVertices = 8000000;
+        // Foundation relief limit shared with the building ground-contact rules.
+        constexpr float maxFoundationRelief = 1.25f + 1e-5f;
+        // World-aligned infill grid pitch; leaves pedestrian/service gaps between lots.
+        constexpr float infillPitch = 18.f;
 
         struct Rectangle
         {
@@ -92,9 +103,12 @@ namespace workphone::scene
         {
             const Bounds parcel{ r.x - r.width * .5, r.x + r.width * .5, r.z - r.depth * .5,
                                  r.z + r.depth * .5 };
+            const auto visit = [&visits] {
+                require( ++visits <= maxClearanceVisits, "Parcel road-clearance work budget exceeded." );
+            };
             for( size_t i = 0; i < groups.size(); ++i )
             {
-                require( ++visits <= 32000000, "Parcel road-clearance work budget exceeded." );
+                visit();
                 const auto &b = groups[i];
                 if( parcel.x1 < b.x0 || parcel.x0 > b.x1 || parcel.z1 < b.z0 || parcel.z0 > b.z1 )
                 {
@@ -104,7 +118,7 @@ namespace workphone::scene
                 const size_t end = std::min( items.size(), start + reservationGroupSize );
                 for( size_t j = start; j < end; ++j )
                 {
-                    require( ++visits <= 32000000, "Parcel road-clearance work budget exceeded." );
+                    visit();
                     if( overlaps( items[j] ) )
                     {
                         return true;
@@ -156,7 +170,8 @@ namespace workphone::scene
                 {
                     return;
                 }
-                require( triangles.size() < 65536, "Parcel junction reservation capacity exceeded." );
+                require( triangles.size() < maxJunctionTriangles,
+                         "Parcel junction reservation capacity exceeded." );
                 triangles.push_back( { { a, b, c },
                                        std::min( { a.x, b.x, c.x } ),
                                        std::max( { a.x, b.x, c.x } ),
@@ -354,6 +369,224 @@ namespace workphone::scene
             return owner;
         }
 
+        using BlockRing = SourceBudgetVector<OpenCityLayout::Point>;
+
+        void measureBlock( const BlockRing &ring, BlockCoverage &block )
+        {
+            require( ring.size() >= 3, "Invalid terrain city block boundary." );
+            block.minX = block.maxX = ring.front().x;
+            block.minZ = block.maxZ = ring.front().z;
+            for( size_t j = 0, k = ring.size() - 1; j < ring.size(); k = j++ )
+            {
+                const auto a = ring[k], b = ring[j];
+                block.area += double( a.x ) * b.z - double( b.x ) * a.z;
+                block.minX = std::min<double>( block.minX, b.x );
+                block.maxX = std::max<double>( block.maxX, b.x );
+                block.minZ = std::min<double>( block.minZ, b.z );
+                block.maxZ = std::max<double>( block.maxZ, b.z );
+            }
+            block.area = std::abs( block.area ) * .5;
+            require( block.area > 0, "Terrain city block has no area." );
+        }
+
+        struct StreetEdge
+        {
+            double distanceSquared = std::numeric_limits<double>::max();
+            OpenCityLayout::Frontage frontage = OpenCityLayout::Frontage::North;
+        };
+
+        // Closest block-boundary edge to the site, and the world side it lies on.
+        StreetEdge nearestStreetEdge( const BlockRing &ring, float x, float z )
+        {
+            StreetEdge nearest;
+            for( size_t j = 0, k = ring.size() - 1; j < ring.size(); k = j++ )
+            {
+                const auto a = ring[k], b = ring[j];
+                const double dx = double( b.x ) - a.x, dz = double( b.z ) - a.z;
+                const double length2 = dx * dx + dz * dz;
+                if( length2 == 0 )
+                {
+                    continue;
+                }
+                const double t =
+                    std::clamp( ( ( x - a.x ) * dx + ( z - a.z ) * dz ) / length2, 0., 1. );
+                const double ox = a.x + t * dx - x, oz = a.z + t * dz - z;
+                const double distance = ox * ox + oz * oz;
+                if( distance < nearest.distanceSquared )
+                {
+                    nearest.distanceSquared = distance;
+                    nearest.frontage = std::abs( ox ) > std::abs( oz )
+                                           ? ( ox < 0 ? OpenCityLayout::Frontage::West
+                                                      : OpenCityLayout::Frontage::East )
+                                           : ( oz < 0 ? OpenCityLayout::Frontage::North
+                                                      : OpenCityLayout::Frontage::South );
+                }
+            }
+            return nearest;
+        }
+
+        // Stable identity per grid cell; the flag bit keeps infill clear of authored ids.
+        u64 infillLotId( u32 seed, int ix, int iz )
+        {
+            return ( u64( seed ) << 32 ) | 0x80000000u | ( ( u32( ix ) & 0x7fffu ) << 15 ) |
+                   ( u32( iz ) & 0x7fffu );
+        }
+
+        // Everything about an infill lot except its frontage; empty when its
+        // envelope would cross the city's road setback.
+        std::optional<OpenCityLayout::Lot> makeInfillLot( u64 id, float x, float z, float extent )
+        {
+            OpenCityLayout::Lot lot{};
+            lot.id = id;
+            const u64 variation = render::foliageStableHash( lot.id );
+            lot.variant = u32( variation );
+            lot.parcelX = lot.x = x;
+            lot.parcelZ = lot.z = z;
+            lot.parcelWidth = 12.f + float( variation & 3 );
+            lot.parcelDepth = 12.f + float( ( variation >> 2 ) & 3 );
+            const float limit = extent - OpenCityLayout::roadSetback;
+            if( std::abs( x ) + lot.parcelWidth * .5f > limit ||
+                std::abs( z ) + lot.parcelDepth * .5f > limit )
+            {
+                return std::nullopt;
+            }
+            lot.park = ( variation >> 32 ) % 16 == 0;
+            lot.width = lot.parcelWidth - ( lot.park ? 0.f : 2.f );
+            lot.depth = lot.parcelDepth - ( lot.park ? 0.f : 2.f );
+            const bool central = std::hypot( x, z ) < extent * .40f;
+            lot.district = central                        ? OpenCityLayout::District::Commercial
+                           : ( variation >> 16 ) % 13 == 0 ? OpenCityLayout::District::Civic
+                                                           : OpenCityLayout::District::Residential;
+            lot.height = central ? 3.6f * ( 6 + ( variation >> 24 ) % 10 )
+                                 : 3.2f * ( 2 + ( variation >> 24 ) % 5 );
+            return lot;
+        }
+
+        template <class Lots>
+        bool overlapsExistingLot( const Lots &lots, const OpenCityLayout::Lot &lot )
+        {
+            // The padding keeps a pedestrian/service gap between neighbouring parcels.
+            return std::any_of( lots.begin(), lots.end(), [&]( const auto &other ) {
+                return std::abs( lot.parcelX - other.parcelX ) <
+                           ( lot.parcelWidth + other.parcelWidth ) * .5f + .75f &&
+                       std::abs( lot.parcelZ - other.parcelZ ) <
+                           ( lot.parcelDepth + other.parcelDepth ) * .5f + .75f;
+            } );
+        }
+
+        using ShrinkScale = std::pair<float, float>;
+
+        // Candidate (x, z) scale factors, largest area first; equal areas keep as
+        // much street frontage as possible. Index 0 is always the unscaled lot.
+        // Built once per frontage axis instead of sorting for every admitted lot.
+        const std::array<ShrinkScale, 25> &shrinkScales( bool frontageAlongX )
+        {
+            static const std::array<std::array<ShrinkScale, 25>, 2> tables = [] {
+                std::array<std::array<ShrinkScale, 25>, 2> result;
+                for( size_t axis = 0; axis < result.size(); ++axis )
+                {
+                    auto &scales = result[axis];
+                    size_t index = 0;
+                    for( float x : { 1.f, .85f, .7f, .55f, .4f } )
+                    {
+                        for( float z : { 1.f, .85f, .7f, .55f, .4f } )
+                        {
+                            scales[index++] = { x, z };
+                        }
+                    }
+                    std::sort( scales.begin(), scales.end(), [axis]( const auto &a, const auto &b ) {
+                        const float areaA = a.first * a.second, areaB = b.first * b.second;
+                        if( areaA != areaB )
+                        {
+                            return areaA > areaB;
+                        }
+                        return axis ? a.first > b.first : a.second > b.second;
+                    } );
+                }
+                return result;
+            }();
+            return tables[frontageAlongX ? 1 : 0];
+        }
+
+        // Scale the envelope and building towards the road-facing edge so that edge,
+        // the identity and the frontage are preserved.
+        OpenCityLayout::Lot shrinkLot( const OpenCityLayout::Lot &original, ShrinkScale scale )
+        {
+            using Frontage = OpenCityLayout::Frontage;
+            auto lot = original;
+            const float anchorX = lot.frontage == Frontage::West ? -1.f
+                                  : lot.frontage == Frontage::East ? 1.f
+                                                                   : 0.f;
+            const float anchorZ = lot.frontage == Frontage::North ? -1.f
+                                  : lot.frontage == Frontage::South ? 1.f
+                                                                    : 0.f;
+            lot.parcelX += anchorX * original.parcelWidth * ( 1 - scale.first ) * .5f;
+            lot.parcelZ += anchorZ * original.parcelDepth * ( 1 - scale.second ) * .5f;
+            lot.parcelWidth *= scale.first;
+            lot.parcelDepth *= scale.second;
+            lot.x = lot.parcelX + ( original.x - original.parcelX ) * scale.first;
+            lot.z = lot.parcelZ + ( original.z - original.parcelZ ) * scale.second;
+            lot.width *= scale.first;
+            lot.depth *= scale.second;
+            return lot;
+        }
+
+        SourceBudgetVector<Segment> buildRoadSegments( const procedural::CityRoadSplineSource &source,
+                                                       const procedural::CityRoadSplineBake &bake )
+        {
+            SourceBudgetVector<Segment> segments;
+            size_t segmentCount = 0;
+            for( size_t road = 0; road < source.roads.size(); ++road )
+            {
+                const auto &samples = bake.roads[road];
+                require( samples.roadId == source.roads[road].id && samples.points.size() >= 2 &&
+                             samples.points.size() <= maxRoadSamples,
+                         "Parcel support received missing or excessive canonical road samples." );
+                segmentCount += samples.points.size() - 1;
+                require( segmentCount <= maxRoadSamples,
+                         "Parcel road-clearance sample budget exceeded." );
+            }
+            segments.reserve( segmentCount );
+            for( size_t road = 0; road < source.roads.size(); ++road )
+            {
+                const auto &points = bake.roads[road].points;
+                for( size_t i = 0; i < points.size(); ++i )
+                {
+                    require( finite( points[i].position ) && std::isfinite( points[i].distance ) &&
+                                 points[i].distance >= 0 &&
+                                 ( !i || points[i].distance > points[i - 1].distance ),
+                             "Parcel road bake contains invalid samples." );
+                    if( !i )
+                    {
+                        continue;
+                    }
+                    const auto a = points[i - 1].position, b = points[i].position;
+                    require( std::hypot( b.x - a.x, b.z - a.z ) > 1e-5f,
+                             "Parcel road bake has a zero horizontal segment." );
+                    segments.push_back(
+                        { a.x, a.z, b.x, b.z, source.roads[road].width * .5 + pedestrianEnvelope } );
+                }
+            }
+            return segments;
+        }
+
+        bool validParcelEnvelope( const OpenCityLayout::Lot &lot )
+        {
+            return std::isfinite( lot.parcelX ) && std::isfinite( lot.parcelZ ) &&
+                   std::isfinite( lot.parcelWidth ) && std::isfinite( lot.parcelDepth ) &&
+                   lot.parcelWidth >= .5f && lot.parcelDepth >= .5f &&
+                   std::min( lot.parcelWidth, lot.parcelDepth ) <= 60 &&
+                   std::abs( lot.parcelX ) + lot.parcelWidth * .5f <= 1000000 &&
+                   std::abs( lot.parcelZ ) + lot.parcelDepth * .5f <= 1000000 &&
+                   std::isfinite( lot.x ) && std::isfinite( lot.z ) && std::isfinite( lot.width ) &&
+                   std::isfinite( lot.depth ) && std::isfinite( lot.height ) && lot.width > 0 &&
+                   lot.depth > 0 && lot.height > 0 &&
+                   std::abs( lot.x - lot.parcelX ) + lot.width * .5f <=
+                       lot.parcelWidth * .5f + .001f &&
+                   std::abs( lot.z - lot.parcelZ ) + lot.depth * .5f <=
+                       lot.parcelDepth * .5f + .001f;
+        }
+
         template <class Admit>
         void fillCityBlocks( OpenCityLayout &city, const CityRoadBlockFaces &faces, u32 seed,
                              SourceBudgetSet<u64> &ids, Admit admit )
@@ -369,21 +602,7 @@ namespace workphone::scene
             SourceBudgetVector<BlockCoverage> blocks;
             for( const auto &ring : faces )
             {
-                require( ring.size() >= 3, "Invalid terrain city block boundary." );
-                auto &block = blocks.emplace_back();
-                block.minX = block.maxX = ring.front().x;
-                block.minZ = block.maxZ = ring.front().z;
-                for( size_t j = 0, k = ring.size() - 1; j < ring.size(); k = j++ )
-                {
-                    const auto a = ring[k], b = ring[j];
-                    block.area += double( a.x ) * b.z - double( b.x ) * a.z;
-                    block.minX = std::min<double>( block.minX, b.x );
-                    block.maxX = std::max<double>( block.maxX, b.x );
-                    block.minZ = std::min<double>( block.minZ, b.z );
-                    block.maxZ = std::max<double>( block.maxZ, b.z );
-                }
-                block.area = std::abs( block.area ) * .5;
-                require( block.area > 0, "Terrain city block has no area." );
+                measureBlock( ring, blocks.emplace_back() );
             }
             for( const auto &lot : city.lots )
             {
@@ -395,75 +614,31 @@ namespace workphone::scene
             }
 
             // World-aligned sites retain their identity when an unrelated road is edited.
-            // The pitch leaves pedestrian/service gaps between neighbouring infill lots.
-            constexpr float pitch = 18.f;
-            const int half = int( std::floor( ( city.extent - OpenCityLayout::roadSetback ) / pitch ) );
+            const int half =
+                int( std::floor( ( city.extent - OpenCityLayout::roadSetback ) / infillPitch ) );
             for( int ix = -half; ix <= half; ++ix )
             {
                 for( int iz = -half; iz <= half; ++iz )
                 {
-                    const float x = ix * pitch, z = iz * pitch;
+                    const float x = ix * infillPitch, z = iz * infillPitch;
                     const auto owner = containingBlock( faces, blocks, x, z );
                     if( owner == faces.size() )
                     {
                         continue;
                     }
-                    OpenCityLayout::Lot lot{};
-                    lot.id = ( u64( seed ) << 32 ) | 0x80000000u | ( ( u32( ix ) & 0x7fffu ) << 15 ) |
-                             ( u32( iz ) & 0x7fffu );
-                    if( ids.count( lot.id ) )
+                    const u64 id = infillLotId( seed, ix, iz );
+                    if( ids.count( id ) )
                     {
                         continue;
                     }
-                    const u64 variation = render::foliageStableHash( lot.id );
-                    lot.variant = u32( variation );
-                    lot.parcelX = lot.x = x;
-                    lot.parcelZ = lot.z = z;
-                    lot.parcelWidth = 12.f + float( variation & 3 );
-                    lot.parcelDepth = 12.f + float( ( variation >> 2 ) & 3 );
-                    if( std::abs( x ) + lot.parcelWidth * .5f >
-                            city.extent - OpenCityLayout::roadSetback ||
-                        std::abs( z ) + lot.parcelDepth * .5f >
-                            city.extent - OpenCityLayout::roadSetback )
+                    auto lot = makeInfillLot( id, x, z, city.extent );
+                    if( !lot )
                     {
                         continue;
                     }
-                    lot.park = ( variation >> 32 ) % 16 == 0;
-                    lot.width = lot.parcelWidth - ( lot.park ? 0.f : 2.f );
-                    lot.depth = lot.parcelDepth - ( lot.park ? 0.f : 2.f );
-                    const bool central = std::hypot( x, z ) < city.extent * .40f;
-                    lot.district = central ? OpenCityLayout::District::Commercial
-                                   : ( variation >> 16 ) % 13 == 0
-                                       ? OpenCityLayout::District::Civic
-                                       : OpenCityLayout::District::Residential;
-                    lot.height = central ? 3.6f * ( 6 + ( variation >> 24 ) % 10 )
-                                         : 3.2f * ( 2 + ( variation >> 24 ) % 5 );
-                    const auto &ring = faces[owner];
-                    double nearest = std::numeric_limits<double>::max();
-                    for( size_t j = 0, k = ring.size() - 1; j < ring.size(); k = j++ )
-                    {
-                        const auto a = ring[k], b = ring[j];
-                        const double dx = double( b.x ) - a.x, dz = double( b.z ) - a.z;
-                        const double length2 = dx * dx + dz * dz;
-                        if( length2 == 0 )
-                        {
-                            continue;
-                        }
-                        const double t =
-                            std::clamp( ( ( x - a.x ) * dx + ( z - a.z ) * dz ) / length2, 0., 1. );
-                        const double ox = a.x + t * dx - x, oz = a.z + t * dz - z;
-                        const double distance = ox * ox + oz * oz;
-                        if( distance < nearest )
-                        {
-                            nearest = distance;
-                            lot.frontage = std::abs( ox ) > std::abs( oz )
-                                               ? ( ox < 0 ? OpenCityLayout::Frontage::West
-                                                          : OpenCityLayout::Frontage::East )
-                                               : ( oz < 0 ? OpenCityLayout::Frontage::North
-                                                          : OpenCityLayout::Frontage::South );
-                        }
-                    }
-                    blocks[owner].sites.push_back( { lot, nearest } );
+                    const auto edge = nearestStreetEdge( faces[owner], x, z );
+                    lot->frontage = edge.frontage;
+                    blocks[owner].sites.push_back( { *lot, edge.distanceSquared } );
                 }
             }
             for( auto &block : blocks )
@@ -493,13 +668,7 @@ namespace workphone::scene
                     break;
                 }
                 const auto &lot = least->sites[least->next++].lot;
-                const bool occupied =
-                    std::any_of( city.lots.begin(), city.lots.end(), [&]( const auto &other ) {
-                        return std::abs( lot.parcelX - other.parcelX ) <
-                                   ( lot.parcelWidth + other.parcelWidth ) * .5f + .75f &&
-                               std::abs( lot.parcelZ - other.parcelZ ) <
-                                   ( lot.parcelDepth + other.parcelDepth ) * .5f + .75f;
-                    } );
+                const bool occupied = overlapsExistingLot( city.lots, lot );
                 if( !occupied && admit( lot ) )
                 {
                     least->occupied += city.lots.back().parcelWidth * city.lots.back().parcelDepth;
@@ -529,7 +698,7 @@ namespace workphone::scene
     {
         try
         {
-            require( terrain && input.lots.size() <= 400,
+            require( terrain && input.lots.size() <= maxInputParcels,
                      "Parcel support requires retained terrain and at most400 parcels." );
             require( std::isfinite( options.minimumBuildingSpan ) && options.minimumBuildingSpan >= 2 &&
                          options.minimumBuildingSpan <= 30,
@@ -550,57 +719,13 @@ namespace workphone::scene
                              "Parcel junction approach has an invalid horizontal direction." );
                 }
             }
-            SourceBudgetVector<Segment> segments;
-            size_t segmentCount = 0;
-            for( size_t road = 0; road < source.roads.size(); ++road )
-            {
-                const auto &samples = bake.roads[road];
-                require( samples.roadId == source.roads[road].id && samples.points.size() >= 2 &&
-                             samples.points.size() <= 65536,
-                         "Parcel support received missing or excessive canonical road samples." );
-                segmentCount += samples.points.size() - 1;
-                require( segmentCount <= 65536, "Parcel road-clearance sample budget exceeded." );
-            }
-            segments.reserve( segmentCount );
-            for( size_t road = 0; road < source.roads.size(); ++road )
-            {
-                const auto &points = bake.roads[road].points;
-                for( size_t i = 0; i < points.size(); ++i )
-                {
-                    require( finite( points[i].position ) && std::isfinite( points[i].distance ) &&
-                                 points[i].distance >= 0 &&
-                                 ( !i || points[i].distance > points[i - 1].distance ),
-                             "Parcel road bake contains invalid samples." );
-                    if( !i )
-                    {
-                        continue;
-                    }
-                    const auto a = points[i - 1].position, b = points[i].position;
-                    require( std::hypot( b.x - a.x, b.z - a.z ) > 1e-5f,
-                             "Parcel road bake has a zero horizontal segment." );
-                    segments.push_back(
-                        { a.x, a.z, b.x, b.z, source.roads[road].width * .5 + pedestrianEnvelope } );
-                }
-            }
+            const auto segments = buildRoadSegments( source, bake );
             SourceBudgetSet<u64> ids;
             for( const auto &lot : input.lots )
             {
-                require(
-                    lot.id && ids.insert( lot.id ).second && std::isfinite( lot.parcelX ) &&
-                        std::isfinite( lot.parcelZ ) && std::isfinite( lot.parcelWidth ) &&
-                        std::isfinite( lot.parcelDepth ) && lot.parcelWidth >= .5f &&
-                        lot.parcelDepth >= .5f && std::min( lot.parcelWidth, lot.parcelDepth ) <= 60 &&
-                        std::abs( lot.parcelX ) + lot.parcelWidth * .5f <= 1000000 &&
-                        std::abs( lot.parcelZ ) + lot.parcelDepth * .5f <= 1000000 &&
-                        std::isfinite( lot.x ) && std::isfinite( lot.z ) && std::isfinite( lot.width ) &&
-                        std::isfinite( lot.depth ) && std::isfinite( lot.height ) && lot.width > 0 &&
-                        lot.depth > 0 && lot.height > 0 &&
-                        std::abs( lot.x - lot.parcelX ) + lot.width * .5f <=
-                            lot.parcelWidth * .5f + .001f &&
-                        std::abs( lot.z - lot.parcelZ ) + lot.depth * .5f <=
-                            lot.parcelDepth * .5f + .001f,
-                    "Parcel support requires unique identities and finite bounded whole envelopes "
-                    "containing their building footprints." );
+                require( lot.id && ids.insert( lot.id ).second && validParcelEnvelope( lot ),
+                         "Parcel support requires unique identities and finite bounded whole envelopes "
+                         "containing their building footprints." );
             }
 
             auto candidate = input;
@@ -656,6 +781,58 @@ namespace workphone::scene
                     reservedJunctions, junctionBounds, footprint, clearanceVisits,
                     [&]( const ReservedTriangle &t ) { return triangleOverlap( footprint, t ); } );
             };
+            enum class Foundation
+            {
+                Unsupported,
+                TooSteep,
+                Supported
+            };
+            // Fit the retained terrain to the whole parcel footprint. Missing, holed
+            // or steep-celled support is a genuine exclusion; only excessive relief
+            // on an otherwise safe surface may be resized by the caller.
+            const auto fitFoundation = [&]( OpenCityLayout::Lot &lot ) {
+                auto &sweep = rectangle.roads[0];
+                const bool alongX = lot.parcelWidth > lot.parcelDepth;
+                sweep.width = std::min( lot.parcelWidth, lot.parcelDepth );
+                const Vector3F span =
+                    alongX ? Vector3F( lot.parcelWidth, 0, 0 ) : Vector3F( 0, 0, lot.parcelDepth );
+                const Vector3F center{ lot.parcelX, 0, lot.parcelZ };
+                sweep.knots[0].position = center - span * .5f;
+                sweep.knots[1].position = center + span * .5f;
+                sweep.knots[0].outHandle = span / 3.f;
+                sweep.knots[1].inHandle = -span / 3.f;
+                const auto denialBefore = sourceBudgetDenialCount();
+                procedural::CityRoadSplineBake rectangleBake;
+                CityRoadTerrainMesh surface;
+                if( !procedural::sampleCityRoadSplines( rectangle, {}, sampler, rectangleBake, error ) ||
+                    !buildCityRoadTerrainMesh( rectangle, rectangleBake, terrain, placement, surface,
+                                               error, false ) )
+                {
+                    if( !unsupportedTerrain( error, denialBefore ) )
+                    {
+                        throw std::runtime_error( error.c_str() );
+                    }
+                    return Foundation::Unsupported;
+                }
+                fittedVertices += surface.vertices.size();
+                require( fittedVertices <= maxFittedVertices,
+                         "Parcel cumulative terrain-fit work budget exceeded." );
+                require( !surface.vertices.empty(),
+                         "Parcel full-footprint support unexpectedly produced no surface." );
+                float minimum = std::numeric_limits<float>::max(), maximum = -minimum;
+                for( const auto &vertex : surface.vertices )
+                {
+                    minimum = std::min( minimum, vertex.position.y );
+                    maximum = std::max( maximum, vertex.position.y );
+                }
+                if( maximum - minimum > maxFoundationRelief )
+                {
+                    return Foundation::TooSteep;
+                }
+                lot.groundHeight = maximum;
+                lot.groundMinimumHeight = minimum;
+                return Foundation::Supported;
+            };
             const auto admit = [&]( OpenCityLayout::Lot lot ) {
                 const Rectangle footprint{ lot.parcelX, lot.parcelZ, lot.parcelWidth, lot.parcelDepth };
                 if( reserved( footprint ) )
@@ -663,54 +840,23 @@ namespace workphone::scene
                     return false;
                 }
                 const auto original = lot;
-                std::array<std::pair<float, float>, 25> scales;
-                size_t scaleIndex = 0;
-                for( float x : { 1.f, .85f, .7f, .55f, .4f } )
-                {
-                    for( float z : { 1.f, .85f, .7f, .55f, .4f } )
-                    {
-                        scales[scaleIndex++] = { x, z };
-                    }
-                }
                 const bool frontageAlongX =
                     lot.frontage == procedural::OpenCityLayout::Frontage::North ||
                     lot.frontage == procedural::OpenCityLayout::Frontage::South;
-                std::sort( scales.begin(), scales.end(), [&]( const auto &a, const auto &b ) {
-                    const float areaA = a.first * a.second, areaB = b.first * b.second;
-                    if( areaA != areaB )
-                    {
-                        return areaA > areaB;
-                    }
-                    // Equal-area choices keep as much street frontage as possible.
-                    return frontageAlongX ? a.first > b.first : a.second > b.second;
-                } );
-                for( size_t attempt = 0; attempt < ( options.shrinkForRelief ? scales.size() : 1 );
-                     ++attempt )
+                const auto &scales = shrinkScales( frontageAlongX );
+                const size_t attempts = options.shrinkForRelief ? scales.size() : 1;
+                for( size_t attempt = 0; attempt < attempts; ++attempt )
                 {
                     lot = original;
-                    const auto scale = scales[attempt];
                     if( attempt )
                     {
+                        const auto scale = scales[attempt];
                         if( original.width * scale.first < options.minimumBuildingSpan ||
                             original.depth * scale.second < options.minimumBuildingSpan )
                         {
                             continue;
                         }
-                        using Frontage = procedural::OpenCityLayout::Frontage;
-                        const float anchorX = lot.frontage == Frontage::West   ? -1.f
-                                              : lot.frontage == Frontage::East ? 1.f
-                                                                               : 0.f;
-                        const float anchorZ = lot.frontage == Frontage::North   ? -1.f
-                                              : lot.frontage == Frontage::South ? 1.f
-                                                                                : 0.f;
-                        lot.parcelX += anchorX * original.parcelWidth * ( 1 - scale.first ) * .5f;
-                        lot.parcelZ += anchorZ * original.parcelDepth * ( 1 - scale.second ) * .5f;
-                        lot.parcelWidth *= scale.first;
-                        lot.parcelDepth *= scale.second;
-                        lot.x = lot.parcelX + ( original.x - original.parcelX ) * scale.first;
-                        lot.z = lot.parcelZ + ( original.z - original.parcelZ ) * scale.second;
-                        lot.width *= scale.first;
-                        lot.depth *= scale.second;
+                        lot = shrinkLot( original, scale );
                         // Recheck even these mathematical subsets so float rounding
                         // at large world coordinates cannot erode a road reservation.
                         const Rectangle reduced{ lot.parcelX, lot.parcelZ, lot.parcelWidth,
@@ -721,51 +867,16 @@ namespace workphone::scene
                         }
                     }
                     ++nextChecks;
-                    auto &sweep = rectangle.roads[0];
-                    const bool alongX = lot.parcelWidth > lot.parcelDepth;
-                    sweep.width = std::min( lot.parcelWidth, lot.parcelDepth );
-                    const Vector3F span =
-                        alongX ? Vector3F( lot.parcelWidth, 0, 0 ) : Vector3F( 0, 0, lot.parcelDepth );
-                    const Vector3F center{ lot.parcelX, 0, lot.parcelZ };
-                    sweep.knots[0].position = center - span * .5f;
-                    sweep.knots[1].position = center + span * .5f;
-                    sweep.knots[0].outHandle = span / 3.f;
-                    sweep.knots[1].inHandle = -span / 3.f;
-                    const auto denialBefore = sourceBudgetDenialCount();
-                    procedural::CityRoadSplineBake rectangleBake;
-                    CityRoadTerrainMesh surface;
-                    if( !procedural::sampleCityRoadSplines( rectangle, {}, sampler, rectangleBake,
-                                                            error ) ||
-                        !buildCityRoadTerrainMesh( rectangle, rectangleBake, terrain, placement, surface,
-                                                   error, false ) )
+                    const auto fit = fitFoundation( lot );
+                    if( fit == Foundation::Unsupported )
                     {
-                        if( !unsupportedTerrain( error, denialBefore ) )
-                        {
-                            throw std::runtime_error( error.c_str() );
-                        }
-                        // Missing/holed/steep support is a genuine exclusion. Only
-                        // excessive relief on an otherwise safe surface is resized.
                         break;
                     }
-                    fittedVertices += surface.vertices.size();
-                    require( fittedVertices <= 8000000,
-                             "Parcel cumulative terrain-fit work budget exceeded." );
-                    require( !surface.vertices.empty(),
-                             "Parcel full-footprint support unexpectedly produced no surface." );
-                    float minimum = std::numeric_limits<float>::max(), maximum = -minimum;
-                    for( const auto &vertex : surface.vertices )
+                    if( fit == Foundation::Supported )
                     {
-                        minimum = std::min( minimum, vertex.position.y );
-                        maximum = std::max( maximum, vertex.position.y );
+                        candidate.lots.push_back( lot );
+                        return true;
                     }
-                    if( maximum - minimum > 1.25f + 1e-5f )
-                    {
-                        continue;
-                    }
-                    lot.groundHeight = maximum;
-                    lot.groundMinimumHeight = minimum;
-                    candidate.lots.push_back( lot );
-                    return true;
                 }
                 return false;
             };
