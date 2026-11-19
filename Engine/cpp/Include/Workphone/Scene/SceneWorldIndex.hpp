@@ -15,11 +15,15 @@ namespace workphone::scene
             Vector3F minimum, maximum;
             u32 begin = 0, end = 0, left = 0, right = 0;
         };
+
         Array<Node> m_nodes{ Allocator<Node>( sourceBudget ) };
         Array<u32> m_order{ Allocator<u32>( sourceBudget ) };
+
         u32 buildNode( const Array<WorldCell> &cells, u32 begin, u32 end )
         {
-            Node node; node.begin = begin; node.end = end;
+            Node node;
+            node.begin = begin;
+            node.end = end;
             node.minimum = cells[m_order[begin]].minimum;
             node.maximum = cells[m_order[begin]].maximum;
             for( auto i = begin + 1; i < end; ++i )
@@ -30,7 +34,8 @@ namespace workphone::scene
                 node.maximum.x = std::max( node.maximum.x, cell.maximum.x );
                 node.maximum.z = std::max( node.maximum.z, cell.maximum.z );
             }
-            const auto index = u32( m_nodes.size() ); m_nodes.push_back( node );
+            const auto index = u32( m_nodes.size() );
+            m_nodes.push_back( node );
             if( end - begin > 8 )
             {
                 const bool x = double( node.maximum.x ) - node.minimum.x >=
@@ -38,38 +43,56 @@ namespace workphone::scene
                 const auto middle = begin + ( end - begin ) / 2;
                 std::nth_element( m_order.begin() + begin, m_order.begin() + middle,
                                   m_order.begin() + end, [&]( u32 a, u32 b ) {
-                    const auto &ca = cells[a]; const auto &cb = cells[b];
-                    const double ac = x ? double( ca.minimum.x ) + ca.maximum.x : double( ca.minimum.z ) + ca.maximum.z;
-                    const double bc = x ? double( cb.minimum.x ) + cb.maximum.x : double( cb.minimum.z ) + cb.maximum.z;
-                    return ac == bc ? ca.key < cb.key : ac < bc;
-                } );
+                                      const auto &ca = cells[a];
+                                      const auto &cb = cells[b];
+                                      const double ac = x ? double( ca.minimum.x ) + ca.maximum.x
+                                                          : double( ca.minimum.z ) + ca.maximum.z;
+                                      const double bc = x ? double( cb.minimum.x ) + cb.maximum.x
+                                                          : double( cb.minimum.z ) + cb.maximum.z;
+                                      return ac == bc ? ca.key < cb.key : ac < bc;
+                                  } );
                 node.left = buildNode( cells, begin, middle );
                 node.right = buildNode( cells, middle, end );
                 m_nodes[index] = node;
             }
             return index;
         }
+
         void queryNode( u32 index, const Array<WorldCell> &cells, const Vector3F &p,
                         double radiusSquared, Array<u32> &found, u32 &visited, u32 &tested ) const
         {
-            const auto &node = m_nodes[index]; ++visited;
-            const double x = std::max( { double( node.minimum.x ) - p.x, 0.0, double( p.x ) - node.maximum.x } );
-            const double z = std::max( { double( node.minimum.z ) - p.z, 0.0, double( p.z ) - node.maximum.z } );
-            if( x * x + z * z > radiusSquared ) return;
+            const auto &node = m_nodes[index];
+            ++visited;
+            const double x =
+                std::max( { double( node.minimum.x ) - p.x, 0.0, double( p.x ) - node.maximum.x } );
+            const double z =
+                std::max( { double( node.minimum.z ) - p.z, 0.0, double( p.z ) - node.maximum.z } );
+            if( x * x + z * z > radiusSquared )
+            {
+                return;
+            }
             if( node.right )
             {
                 queryNode( node.left, cells, p, radiusSquared, found, visited, tested );
                 queryNode( node.right, cells, p, radiusSquared, found, visited, tested );
             }
-            else for( auto i = node.begin; i < node.end; ++i )
+            else
             {
-                ++tested;
-                if( cells[m_order[i]].distanceSquared( p ) <= radiusSquared ) found.push_back( m_order[i] );
+                for( auto i = node.begin; i < node.end; ++i )
+                {
+                    ++tested;
+                    if( cells[m_order[i]].distanceSquared( p ) <= radiusSquared )
+                    {
+                        found.push_back( m_order[i] );
+                    }
+                }
             }
         }
+
     public:
         SourceBudgetMap<u64, u32> byKey;
         u32 persistent = ~u32( 0 );
+
         void clear()
         {
             byKey.clear();
@@ -77,22 +100,36 @@ namespace workphone::scene
             m_order = Array<u32>{ Allocator<u32>( sourceBudget ) };
             persistent = ~u32( 0 );
         }
+
         void build( const WorldManifest &manifest )
         {
             clear();
             for( u32 i = 0; i < manifest.cells.size(); ++i )
             {
                 byKey.emplace( manifest.cells[i].key, i );
-                if( manifest.cells[i].id == "persistent" ) persistent = i;
-                else if( !manifest.cells[i].detailKey ) m_order.push_back( i );
+                if( manifest.cells[i].id == "persistent" )
+                {
+                    persistent = i;
+                }
+                else if( !manifest.cells[i].detailKey )
+                {
+                    m_order.push_back( i );
+                }
             }
             m_nodes.reserve( m_order.size() / 4 + 1 );
-            if( !m_order.empty() ) buildNode( manifest.cells, 0, u32( m_order.size() ) );
+            if( !m_order.empty() )
+            {
+                buildNode( manifest.cells, 0, u32( m_order.size() ) );
+            }
         }
+
         void query( const WorldManifest &manifest, const Vector3F &p, double radiusSquared,
                     Array<u32> &found, u32 &visited, u32 &tested ) const
         {
-            if( !m_nodes.empty() ) queryNode( 0, manifest.cells, p, radiusSquared, found, visited, tested );
+            if( !m_nodes.empty() )
+            {
+                queryNode( 0, manifest.cells, p, radiusSquared, found, visited, tested );
+            }
         }
     };
-}
+}  // namespace workphone::scene

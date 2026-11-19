@@ -17,11 +17,15 @@ namespace workphone::scene::race::cityTrafficAppearance
         // Keep the lateral axle horizontal while allowing the chassis to pitch
         // with the fitted road. +Z is forward and +X is the right-hand side.
         if( !tangent.isFinite() || tangent.lengthSquared() < 1e-8f )
+        {
             return QuaternionF::identity();
+        }
         tangent.normalise();
         const Vector3F horizontal( tangent.x, 0, tangent.z );
         if( horizontal.lengthSquared() < 1e-6f )
+        {
             return QuaternionF::identity();
+        }
         auto right = Vector3F( horizontal.z, 0, -horizontal.x ).normaliseCopy();
         auto up = tangent.crossProduct( right ).normaliseCopy();
         QuaternionF orientation;
@@ -39,9 +43,12 @@ namespace workphone::scene::race::cityTrafficAppearance
     {
         switch( style % 3 )
         {
-        case 0: return { .89f, .43f, -.88f, -1.68f, .81f }; // sloping hatch door
-        case 1: return { 1.08f, .59f, -.75f, -1.29f, .78f }; // separate boot
-        default: return { 1.26f, 1.04f, -2.07f, -2.28f, 1.09f }; // high van roof
+        case 0:
+            return { .89f, .43f, -.88f, -1.68f, .81f };  // sloping hatch door
+        case 1:
+            return { 1.08f, .59f, -.75f, -1.29f, .78f };  // separate boot
+        default:
+            return { 1.26f, 1.04f, -2.07f, -2.28f, 1.09f };  // high van roof
         }
     }
 
@@ -58,8 +65,8 @@ namespace workphone::scene::race::cityTrafficAppearance
         // wheel arches. The former box shell filled the arch and hid the tires.
         const auto sidePanel = [&]( float side, float z0, float z1 ) {
             const float x = side * sideX;
-            g.quad( { x, lower, z0 }, { x, lower, z1 },
-                    { x, shoulder, z1 }, { x, shoulder, z0 }, { side, 0, 0 } );
+            g.quad( { x, lower, z0 }, { x, lower, z1 }, { x, shoulder, z1 }, { x, shoulder, z0 },
+                    { side, 0, 0 } );
         };
         for( const auto side : { -1.f, 1.f } )
         {
@@ -78,8 +85,8 @@ namespace workphone::scene::race::cityTrafficAppearance
                         return -.43f + std::sqrt( std::max( 0.f, archRadius * archRadius - d * d ) );
                     };
                     const float x = side * sideX;
-                    g.quad( { x, archY( z0 ), z0 }, { x, archY( z1 ), z1 },
-                            { x, shoulder, z1 }, { x, shoulder, z0 }, { side, 0, 0 } );
+                    g.quad( { x, archY( z0 ), z0 }, { x, archY( z1 ), z1 }, { x, shoulder, z1 },
+                            { x, shoulder, z0 }, { side, 0, 0 } );
                 }
             }
             // Door sill and modest mirrors silhouette at three-quarter view.
@@ -89,39 +96,35 @@ namespace workphone::scene::race::cityTrafficAppearance
 
         // Chamfered nose and tail, and deck surfaces that rise toward the
         // greenhouse. These replace the previous flat rectangular upper boxes.
-        g.quad( { -.82f, lower, half }, { .82f, lower, half },
-                { .84f, .17f, half }, { -.84f, .17f, half }, { 0, 0, 1 } );
-        g.quad( { .82f, lower, -half }, { -.82f, lower, -half },
-                { -.84f, .17f, -half }, { .84f, .17f, -half }, { 0, 0, -1 } );
+        g.quad( { -.82f, lower, half }, { .82f, lower, half }, { .84f, .17f, half },
+                { -.84f, .17f, half }, { 0, 0, 1 } );
+        g.quad( { .82f, lower, -half }, { -.82f, lower, -half }, { -.84f, .17f, -half },
+                { .84f, .17f, -half }, { 0, 0, -1 } );
         for( const auto side : { -1.f, 1.f } )
         {
-            g.quad( { side * sideX, lower, half - .16f },
-                    { side * .82f, lower, half }, { side * .84f, .17f, half },
-                    { side * sideX, shoulder, half - .16f }, { side, 0, .25f } );
-            g.quad( { side * .82f, lower, -half },
-                    { side * sideX, lower, -half + .16f },
-                    { side * sideX, shoulder, -half + .16f },
-                    { side * .84f, .17f, -half }, { side, 0, -.25f } );
+            g.quad( { side * sideX, lower, half - .16f }, { side * .82f, lower, half },
+                    { side * .84f, .17f, half }, { side * sideX, shoulder, half - .16f },
+                    { side, 0, .25f } );
+            g.quad( { side * .82f, lower, -half }, { side * sideX, lower, -half + .16f },
+                    { side * sideX, shoulder, -half + .16f }, { side * .84f, .17f, -half },
+                    { side, 0, -.25f } );
         }
-        g.quad( { -.84f, .17f, half }, { .84f, .17f, half },
-                { .88f, shoulder, c.frontBase }, { -.88f, shoulder, c.frontBase },
-                { 0, 1, .1f } );
-        g.quad( { .88f, shoulder, c.rearBase }, { -.88f, shoulder, c.rearBase },
-                { -.84f, .17f, -half }, { .84f, .17f, -half }, { 0, 1, -.1f } );
-        g.quad( { -.78f, lower, -half }, { .78f, lower, -half },
-                { .78f, lower, half }, { -.78f, lower, half }, { 0, -1, 0 } );
+        g.quad( { -.84f, .17f, half }, { .84f, .17f, half }, { .88f, shoulder, c.frontBase },
+                { -.88f, shoulder, c.frontBase }, { 0, 1, .1f } );
+        g.quad( { .88f, shoulder, c.rearBase }, { -.88f, shoulder, c.rearBase }, { -.84f, .17f, -half },
+                { .84f, .17f, -half }, { 0, 1, -.1f } );
+        g.quad( { -.78f, lower, -half }, { .78f, lower, -half }, { .78f, lower, half },
+                { -.78f, lower, half }, { 0, -1, 0 } );
 
         // A sloped four-plane greenhouse, with a slight roof crown. The van
         // retains cargo volume but has eased front pillars and rear shoulders.
         constexpr float baseX = .80f, roofX = .72f;
         for( const auto side : { -1.f, 1.f } )
         {
-            g.quad( { side * sideX, shoulder, c.rearBase },
-                    { side * sideX, shoulder, c.frontBase },
-                    { side * .80f, shoulder, c.frontBase },
-                    { side * .80f, shoulder, c.rearBase }, { 0, 1, 0 } );
-            g.quad( { side * baseX, shoulder, c.rearBase },
-                    { side * baseX, shoulder, c.frontBase },
+            g.quad( { side * sideX, shoulder, c.rearBase }, { side * sideX, shoulder, c.frontBase },
+                    { side * .80f, shoulder, c.frontBase }, { side * .80f, shoulder, c.rearBase },
+                    { 0, 1, 0 } );
+            g.quad( { side * baseX, shoulder, c.rearBase }, { side * baseX, shoulder, c.frontBase },
                     { side * roofX, c.roofHeight, c.frontRoof },
                     { side * roofX, c.roofHeight, c.rearRoof }, { side, .14f, 0 } );
         }
@@ -131,19 +134,19 @@ namespace workphone::scene::race::cityTrafficAppearance
         g.quad( { baseX, shoulder, c.rearBase }, { -baseX, shoulder, c.rearBase },
                 { -roofX, c.roofHeight, c.rearRoof }, { roofX, c.roofHeight, c.rearRoof },
                 { 0, .3f, -1 } );
-        g.quad( { -roofX, c.roofHeight, c.rearRoof },
-                { 0, c.roofHeight + .035f, c.rearRoof },
-                { 0, c.roofHeight + .035f, c.frontRoof },
-                { -roofX, c.roofHeight, c.frontRoof }, { 0, 1, 0 } );
-        g.quad( { 0, c.roofHeight + .035f, c.rearRoof },
-                { roofX, c.roofHeight, c.rearRoof },
-                { roofX, c.roofHeight, c.frontRoof },
-                { 0, c.roofHeight + .035f, c.frontRoof }, { 0, 1, 0 } );
+        g.quad( { -roofX, c.roofHeight, c.rearRoof }, { 0, c.roofHeight + .035f, c.rearRoof },
+                { 0, c.roofHeight + .035f, c.frontRoof }, { -roofX, c.roofHeight, c.frontRoof },
+                { 0, 1, 0 } );
+        g.quad( { 0, c.roofHeight + .035f, c.rearRoof }, { roofX, c.roofHeight, c.rearRoof },
+                { roofX, c.roofHeight, c.frontRoof }, { 0, c.roofHeight + .035f, c.frontRoof },
+                { 0, 1, 0 } );
         if( kind == 2 )
         {
             // Faint cargo-door embossing also breaks the broad flat side.
             for( const auto side : { -1.f, 1.f } )
+            {
                 g.box( { side * .81f, .25f, -.85f }, { .025f, .10f, 1.75f } );
+            }
         }
     }
 
@@ -155,29 +158,28 @@ namespace workphone::scene::race::cityTrafficAppearance
         const float glassTop = c.roofHeight - .085f;
         // Insets sit just outside the painted pillar planes. Broad front and
         // rear panes keep the new cabin angles legible at street distance.
-        g.quad( { -.68f, .345f, c.frontBase + .018f },
-                { .68f, .345f, c.frontBase + .018f },
-                { .65f, glassTop, c.frontRoof + .020f },
-                { -.65f, glassTop, c.frontRoof + .020f }, { 0, .36f, 1 } );
+        g.quad( { -.68f, .345f, c.frontBase + .018f }, { .68f, .345f, c.frontBase + .018f },
+                { .65f, glassTop, c.frontRoof + .020f }, { -.65f, glassTop, c.frontRoof + .020f },
+                { 0, .36f, 1 } );
         if( kind != 2 )
-            g.quad( { .68f, .345f, c.rearBase - .020f },
-                    { -.68f, .345f, c.rearBase - .020f },
-                    { -.65f, glassTop, c.rearRoof - .020f },
-                    { .65f, glassTop, c.rearRoof - .020f }, { 0, .34f, -1 } );
+        {
+            g.quad( { .68f, .345f, c.rearBase - .020f }, { -.68f, .345f, c.rearBase - .020f },
+                    { -.65f, glassTop, c.rearRoof - .020f }, { .65f, glassTop, c.rearRoof - .020f },
+                    { 0, .34f, -1 } );
+        }
         for( const auto side : { -1.f, 1.f } )
         {
             const float bottomX = side * .812f, topX = side * .734f;
-            const float split = kind == 2 ? .23f :
-                ( c.frontRoof + c.rearRoof ) * .50f;
-            g.quad( { bottomX, .34f, split + .065f },
-                    { bottomX, .34f, c.frontBase - .08f },
-                    { topX, glassTop, c.frontRoof - .07f },
-                    { topX, glassTop, split + .065f }, { side, .1f, 0 } );
+            const float split = kind == 2 ? .23f : ( c.frontRoof + c.rearRoof ) * .50f;
+            g.quad( { bottomX, .34f, split + .065f }, { bottomX, .34f, c.frontBase - .08f },
+                    { topX, glassTop, c.frontRoof - .07f }, { topX, glassTop, split + .065f },
+                    { side, .1f, 0 } );
             if( kind != 2 )
-                g.quad( { bottomX, .34f, c.rearBase + .09f },
-                        { bottomX, .34f, split - .065f },
-                        { topX, glassTop, split - .065f },
-                        { topX, glassTop, c.rearRoof + .08f }, { side, .1f, 0 } );
+            {
+                g.quad( { bottomX, .34f, c.rearBase + .09f }, { bottomX, .34f, split - .065f },
+                        { topX, glassTop, split - .065f }, { topX, glassTop, c.rearRoof + .08f },
+                        { side, .1f, 0 } );
+            }
 
             // Thin dark seams, handles and arch liners give the moving cars
             // useful small-scale cues without allocating per-car resources.
@@ -201,29 +203,27 @@ namespace workphone::scene::race::cityTrafficAppearance
                         return -.43f + std::sqrt( std::max( 0.f, radius * radius - d * d ) );
                     };
                     const float x = side * .932f;
-                    g.quad( { x, edge( z0 ) - .024f, z0 },
-                            { x, edge( z1 ) - .024f, z1 },
-                            { x, edge( z1 ) + .016f, z1 },
-                            { x, edge( z0 ) + .016f, z0 }, { side, 0, 0 } );
+                    g.quad( { x, edge( z0 ) - .024f, z0 }, { x, edge( z1 ) - .024f, z1 },
+                            { x, edge( z1 ) + .016f, z1 }, { x, edge( z0 ) + .016f, z0 },
+                            { side, 0, 0 } );
                 }
             }
         }
         const float half = lengths[kind] * .5f;
-        g.box( { 0, -.24f, half + .014f }, { .94f, .095f, .035f } ); // front grille
-        g.box( { 0, -.19f, -half - .014f }, { .43f, .15f, .035f } ); // inset plate
+        g.box( { 0, -.24f, half + .014f }, { .94f, .095f, .035f } );  // front grille
+        g.box( { 0, -.19f, -half - .014f }, { .43f, .15f, .035f } );  // inset plate
         if( kind == 2 )
         {
             // Two door seams follow the rear panel instead of floating off
             // its inclined surface; the lower seam continues onto the bumper.
             g.box( { 0, -.13f, -half - .019f }, { .018f, .57f, .028f } );
             const auto rearAt = [&]( float y ) {
-                return c.rearBase + ( c.rearRoof - c.rearBase ) *
-                    ( y - .27f ) / ( c.roofHeight - .27f ) - .022f;
+                return c.rearBase +
+                       ( c.rearRoof - c.rearBase ) * ( y - .27f ) / ( c.roofHeight - .27f ) - .022f;
             };
-            g.quad( { -.010f, .32f, rearAt( .32f ) },
-                    { .010f, .32f, rearAt( .32f ) },
-                    { .010f, 1.01f, rearAt( 1.01f ) },
-                    { -.010f, 1.01f, rearAt( 1.01f ) }, { 0, .28f, -1 } );
+            g.quad( { -.010f, .32f, rearAt( .32f ) }, { .010f, .32f, rearAt( .32f ) },
+                    { .010f, 1.01f, rearAt( 1.01f ) }, { -.010f, 1.01f, rearAt( 1.01f ) },
+                    { 0, .28f, -1 } );
             g.box( { 0, -.32f, -half - .019f }, { 1.40f, .065f, .030f } );
             g.box( { .27f, .57f, rearAt( .57f ) }, { .16f, .042f, .032f } );
         }
@@ -270,25 +270,23 @@ namespace workphone::scene::race::cityTrafficAppearance
         const float half = lengths[kind] * .5f;
         for( const auto side : { -1.f, 1.f } )
         {
-            front.box( { side * .60f, -.055f, half + .027f },
-                       { .43f, .13f, .047f } );
+            front.box( { side * .60f, -.055f, half + .027f }, { .43f, .13f, .047f } );
             if( kind == 2 )
             {
-                rear.box( { side * .74f, -.13f, -half - .028f },
-                          { .14f, .30f, .045f } );
+                rear.box( { side * .74f, -.13f, -half - .028f }, { .14f, .30f, .045f } );
                 const auto c = cabin( kind );
                 const auto rearAt = [&]( float y ) {
-                    return c.rearBase + ( c.rearRoof - c.rearBase ) *
-                        ( y - .27f ) / ( c.roofHeight - .27f ) - .026f;
+                    return c.rearBase +
+                           ( c.rearRoof - c.rearBase ) * ( y - .27f ) / ( c.roofHeight - .27f ) - .026f;
                 };
-                rear.quad( { side * .65f, .34f, rearAt( .34f ) },
-                           { side * .76f, .34f, rearAt( .34f ) },
-                           { side * .73f, .88f, rearAt( .88f ) },
-                           { side * .64f, .88f, rearAt( .88f ) }, { 0, .28f, -1 } );
+                rear.quad( { side * .65f, .34f, rearAt( .34f ) }, { side * .76f, .34f, rearAt( .34f ) },
+                           { side * .73f, .88f, rearAt( .88f ) }, { side * .64f, .88f, rearAt( .88f ) },
+                           { 0, .28f, -1 } );
             }
             else
-                rear.box( { side * .63f, .035f, -half - .028f },
-                          { .39f, .15f, .045f } );
+            {
+                rear.box( { side * .63f, .035f, -half - .028f }, { .39f, .15f, .045f } );
+            }
         }
     }
-}
+}  // namespace workphone::scene::race::cityTrafficAppearance

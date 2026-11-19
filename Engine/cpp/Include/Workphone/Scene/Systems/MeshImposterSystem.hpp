@@ -58,6 +58,7 @@ namespace workphone::scene
             static constexpr u32 pageSize = 32;
             using Views = Array<MeshImposterView>;
             struct Page;
+
             struct Access
             {
                 std::unique_lock<std::recursive_mutex> lock;
@@ -67,6 +68,7 @@ namespace workphone::scene
                 s32 &selectedView;
                 u64 &selectionChanges;
             };
+
             Access access( Handle handle );
             bool containsUnlocked( Handle handle ) const;
 
@@ -87,4 +89,4 @@ namespace workphone::scene
         Array<time_interval> m_nextUpdates{ Allocator<time_interval>( sourceBudget ) };
         time_interval m_lastUpdateTime = 0;
     };
-}
+}  // namespace workphone::scene

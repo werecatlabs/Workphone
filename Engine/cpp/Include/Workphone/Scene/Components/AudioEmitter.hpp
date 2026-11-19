@@ -5,7 +5,11 @@
 #include <memory>
 #include <thread>
 
-namespace workphone::resource { struct RuntimeAssetContext; struct RuntimeResource; }
+namespace workphone::resource
+{
+    struct RuntimeAssetContext;
+    struct RuntimeResource;
+}  // namespace workphone::resource
 
 namespace workphone
 {
@@ -29,7 +33,7 @@ namespace workphone
             /** @brief Destructor. */
             ~AudioEmitter() override;
 
-            void configureRuntimeAssets(std::shared_ptr<const resource::RuntimeAssetContext> context);
+            void configureRuntimeAssets( std::shared_ptr<const resource::RuntimeAssetContext> context );
             String getRuntimeDiagnostic() const;
 
             /** @copydoc Component::load */
@@ -68,7 +72,7 @@ namespace workphone
 
             /** @brief Unpauses the sound. */
             void unpause();
-            bool seekFrames(u64 frame,String &error);
+            bool seekFrames( u64 frame, String &error );
 
             WP_CLASS_REGISTER_DECL;
 
@@ -79,8 +83,8 @@ namespace workphone
             SmartPtr<ISound> m_sound;
             std::shared_ptr<const resource::RuntimeAssetContext> m_runtimeAssets;
             std::shared_ptr<const resource::RuntimeResource> m_runtimeResource;
-            String m_runtimeSoundUuid,m_runtimeDiagnostic;
-            bool m_runtimeAssetsMode=false;
+            String m_runtimeSoundUuid, m_runtimeDiagnostic;
+            bool m_runtimeAssetsMode = false;
             std::thread::id m_runtimeOwner;
             void requireRuntimeOwner() const;
         };

@@ -15,7 +15,12 @@
  */
 namespace workphone
 {
-    namespace resource { struct RuntimeResource; struct RuntimeAssetContext; }
+    namespace resource
+    {
+        struct RuntimeResource;
+        struct RuntimeAssetContext;
+    }  // namespace resource
+
     namespace scene
     {
 
@@ -303,8 +308,8 @@ namespace workphone
             /** Owner-thread typed skeleton/clip installation. Stages an independent
              * rig and clips before changing playback; failure preserves the old set.
              * A live animation graph must be explicitly cleared before replacement. */
-            bool loadResource(std::shared_ptr<const resource::RuntimeResource>,String &error);
-            void configureRuntimeAssets(std::shared_ptr<const resource::RuntimeAssetContext>);
+            bool loadResource( std::shared_ptr<const resource::RuntimeResource>, String &error );
+            void configureRuntimeAssets( std::shared_ptr<const resource::RuntimeAssetContext> );
 
             /**
              * @brief Retrieve serialized properties for this component.
@@ -357,11 +362,11 @@ namespace workphone
             WP_CLASS_REGISTER_DECL;
 
         private:
-            bool loadRuntimeAnimation(const String &uuid,String &error);
+            bool loadRuntimeAnimation( const String &uuid, String &error );
             std::shared_ptr<const resource::RuntimeAssetContext> m_runtimeAssets;
             std::shared_ptr<const resource::RuntimeResource> m_runtimeAnimation;
             String m_animationAssetUuid;
-            bool m_runtimeAssetsMode=false;
+            bool m_runtimeAssetsMode = false;
             bool restoreRuntimeAnimations();
             void publishSkeletonPose();
             /**

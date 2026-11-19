@@ -10,7 +10,11 @@
 
 namespace workphone
 {
-    namespace resource { struct RuntimeAssetContext; }
+    namespace resource
+    {
+        struct RuntimeAssetContext;
+    }
+
     namespace scene
     {
         class RenderTexture;
@@ -39,7 +43,7 @@ namespace workphone
         class WPCore_API Camera : public Component
         {
         public:
-            void configureRuntimeAssets(std::shared_ptr<const resource::RuntimeAssetContext>);
+            void configureRuntimeAssets( std::shared_ptr<const resource::RuntimeAssetContext> );
             /** Property name for the camera z-order used when serializing. */
             static const String s_zOrderStr;
 
@@ -625,7 +629,7 @@ namespace workphone
             /// Viewport suffix used to generate unique viewport identifiers.
             static u32 m_vpExt;
             std::shared_ptr<const resource::RuntimeAssetContext> m_runtimeAssets;
-            bool m_runtimeAssetsMode=false;
+            bool m_runtimeAssetsMode = false;
         };
     }  // namespace scene
 }  // namespace workphone

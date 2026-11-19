@@ -87,8 +87,7 @@ namespace workphone::scene
 
     private:
         using RuntimePublication = std::function<bool( const std::function<void()> &admit,
-                                                       const std::function<void()> &commit,
-                                                       String & )>;
+                                                       const std::function<void()> &commit, String & )>;
         bool publishRuntimePrepared( const procedural::CityRoadSplineSource &source,
                                      const procedural::CityRoadSplineBake &bake,
                                      render::TerrainSnapshot terrain,

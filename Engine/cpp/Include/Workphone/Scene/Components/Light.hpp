@@ -7,7 +7,11 @@
 
 namespace workphone
 {
-    namespace resource { struct RuntimeAssetContext; }
+    namespace resource
+    {
+        struct RuntimeAssetContext;
+    }
+
     namespace scene
     {
 
@@ -47,7 +51,7 @@ namespace workphone
         class WPCore_API Light : public Component
         {
         public:
-            void configureRuntimeAssets(std::shared_ptr<const resource::RuntimeAssetContext>);
+            void configureRuntimeAssets( std::shared_ptr<const resource::RuntimeAssetContext> );
             /** Hash used to identify light components (unique per component type). */
             static const hash_type lightHash;
 
@@ -376,7 +380,7 @@ namespace workphone
             /** Internal counter used to generate unique names/IDs for light instances. */
             static u32 m_nameExt;
             std::shared_ptr<const resource::RuntimeAssetContext> m_runtimeAssets;
-            bool m_runtimeAssetsMode=false;
+            bool m_runtimeAssetsMode = false;
         };
 
     }  // namespace scene

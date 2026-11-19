@@ -9,7 +9,12 @@
 
 namespace workphone
 {
-    namespace resource { struct RuntimeAssetContext; struct RuntimeResource; }
+    namespace resource
+    {
+        struct RuntimeAssetContext;
+        struct RuntimeResource;
+    }  // namespace resource
+
     namespace scene
     {
 
@@ -36,7 +41,8 @@ namespace workphone
         class WPCore_API Material : public Component
         {
         public:
-            void configureRuntimeAssets(std::shared_ptr<const resource::RuntimeAssetContext>);
+            void configureRuntimeAssets( std::shared_ptr<const resource::RuntimeAssetContext> );
+
             /**
              * @brief Event listener that observes shared-object lifecycle events for
              *        material resources.
@@ -365,7 +371,7 @@ namespace workphone
             std::shared_ptr<const resource::RuntimeAssetContext> m_runtimeAssets;
             std::shared_ptr<const resource::RuntimeResource> m_runtimeResource;
             String m_runtimeMaterialUuid;
-            bool m_runtimeAssetsMode=false;
+            bool m_runtimeAssetsMode = false;
         };
     }  // namespace scene
 }  // namespace workphone

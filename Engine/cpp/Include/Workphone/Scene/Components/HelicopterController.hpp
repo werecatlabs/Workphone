@@ -13,7 +13,13 @@ namespace workphone::scene
     class WPCore_API HelicopterController : public VehicleController
     {
     public:
-        enum class PhysicsSolution : s32 { Arcade = 0, Advanced = 1, Extreme = 2, DCS = 3 };
+        enum class PhysicsSolution : s32
+        {
+            Arcade = 0,
+            Advanced = 1,
+            Extreme = 2,
+            DCS = 3
+        };
 
         HelicopterController();
         ~HelicopterController() override;
@@ -49,5 +55,5 @@ namespace workphone::scene
         SmartPtr<Properties> m_rotorTuning;
         real_Num m_appliedMaximumLift = static_cast<real_Num>( -1 );
     };
-}
+}  // namespace workphone::scene
 #endif

@@ -60,4 +60,4 @@ namespace workphone::scene
 
         MeshImposterSystem::Handle m_storage;
     };
-}
+}  // namespace workphone::scene

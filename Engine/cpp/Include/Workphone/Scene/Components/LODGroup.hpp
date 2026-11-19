@@ -8,7 +8,11 @@
 
 namespace workphone
 {
-    namespace resource { struct RuntimeAssetContext; }
+    namespace resource
+    {
+        struct RuntimeAssetContext;
+    }
+
     namespace scene
     {
         class LODSystem;
@@ -50,7 +54,7 @@ namespace workphone
         public:
             LODGroup();
             ~LODGroup() override;
-            void configureRuntimeAssets(std::shared_ptr<const resource::RuntimeAssetContext>);
+            void configureRuntimeAssets( std::shared_ptr<const resource::RuntimeAssetContext> );
             void finalizeRuntimeLOD();
             s32 getDisplayedLOD() const;
 
@@ -143,8 +147,8 @@ namespace workphone
             atomic_u64 m_revision = 1;
             mutable RecursiveMutex m_lodMutex;
             std::shared_ptr<const resource::RuntimeAssetContext> m_runtimeAssets;
-            bool m_runtimeAssetsMode=false;
-            s32 m_displayedLOD=-1;
+            bool m_runtimeAssetsMode = false;
+            s32 m_displayedLOD = -1;
         };
     }  // namespace scene
 }  // namespace workphone

@@ -97,7 +97,8 @@ namespace workphone
                 f32 nearClipDistance = 0.1f;
                 bool orthographic = false;
 
-                Array<Vector3<real_Num>> worldReferencePoints{ Allocator<Vector3<real_Num>>( sourceBudget ) };
+                Array<Vector3<real_Num>> worldReferencePoints{ Allocator<Vector3<real_Num>>(
+                    sourceBudget ) };
                 Array<f32> worldRadii{ Allocator<f32>( sourceBudget ) };
                 Array<u32> detailOffsets{ Allocator<u32>( sourceBudget ) };
                 Array<u32> detailCounts{ Allocator<u32>( sourceBudget ) };
@@ -132,7 +133,8 @@ namespace workphone
             Array<s32> m_currentLODs{ Allocator<s32>( sourceBudget ) };
             Array<u64> m_appliedRevisions{ Allocator<u64>( sourceBudget ) };
             std::unordered_map<LODGroup *, u32, std::hash<LODGroup *>, std::equal_to<LODGroup *>,
-                SourceBudgetAllocator<std::pair<LODGroup * const, u32>>> m_groupSlots;
+                               SourceBudgetAllocator<std::pair<LODGroup *const, u32>>>
+                m_groupSlots;
 
             SharedPtr<LODBatch> m_pendingBatch;
 

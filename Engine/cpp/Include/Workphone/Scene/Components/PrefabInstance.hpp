@@ -15,9 +15,10 @@ namespace workphone::scene
         String getSourceAssetUuid() const;
         SmartPtr<Properties> getIdentityMap() const;
         WP_CLASS_REGISTER_DECL;
+
     private:
         String m_sourcePath;
         String m_sourceAssetUuid;
         SmartPtr<Properties> m_identities;
     };
-}
+}  // namespace workphone::scene

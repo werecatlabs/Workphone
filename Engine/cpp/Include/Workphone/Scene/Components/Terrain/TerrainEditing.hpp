@@ -151,8 +151,8 @@ namespace workphone::scene
                                        const render::TerrainLayer &layer,
                                        SmartPtr<ICommandManager> commands, String &error );
     WPCore_API bool applyTerrainLayers( SmartPtr<TerrainSystem> terrain,
-                                         const std::array<render::TerrainLayer, 4> &layers,
-                                         SmartPtr<ICommandManager> commands, String &error );
+                                        const std::array<render::TerrainLayer, 4> &layers,
+                                        SmartPtr<ICommandManager> commands, String &error );
     WPCore_API bool saveTerrainDataFile( SmartPtr<TerrainSystem> terrain, const String &path,
                                          String &error );
     WPCore_API bool loadTerrainDataFile( SmartPtr<TerrainSystem> terrain, const String &path,

@@ -13,7 +13,12 @@ namespace workphone::scene
     class WPCore_API GameActorSystem final
     {
     public:
-        enum class Phase { PreUpdate, Update, PostUpdate };
+        enum class Phase
+        {
+            PreUpdate,
+            Update,
+            PostUpdate
+        };
 
         static void dispatch( GameActor &actor, Phase phase );
 

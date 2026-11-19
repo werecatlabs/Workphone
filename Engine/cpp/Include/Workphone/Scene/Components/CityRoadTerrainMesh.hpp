@@ -34,7 +34,8 @@ namespace workphone::scene
         SourceBudgetVector<CityRoadTerrainVertex> vertices;
         SourceBudgetVector<u32> indices;
         SourceBudgetVector<CityRoadTerrainTriangleKind> triangleKinds;
-        SourceBudgetVector<CityRoadCrossing> crossings;  // Paint-confirmed positions on published footways.
+        SourceBudgetVector<CityRoadCrossing>
+            crossings;  // Paint-confirmed positions on published footways.
         u64 sourceRevision = 0, terrainRevision = 0;
         WPCore_API void swap( CityRoadTerrainMesh &other ) noexcept;
     };

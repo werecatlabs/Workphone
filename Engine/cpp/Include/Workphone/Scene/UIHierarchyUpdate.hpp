@@ -10,13 +10,24 @@ namespace workphone::scene::ui_hierarchy
     class ActorOrderWalk
     {
     public:
-        ActorOrderWalk() { ++actorOrderWalkDepth; }
-        ~ActorOrderWalk() { --actorOrderWalkDepth; }
+        ActorOrderWalk()
+        {
+            ++actorOrderWalkDepth;
+        }
+
+        ~ActorOrderWalk()
+        {
+            --actorOrderWalkDepth;
+        }
+
         ActorOrderWalk( const ActorOrderWalk & ) = delete;
         ActorOrderWalk &operator=( const ActorOrderWalk & ) = delete;
     };
 
-    inline bool actorOwnsOrderWalk() { return actorOrderWalkDepth != 0; }
-}
+    inline bool actorOwnsOrderWalk()
+    {
+        return actorOrderWalkDepth != 0;
+    }
+}  // namespace workphone::scene::ui_hierarchy
 
 #endif

@@ -14,7 +14,8 @@ namespace workphone::scene::citySurfaceScalar
         if( channel >= 3 || !source.width || !source.height || bytes % 4 != 0 ||
             std::uint64_t( source.width ) * source.height != bytes / 4 )
         {
-            throw std::invalid_argument( "City scalar map requires a complete RGBA source and ORM channel." );
+            throw std::invalid_argument(
+                "City scalar map requires a complete RGBA source and ORM channel." );
         }
 
         const auto first = source.pixels[channel];
@@ -31,7 +32,8 @@ namespace workphone::scene::citySurfaceScalar
         procedural::TextureBuffer result( constant ? 1u : source.width, constant ? 1u : source.height );
         for( std::size_t pixel = 0; pixel < result.pixels.size(); pixel += 4 )
         {
-            result.pixels[pixel] = result.pixels[pixel + 1] = result.pixels[pixel + 2] = source.pixels[pixel + channel];
+            result.pixels[pixel] = result.pixels[pixel + 1] = result.pixels[pixel + 2] =
+                source.pixels[pixel + channel];
             result.pixels[pixel + 3] = 255;
         }
         return result;

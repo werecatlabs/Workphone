@@ -151,7 +151,7 @@ namespace workphone
 
             protected:
                 WeakPtr<FourWheelVehicle> m_owner;  ///< Weak reference to the owning FourWheelVehicle
-                u32 m_priority = 1000;           ///< Event listener priority (default)
+                u32 m_priority = 1000;              ///< Event listener priority (default)
             };
 
             /**
@@ -464,7 +464,7 @@ namespace workphone
             f32 m_width = 1.810f;      ///< Vehicle overall width
             f32 m_height = 1.170f;     ///< Vehicle overall height
 
-            f32 m_wheelChassisOffset = 0.0f;  ///< Vertical offset of wheels relative to chassis
+            f32 m_wheelChassisOffset = 0.0f;     ///< Vertical offset of wheels relative to chassis
             bool m_useAuthoredGeometry = false;  ///< Keep the saved chassis shape and wheel mounts
 
             // Wheel & suspension tuning parameters

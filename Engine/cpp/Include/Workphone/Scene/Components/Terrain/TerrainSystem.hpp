@@ -10,7 +10,12 @@
 
 namespace workphone
 {
-    namespace resource { struct RuntimeAssetContext; struct RuntimeResource; }
+    namespace resource
+    {
+        struct RuntimeAssetContext;
+        struct RuntimeResource;
+    }  // namespace resource
+
     namespace scene
     {
         class TerrainEditStroke;
@@ -122,7 +127,7 @@ namespace workphone
              * properties (usually a Properties instance).
              */
             void load( SmartPtr<ISharedObject> data ) override;
-            void configureRuntimeAssets(std::shared_ptr<const resource::RuntimeAssetContext>);
+            void configureRuntimeAssets( std::shared_ptr<const resource::RuntimeAssetContext> );
 
             /**
              * @brief Unload component state and release runtime resources.
@@ -474,12 +479,12 @@ namespace workphone
             /** Listener instance used to observe the graphics terrain object. */
             SmartPtr<TerrainObjectListener> m_terrainListener;
 
-            void loadRuntimeTerrain(SmartPtr<ISharedObject> data);
-            void setRuntimeTerrainProperties(SmartPtr<Properties> properties);
+            void loadRuntimeTerrain( SmartPtr<ISharedObject> data );
+            void setRuntimeTerrainProperties( SmartPtr<Properties> properties );
             std::shared_ptr<const resource::RuntimeAssetContext> m_runtimeAssets;
             std::shared_ptr<const resource::RuntimeResource> m_runtimeTerrainResource;
-            String m_runtimeTerrainUuid,m_runtimeFoliageUuid;
-            bool m_runtimeAssetsMode=false;
+            String m_runtimeTerrainUuid, m_runtimeFoliageUuid;
+            bool m_runtimeAssetsMode = false;
 
             /** Height map texture for the terrain (may be generated procedurally). */
             SmartPtr<render::ITexture> m_heightMap;

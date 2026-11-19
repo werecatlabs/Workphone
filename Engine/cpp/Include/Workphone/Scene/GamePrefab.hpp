@@ -7,7 +7,11 @@
 
 namespace workphone
 {
-    namespace resource { struct RuntimeAssetContext; }
+    namespace resource
+    {
+        struct RuntimeAssetContext;
+    }
+
     namespace scene
     {
 

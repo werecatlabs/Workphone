@@ -7,7 +7,10 @@
 #include <Workphone/Math/AABB2.hpp>
 #include <memory>
 
-namespace workphone::resource { struct RuntimeAssetContext; }
+namespace workphone::resource
+{
+    struct RuntimeAssetContext;
+}
 
 namespace workphone
 {
@@ -114,7 +117,7 @@ namespace workphone
             ~UIComponent() override;
 
             /** A bounded typed UI document host; configure before loading. */
-            void configureRuntimeAssets(std::shared_ptr<const resource::RuntimeAssetContext> context);
+            void configureRuntimeAssets( std::shared_ptr<const resource::RuntimeAssetContext> context );
             String getRuntimeDiagnostic() const;
 
             /**
@@ -435,8 +438,8 @@ namespace workphone
             struct RuntimeUIState;
             std::shared_ptr<RuntimeUIState> m_runtimeUI;
             std::shared_ptr<const resource::RuntimeAssetContext> m_runtimeAssets;
-            String m_uiAssetUuid,m_uiLocale,m_runtimeDiagnostic;
-            bool m_runtimeAssetsMode=false;
+            String m_uiAssetUuid, m_uiLocale, m_runtimeDiagnostic;
+            bool m_runtimeAssetsMode = false;
             /**
              * @brief Handles the specified event type and updates the UIComponent.
              *

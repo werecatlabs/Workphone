@@ -6,7 +6,11 @@
 
 namespace workphone
 {
-    namespace resource { struct RuntimeAssetContext; }
+    namespace resource
+    {
+        struct RuntimeAssetContext;
+    }
+
     namespace scene
     {
 
@@ -23,6 +27,7 @@ namespace workphone
         public:
             /** Release a gameplay instance before switching project VMs; the component remains loaded. */
             void resetProjectScriptInstance();
+
             /**
              * @class ScriptReceiver
              * @brief Receives and handles script calls for the UserComponent.
@@ -301,7 +306,7 @@ namespace workphone
             /// Durable source-asset identity. Empty retains legacy globally loaded classes.
             String getScriptAssetUuid() const;
             void setScriptAssetUuid( const String &uuid );
-            void configureRuntimeAssets(std::shared_ptr<const resource::RuntimeAssetContext> context);
+            void configureRuntimeAssets( std::shared_ptr<const resource::RuntimeAssetContext> context );
             SmartPtr<IScriptManager> getRuntimeScriptManager() const;
             bool hasRuntimeAssets() const;
 
@@ -339,7 +344,7 @@ namespace workphone
             String m_className;               ///< Name of the script class.
             String m_scriptAssetUuid;
             std::shared_ptr<const resource::RuntimeAssetContext> m_runtimeAssets;
-            bool m_runtimeAssetsMode=false;
+            bool m_runtimeAssetsMode = false;
             SmartPtr<IScriptClass> m_scriptClass;  ///< Script class associated with this component.
             SmartPtr<IScriptInvoker> m_invoker;    ///< Used to call script functions.
             SmartPtr<IScriptReceiver> m_receiver;  ///< Used to receive script calls.

@@ -19,4 +19,4 @@ namespace workphone::scene
         const procedural::CityRoadSplineSource &source, const procedural::CityRoadSplineBake &bake,
         const CityRoadJunctionBake &connections, const render::TerrainData &terrain,
         const Transform3<real_Num> &placement, CityRoadTerrainMesh *asphalt = nullptr );
-}
+}  // namespace workphone::scene

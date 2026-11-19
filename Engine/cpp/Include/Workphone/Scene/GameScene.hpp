@@ -78,8 +78,15 @@ namespace workphone
             ~GameScene() override;
 
             // Ephemeral editor document mode, deliberately absent from scene serialization.
-            bool isEditorPrefabScene() const { return m_editorPrefabScene; }
-            void setEditorPrefabScene( bool enabled ) { m_editorPrefabScene = enabled; }
+            bool isEditorPrefabScene() const
+            {
+                return m_editorPrefabScene;
+            }
+
+            void setEditorPrefabScene( bool enabled )
+            {
+                m_editorPrefabScene = enabled;
+            }
 
 #ifdef _DEBUG
             s32 addReference();
@@ -482,8 +489,9 @@ namespace workphone
              * This concurrent queue is used to manage actors that need to be transitioned to play mode
              * in a thread-safe manner.
              */
-            ConcurrentQueue<SmartPtr<IGameActor>> m_playQueue{ 0, GrowthPolicy::Double, 64,
-                Allocator<SmartPtr<IGameActor>>( sourceBudget ) };
+            ConcurrentQueue<SmartPtr<IGameActor>> m_playQueue{
+                0, GrowthPolicy::Double, 64, Allocator<SmartPtr<IGameActor>>( sourceBudget )
+            };
 
             /**
              * @var m_editQueue
@@ -492,8 +500,9 @@ namespace workphone
              * This concurrent queue is used to manage actors that need to be transitioned to edit mode
              * in a thread-safe manner.
              */
-            ConcurrentQueue<SmartPtr<IGameActor>> m_editQueue{ 0, GrowthPolicy::Double, 64,
-                Allocator<SmartPtr<IGameActor>>( sourceBudget ) };
+            ConcurrentQueue<SmartPtr<IGameActor>> m_editQueue{
+                0, GrowthPolicy::Double, 64, Allocator<SmartPtr<IGameActor>>( sourceBudget )
+            };
 
             /**
              * @var m_actors
@@ -514,7 +523,8 @@ namespace workphone
             using UpdateActors = ConcurrentArray<SmartPtr<IGameActor>>;
             using UpdateTasks = ConcurrentArray<UpdateActors>;
             using UpdateTable = ConcurrentArray<UpdateTasks>;
-            UpdateTable m_updateObjects{ GrowthPolicy::Default, 1, Allocator<UpdateTasks>( sourceBudget ) };
+            UpdateTable m_updateObjects{ GrowthPolicy::Default, 1,
+                                         Allocator<UpdateTasks>( sourceBudget ) };
             atomic_bool m_editorPrefabScene = false;
         };
     }  // namespace scene
