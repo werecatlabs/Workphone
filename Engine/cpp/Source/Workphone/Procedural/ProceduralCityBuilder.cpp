@@ -1,5 +1,5 @@
 #include <Workphone/WorkphonePCH.hpp>
-#include "ProceduralSceneInternal.hpp"
+#include "Workphone/Procedural/ProceduralSceneInternal.hpp"
 
 namespace workphone::scene::race
 {
