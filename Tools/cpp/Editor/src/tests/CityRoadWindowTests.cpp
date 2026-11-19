@@ -5,7 +5,7 @@
 #include <ui/CityRoadWindow.hpp>
 #include <ui/UIManager.hpp>
 #include <Workphone/Workphone.hpp>
-#include <Workphone/Procedural/CityRoadAuthoring.hpp>
+#include <Workphone/Scene/Components/CityRoadAuthoring.hpp>
 #include <Workphone/Procedural/CityRoadTerrainMesh.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
 #include <WPImGui/SceneViewportToolInput.hpp>

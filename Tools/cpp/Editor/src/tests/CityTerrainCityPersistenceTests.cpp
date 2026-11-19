@@ -5,11 +5,11 @@
 #include <Workphone/Workphone.hpp>
 #include <Workphone/Core/Handle.hpp>
 #include <Workphone/Scene/GameScene.hpp>
-#include <Workphone/Procedural/CityRoadAuthoring.hpp>
+#include <Workphone/Scene/Components/CityRoadAuthoring.hpp>
 #include <Workphone/Scene/Components/ProceduralCircuitScene.hpp>
 #include <Workphone/Scene/Components/ProceduralCityScene.hpp>
 #include <Workphone/Scene/Components/ProceduralRaceScene.hpp>
-#include <Workphone/Scene/Components/ProceduralSceneGeneration.hpp>
+#include <Workphone/Procedural/ProceduralSceneGeneration.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
 #include <Workphone/Scene/Components/CollisionBox.hpp>
 #include <Workphone/Scene/Components/Rigidbody.hpp>

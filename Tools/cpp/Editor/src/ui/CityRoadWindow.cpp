@@ -4,7 +4,7 @@
 #include <editor/EditorManager.hpp>
 #include <jobs/SaveSceneJob.hpp>
 #include <Workphone/Workphone.hpp>
-#include <Workphone/Procedural/CityRoadAuthoring.hpp>
+#include <Workphone/Scene/Components/CityRoadAuthoring.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
 #include <Workphone/Graphics/TerrainData.hpp>
 #include <algorithm>
