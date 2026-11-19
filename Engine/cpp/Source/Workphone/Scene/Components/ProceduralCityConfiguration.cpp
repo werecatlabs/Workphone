@@ -58,7 +58,7 @@ namespace workphone::scene
         }
     }  // namespace
 
-    bool race::prepareCitySourceMemoryBudget( int minimumMiB, String &error )
+    bool procedural_scene::prepareCitySourceMemoryBudget( int minimumMiB, String &error )
     {
         if( minimumMiB < minimumCitySourceMemoryMiB || minimumMiB > maximumCitySourceMemoryMiB )
         {
@@ -81,9 +81,9 @@ namespace workphone::scene
 
     ProceduralCityConfiguration::ProceduralCityConfiguration( bool alwaysOpen ) :
         m_alwaysOpen( alwaysOpen ),
-        m_streamLoadRadius( race::defaultCityStreamLoadRadius ),
-        m_streamRetainRadius( race::defaultCityStreamRetainRadius ),
-        m_sourceMemoryMiB( race::defaultCitySourceMemoryMiB )
+        m_streamLoadRadius( procedural_scene::defaultCityStreamLoadRadius ),
+        m_streamRetainRadius( procedural_scene::defaultCityStreamRetainRadius ),
+        m_sourceMemoryMiB( procedural_scene::defaultCitySourceMemoryMiB )
     {
     }
 
@@ -104,7 +104,7 @@ namespace workphone::scene
 
     bool ProceduralCityConfiguration::resolveBindings( IGameManager &manager, String &error )
     {
-        if( isOpenCity() && !race::prepareCitySourceMemoryBudget( m_sourceMemoryMiB, error ) )
+        if( isOpenCity() && !procedural_scene::prepareCitySourceMemoryBudget( m_sourceMemoryMiB, error ) )
         {
             return false;
         }
@@ -150,7 +150,7 @@ namespace workphone::scene
         return true;
     }
 
-    void ProceduralCityConfiguration::applyTo( race::SceneAssets &assets ) const
+    void ProceduralCityConfiguration::applyTo( procedural_scene::SceneAssets &assets ) const
     {
         assets.openCity = isOpenCity();
         assets.cityStreamingEnabled = assets.openCity && m_streamingEnabled;
@@ -184,7 +184,7 @@ namespace workphone::scene
         }
     }
 
-    void ProceduralCityConfiguration::adoptBuild( const race::SceneAssets &assets )
+    void ProceduralCityConfiguration::adoptBuild( const procedural_scene::SceneAssets &assets )
     {
         if( !m_terrainRoads )
         {
@@ -203,7 +203,7 @@ namespace workphone::scene
         m_lastAttemptPlacement = m_builtTerrainPlacement;
     }
 
-    void ProceduralCityConfiguration::retainBindings( const race::SceneAssets &assets )
+    void ProceduralCityConfiguration::retainBindings( const procedural_scene::SceneAssets &assets )
     {
         if( !m_terrainRoads )
         {
@@ -234,7 +234,7 @@ namespace workphone::scene
     }
 
     bool ProceduralCityConfiguration::needsRefresh( IGameManager &manager, SmartPtr<IGameActor> owner,
-                                                    const race::SceneAssets &assets )
+                                                    const procedural_scene::SceneAssets &assets )
     {
         if( !m_terrainRoads )
         {
@@ -279,7 +279,7 @@ namespace workphone::scene
     }
 
     void ProceduralCityConfiguration::writeProperties( Properties &properties,
-                                                       const race::SceneAssets &assets ) const
+                                                       const procedural_scene::SceneAssets &assets ) const
     {
         if( !m_alwaysOpen )
         {
@@ -299,8 +299,8 @@ namespace workphone::scene
                 "Keep detailed patches until this distance in metres. Use at least the load radius." );
         properties.setProperty( "City Source Memory MiB", m_sourceMemoryMiB );
         auto &sourceMemory = properties.getPropertyObject( "City Source Memory MiB" );
-        sourceMemory.setAttribute( "min", StringUtil::toString( race::minimumCitySourceMemoryMiB ) );
-        sourceMemory.setAttribute( "max", StringUtil::toString( race::maximumCitySourceMemoryMiB ) );
+        sourceMemory.setAttribute( "min", StringUtil::toString( procedural_scene::minimumCitySourceMemoryMiB ) );
+        sourceMemory.setAttribute( "max", StringUtil::toString( procedural_scene::maximumCitySourceMemoryMiB ) );
         sourceMemory.setAttribute( "description",
                                    "Minimum shared CPU source memory available to the city." );
         properties.setProperty( "City Natural Roads", m_naturalRoads );
@@ -379,7 +379,7 @@ namespace workphone::scene
         properties.setProperty( "City Building Style", m_buildingStyle );
         auto &buildingStyle = properties.getPropertyObject( "City Building Style" );
         buildingStyle.setTypeName( Properties::enumTypeStr );
-        buildingStyle.setAttribute( Properties::enumTypeStr, race::cityBuildingStyleLabels );
+        buildingStyle.setAttribute( Properties::enumTypeStr, procedural_scene::cityBuildingStyleLabels );
         for( size_t i = 0; i < cityBuildingMeshProperties.size(); ++i )
         {
             const auto name = cityBuildingMeshProperties[i];
@@ -427,8 +427,8 @@ namespace workphone::scene
         s32 sourceMemory = m_sourceMemoryMiB;
         if( properties.getPropertyValue( "City Source Memory MiB", sourceMemory ) )
         {
-            m_sourceMemoryMiB = std::clamp( sourceMemory, race::minimumCitySourceMemoryMiB,
-                                            race::maximumCitySourceMemoryMiB );
+            m_sourceMemoryMiB = std::clamp( sourceMemory, procedural_scene::minimumCitySourceMemoryMiB,
+                                            procedural_scene::maximumCitySourceMemoryMiB );
         }
         properties.getPropertyValue( "City Natural Roads", m_naturalRoads );
         f32 terrainRelief = m_terrainRelief;
@@ -553,7 +553,7 @@ namespace workphone::scene
         s32 buildingStyle = m_buildingStyle;
         if( properties.getPropertyValue( "City Building Style", buildingStyle ) )
         {
-            m_buildingStyle = std::clamp( buildingStyle, 0, race::cityBuildingStyleMax );
+            m_buildingStyle = std::clamp( buildingStyle, 0, procedural_scene::cityBuildingStyleMax );
         }
         for( size_t i = 0; i < cityBuildingMeshProperties.size(); ++i )
         {

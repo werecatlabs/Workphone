@@ -81,7 +81,7 @@ namespace workphone::scene
         m_city->applyTo( m_assets );
         m_assets.useFoliageWorld = m_foliageWorldEnabled;
         m_assets.exportSourceDirectory = m_materialExportDirectory;
-        race::buildCityScene( m_assets, getActor(), m_seed, m_quality );
+        procedural_scene::buildCityScene( m_assets, getActor(), m_seed, m_quality );
         m_city->adoptBuild( m_assets );
         activateGeneratedAssets();
         if( !m_assets.cityRaceRouteAvailable )

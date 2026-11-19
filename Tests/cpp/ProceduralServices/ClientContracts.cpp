@@ -344,15 +344,15 @@ void checkClientContracts( SmartPtr<IFactoryManager> factories )
     size_t sparse = 0, dense = 0, central = 0, peripheral = 0;
     for( u64 id = 1; id <= 1000; ++id )
     {
-        const bool low = scene::race::selectCityBuilding( id, 42, .5f, 25 );
-        const bool high = scene::race::selectCityBuilding( id, 42, .5f, 75 );
+        const bool low = scene::procedural_scene::selectCityBuilding( id, 42, .5f, 25 );
+        const bool high = scene::procedural_scene::selectCityBuilding( id, 42, .5f, 75 );
         require( !low || high, "Increasing density must never remove a selected building" );
-        require( !scene::race::selectCityBuilding( id, 42, .5f, 0 ) &&
-                 scene::race::selectCityBuilding( id, 42, .5f, 100 ),
+        require( !scene::procedural_scene::selectCityBuilding( id, 42, .5f, 0 ) &&
+                 scene::procedural_scene::selectCityBuilding( id, 42, .5f, 100 ),
                  "City density endpoints must select no lots or all lots" );
         sparse += low; dense += high;
-        central += scene::race::selectCityBuilding( id, 42, 0.f, 45 );
-        peripheral += scene::race::selectCityBuilding( id, 42, 1.f, 45 );
+        central += scene::procedural_scene::selectCityBuilding( id, 42, 0.f, 45 );
+        peripheral += scene::procedural_scene::selectCityBuilding( id, 42, 1.f, 45 );
     }
     require( sparse < dense && central > peripheral,
              "Density must change building count while favoring the city centre" );
@@ -360,7 +360,7 @@ void checkClientContracts( SmartPtr<IFactoryManager> factories )
     auto sparseCity = fullCity;
     const auto originalBuildings = std::count_if( fullCity.lots.begin(), fullCity.lots.end(),
         []( const auto &lot ) { return !lot.park; } );
-    scene::race::applyCityBuildingDensity( sparseCity, 42, 40 );
+    scene::procedural_scene::applyCityBuildingDensity( sparseCity, 42, 40 );
     const auto remainingBuildings = std::count_if( sparseCity.lots.begin(), sparseCity.lots.end(),
         []( const auto &lot ) { return !lot.park; } );
     require( remainingBuildings > 0 && remainingBuildings < originalBuildings &&
@@ -368,7 +368,7 @@ void checkClientContracts( SmartPtr<IFactoryManager> factories )
              sparseCity.lots.size() == fullCity.lots.size(),
              "City density must change building occupancy without changing roads or parcels" );
     auto packedCity = fullCity;
-    scene::race::applyCityBuildingDensity( packedCity, 42, 200 );
+    scene::procedural_scene::applyCityBuildingDensity( packedCity, 42, 200 );
     const auto packedBuildings = std::count_if( packedCity.lots.begin(), packedCity.lots.end(),
         []( const auto &lot ) { return !lot.park; } );
     require( packedBuildings > originalBuildings &&
@@ -474,8 +474,8 @@ void checkClientContracts( SmartPtr<IFactoryManager> factories )
                  savedOptions->getPropertyValue( "City Source Memory MiB", cityMemory ) && cityMemory == 4096 &&
                  savedOptions->getPropertyValue( "Generation Error", cityError ) && !cityError.empty(),
              "Invalid city radii must preserve the last valid settings and memory must stay bounded" );
-    require( !scene::race::prepareCitySourceMemoryBudget( 127, cityError ) && !cityError.empty() &&
-                 !scene::race::prepareCitySourceMemoryBudget( 4097, cityError ) && !cityError.empty(),
+    require( !scene::procedural_scene::prepareCitySourceMemoryBudget( 127, cityError ) && !cityError.empty() &&
+                 !scene::procedural_scene::prepareCitySourceMemoryBudget( 4097, cityError ) && !cityError.empty(),
              "Invalid direct city budgets were accepted" );
     auto foliageOwner = workphone::make_ptr<render::Terrain>();
     auto foliage = std::make_shared<render::FoliageWorldData>();

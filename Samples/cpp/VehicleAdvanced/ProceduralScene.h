@@ -4,12 +4,12 @@
 // Compatibility names for the sample's command-line validation and capture harness.
 namespace workphone::advanced
 {
-    using scene::race::CircuitSample;
-    using scene::race::Circuit;
-    using scene::race::SceneAssets;
-    using scene::race::generateCircuit;
-    using scene::race::validateCircuit;
-    using scene::race::validateReflection;
-    using scene::race::buildScene;
-    using scene::race::configurePhysics;
+    using scene::procedural_scene::CircuitSample;
+    using scene::procedural_scene::Circuit;
+    using scene::procedural_scene::SceneAssets;
+    using scene::procedural_scene::generateCircuit;
+    using scene::procedural_scene::validateCircuit;
+    using scene::procedural_scene::validateReflection;
+    using scene::procedural_scene::buildScene;
+    using scene::procedural_scene::configurePhysics;
 }

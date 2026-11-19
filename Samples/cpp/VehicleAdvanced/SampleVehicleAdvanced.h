@@ -250,7 +250,7 @@ namespace workphone
         enum class CitySmokePhase { Startup, ColdAway, Near, Away, Return, Automatic, VehicleHold, CameraColdAway, CameraNear, CameraAway, CameraReturn, VehicleRelease, Passed, Failed };
         struct CitySmokeSnapshot
         {
-            scene::race::CityStreamingStats streaming;
+            scene::procedural_scene::CityStreamingStats streaming;
             WorldStreamStats memory;
             u64 nativeTriangles = 0;
             u32 readyMeshes = 0, streamedOutMeshes = 0, imposterMeshes = 0, readyImposters = 0;
@@ -266,7 +266,7 @@ namespace workphone
         };
         CitySmokePhase m_citySmokePhase = CitySmokePhase::Startup;
         u64 m_citySmokeStartupIdentity = 0;
-        scene::race::CityStreamingStats m_citySmokeInitialResidency;
+        scene::procedural_scene::CityStreamingStats m_citySmokeInitialResidency;
         bool m_citySmokeInitialResidencyRecorded = false;
         std::atomic<CitySmokeObserver> m_citySmokeRequested{ CitySmokeObserver::Automatic };
         std::atomic<CitySmokeObserver> m_citySmokeApplied{ CitySmokeObserver::Automatic };

@@ -1,7 +1,7 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include "Workphone/Procedural/ProceduralSceneInternal.hpp"
 
-namespace workphone::scene::race
+namespace workphone::scene::procedural_scene
 {
     namespace scene_build
     {

@@ -97,7 +97,7 @@ namespace workphone::scene
                 m_assets.cityTrafficAccumulator = 0;
                 for( const auto &entry : m_assets.cityTrafficActors )
                 {
-                    race::cityTrafficVehicle::stopTrafficVehicle( entry.actor );
+                    procedural_scene::cityTrafficVehicle::stopTrafficVehicle( entry.actor );
                 }
                 return;
             }
@@ -124,7 +124,7 @@ namespace workphone::scene
                     continue;
                 }
                 auto position = pose.position;
-                ready[index] = race::cityTrafficVehicle::sampleMotion( entry.actor, position,
+                ready[index] = procedural_scene::cityTrafficVehicle::sampleMotion( entry.actor, position,
                                                                        speeds[index] );
                 if( entry.respawns == pose.respawns )
                 {
@@ -151,7 +151,7 @@ namespace workphone::scene
                 const auto &pose = poses[index];
                 if( entry.respawns != pose.respawns )
                 {
-                    race::cityTrafficVehicle::resetTrafficVehicle( entry.actor, pose.position,
+                    procedural_scene::cityTrafficVehicle::resetTrafficVehicle( entry.actor, pose.position,
                                                                   pose.forward );
                     entry.respawns = pose.respawns;
                     continue;
@@ -160,7 +160,7 @@ namespace workphone::scene
                 const f32 lookAhead = std::clamp( 3.f + speeds[index] * .35f, 3.f, 6.f );
                 if( traffic->getDrivingTarget( pose.id, lookAhead, target ) )
                 {
-                    race::cityTrafficVehicle::driveToward( entry.actor, target, pose.speed );
+                    procedural_scene::cityTrafficVehicle::driveToward( entry.actor, target, pose.speed );
                 }
             }
             return;
@@ -193,7 +193,7 @@ namespace workphone::scene
             return;
         }
 
-        std::shared_ptr<race::CityStreaming> streaming;
+        std::shared_ptr<procedural_scene::CityStreaming> streaming;
         {
             std::unique_lock<std::recursive_mutex> lock( m_generationMutex, std::try_to_lock );
             if( !lock.owns_lock() || !m_generated || m_activationPending )
@@ -281,11 +281,11 @@ namespace workphone::scene
             buildGeneratedScene();
             if( m_assets.openCity && m_assets.cityStreamingEnabled && !m_assets.cityRoadShowcase )
             {
-                race::CityStreamingOptions options;
+                procedural_scene::CityStreamingOptions options;
                 options.loadRadius = m_assets.cityStreamLoadRadius;
                 options.retainRadius = m_assets.cityStreamRetainRadius;
-                auto streaming = std::allocate_shared<race::CityStreaming>(
-                    SourceBudgetAllocator<race::CityStreaming>{}, options );
+                auto streaming = std::allocate_shared<procedural_scene::CityStreaming>(
+                    SourceBudgetAllocator<procedural_scene::CityStreaming>{}, options );
                 const auto cache = ( std::filesystem::u8path( app->getProjectPath().c_str() ) /
                                      ".FBCache" / "ProceduralCityStreaming" )
                                        .generic_u8string();
@@ -313,7 +313,7 @@ namespace workphone::scene
         std::lock_guard<std::recursive_mutex> lock( m_generationMutex );
         m_generated = false;
         m_activationPending = false;
-        race::SceneAssets retired;
+        procedural_scene::SceneAssets retired;
         m_assets.swap( retired );
         if( retired.cityStreaming )
         {
@@ -331,7 +331,7 @@ namespace workphone::scene
         retired.circuit = {};
         retired.cityLayout = {};
         generationCleared();
-        race::clearScene( retired, getActor() );
+        procedural_scene::clearScene( retired, getActor() );
     }
 
     SmartPtr<Properties> ProceduralScene::getProperties() const
@@ -405,7 +405,7 @@ namespace workphone::scene
     void ProceduralScene::activateGeneratedAssets()
     {
         String error;
-        m_activationPending = !race::activateGeneratedScene( m_assets, getActor(), error );
+        m_activationPending = !procedural_scene::activateGeneratedScene( m_assets, getActor(), error );
         if( !error.empty() )
         {
             throw std::runtime_error( error.c_str() );
@@ -423,7 +423,7 @@ namespace workphone::scene
         return m_generationError;
     }
 
-    const race::SceneAssets &ProceduralScene::getAssets() const
+    const procedural_scene::SceneAssets &ProceduralScene::getAssets() const
     {
         return m_assets;
     }
@@ -519,7 +519,7 @@ namespace workphone::scene
         ensurePhysicsScene();
         m_assets.useFoliageWorld = m_foliageWorldEnabled;
         m_assets.exportSourceDirectory = m_materialExportDirectory;
-        race::buildCircuitScene( m_assets, getActor(), m_seed, m_quality );
+        procedural_scene::buildCircuitScene( m_assets, getActor(), m_seed, m_quality );
         activateGeneratedAssets();
     }
 }  // namespace workphone::scene

@@ -4,7 +4,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace workphone::scene::race::cityTrafficAppearance
+namespace workphone::scene::procedural_scene::cityTrafficAppearance
 {
     // Local +Z is the direction of travel. The origin is the chassis centre,
     // 0.76 m above the fitted road contact. Three shared silhouettes are enough

@@ -11,7 +11,7 @@
 #include <tuple>
 #include <cstdio>
 
-namespace workphone::scene::race
+namespace workphone::scene::procedural_scene
 {
 
     void Circuit::swap( Circuit &other ) noexcept
@@ -20,7 +20,7 @@ namespace workphone::scene::race
         std::swap( length, other.length );
     }
 
-    workphone::scene::race::Circuit &Circuit::operator=( const Circuit &other )
+    workphone::scene::procedural_scene::Circuit &Circuit::operator=( const Circuit &other )
     {
         if( this != &other )
         {

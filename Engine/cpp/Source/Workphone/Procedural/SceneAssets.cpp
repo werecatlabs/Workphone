@@ -1,7 +1,7 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Procedural/SceneAssets.hpp>
 
-namespace workphone::scene::race
+namespace workphone::scene::procedural_scene
 {
 
     SceneAssets::SceneAssets( const SceneAssets &other ) :
@@ -93,7 +93,7 @@ namespace workphone::scene::race
         return *this;
     }
 
-    workphone::scene::race::SceneAssets &SceneAssets::operator=( SceneAssets && ) noexcept = default;
+    workphone::scene::procedural_scene::SceneAssets &SceneAssets::operator=( SceneAssets && ) noexcept = default;
 
     void SceneAssets::swap( SceneAssets &other ) noexcept
     {

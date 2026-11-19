@@ -16,7 +16,7 @@
 #include <cmath>
 #include <stdexcept>
 
-namespace workphone::scene::race::cityTrafficVehicle
+namespace workphone::scene::procedural_scene::cityTrafficVehicle
 {
     inline constexpr f32 wheelRadius = .34f;
     inline constexpr f32 halfWheelbase = 1.27f;

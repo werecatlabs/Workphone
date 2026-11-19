@@ -12,7 +12,7 @@ namespace workphone::scene
     class IGameActor;
     class MeshRenderer;
 
-    namespace race
+    namespace procedural_scene
     {
         struct SceneAssets;
 

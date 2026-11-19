@@ -128,17 +128,17 @@ namespace
         owner->setName( "Invalid city candidate cleanup probe" );
         scene->addActor( owner );
         owner->setState( scene::IGameActor::State::Edit );
-        scene::race::SceneAssets assets;
+        scene::procedural_scene::SceneAssets assets;
 
         struct Cleanup
         {
-            scene::race::SceneAssets &assets;
+            scene::procedural_scene::SceneAssets &assets;
             SmartPtr<scene::IGameManager> manager;
             SmartPtr<scene::IGameActor> owner;
 
             ~Cleanup()
             {
-                scene::race::clearScene( assets, owner );
+                scene::procedural_scene::clearScene( assets, owner );
                 manager->destroyActor( owner );
             }
         } cleanup{ assets, manager, owner };
@@ -169,7 +169,7 @@ namespace
                 String failure;
                 try
                 {
-                    scene::race::buildCityScene( assets, owner, 42,
+                    scene::procedural_scene::buildCityScene( assets, owner, 42,
                                                  procedural::VehicleAppearanceQuality::Preview );
                 }
                 catch( const std::exception &error )
@@ -189,7 +189,7 @@ namespace
                                    beforeRoads );
                 BOOST_CHECK_EQUAL( scene->getComponents<scene::TerrainSystem>().size(), beforeTerrain );
                 BOOST_CHECK( liveActors() == beforeActors );
-                scene::race::clearScene( assets, owner );
+                scene::procedural_scene::clearScene( assets, owner );
                 BOOST_CHECK_EQUAL( scene->getActors().size(), beforeRoots );
                 BOOST_CHECK( owner->getChildren().empty() );
                 BOOST_CHECK( !assets.roadAuthoring && !assets.roadTerrain );
@@ -722,7 +722,7 @@ BOOST_AUTO_TEST_CASE( terrain_city_source_anchor_roundtrip_test )
     BOOST_REQUIRE_GT( standaloneCircuit->getCircuitSampleCount(), 10u );
     const auto circuitLength = standaloneCircuit->getCircuitLength();
     BOOST_REQUIRE_GT( circuitLength, 100.f );
-    const auto deterministicCircuit = scene::race::generateCircuit( standaloneCircuit->getSeed() );
+    const auto deterministicCircuit = scene::procedural_scene::generateCircuit( standaloneCircuit->getSeed() );
     BOOST_CHECK_EQUAL( standaloneCircuit->getCircuitSampleCount(), deterministicCircuit.samples.size() );
     BOOST_CHECK_EQUAL( circuitLength, deterministicCircuit.length );
     const auto middleSample = standaloneCircuit->getCircuitSampleCount() / 2;

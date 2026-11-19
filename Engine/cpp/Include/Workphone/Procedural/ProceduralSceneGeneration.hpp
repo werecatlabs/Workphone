@@ -13,7 +13,7 @@
 #include <array>
 #include <memory>
 
-namespace workphone::scene::race
+namespace workphone::scene::procedural_scene
 {
 
     // City generation uses the process-wide SourceCpu ledger. A lower request

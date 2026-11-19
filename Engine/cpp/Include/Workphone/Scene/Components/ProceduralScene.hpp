@@ -23,7 +23,7 @@ namespace workphone::scene
         void clearGeneratedScene();
         virtual bool isGenerated() const;
         String getGenerationError() const;
-        const race::SceneAssets &getAssets() const;
+        const procedural_scene::SceneAssets &getAssets() const;
         /// Optional world-space interests for simulation or a streaming review.
         /// Clearing the override resumes the active LOD camera; no camera preserves residency.
         void setCityStreamingObservers( const Array<Vector3F> &observers );
@@ -56,7 +56,7 @@ namespace workphone::scene
         void activateGeneratedAssets();
 
         mutable std::recursive_mutex m_generationMutex;
-        race::SceneAssets m_assets;
+        procedural_scene::SceneAssets m_assets;
         u32 m_seed = 7;
         procedural::VehicleAppearanceQuality m_quality = procedural::VehicleAppearanceQuality::High;
         bool m_foliageWorldEnabled = false;

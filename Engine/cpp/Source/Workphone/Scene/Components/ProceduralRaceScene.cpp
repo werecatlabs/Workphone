@@ -115,7 +115,7 @@ namespace workphone::scene
         m_assets.terrainGameplaySource = m_terrainGameplaySource;
         m_assets.useFoliageWorld = m_foliageWorldEnabled;
         m_assets.exportSourceDirectory = m_materialExportDirectory;
-        race::buildScene( m_assets, actor, m_seed, m_quality, m_citySourceOwner.lock() );
+        procedural_scene::buildScene( m_assets, actor, m_seed, m_quality, m_citySourceOwner.lock() );
         m_city->adoptBuild( m_assets );
 
         actor->setSmoothMotion( true, false );
@@ -211,7 +211,7 @@ namespace workphone::scene
                 auto physicsLock = tasks ? tasks->lockTask( TaskId::Physics ) : TaskLock();
                 std::lock_guard<std::recursive_mutex> presentationLock( m_generationMutex );
                 String error;
-                if( !race::activateGeneratedScene( m_assets, getActor(), error ) )
+                if( !procedural_scene::activateGeneratedScene( m_assets, getActor(), error ) )
                 {
                     m_physicsConfigured = false;
                     setControls( 0, 1, 0 );
@@ -229,7 +229,7 @@ namespace workphone::scene
                 setControls( 0, 1, 0 );
                 return;
             }
-            race::configurePhysics( m_assets, getActor() );
+            procedural_scene::configurePhysics( m_assets, getActor() );
             m_physicsConfigured = true;
         }
     }
@@ -621,7 +621,7 @@ namespace workphone::scene
 
     bool ProceduralRaceScene::validateReflection() const
     {
-        return race::validateReflection( m_assets );
+        return procedural_scene::validateReflection( m_assets );
     }
 
     SmartPtr<Properties> ProceduralRaceScene::getProperties() const

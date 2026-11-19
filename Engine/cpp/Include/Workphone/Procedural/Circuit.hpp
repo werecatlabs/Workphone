@@ -13,7 +13,7 @@
 #include <array>
 #include <memory>
 
-namespace workphone::scene::race
+namespace workphone::scene::procedural_scene
 {
 
     /**

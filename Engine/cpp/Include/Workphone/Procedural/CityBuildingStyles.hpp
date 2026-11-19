@@ -2,7 +2,7 @@
 
 #include <array>
 
-namespace workphone::scene::race
+namespace workphone::scene::procedural_scene
 {
     // Persisted IDs: append new styles so existing scenes retain their appearance.
     inline constexpr std::array<const char *, 10> cityBuildingStyleKeys{

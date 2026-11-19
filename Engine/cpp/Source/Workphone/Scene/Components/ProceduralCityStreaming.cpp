@@ -37,7 +37,7 @@
 #include <stdexcept>
 #include <vector>
 
-namespace workphone::scene::race
+namespace workphone::scene::procedural_scene
 {
     namespace
     {

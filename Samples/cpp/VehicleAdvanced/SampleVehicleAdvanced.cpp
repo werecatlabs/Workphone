@@ -96,7 +96,7 @@ namespace workphone
         constexpr std::array<const char *, 5> cityBuildingMeshProperties = {
             "City Wall Mesh", "City Window Mesh", "City Entrance Mesh", "City Corner Mesh", "City Roof Mesh"
         };
-        constexpr auto &cityBuildingStyles = scene::race::cityBuildingStyleKeys;
+        constexpr auto &cityBuildingStyles = scene::procedural_scene::cityBuildingStyleKeys;
 
         u64 foliagePopulationHash( const render::FoliageWorldData &world )
         {
@@ -179,7 +179,7 @@ namespace workphone
             writeSharedMemoryLedger( output, WorldStreamingScheduler::shared()->stats() );
         }
 
-        void writeCityStreamingStats( std::ostream &output, const scene::race::CityStreamingStats &streaming,
+        void writeCityStreamingStats( std::ostream &output, const scene::procedural_scene::CityStreamingStats &streaming,
                                       const advanced::SceneAssets &assets )
         {
             output << "{\"initialized\":" << ( streaming.initialized ? "true" : "false" )

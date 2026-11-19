@@ -10,7 +10,7 @@ namespace workphone::scene
 {
     class IGameManager;
 
-    namespace race
+    namespace procedural_scene
     {
         struct SceneAssets;
     }
@@ -26,14 +26,14 @@ namespace workphone::scene
         bool usesTerrainRoads() const;
 
         bool resolveBindings( IGameManager &manager, String &error );
-        void applyTo( race::SceneAssets &assets ) const;
-        void adoptBuild( const race::SceneAssets &assets );
-        void retainBindings( const race::SceneAssets &assets );
+        void applyTo( procedural_scene::SceneAssets &assets ) const;
+        void adoptBuild( const procedural_scene::SceneAssets &assets );
+        void retainBindings( const procedural_scene::SceneAssets &assets );
         void releaseBindings();
         bool needsRefresh( IGameManager &manager, SmartPtr<IGameActor> owner,
-                           const race::SceneAssets &assets );
+                           const procedural_scene::SceneAssets &assets );
 
-        void writeProperties( Properties &properties, const race::SceneAssets &assets ) const;
+        void writeProperties( Properties &properties, const procedural_scene::SceneAssets &assets ) const;
         void readProperties( Properties &properties, String &error );
 
     private:

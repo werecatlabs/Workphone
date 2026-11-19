@@ -10,7 +10,7 @@
 #include <cstring>
 #include <stdexcept>
 
-namespace workphone::scene::race
+namespace workphone::scene::procedural_scene
 {
     enum class CityBuildingPart
     {
