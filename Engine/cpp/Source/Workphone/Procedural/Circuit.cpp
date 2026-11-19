@@ -1,5 +1,5 @@
 #include <Workphone/WorkphonePCH.hpp>
-#include <Workphone/Scene/Components/Circuit.hpp>
+#include <Workphone/Procedural/Circuit.hpp>
 
 namespace workphone::scene::race
 {

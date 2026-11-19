@@ -43,7 +43,7 @@
 #include "CityTrafficVehicle.hpp"
 #include <Workphone/Scene/Components/WheelController.hpp>
 #include "Workphone/Scene/Components/CityRoadCrossings.hpp"
-#include "Workphone/Scene/Components/City/CityStreetFixture.hpp"
+#include "Workphone/Procedural/CityStreetFixture.hpp"
 #include "Workphone/Scene/RuntimeSceneMembership.hpp"
 #include <algorithm>
 #include <optional>

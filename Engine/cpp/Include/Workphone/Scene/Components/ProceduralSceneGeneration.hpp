@@ -8,8 +8,8 @@
 #include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
 #include <Workphone/Graphics/Terrain.hpp>
 #include <Workphone/System/SourceBudgetVector.hpp>
-#include <C:\dev\Workphone\Engine\cpp\Include\Workphone\Scene\Components\Circuit.hpp>
-#include <C:\dev\Workphone\Engine\cpp\Include\Workphone\Scene\Components\City\SceneAssets.hpp>
+#include <Workphone\Procedural\Circuit.hpp>
+#include <Workphone\Procedural\SceneAssets.hpp>
 #include <array>
 #include <memory>
 
