@@ -4,7 +4,7 @@
 #include <Workphone/Core/Properties.hpp>
 #include <Workphone/Core/StringUtil.hpp>
 #include <Workphone/Interface/Scene/IGameManager.hpp>
-#include <Workphone/Scene/Components/CityBuildingStyles.hpp>
+#include <Workphone/Procedural/CityBuildingStyles.hpp>
 #include <Workphone/Procedural/ProceduralSceneGeneration.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
 #include <algorithm>

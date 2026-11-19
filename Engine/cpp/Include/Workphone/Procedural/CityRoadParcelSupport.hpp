@@ -2,7 +2,7 @@
 #include <Workphone/Interface/Procedural/OpenCityLayout.hpp>
 #include <Workphone/Interface/Procedural/CityRoadSplineSource.hpp>
 #include <Workphone/Graphics/TerrainData.hpp>
-#include <Workphone/Scene/Components/CityRoadBlockFaces.hpp>
+#include <Workphone/Procedural/CityRoadBlockFaces.hpp>
 
 namespace workphone::scene
 {

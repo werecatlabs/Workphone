@@ -1,5 +1,5 @@
 #pragma once
-#include <Workphone/Scene/Components/CityRoadTerrainMesh.hpp>
+#include <Workphone/Procedural/CityRoadTerrainMesh.hpp>
 
 namespace workphone::scene
 {

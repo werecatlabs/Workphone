@@ -5,10 +5,10 @@ namespace workphone::scene::race
 {
     namespace sceneBuild
     {
-#include "Workphone/Scene/Components/CityFoliageLOD.hpp"
-#include "Workphone/Scene/Components/CityHillsideVegetation.hpp"
-#include "Workphone/Scene/Components/CityParkPlanting.hpp"
-#include "Workphone/Scene/Components/CityReservePlanting.hpp"
+#include "Workphone/Procedural/CityFoliageLOD.hpp"
+#include "Workphone/Procedural/CityHillsideVegetation.hpp"
+#include "Workphone/Procedural/CityParkPlanting.hpp"
+#include "Workphone/Procedural/CityReservePlanting.hpp"
 
         void buildFoliageWorld( SceneAssets &assets, u32 seed, VehicleAppearanceQuality quality,
                                 const OpenCityLayout *city, const CityRoadTerrainMesh *cityFootways,

@@ -1,6 +1,6 @@
-#include <Workphone/Scene/Components/CityRoadTerrainMesh.hpp>
-#include <Workphone/Scene/Components/CityRoadJunctions.hpp>
-#include <Workphone/Scene/Components/CityRoadBlockFaces.hpp>
+#include <Workphone/Procedural/CityRoadTerrainMesh.hpp>
+#include <Workphone/Procedural/CityRoadJunctions.hpp>
+#include <Workphone/Procedural/CityRoadBlockFaces.hpp>
 #include <Workphone/Interface/Procedural/OpenCityDebugBlocks.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
 #include <cmath>

@@ -1,6 +1,6 @@
 #include <Workphone/WorkphonePCH.hpp>
-#include <Workphone/Scene/Components/CityRoadTerrainFit.hpp>
-#include <Workphone/Scene/Components/CityRoadJunctions.hpp>
+#include <Workphone/Procedural/CityRoadTerrainFit.hpp>
+#include <Workphone/Procedural/CityRoadJunctions.hpp>
 #include <algorithm>
 #include <array>
 #include <cmath>

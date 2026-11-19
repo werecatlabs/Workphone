@@ -1,5 +1,5 @@
 #include <Workphone/WorkphonePCH.hpp>
-#include <Workphone/Scene/Components/CityRoadBlockFaces.hpp>
+#include <Workphone/Procedural/CityRoadBlockFaces.hpp>
 #include <algorithm>
 #include <cmath>
 #include <limits>

@@ -1,8 +1,8 @@
 #include <Workphone/WorkphonePCH.hpp>
-#include <Workphone/Scene/Components/CityRoadFootways.hpp>
-#include <Workphone/Scene/Components/CityRoadJunctions.hpp>
-#include "Workphone/Scene/Components/CityDroppedKerbs.hpp"
-#include "Workphone/Scene/Components/CityRoadTerminals.hpp"
+#include <Workphone/Procedural/CityRoadFootways.hpp>
+#include <Workphone/Procedural/CityRoadJunctions.hpp>
+#include "Workphone/Procedural/CityDroppedKerbs.hpp"
+#include "Workphone/Procedural/CityRoadTerminals.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>

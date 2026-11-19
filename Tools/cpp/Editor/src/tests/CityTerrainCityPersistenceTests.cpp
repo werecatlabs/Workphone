@@ -5,7 +5,7 @@
 #include <Workphone/Workphone.hpp>
 #include <Workphone/Core/Handle.hpp>
 #include <Workphone/Scene/GameScene.hpp>
-#include <Workphone/Scene/Components/CityRoadAuthoring.hpp>
+#include <Workphone/Procedural/CityRoadAuthoring.hpp>
 #include <Workphone/Scene/Components/ProceduralCircuitScene.hpp>
 #include <Workphone/Scene/Components/ProceduralCityScene.hpp>
 #include <Workphone/Scene/Components/ProceduralRaceScene.hpp>

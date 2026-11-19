@@ -1,4 +1,4 @@
-#include <Workphone/Scene/Components/CitySurfaceLibrary.hpp>
+#include <Workphone/Procedural/CitySurfaceLibrary.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
 #include <FreeImage.h>
 #include <algorithm>

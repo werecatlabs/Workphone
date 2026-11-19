@@ -1,9 +1,9 @@
-#include <Workphone/Scene/Components/CityRoadFootways.hpp>
-#include <Workphone/Scene/Components/CityRoadJunctions.hpp>
+#include <Workphone/Procedural/CityRoadFootways.hpp>
+#include <Workphone/Procedural/CityRoadJunctions.hpp>
 #include <Workphone/Interface/Procedural/OpenCityLayout.hpp>
 #include <Workphone/Interface/Procedural/OpenCityRoadSource.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
-#include "../../Engine/cpp/Source/Workphone/Scene/Components/CityRoadCrossings.hpp"
+#include "../../Engine/cpp/Source/Workphone/Procedural/CityRoadCrossings.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstring>

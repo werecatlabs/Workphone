@@ -7,7 +7,7 @@ namespace workphone::scene::race
 
     namespace
     {
-        #include "Workphone/Scene/Components/CityVergeTransitions.hpp"
+        #include "Workphone/Procedural/CityVergeTransitions.hpp"
     }
 
     namespace sceneBuild

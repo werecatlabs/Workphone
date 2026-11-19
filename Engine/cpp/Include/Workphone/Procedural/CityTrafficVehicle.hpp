@@ -8,7 +8,7 @@
 #include <Workphone/Interface/Vehicle/IDriveTrain.hpp>
 #include <Workphone/Interface/Vehicle/IVehicle.hpp>
 #include <Workphone/Mesh/Geometry.hpp>
-#include <Workphone/Scene/Components/CityTrafficAppearance.hpp>
+#include <Workphone/Procedural/CityTrafficAppearance.hpp>
 #include <Workphone/Scene/Components/CollisionBox.hpp>
 #include <Workphone/Scene/Components/FourWheelVehicle.hpp>
 #include <Workphone/Scene/Components/Rigidbody.hpp>

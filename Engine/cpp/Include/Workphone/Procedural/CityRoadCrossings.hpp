@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Workphone/Scene/Components/CityRoadJunctions.hpp>
-#include <Workphone/Scene/Components/CityRoadTerrainMesh.hpp>
+#include <Workphone/Procedural/CityRoadJunctions.hpp>
+#include <Workphone/Procedural/CityRoadTerrainMesh.hpp>
 #include <algorithm>
 #include <cmath>
 #include <limits>

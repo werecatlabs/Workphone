@@ -1,8 +1,8 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Graphics/FoliageData.hpp>
-#include <Workphone/Scene/Components/CityRoadParcelSupport.hpp>
-#include <Workphone/Scene/Components/CityRoadJunctions.hpp>
-#include <Workphone/Scene/Components/CityRoadTerrainMesh.hpp>
+#include <Workphone/Procedural/CityRoadParcelSupport.hpp>
+#include <Workphone/Procedural/CityRoadJunctions.hpp>
+#include <Workphone/Procedural/CityRoadTerrainMesh.hpp>
 #include <algorithm>
 #include <array>
 #include <cmath>

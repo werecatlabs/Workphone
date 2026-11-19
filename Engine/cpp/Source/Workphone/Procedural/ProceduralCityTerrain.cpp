@@ -5,7 +5,7 @@ namespace workphone::scene::race
 {
     namespace sceneBuild
     {
-#include "Workphone/Scene/Components/CityGroundAppearance.hpp"
+#include "Workphone/Procedural/CityGroundAppearance.hpp"
 
         SourceBudgetVector<Vector3F> prepareTerrainCity( SceneAssets &assets, OpenCityLayout &city,
                                                          SmartPtr<IGameActor> sourceOwner,

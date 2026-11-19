@@ -1,6 +1,6 @@
 #include <Workphone/WorkphonePCH.hpp>
-#include <Workphone/Scene/Components/CityTrafficSimulation.hpp>
-#include <Workphone/Scene/Components/CityRoadJunctions.hpp>
+#include <Workphone/Procedural/CityTrafficSimulation.hpp>
+#include <Workphone/Procedural/CityRoadJunctions.hpp>
 #include <Workphone/Interface/Procedural/CityRoadRoundabout.hpp>
 #include <algorithm>
 #include <cmath>

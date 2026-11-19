@@ -4,9 +4,9 @@
 // The public entry points are declared in Workphone/Procedural/ProceduralSceneGeneration.hpp.
 #include <Workphone/Procedural/ProceduralSceneGeneration.hpp>
 #include <Workphone/Scene/Systems/LODSystem.hpp>
-#include <Workphone/Scene/Components/CityBuildingStyles.hpp>
-#include <Workphone/Scene/Components/CitySurfaceLibrary.hpp>
-#include "Workphone/Scene/Components/CitySurfaceScalar.hpp"
+#include <Workphone/Procedural/CityBuildingStyles.hpp>
+#include <Workphone/Procedural/CitySurfaceLibrary.hpp>
+#include "Workphone/Procedural/CitySurfaceScalar.hpp"
 #include <Workphone/Scene/Components/Terrain/FoliagePlantGenerator.hpp>
 #include <Workphone/Workphone.hpp>
 #include <Workphone/Interface/Mesh/IMeshResource.hpp>
@@ -21,14 +21,14 @@
 #include <Workphone/Interface/Procedural/IRoadSystem.hpp>
 #include <Workphone/Interface/Procedural/OpenCityStreetDetails.hpp>
 #include <Workphone/Interface/Procedural/OpenCityDebugBlocks.hpp>
-#include <Workphone/Scene/Components/CityRoadBlockFaces.hpp>
+#include <Workphone/Procedural/CityRoadBlockFaces.hpp>
 #include <Workphone/Interface/Procedural/OpenCityRoadSource.hpp>
 #include <Workphone/Interface/Procedural/OpenCityLegacyRoute.hpp>
 #include <Workphone/Interface/Procedural/ISkyAtmosphere.hpp>
 #include <Workphone/Scene/Components/Cubemap.hpp>
-#include <Workphone/Scene/Components/CityRoadAuthoring.hpp>
-#include <Workphone/Scene/Components/CityRoadParcelSupport.hpp>
-#include <Workphone/Scene/Components/CityRoadFootways.hpp>
+#include <Workphone/Procedural/CityRoadAuthoring.hpp>
+#include <Workphone/Procedural/CityRoadParcelSupport.hpp>
+#include <Workphone/Procedural/CityRoadFootways.hpp>
 #include <Workphone/Scene/Components/CollisionMesh.hpp>
 #include <Workphone/Scene/Components/Collision.hpp>
 #include <Workphone/Scene/Components/Rigidbody.hpp>
@@ -41,11 +41,11 @@
 #include <Workphone/Graphics/FoliageImpostorBaker.hpp>
 #include <Workphone/System/SourceBudgetContainers.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
-#include "Workphone/Scene/Components/CityBuildingKit.hpp"
-#include "Workphone/Scene/Components/CityTrafficAppearance.hpp"
+#include "Workphone/Procedural/CityBuildingKit.hpp"
+#include "Workphone/Procedural/CityTrafficAppearance.hpp"
 #include "Workphone/Procedural/CityTrafficVehicle.hpp"
 #include <Workphone/Scene/Components/WheelController.hpp>
-#include "Workphone/Scene/Components/CityRoadCrossings.hpp"
+#include "Workphone/Procedural/CityRoadCrossings.hpp"
 #include "Workphone/Procedural/CityStreetFixture.hpp"
 #include "Workphone/Scene/RuntimeSceneMembership.hpp"
 #include <algorithm>
@@ -85,9 +85,9 @@ namespace workphone::scene::race::sceneBuild
 		owners.reserve( next );
 	}
 
-#include "Workphone/Scene/Components/CityHillsideSpatial.hpp"
-#include "Workphone/Scene/Components/CityParkLayout.hpp"
-#include "Workphone/Scene/Components/CityReserveLayout.hpp"
+#include "Workphone/Procedural/CityHillsideSpatial.hpp"
+#include "Workphone/Procedural/CityParkLayout.hpp"
+#include "Workphone/Procedural/CityReserveLayout.hpp"
 
 	// ProceduralSceneMaterials.cpp
 	SmartPtr<render::IMaterial> material( SceneAssets &assets, ColourF colour, float roughness,

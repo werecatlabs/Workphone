@@ -1,4 +1,4 @@
-#include <Workphone/Scene/Components/CityTrafficSimulation.hpp>
+#include <Workphone/Procedural/CityTrafficSimulation.hpp>
 #include <Workphone/Interface/Procedural/CityRoadRoundabout.hpp>
 #include <algorithm>
 #include <array>

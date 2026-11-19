@@ -1,6 +1,6 @@
-#include <Workphone/Scene/Components/CityRoadParcelSupport.hpp>
-#include <Workphone/Scene/Components/CityRoadFootways.hpp>
-#include <Workphone/Scene/Components/CityRoadTerrainFit.hpp>
+#include <Workphone/Procedural/CityRoadParcelSupport.hpp>
+#include <Workphone/Procedural/CityRoadFootways.hpp>
+#include <Workphone/Procedural/CityRoadTerrainFit.hpp>
 #include <Workphone/Interface/Procedural/OpenCityRoadSource.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
 #include <algorithm>

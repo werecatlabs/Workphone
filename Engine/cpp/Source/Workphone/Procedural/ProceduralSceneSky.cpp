@@ -5,7 +5,7 @@ namespace workphone::scene::race
 {
     namespace sceneBuild
     {
-#include "Workphone/Scene/Components/CityDaylightSky.hpp"
+#include "Workphone/Procedural/CityDaylightSky.hpp"
 
         void buildSky( SceneAssets &assets, SmartPtr<scene::IGameActor> vehicle, u32 seed )
         {

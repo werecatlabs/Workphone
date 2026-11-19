@@ -1,6 +1,6 @@
 #pragma once
 #include <Workphone/Interface/Procedural/OpenCityLayout.hpp>
-#include <Workphone/Scene/Components/CityRoadJunctions.hpp>
+#include <Workphone/Procedural/CityRoadJunctions.hpp>
 
 namespace workphone::scene
 {

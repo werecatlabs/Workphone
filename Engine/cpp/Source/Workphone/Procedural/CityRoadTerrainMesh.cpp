@@ -1,8 +1,8 @@
 #include <Workphone/WorkphonePCH.hpp>
-#include <Workphone/Scene/Components/CityRoadTerrainMesh.hpp>
-#include <Workphone/Scene/Components/CityRoadJunctions.hpp>
+#include <Workphone/Procedural/CityRoadTerrainMesh.hpp>
+#include <Workphone/Procedural/CityRoadJunctions.hpp>
 #include <Workphone/Interface/Procedural/CityRoadRoundabout.hpp>
-#include "Workphone/Scene/Components/CityRoadTerminals.hpp"
+#include "Workphone/Procedural/CityRoadTerminals.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>
