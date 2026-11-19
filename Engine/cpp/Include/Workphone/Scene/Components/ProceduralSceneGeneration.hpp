@@ -21,20 +21,6 @@ namespace workphone::scene::race
     WPCore_API bool prepareCitySourceMemoryBudget( int minimumMiB, String &error );
 
     /**
-     * Generate a deterministic circuit using the provided seed.
-     *
-     * @param seed Random seed for procedural generation.
-     * @return Generated Circuit instance containing samples and length.
-     */
-    WPCore_API Circuit generateCircuit( u32 seed );
-
-    /**
-     * Run any internal validation checks for circuit generation. Intended for
-     * debug/assertions; does not return a value.
-     */
-    WPCore_API void validateCircuit();
-
-    /**
      * Validate that reflection rendering resources are correctly configured for
      * the provided scene assets (e.g. textures and actors present).
      *

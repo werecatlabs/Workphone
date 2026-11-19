@@ -59,6 +59,20 @@ namespace workphone::scene::race
         size_t nearest( const Vector3F &position ) const;
     };
 
+     /**
+     * Generate a deterministic circuit using the provided seed.
+     *
+     * @param seed Random seed for procedural generation.
+     * @return Generated Circuit instance containing samples and length.
+     */
+    WPCore_API Circuit generateCircuit( u32 seed );
+
+    /**
+     * Run any internal validation checks for circuit generation. Intended for
+     * debug/assertions; does not return a value.
+     */
+    WPCore_API void validateCircuit();
+
 }  // namespace workphone::scene::race
 
 #endif  // Circuit_h__
