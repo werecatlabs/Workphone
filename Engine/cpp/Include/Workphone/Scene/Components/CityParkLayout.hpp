@@ -20,7 +20,7 @@
                 std::array<float, 4> seatFootOffsets{};
             };
 
-            bool clearOfPaths( const Layout &layout, Vector3F point, float radius )
+            inline bool clearOfPaths( const Layout &layout, Vector3F point, float radius )
             {
                 for( const auto &path : layout.paths )
                 {

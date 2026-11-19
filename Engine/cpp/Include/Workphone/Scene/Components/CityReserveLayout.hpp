@@ -10,7 +10,7 @@
                 bool corner = false;
             };
 
-            bool contains( const Site &site, Vector3F point, float radius = 0 )
+            inline bool contains( const Site &site, Vector3F point, float radius = 0 )
             {
                 const auto x = site.halfLength * .88f - radius, z = site.halfDepth * .88f - radius;
                 if( x <= 0 || z <= 0 ) return false;
