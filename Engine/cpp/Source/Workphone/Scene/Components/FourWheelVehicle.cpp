@@ -1332,7 +1332,6 @@ namespace workphone::scene
 
     void FourWheelVehicle::setControls( f32 throttle, f32 brake, f32 steering )
     {
-        ScopedLock controlsLock( this, true );
         m_playerControls = false;
         setThrottle( std::clamp( throttle, 0.f, 1.f ) );
         setBrake( std::clamp( brake, 0.f, 1.f ) );
@@ -1341,7 +1340,6 @@ namespace workphone::scene
 
     void FourWheelVehicle::usePlayerControls()
     {
-        ScopedLock controlsLock( this, true );
         if( !m_playerControls.exchange( true ) )
         {
             m_joystickActive = false;
