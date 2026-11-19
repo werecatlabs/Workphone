@@ -20,7 +20,7 @@
 #include <Workphone/Physics/RaycastHit.hpp>
 #include <Workphone/Core/Properties.hpp>
 #include <Workphone/Graphics/FoliageData.hpp>
-#include <Workphone/Procedural/CityRoadAuthoring.hpp>
+#include <Workphone/Scene/Components/CityRoadAuthoring.hpp>
 #include <Workphone/Procedural/CityRoadJunctions.hpp>
 #include <Workphone/Procedural/CityRoadTerrainFit.hpp>
 #include <Workphone/Procedural/CityRoadTerrainMesh.hpp>

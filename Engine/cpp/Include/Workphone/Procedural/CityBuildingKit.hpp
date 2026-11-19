@@ -121,7 +121,7 @@ namespace workphone::scene::procedural_scene
             return true;
         }
 
-        void finish()
+        void finish( size_t surrounds, size_t dressedLots, size_t officePanelRows )
         {
             for( size_t role = 0; role < m_modules.size(); ++role )
             {
@@ -131,6 +131,12 @@ namespace workphone::scene::procedural_scene
                     warn( role, "no placements at the selected quality or layout" );
                 }
             }
+            auto &status = m_assets.cityBuildingKitDiagnostic;
+            if( !status.empty() ) status += " | ";
+            status += StringUtil::toString( surrounds ) + " built-in window surrounds on " +
+                      StringUtil::toString( dressedLots ) + " buildings, " +
+                      StringUtil::toString( officePanelRows ) + " office panel rows, " +
+                      StringUtil::toString( m_assets.cityBuildingModuleCount ) + " custom mesh placements.";
         }
 
     private:

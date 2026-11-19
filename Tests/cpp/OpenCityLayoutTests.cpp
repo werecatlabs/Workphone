@@ -1,13 +1,104 @@
 #include <Workphone/Interface/Procedural/OpenCityLayout.hpp>
+#include <Workphone/Procedural/CityBuildingWindowKit.hpp>
+#include <Workphone/Procedural/CityFacadeLayout.hpp>
+#include <algorithm>
 #include <stdexcept>
 #include <cmath>
 #include <iostream>
 #include <set>
 #include <map>
 #include <limits>
+#include <vector>
 using workphone::procedural::OpenCityLayout;
 static void require(bool condition, const char *message="Open-city layout contract failed")
 { if(!condition) throw std::runtime_error(message); }
+
+static void checkFacadeBays()
+{
+    using workphone::scene::procedural_scene::cityFacadeLayout::planBays;
+    // A 48 m frontage can fit twelve 4 m bays. Increasing the city's
+    // population must not turn its upper floors into long blank wall strips.
+    constexpr float span = 48.f, desiredBay = 4.f;
+    const auto original = planBays( span, desiredBay, 64, true, false );
+    require( original.bays == 12, "Small city lost the facade's nominal bay spacing" );
+    for( bool streetFace : { false, true } )
+    {
+        const auto dense = planBays( span, desiredBay, 384, streetFace, false );
+        require( dense.bays == original.bays && std::abs( dense.bays * dense.bayWidth - span ) < .001f &&
+                 std::abs( dense.bayWidth - original.bayWidth ) < .001f,
+                 "High density changed the facade's bay count, aperture width or frontage coverage" );
+        for( int doorBay : { -1, 0, dense.bays / 2, dense.bays - 1 } )
+        {
+            int detailed = 0, first = dense.bays, last = -1;
+            for( int bay = 0; bay < dense.bays; ++bay )
+            {
+                if( !dense.detailedBay( bay, doorBay ) ) continue;
+                first = std::min( first, bay );
+                last = bay;
+                ++detailed;
+            }
+            require( detailed == dense.recessedBays && detailed > 0 && detailed < dense.bays &&
+                     first < dense.bays / 2 && last >= dense.bays / 2,
+                     "Dense facades must spread a bounded number of detailed bays across the elevation" );
+        }
+        for( int entry = 0; entry < dense.bays; ++entry )
+            require( dense.detailedBay( entry, entry ), "Detail admission dropped a designated entrance bay" );
+    }
+    const auto narrow = planBays( .8f, desiredBay, 384, true, false );
+    require( narrow.bays == 1 && std::abs( narrow.bayWidth - .8f ) < .001f &&
+             narrow.detailedBay( 0, 0 ), "Narrow frontage lost its sole entrance bay" );
+    const auto office = planBays( span, desiredBay, 384, true, true );
+    require( office.bays == original.bays && std::abs( office.bayWidth - desiredBay ) < .001f,
+             "Office curtain wall lost its original spacing" );
+}
+
+static void checkBuiltInWindowPlacement()
+{
+    using namespace workphone::scene::procedural_scene::cityBuildingWindowKit;
+    constexpr int bays = 8, floors = 7, firstFloor = 1;
+    size_t distributed = 0;
+    for( size_t tier = 0; tier < 3; ++tier )
+    {
+        require( faceWindowSlots( 7, tier, 3, 0 ) >= 1, "Street elevation received no window surround" );
+        for( int face = 0; face < 4; ++face ) distributed += faceWindowSlots( 7, tier, 3, face );
+    }
+    require( distributed == 7, "Window budget lost or duplicated whole surrounds" );
+    // Budget for one window short of a third row. The two affordable full
+    // rows should be visible on different parts of the elevation.
+    const auto twoRows = planWindows( bays, floors, firstFloor, 23 );
+    std::vector<int> selectedFloors;
+    for( int floor = 0; floor < floors; ++floor )
+    {
+        int count = 0;
+        for( int bay = 0; bay < bays; ++bay )
+            if( twoRows.contains( bay, floor ) ) ++count;
+        if( count )
+        {
+            require( count == bays, "Window heads stopped halfway through an affordable row" );
+            selectedFloors.push_back( floor );
+        }
+    }
+    require( selectedFloors.size() == 2 && selectedFloors.front() >= firstFloor &&
+             selectedFloors.back() - selectedFloors.front() > 1,
+             "Window head budget was exhausted at the bottom of the facade" );
+
+    const auto sparse = planWindows( bays, floors, firstFloor, 3 );
+    const auto empty = planWindows( bays, floors, firstFloor, 0 );
+    int sparseCount = 0, firstBay = bays, lastBay = -1;
+    for( int floor = 0; floor < floors; ++floor )
+        for( int bay = 0; bay < bays; ++bay )
+        {
+            require( !empty.contains( bay, floor ), "An unfunded window head was selected" );
+            if( !sparse.contains( bay, floor ) ) continue;
+            require( floor >= firstFloor, "Window head encroached on the reserved ground floor" );
+            firstBay = std::min( firstBay, bay );
+            lastBay = std::max( lastBay, bay );
+            ++sparseCount;
+        }
+    require( sparseCount == 3 && firstBay < bays / 2 && lastBay >= bays / 2,
+             "Sparse window heads lost the vertex bound or clustered at one end of a facade" );
+}
+
 static bool sameLot(const OpenCityLayout::Lot &a,const OpenCityLayout::Lot &b)
 {
     return a.x==b.x && a.z==b.z && a.width==b.width && a.depth==b.depth && a.height==b.height &&
@@ -52,6 +143,8 @@ static void checkMasses(const OpenCityLayout &city,const OpenCityLayout::Lot &lo
 }
 int main()
 {
+    checkFacadeBays();
+    checkBuiltInWindowPlacement();
     for(unsigned seed : {0u, 7u, 23u, 4294967295u})
     {
         const auto large=OpenCityLayout::generate(seed,10,0);

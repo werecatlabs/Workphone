@@ -32,12 +32,11 @@ namespace cityBuildingImposters
     }
 
     template <class Patch>
-    std::optional<Baked> bake( const Patch &patch, VehicleAppearanceQuality quality,
-                               u32 requestedResolution )
+    auto surfaces( const Patch &patch )
     {
         // Median linear reflectance of the shipped scans. Plaster and
         // concrete include the tint used on the corresponding LOD1 mesh.
-        const std::array<std::pair<const Geometry *, ColourF>, 8> surfaces{
+        return std::array<std::pair<const Geometry *, ColourF>, 9>{
             { { &patch.farWalls[0], { .122f, .063f, .041f, 1.f } },
               { &patch.farWalls[1], { .247f, .214f, .156f, 1.f } },
               { &patch.farWalls[2], { .306f, .295f, .266f, 1.f } },
@@ -45,10 +44,18 @@ namespace cityBuildingImposters
               { &patch.farPitchedRoofs.slate, { .108f, .123f, .130f, 1.f } },
               { &patch.farPitchedRoofs.clay, { .375f, .175f, .100f, 1.f } },
               { &patch.farTiles, { .435f, .20f, .108f, 1.f } },
-              { &patch.farGlass, { .120f, .146f, .161f, 1.f } } }
+              { &patch.farGlass[0], { .120f, .146f, .161f, 1.f } },
+              { &patch.farGlass[1], { .222f, .227f, .217f, 1.f } } }
         };
+    }
+
+    template <class Patch>
+    std::optional<Baked> bake( const Patch &patch, VehicleAppearanceQuality quality,
+                               u32 requestedResolution )
+    {
+        const auto inputs = surfaces( patch );
         size_t sourceTriangles = 0;
-        for( const auto &surface : surfaces )
+        for( const auto &surface : inputs )
         {
             const auto indices = surface.first->indices.size();
             const auto count = indices / 3;
@@ -67,7 +74,7 @@ namespace cityBuildingImposters
         triangles.reserve( sourceTriangles );
         const auto bound = std::numeric_limits<float>::max();
         Vector3F minimum( bound, bound, bound ), maximum( -bound, -bound, -bound );
-        for( const auto &[geometry, colour] : surfaces )
+        for( const auto &[geometry, colour] : inputs )
         {
             for( size_t i = 0; i < geometry->indices.size(); i += 3 )
             {

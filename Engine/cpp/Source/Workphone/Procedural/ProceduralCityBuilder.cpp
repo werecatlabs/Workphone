@@ -1,4 +1,6 @@
 #include <Workphone/WorkphonePCH.hpp>
+#include <Workphone/Procedural/CityFacadeLayout.hpp>
+#include <Workphone/Procedural/CityBuildingWindowKit.hpp>
 #include "Workphone/Procedural/ProceduralSceneInternal.hpp"
 
 namespace workphone::scene::procedural_scene
@@ -108,7 +110,8 @@ namespace workphone::scene::procedural_scene
             struct CityPatch
             {
                 bool customDetailOutsideFarMesh = false;
-                Geometry walls[3], farWalls[3], glass[3], farGlass, roofs, farRoofs, frames, accents;
+                Geometry walls[3], farWalls[3], glass[3], farGlass[2], roofs, farRoofs, frames, accents;
+                SourceBudgetVector<cityBuildingGlazing::OfficeRibbon> officeRibbons;
                 Geometry windowPanes, timber, tiles, farTiles, officeJoinery;
                 Geometry shopfrontFascia[static_cast<size_t>( cityShopfront::Style::Count )],
                     shopfrontLetters, shopfrontDisplays;
@@ -125,6 +128,7 @@ namespace workphone::scene::procedural_scene
             size_t emittedShopfronts = 0;
             size_t emittedDisplayBays = 0;
             bool emittedMasonry = false;
+            size_t builtInSurrounds = 0, dressedLots = 0, officePanelStoreys = 0;
             bool emittedRoofFinish = false, emittedRoofEquipment = false;
             bool emittedPitchedRoofs = false, emittedRoofDrainage = false;
             const size_t displayBayLimit = buildingCount > 256 ? 96 : 144;
@@ -446,12 +450,17 @@ namespace workphone::scene::procedural_scene
                 const bool office = style == 3, civic = style == 2;
                 const bool terrace = style == 4, parisian = style == 5, warehouse = style == 6;
                 const bool mediterranean = style == 7, artdeco = style == 8, timber = style == 9;
+                const auto &preset = cityBuildingWindowKit::presetForStyle( style );
+                const float variantStep = float( lot.variant % 3 );
+                const float desiredBay = preset.bayWidth + variantStep * preset.bayWidthStep;
+                const float windowRatio = preset.windowRatio + variantStep * preset.windowRatioStep;
                 // Fine ornaments share a fixed city-wide allowance, divided fairly
                 // before emission. Roof forms, occupied shells and glazing never
                 // depend on this optional-detail budget. Dense ten-block cities
                 // therefore cannot multiply railings or sash bars without bound.
                 size_t facadeDetailVertices = 0, roofDetailVertices = 0;
                 size_t masonryVerticesLeft = 250000u / std::max<size_t>( 1, buildingCount );
+                size_t dressedWindows = 0;
                 cityFacadeDetail::Counts masonry;
                 const size_t facadeDetailLimit =
                     ( buildingCount > 256 ? 110000u : 220000u ) / std::max<size_t>( 1, buildingCount );
@@ -530,11 +539,7 @@ namespace workphone::scene::procedural_scene
                                      { volume.width + .12f, .12f, volume.depth + .12f } );
                     patch.farRoofs.box( { cx, top + .06f, cz },
                                         { volume.width + .12f, .12f, volume.depth + .12f } );
-                    const float nominalFloor = warehouse           ? 4.1f
-                                               : office            ? 3.6f
-                                               : civic || parisian ? 3.5f
-                                                                   : 3.2f;
-                    const int floors = std::max( 1, int( std::round( volume.height / nominalFloor ) ) );
+                    const int floors = std::max( 1, int( std::round( volume.height / preset.floorHeight ) ) );
                     const float floorHeight = volume.height / floors;
                     for( int axis : { entranceAxis, 1 - entranceAxis } )
                     {
@@ -601,27 +606,28 @@ namespace workphone::scene::procedural_scene
                                        axis ? Vector3F( thickness, height, width )
                                             : Vector3F( width, height, thickness ) );
                             };
-                            const float desiredBay = terrace || parisian || timber ? 4.2f
-                                                     : warehouse                   ? 4.2f
-                                                     : artdeco                     ? 4.2f
-                                                     : office                      ? 3.8f
-                                                     : civic ? 4.6f
-                                                             : 4.4f + ( lot.variant % 3 ) * .45f;
-                            const int nominalBays =
-                                std::max( 1, int( std::floor( span / desiredBay ) ) );
-                            const bool denseFacade = !office && buildingCount > 128;
-                            const float density = denseFacade ? 128.f / float( buildingCount ) : 1.f;
-                            // Preserve the six-block frontage exactly. Larger cities use
-                            // fewer, normally sized apertures, with priority given to the
-                            // street elevation. Storey heights and roof forms stay intact.
-                            const int bays =
-                                denseFacade
-                                    ? std::max( 1, int( std::floor( nominalBays *
-                                                                    ( streetFace ? std::sqrt( density )
-                                                                                 : density ) ) ) )
-                                    : nominalBays;
-                            const float bayWidth = span / bays;
-                            const float windowBayWidth = denseFacade ? span / nominalBays : bayWidth;
+                            const auto bayLayout = cityFacadeLayout::planBays(
+                                span, desiredBay, buildingCount, streetFace, office );
+                            const int bays = bayLayout.bays;
+                            const float bayWidth = bayLayout.bayWidth;
+                            // Give each tier and face its own share. A complete row of heads
+                            // reads as a storey even where the city budget cannot dress every bay.
+                            const auto lotSlots = masonryVerticesLeft /
+                                                  cityBuildingWindowKit::vertexCost( preset.windowHead );
+                            const int face = ( axis != entranceAxis ? 2 : 0 ) + ( sign != entranceSign );
+                            const auto faceSlots = cityBuildingWindowKit::faceWindowSlots(
+                                lotSlots, tier, volumes.size(), face );
+                            const auto windowPlan = cityBuildingWindowKit::planWindows(
+                                bays, floors, entrance && floors > 1 ? 1 : 0,
+                                detailedBuildings && !office ? faceSlots : 0 );
+                            const auto dressWindow = [&]( int floor, int bay, float left, float right,
+                                                          float sill, float head ) {
+                                if( !windowPlan.contains( bay, floor ) ) return false;
+                                cityFacadeDetail::dressWindow( patch.masonry.profiles, patch.timber,
+                                    preset.windowHead, point, normal, along, left, right, sill, head );
+                                ++dressedWindows;
+                                return true;
+                            };
                             if( assets.cityTerrainRoads && entrance )
                             {
                                 const float doorOffset =
@@ -646,18 +652,7 @@ namespace workphone::scene::procedural_scene
                                 const float high = y1 - ( retail ? .42f : office ? .48f : .62f );
                                 auto &glass =
                                     patch.glass[( lot.variant / 7 + axis + ( sign > 0 ? 1 : 0 ) ) % 2];
-                                const auto windowPane = [&]( Geometry &plain, float left, float bottom,
-                                                             float right, float head, float depth,
-                                                             int bay, bool usePlain ) {
-                                    if( usePlain || !detailedBuildings )
-                                    {
-                                        panel( plain, left, bottom, right, head, depth );
-                                        return;
-                                    }
-                                    if( right - left <= .001f || head - bottom <= .001f )
-                                    {
-                                        return;
-                                    }
+                                const auto paneTile = [&]( int bay ) {
                                     const u64 building = ( u64( lot.variant ) << 32 ) | seed;
                                     const u64 pane = ( u64( tier ) << 40 ) | ( u64( floor ) << 24 ) |
                                                      ( u64( bay ) << 3 ) |
@@ -679,6 +674,28 @@ namespace workphone::scene::procedural_scene
                                     {
                                         tile = 4 + ( variant >> 9 ) % 4;
                                     }
+                                    return tile;
+                                };
+                                const auto farWindow = [&]( float left, float bottom, float right,
+                                                            float head, int bay, bool plain = false ) {
+                                    const bool shaded = !plain && paneTile( bay ) >= 4;
+                                    panel( patch.farGlass[shaded ? 1 : 0], left, bottom, right,
+                                           head, -.018f );
+                                };
+                                const auto windowPane = [&]( Geometry &plain, float left, float bottom,
+                                                             float right, float head, float depth,
+                                                             int bay, bool usePlain, bool framed = false ) {
+                                    if( usePlain || !detailedBuildings )
+                                    {
+                                        panel( plain, left, bottom, right, head, depth );
+                                        return;
+                                    }
+                                    if( right - left <= .001f || head - bottom <= .001f )
+                                    {
+                                        return;
+                                    }
+                                    const u32 tile = paneTile( bay ) +
+                                        ( framed ? cityBuildingGlazing::paneVariants : 0u );
                                     const float u0 = ( tile + panePadding ) / paneAtlasColumns;
                                     const float u1 = ( tile + 1.f - panePadding ) / paneAtlasColumns;
                                     patch.windowPanes.quad(
@@ -858,7 +875,10 @@ namespace workphone::scene::procedural_scene
                                         previousModule = windowModule;
                                         anyWindowModule |= windowModule;
                                     }
-                                    panel( patch.farGlass, left, low, right, high, -.018f );
+                                    patch.officeRibbons.push_back( cityBuildingGlazing::officeRibbon(
+                                        point( left, low, -.018f ), point( right, low, -.018f ),
+                                        normal, high - low, span, .38f, bays,
+                                        [&]( int bay ) { return !anyWindowModule && paneTile( bay ) >= 4; } ) );
                                     if( detailedBuildings && !anyWindowModule &&
                                         ( streetFace || floor < 3 ) )
                                     {
@@ -925,18 +945,34 @@ namespace workphone::scene::procedural_scene
                                                     s1 = s0 + bayWidth;
                                         const float s = ( s0 + s1 ) * .5f;
                                         const bool door = entrance && floor == 0 && bay == bays / 2;
-                                        const float ratio = warehouse ? .74f
-                                                            : artdeco ? .52f
-                                                            : timber  ? .50f
-                                                            : retail  ? .79f
-                                                            : civic ? .56f
-                                                                    : .48f + ( lot.variant % 3 ) * .05f;
+                                        const float ratio = retail ? preset.shopWindowRatio : windowRatio;
                                         const float width = door ? std::min( 2.05f, bayWidth * .72f )
-                                                                 : windowBayWidth * ratio;
+                                                                 : bayWidth * ratio;
                                         const float left = s - width * .5f, right = s + width * .5f;
                                         const float bottom = door ? y0 + .16f : low;
                                         const float head =
                                             door ? std::min( y1 - .35f, y0 + 2.65f ) : high;
+                                        if( !bayLayout.detailedBay( bay, entrance && floor == 0 ? bays / 2 : -1 ) )
+                                        {
+                                            // A flush frame and pane preserve the elevation between
+                                            // recessed openings without four reveals and a divided shell.
+                                            panel( opaque, s0, y0, s1, y1 );
+                                            if( retail )
+                                            {
+                                                panel( patch.frames, left - .045f, bottom - .045f,
+                                                       right + .045f, head + .045f, -.018f );
+                                                windowPane( glass, left, bottom, right, head, -.035f, bay, false );
+                                            }
+                                            else
+                                            {
+                                                windowPane( glass, left - .045f, bottom - .045f, right + .045f,
+                                                            head + .045f, -.035f, bay, false, true );
+                                            }
+                                            farWindow( left, bottom, right, head, bay );
+                                            if( !retail && !door )
+                                                dressWindow( floor, bay, left, right, bottom, head );
+                                            continue;
+                                        }
                                         const float depth = builtInShopfront && !door
                                                                 ? cityShopfront::glassDepth
                                                             : civic ? .24f
@@ -971,9 +1007,10 @@ namespace workphone::scene::procedural_scene
                                             panel( patch.frames, s - .032f, bottom, s + .032f, head,
                                                    depth - .025f );
                                         }
-                                        panel( patch.farGlass, left, bottom, right, head, -.018f );
-                                        if( !retail && !door && axis == entranceAxis &&
-                                            sign == entranceSign )
+                                        farWindow( left, bottom, right, head, bay, door || hasModule );
+                                        const bool dressed = !retail && !hasModule && !door && !bayWindow &&
+                                            dressWindow( floor, bay, left, right, bottom, head );
+                                        if( !dressed && !retail && !door && !bayWindow && !hasModule && streetFace )
                                         {
                                             // A shallow projecting sill gives a grazing highlight.
                                             faceBox( patch.frames, s, bottom - .035f, width + .18f, .07f,
@@ -1013,7 +1050,7 @@ namespace workphone::scene::procedural_scene
                                                 faceBox( patch.frames, s, head + .06f, width + .14f,
                                                          .12f, projection * .5f, projection + .16f );
                                             }
-                                            if( warehouse && admitFacadeDetail( 120 ) )
+                                            if( warehouse && admitFacadeDetail( dressed ? 96 : 120 ) )
                                             {
                                                 // Tall steel factory sash with an actual multi-pane grid.
                                                 for( int pane = 1; pane < 3; ++pane )
@@ -1028,8 +1065,9 @@ namespace workphone::scene::procedural_scene
                                                              bottom + ( head - bottom ) * pane / 3.f,
                                                              width, .045f, -depth + .035f, .055f );
                                                 }
-                                                faceBox( patch.frames, s, head + .07f, width + .22f,
-                                                         .14f, .06f, .20f );
+                                                if( !dressed )
+                                                    faceBox( patch.frames, s, head + .07f, width + .22f,
+                                                             .14f, .06f, .20f );
                                             }
                                             if( mediterranean && admitFacadeDetail( 240 ) )
                                             {
@@ -1823,9 +1861,16 @@ namespace workphone::scene::procedural_scene
                         }
                     }
                 }
+                if( dressedWindows )
+                {
+                    emittedMasonry |= !timber;
+                    builtInSurrounds += dressedWindows;
+                    ++dressedLots;
+                }
                 if( masonry.storeys )
                 {
                     emittedMasonry = true;
+                    officePanelStoreys += masonry.storeys;
                     WP_LOG( String( "City masonry facade lot=" ) + StringUtil::toString( lot.id ) +
                             ", faces=" + StringUtil::toString( masonry.storeys ) +
                             ", panels=" + StringUtil::toString( masonry.panels ) +
@@ -1852,7 +1897,7 @@ namespace workphone::scene::procedural_scene
                         StringUtil::toString(
                             u64( nominalMansardSilhouettes - emittedMansardSilhouettes ) * 24 ) );
             }
-            kit.finish();
+            kit.finish( builtInSurrounds, dressedLots, officePanelStoreys );
             // Contain exploration within the shared collision plane.
             const float boundary = city.extent + 20;
             std::array<Geometry, 4> terrainBoundaries;
@@ -2071,6 +2116,17 @@ namespace workphone::scene::procedural_scene
                 assets.actors.push_back( root );
                 root->setName( "City LOD patch" );
                 root->setPosition( { key.first * 128.f + 64, 0, key.second * 128.f + 64 } );
+                // Reserve one quad per ribbon first. The additional divisions must fit
+                // alongside every pitched roof and custom roof in the actual atlas source.
+                size_t baseTriangles = patch.officeRibbons.size() * 2;
+                for( const auto &[geometry, colour] : cityBuildingImposters::surfaces( patch ) )
+                {
+                    baseTriangles += geometry->indices.size() / 3;
+                }
+                const size_t available = cityBuildingImposters::maximumSourceTriangles -
+                    std::min( baseTriangles, cityBuildingImposters::maximumSourceTriangles );
+                cityBuildingGlazing::emitOfficeRibbons( patch.officeRibbons, patch.farGlass,
+                                                        std::min<size_t>( available / 2, 1024 ) );
                 SmartPtr<scene::MeshRenderer> imposter;
                 if( assets.cityStreamingEnabled && !patch.customDetailOutsideFarMesh )
                 {
@@ -2190,7 +2246,8 @@ namespace workphone::scene::procedural_scene
                 add( "LOD1 city pitched roof clay", patch.farPitchedRoofs.clay, pitchedRoof.clay,
                      farRenderers );
                 add( "LOD1 city terracotta silhouette", patch.farTiles, tileMaterial, farRenderers );
-                add( "LOD1 city glazing ribbons", patch.farGlass, glassMaterials[0], farRenderers );
+                add( "LOD1 city glazing ribbons", patch.farGlass[0], glassMaterials[0], farRenderers );
+                add( "LOD1 city shaded glazing", patch.farGlass[1], glassMaterials[2], farRenderers );
                 auto lod = root->addComponent<scene::LODGroup>();
                 lod->setSize( 128 );
                 lod->setDetailBounds( patch.bounds );

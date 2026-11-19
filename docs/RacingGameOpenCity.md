@@ -206,14 +206,26 @@ assets. Appearance quality and distance control the finer façade details;
 roof silhouettes remain visible in the far LOD. Changes retain the same
 building masses, terrain support, and collision footprint.
 
-Small details such as balcony bars, shutter slats, and raised window frames
-share a fixed allowance across the city. Larger cities also space window bays
-and mansard dormers more widely, with more detail retained on street-facing
-elevations. Above 256 building lots, the fine-detail allowance is halved and
-shared façade, paving, and soil textures use 256-pixel maps. Vehicle and
-carriageway textures retain their own quality settings. Window sizes, storey
-heights, and the main roof silhouettes remain unchanged. These limits keep
-larger scenes within the existing memory budget.
+The preset sets window spacing from the length of each elevation. Above 128
+buildings, selected bays keep their recesses. Between them, ordinary windows
+use a single textured pane with a sash, transom and sill line. Clear glass,
+curtains and partly lowered blinds vary from bay to bay. Entrances always keep
+a recess, and street faces get a larger share of the recessed windows.
+The window kit distributes projecting sills and heads in rows. Masonry and
+warehouse façades use cambered stonework, civic and Parisian façades use
+pediments, Art Deco uses stepped heads, and timber uses posts and lintels.
+The middle LOD carries the pane pattern and groups office windows between
+piers. Building impostors use this same middle-distance geometry.
+
+To tune a built-in preset in source, edit its row in the
+[window kit](../Engine/cpp/Include/Workphone/Procedural/CityBuildingWindowKit.hpp).
+Floor height and bay width use metres. Window and shopfront widths are
+fractions of one bay. The window-head column selects the geometry placed
+above ordinary windows.
+
+Balcony bars, shutter slats and window surrounds have bounded geometry
+allowances. Above 256 building lots, the fine-detail allowance is halved and
+shared façade, paving, and soil textures use 256-pixel maps.
 
 Assign **City Wall Mesh**, **City Window Mesh**, **City Entrance Mesh**,
 **City Corner Mesh**, or **City Roof Mesh** independently. Use **Browse** to
@@ -229,14 +241,16 @@ behind it. Modules inherit the city's material for that part. The placement
 budget shares custom geometry across buildings, starting at street-facing bays
 on each building. Remaining placements use the built-in geometry.
 Detailed appearance levels use the façade overrides in the near LOD. Preview
-accepts corner and roof overrides. **City Building Kit Status** reports invalid
+accepts corner and roof overrides. After **Regenerate**, **City Building Kit
+Status** shows the number of built-in window surrounds, buildings receiving
+them, office panel rows, and custom mesh placements. It also reports invalid
 files, skipped roles, and placement limits. Failed placements use the preset.
 
 For a native matched comparison, use **facade** with the same city seed and
 layout. This example applies a sample arched window mesh to Civic Stone.
 
 ```powershell
-& .\Tools\powershell\CaptureProceduralRacing.ps1 -Configuration Debug -CityTerrainRoads `
+& .\Tools\powershell\CaptureProceduralRacing.ps1 -Configuration Debug -Scene city `
     -CityBlocks 6 -CityLayout grid -CityBuildingStyle civic -Views facade -Seconds 2 `
     -CityBuildingMeshes @{ window = '.\docs\examples\city-window-arch.obj' }
 ```
