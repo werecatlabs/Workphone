@@ -4,7 +4,7 @@
 #include "Workphone/Scene/Components/ProceduralCityConfiguration.hpp"
 #include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
 #include <Workphone/Scene/Components/Terrain/CollisionTerrain.hpp>
-#include <Workphone/Procedural/CityRoadAuthoring.hpp>
+#include <Workphone/Scene/Components/CityRoadAuthoring.hpp>
 #include <Workphone/Scene/Systems/LODSystem.hpp>
 #include <Workphone/Interface/System/ITaskManager.hpp>
 #include <Workphone/System/TaskLock.hpp>

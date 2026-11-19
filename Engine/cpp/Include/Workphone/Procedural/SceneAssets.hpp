@@ -4,7 +4,7 @@
 #include <Workphone/Interface/Procedural/IVehicleGenerator.hpp>
 #include <Workphone/Interface/Procedural/OpenCityLayout.hpp>
 #include <Workphone/Scene/Components/LODGroup.hpp>
-#include <Workphone/Procedural/CityRoadAuthoring.hpp>
+#include <Workphone/Scene/Components/CityRoadAuthoring.hpp>
 #include <Workphone/Procedural/CityRoadTerrainFit.hpp>
 #include <Workphone/Procedural/CityTrafficSimulation.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>

@@ -1,5 +1,5 @@
 #include <Workphone/WorkphonePCH.hpp>
-#include <Workphone/Procedural/CityRoadAuthoring.hpp>
+#include <Workphone/Scene/Components/CityRoadAuthoring.hpp>
 #include <Workphone/Procedural/CityRoadTerrainMesh.hpp>
 #include <Workphone/Procedural/CityRoadJunctions.hpp>
 #include <Workphone/Procedural/CityRoadFootways.hpp>

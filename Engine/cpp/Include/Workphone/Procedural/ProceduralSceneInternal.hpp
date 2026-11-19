@@ -26,7 +26,7 @@
 #include <Workphone/Interface/Procedural/OpenCityLegacyRoute.hpp>
 #include <Workphone/Interface/Procedural/ISkyAtmosphere.hpp>
 #include <Workphone/Scene/Components/Cubemap.hpp>
-#include <Workphone/Procedural/CityRoadAuthoring.hpp>
+#include <Workphone/Scene/Components/CityRoadAuthoring.hpp>
 #include <Workphone/Procedural/CityRoadParcelSupport.hpp>
 #include <Workphone/Procedural/CityRoadFootways.hpp>
 #include <Workphone/Scene/Components/CollisionMesh.hpp>

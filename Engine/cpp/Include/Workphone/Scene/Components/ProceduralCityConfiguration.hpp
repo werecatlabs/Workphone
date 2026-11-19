@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Workphone/Graphics/TerrainData.hpp>
-#include <Workphone/Procedural/CityRoadAuthoring.hpp>
+#include <Workphone/Scene/Components/CityRoadAuthoring.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
 
 #include <array>

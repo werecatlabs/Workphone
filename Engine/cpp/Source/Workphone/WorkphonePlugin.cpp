@@ -2,7 +2,7 @@
 #include <Workphone/Scene/Components/PrefabInstance.hpp>
 #include <Workphone/WorkphonePlugin.hpp>
 #include <Workphone/Scene/Components/Script.hpp>
-#include <Workphone/Procedural/CityRoadAuthoring.hpp>
+#include <Workphone/Scene/Components/CityRoadAuthoring.hpp>
 #include <Workphone/Scene/Components/MeshImposter.hpp>
 #include <Workphone/Jobs/RunCommandJob.hpp>
 #include <Workphone/IO/FolderListing.hpp>
