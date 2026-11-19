@@ -849,7 +849,8 @@ namespace workphone::scene
 
                     auto &updateObjects = getRegisteredObjects( Thread::UpdateState::Update, task );
 
-                    for( auto actor : updateObjects )
+                    ScopedLock lock( &updateObjects );
+                    for( auto &actor : updateObjects )
                     {
                         if( actor )
                         {
