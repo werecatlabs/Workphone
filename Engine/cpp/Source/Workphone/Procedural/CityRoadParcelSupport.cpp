@@ -325,12 +325,14 @@ namespace workphone::scene
         struct BlockCandidate
         {
             OpenCityLayout::Lot lot;
-            double streetDistanceSquared;
+            int setbackBand;
+            u64 rank;
         };
 
         struct BlockCoverage
         {
-            double minX, maxX, minZ, maxZ, area = 0, occupied = 0;
+            double minX, maxX, minZ, maxZ, targetArea = 0, occupied = 0;
+            double area = 0;
             SourceBudgetVector<BlockCandidate> sites;
             size_t next = 0;
         };
@@ -371,7 +373,7 @@ namespace workphone::scene
 
         using BlockRing = SourceBudgetVector<OpenCityLayout::Point>;
 
-        void measureBlock( const BlockRing &ring, BlockCoverage &block )
+        void measureBlock( const BlockRing &ring, float extent, BlockCoverage &block )
         {
             require( ring.size() >= 3, "Invalid terrain city block boundary." );
             block.minX = block.maxX = ring.front().x;
@@ -387,11 +389,17 @@ namespace workphone::scene
             }
             block.area = std::abs( block.area ) * .5;
             require( block.area > 0, "Terrain city block has no area." );
+            const double distance = std::hypot( ( block.minX + block.maxX ) * .5,
+                                                ( block.minZ + block.maxZ ) * .5 );
+            const double centrality = std::max( 0., 1. - distance / ( extent * .75 ) );
+            // Compare coverage against a denser central district and leafier outskirts.
+            block.targetArea = block.area * ( .15 + .45 * centrality * centrality );
         }
 
         struct StreetEdge
         {
             double distanceSquared = std::numeric_limits<double>::max();
+            Segment centreline{};
             OpenCityLayout::Frontage frontage = OpenCityLayout::Frontage::North;
         };
 
@@ -415,6 +423,7 @@ namespace workphone::scene
                 if( distance < nearest.distanceSquared )
                 {
                     nearest.distanceSquared = distance;
+                    nearest.centreline = { a.x, a.z, b.x, b.z, 0 };
                     nearest.frontage = std::abs( ox ) > std::abs( oz )
                                            ? ( ox < 0 ? OpenCityLayout::Frontage::West
                                                       : OpenCityLayout::Frontage::East )
@@ -432,9 +441,10 @@ namespace workphone::scene
                    ( u32( iz ) & 0x7fffu );
         }
 
-        // Everything about an infill lot except its frontage; empty when its
-        // envelope would cross the city's road setback.
-        std::optional<OpenCityLayout::Lot> makeInfillLot( u64 id, float x, float z, float extent )
+        // Lay out the parcel relative to its street. Central shop and office
+        // fronts can use more of the 18 m pitch along the pavement.
+        std::optional<OpenCityLayout::Lot> makeInfillLot( u64 id, float x, float z, float extent,
+                                                          OpenCityLayout::Frontage frontage )
         {
             OpenCityLayout::Lot lot{};
             lot.id = id;
@@ -442,24 +452,39 @@ namespace workphone::scene
             lot.variant = u32( variation );
             lot.parcelX = lot.x = x;
             lot.parcelZ = lot.z = z;
-            lot.parcelWidth = 12.f + float( variation & 3 );
-            lot.parcelDepth = 12.f + float( ( variation >> 2 ) & 3 );
+            lot.frontage = frontage;
+            lot.park = ( variation >> 32 ) % 16 == 0;
+            const bool central = std::hypot( x, z ) < extent * .40f;
+            const bool alongX = frontage == OpenCityLayout::Frontage::North ||
+                                frontage == OpenCityLayout::Frontage::South;
+            const float streetSpan = ( central && !lot.park ? 14.f : 12.f ) + float( variation & 3 );
+            const float plotDepth = 12.f + float( ( variation >> 2 ) & 3 );
+            lot.parcelWidth = alongX ? streetSpan : plotDepth;
+            lot.parcelDepth = alongX ? plotDepth : streetSpan;
             const float limit = extent - OpenCityLayout::roadSetback;
             if( std::abs( x ) + lot.parcelWidth * .5f > limit ||
                 std::abs( z ) + lot.parcelDepth * .5f > limit )
             {
                 return std::nullopt;
             }
-            lot.park = ( variation >> 32 ) % 16 == 0;
             lot.width = lot.parcelWidth - ( lot.park ? 0.f : 2.f );
             lot.depth = lot.parcelDepth - ( lot.park ? 0.f : 2.f );
-            const bool central = std::hypot( x, z ) < extent * .40f;
             lot.district = central                        ? OpenCityLayout::District::Commercial
                            : ( variation >> 16 ) % 13 == 0 ? OpenCityLayout::District::Civic
                                                            : OpenCityLayout::District::Residential;
-            lot.height = central ? 3.6f * ( 6 + ( variation >> 24 ) % 10 )
-                                 : 3.2f * ( 2 + ( variation >> 24 ) % 5 );
             return lot;
+        }
+
+        // Use the supported footprint, which can be much narrower on a hillside.
+        float infillBuildingHeight( const OpenCityLayout::Lot &lot )
+        {
+            const bool commercial = lot.district == OpenCityLayout::District::Commercial;
+            const float storey = commercial ? 3.6f : 3.2f;
+            const float shortSpan = std::min( lot.width, lot.depth );
+            const int maximum = std::clamp( int( shortSpan * ( commercial ? 2.1f : 1.5f ) / storey ),
+                                            2, commercial ? 8 : 5 );
+            const int minimum = std::min( commercial ? 3 : 2, maximum );
+            return storey * ( minimum + ( lot.variant >> 24 ) % ( maximum - minimum + 1 ) );
         }
 
         template <class Lots>
@@ -598,7 +623,7 @@ namespace workphone::scene
             SourceBudgetVector<BlockCoverage> blocks;
             for( const auto &ring : faces )
             {
-                measureBlock( ring, blocks.emplace_back() );
+                measureBlock( ring, city.extent, blocks.emplace_back() );
             }
             for( const auto &lot : city.lots )
             {
@@ -627,24 +652,29 @@ namespace workphone::scene
                     {
                         continue;
                     }
-                    auto lot = makeInfillLot( id, x, z, city.extent );
+                    const auto edge = nearestStreetEdge( faces[owner], x, z );
+                    auto lot = makeInfillLot( id, x, z, city.extent, edge.frontage );
                     if( !lot )
                     {
                         continue;
                     }
-                    const auto edge = nearestStreetEdge( faces[owner], x, z );
-                    lot->frontage = edge.frontage;
-                    blocks[owner].sites.push_back( { *lot, edge.distanceSquared } );
+                    const Rectangle parcel{ x, z, lot->parcelWidth, lot->parcelDepth };
+                    const double gap = std::sqrt( segmentRectangleSquared( edge.centreline, parcel ) );
+                    // Frontages within four metres of the same building line are
+                    // interchangeable. A separate hash avoids coordinate-order rows
+                    // and keeps street selection independent of facade and height.
+                    const auto rank = render::foliageStableHash( id ^ 0x535452454554ull );
+                    blocks[owner].sites.push_back( { *lot, int( gap / 4. ), rank } );
                 }
             }
             for( auto &block : blocks )
             {
                 std::sort( block.sites.begin(), block.sites.end(), []( const auto &a, const auto &b ) {
-                    if( a.streetDistanceSquared != b.streetDistanceSquared )
+                    if( a.setbackBand != b.setbackBand )
                     {
-                        return a.streetDistanceSquared < b.streetDistanceSquared;
+                        return a.setbackBand < b.setbackBand;
                     }
-                    return a.lot.id < b.lot.id;
+                    return a.rank < b.rank;
                 } );
             }
 
@@ -654,7 +684,7 @@ namespace workphone::scene
                 for( auto &block : blocks )
                 {
                     if( block.next < block.sites.size() &&
-                        ( !least || block.occupied * least->area < least->occupied * block.area ) )
+                        ( !least || block.occupied * least->targetArea < least->occupied * block.targetArea ) )
                     {
                         least = &block;
                     }
@@ -667,7 +697,9 @@ namespace workphone::scene
                 const bool occupied = overlapsExistingLot( city.lots, lot );
                 if( !occupied && admit( lot ) )
                 {
-                    least->occupied += city.lots.back().parcelWidth * city.lots.back().parcelDepth;
+                    auto &fitted = city.lots.back();
+                    fitted.height = infillBuildingHeight( fitted );
+                    least->occupied += fitted.parcelWidth * fitted.parcelDepth;
                 }
             }
         }
@@ -884,7 +916,7 @@ namespace workphone::scene
                 }
             }
             CityRoadBlockFaces faces;
-            if( infillSeed && input.naturalRoads )
+            if( infillSeed )
             {
                 faces = cityRoadBlockFaces( source, bake, connections );
                 fillCityBlocks( candidate, faces, *infillSeed, ids, admit );

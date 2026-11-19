@@ -139,15 +139,18 @@ namespace workphone::procedural
                 {
                     graph.nodes.push_back( { point.x, point.z } );
                 }
+                // Scale from the arterial width once. At the standard width this
+                // preserves the exact local, collector and arterial profiles.
+                const double widthScale = double( options.roadWidth ) /
+                    OpenCityRoadNetwork::roadWidth( OpenCityRoadNetwork::RoadClass::Arterial );
                 for( auto edge : city.roads.edges )
                 {
                     need( edge.roadClass == OpenCityRoadNetwork::RoadClass::Local ||
                               edge.roadClass == OpenCityRoadNetwork::RoadClass::Collector ||
                               edge.roadClass == OpenCityRoadNetwork::RoadClass::Arterial,
                           "City graph has an unsupported road class." );
-                    const float width =
-                        std::max( 4.f, options.roadWidth *
-                                           ( OpenCityRoadNetwork::roadWidth( edge.roadClass ) / 12.f ) );
+                    const float width = std::max(
+                        4.f, float( widthScale * OpenCityRoadNetwork::roadWidth( edge.roadClass ) ) );
                     graph.edges.push_back( { edge.a, edge.b, edge.roadClass, width } );
                 }
             }

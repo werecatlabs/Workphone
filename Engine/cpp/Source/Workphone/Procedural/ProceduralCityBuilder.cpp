@@ -2391,8 +2391,7 @@ namespace workphone::scene::procedural_scene
             }
             mesh( assets, "City parks", parks, land );
             buildCityStreetDressing( assets, city, quality );
-            buildCityLayoutDebug(
-                assets, city, assets.cityTerrainRoads && city.naturalRoads ? &terrainBlocks : nullptr );
+            buildCityLayoutDebug( assets, city, assets.cityTerrainRoads ? &terrainBlocks : nullptr );
             Geometry ground;
             ground.box( { 0, -.06f, 0 }, { city.extent * 2 + 80, .1f, city.extent * 2 + 80 } );
             if( !city.naturalRoads && !assets.cityTerrainRoads )

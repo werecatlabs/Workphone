@@ -245,9 +245,74 @@ namespace
         require(culled==0 && checks==adapted.lots.size(),"Adapted city cannot pass unchanged strict terrain support and reservations");
         sameCity(adapted,verified);sameCity(input,original);
     }
-    void largeHillsideInfill()
+    void hillsideGridInfill()
     {
-        const auto input = OpenCityLayout::generate( 42, 10, 0, true );
+        const auto input = OpenCityLayout::generate( 42, 6, 0, false );
+        const auto fitted = fitGeneratedHillside( input );
+        CityRoadParcelSupportOptions options;
+        options.shrinkForRelief = true;
+        OpenCityLayout original, filled, verified;
+        CityRoadBlockFaces faces;
+        u32 culled = 0, checks = 0;
+        String error;
+        check( prepareCityRoadParcels( input, fitted.source, fitted.bake, fitted.terrain, {},
+                                       original, culled, checks, error, options ), error );
+        check( prepareCityRoadParcels( input, fitted.source, fitted.bake, fitted.terrain, {},
+                                       filled, culled, checks, error, options, 42u, &faces ), error );
+        require( !faces.empty() && filled.lots.size() <= size_t( input.blocks * input.blocks * 4 ) &&
+                 filled.lots.size() > original.lots.size() + input.lots.size() / 2,
+                 "Hillside grid failed to repopulate enclosed blocks within its lot budget" );
+        for( size_t i = 0; i < original.lots.size(); ++i )
+            sameLot( original.lots[i], filled.lots[i] );
+
+        size_t commercialFronts = 0;
+        float lowestOffice = std::numeric_limits<float>::max(), highestOffice = 0;
+        for( size_t i = original.lots.size(); i < filled.lots.size(); ++i )
+        {
+            const auto &lot = filled.lots[i];
+            for( size_t j = 0; j < i; ++j )
+                require( lot.id != filled.lots[j].id && !OpenCityLayout::parcelsOverlap( lot, filled.lots[j] ),
+                         "Grid infill duplicated a lot or encroached on a neighbouring envelope" );
+            if( lot.park )
+                continue;
+            const bool commercial = lot.district == OpenCityLayout::District::Commercial;
+            const float storey = commercial ? 3.6f : 3.2f;
+            const float floors = lot.height / storey;
+            require( floors >= 2.f && std::abs( floors - std::round( floors ) ) < .001f &&
+                     lot.height <= std::min( lot.width, lot.depth ) * ( commercial ? 2.1f : 1.5f ) + .001f,
+                     "Grid infill lost whole storeys or outgrew its fitted foundation" );
+            if( commercial )
+            {
+                ++commercialFronts;
+                lowestOffice = std::min( lowestOffice, lot.height );
+                highestOffice = std::max( highestOffice, lot.height );
+            }
+        }
+        require( commercialFronts >= 4 && highestOffice - lowestOffice >= 3.5f,
+                 "Grid centre lacks a mix of commercial building heights" );
+        double centreArea = 0, outerArea = 0;
+        for( const auto &lot : filled.lots )
+        {
+            if( lot.park )
+                continue;
+            const float distance = std::max( std::abs( lot.parcelX ), std::abs( lot.parcelZ ) );
+            if( distance < input.spacing )
+                centreArea += lot.width * lot.depth;
+            else if( distance >= 2 * input.spacing )
+                outerArea += lot.width * lot.depth;
+        }
+        // Four central blocks and twenty perimeter blocks in this six-by-six grid.
+        require( outerArea > 0 && centreArea / 4 > 1.25 * outerArea / 20,
+                 "Hillside grid lost the transition from denser central blocks to the outskirts" );
+        check( prepareCityRoadParcels( filled, fitted.source, fitted.bake, fitted.terrain, {},
+                                       verified, culled, checks, error ), error );
+        require( culled == 0 && checks == filled.lots.size(),
+                 "Grid infill failed strict road, footway or terrain checks" );
+        sameCity( filled, verified );
+    }
+    void largeHillsideInfill( bool naturalRoads )
+    {
+        const auto input = OpenCityLayout::generate( 42, 10, 0, naturalRoads );
         const auto fitted = fitGeneratedHillside( input );
         CityRoadParcelSupportOptions options;
         options.shrinkForRelief = true;
@@ -509,7 +574,7 @@ namespace
 int main()
 {
     int result = 0;
-    try { canonicalRoads(); fullTerrain(); adaptiveFootprints(); generatedHillsideDensity(); largeHillsideInfill(); sparseAuthoredBlockInfill(); junctions(); pavementReservations(); ordinaryJunctionReservations(); transactionalFailures(); std::cout << "City parcels: canonical road/junction/pavement clearances, full terrain support/heights, stable order and transactional budgets PASS\n"; }
+    try { canonicalRoads(); fullTerrain(); adaptiveFootprints(); generatedHillsideDensity(); hillsideGridInfill(); largeHillsideInfill( false ); largeHillsideInfill( true ); sparseAuthoredBlockInfill(); junctions(); pavementReservations(); ordinaryJunctionReservations(); transactionalFailures(); std::cout << "City parcels: canonical road/junction/pavement clearances, full terrain support/heights, stable order and transactional budgets PASS\n"; }
     catch( const std::exception &e ) { std::cerr << "City parcel support: " << e.what() << '\n'; result = 1; }
     WorldStreamingScheduler::shutdownShared(); return result;
 }

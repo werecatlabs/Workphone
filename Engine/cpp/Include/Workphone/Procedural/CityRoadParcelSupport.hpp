@@ -37,8 +37,8 @@ namespace workphone::scene
         const procedural::CityRoadSplineBake &bake, render::TerrainSnapshot terrain,
         const Transform3<real_Num> &placement, procedural::OpenCityLayout &output, u32 &culled,
         u32 &supportChecks, String &error, const CityRoadParcelSupportOptions &options );
-    /** Admit existing lots first, then use the remaining natural-city lot budget
-     * in the least developed enclosed blocks of the authored road network.
+    /** Admit existing lots first, then use the remaining terrain-city lot budget
+     * in enclosed blocks of the authored road network, with a denser centre.
      * culled counts rejected input lots. Optional faces describe this same road bake. */
     WPCore_API bool prepareCityRoadParcels(
         const procedural::OpenCityLayout &input, const procedural::CityRoadSplineSource &source,

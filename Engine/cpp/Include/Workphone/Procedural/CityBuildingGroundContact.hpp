@@ -475,9 +475,16 @@ namespace cityGroundContact
             const auto groundClear = [&]( Vector3F a, Vector3F b ) {
                 return footprintClear( a, b, &lot );
             };
+            // Fitted steps, aprons and their handrails stop at the public footway.
+            // The two corners bound an axis-aligned, street-facing stair flight.
+            const auto stairClear = [&]( Vector3F a, Vector3F b ) {
+                return groundClear( a, b ) &&
+                       !sidewalkSurface.overlaps( { a, { a.x, a.y, b.z }, b } ) &&
+                       !sidewalkSurface.overlaps( { a, b, { b.x, b.y, a.z } } );
+            };
             const auto landing = lot.district == OpenCityLayout::District::Commercial
                                      ? buildRaisedApproach( entry, depth, half, floor, surface,
-                                                            groundClear, stairs, handrails )
+                                                            stairClear, stairs, handrails )
                                      : RaisedApproach{};
             if( landing.end > 0 )
             {

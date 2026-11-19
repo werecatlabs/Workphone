@@ -351,8 +351,12 @@ this limitation. Flat-city record persistence is unchanged.
 
 The conversion uses stable source/road/knot/junction IDs, coalesces collinear
 streets, and replaces selected junctions with directed roundabout routes. Roads
-follow the real terrain triangles; unsupported parcels are removed and surviving
-building foundations, collision, parks and foliage share sampled ground heights.
+follow the terrain triangles. On hilly grid and L-system streets, the generator
+keeps supported lots first, then fits smaller parcels along the streets of enclosed
+blocks. It reserves a larger share of the available lots for the centre. New
+commercial lots have wider street frontages where the slope allows, and the
+narrower dimension of each fitted building limits its storey count.
+Building foundations, collision, parks and foliage share sampled ground heights.
 Source or terrain changes trigger a rebuild of the derived city. Moving a road
 away from the pinned racing route disables racing until the route has continuous
 supported coverage again; free editing does not silently create a replacement lap.
@@ -364,8 +368,9 @@ Removed or transferred actors cannot be reactivated by a stale queued load;
 valid children retain activation through their live scene-owned parent hierarchy.
 
 Terrain-city streets also have fitted 2.4 m pedestrian strips and roundabout-edge
-walks, 15 cm above terrain, with concrete kerbs and shared mesh collision. Road
-mouths and unsupported terrain pieces stay open. Splitter refuges retain their
+walks, 15 cm above terrain, with concrete kerbs and shared mesh collision. Raised
+entrance steps and their handrails fit outside the public footway. Road mouths
+and unsupported terrain pieces stay open. Splitter refuges retain their
 raised concrete rims and inset turf. `--view boulevard` places the terrain-city
 camera beside an approach at pedestrian height; `street` retains the elevated
 junction inspection view.
