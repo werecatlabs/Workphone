@@ -329,16 +329,19 @@ namespace workphone
         physics_Num hitDistance = 0.0;
         if( body->castWorldRay( ray, m_hit ) )
         {
-            hitDistance = m_hit->getDistance();
+            if( m_hit )
+            {
+                hitDistance = m_hit->getDistance();
 #if !WP_FINAL
-            WP_ASSERT( isFiniteValue( hitDistance ) );
-            WP_ASSERT( hitDistance >= static_cast<physics_Num>( 0.0 ) );
+                WP_ASSERT( isFiniteValue( hitDistance ) );
+                WP_ASSERT( hitDistance >= static_cast<physics_Num>( 0.0 ) );
 #endif
 
-            if( hitDistance > std::numeric_limits<physics_Num>::epsilon() &&
-                hitDistance < m_suspensionTravel + m_radius )
-            {
-                m_onGround = true;
+                if( hitDistance > std::numeric_limits<physics_Num>::epsilon() &&
+                    hitDistance < m_suspensionTravel + m_radius )
+                {
+                    m_onGround = true;
+                }
             }
         }
 
