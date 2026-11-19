@@ -1,5 +1,5 @@
 #include <Workphone/WorkphonePCH.hpp>
-#include <Workphone/Scene/Components/ProceduralSceneGeneration.hpp>
+#include <Workphone/Procedural/ProceduralSceneGeneration.hpp>
 #include <Workphone/Scene/Systems/LODSystem.hpp>
 #include <Workphone/Scene/Components/CityBuildingStyles.hpp>
 #include <Workphone/Scene/Components/CitySurfaceLibrary.hpp>
@@ -40,7 +40,7 @@
 #include <Workphone/System/WorldStreamingScheduler.hpp>
 #include "Workphone/Scene/Components/CityBuildingKit.hpp"
 #include "Workphone/Scene/Components/CityTrafficAppearance.hpp"
-#include "CityTrafficVehicle.hpp"
+#include "Workphone/Procedural/CityTrafficVehicle.hpp"
 #include <Workphone/Scene/Components/WheelController.hpp>
 #include "Workphone/Scene/Components/CityRoadCrossings.hpp"
 #include "Workphone/Procedural/CityStreetFixture.hpp"

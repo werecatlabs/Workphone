@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Workphone/Scene/Components/Component.hpp>
-#include <Workphone/Scene/Components/ProceduralSceneGeneration.hpp>
+#include <Workphone/Procedural/ProceduralSceneGeneration.hpp>
 #include <mutex>
 
 namespace workphone::scene

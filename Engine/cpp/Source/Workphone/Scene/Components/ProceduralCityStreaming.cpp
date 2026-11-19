@@ -1,6 +1,6 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Scene/Components/ProceduralCityStreaming.hpp>
-#include <Workphone/Scene/Components/ProceduralSceneGeneration.hpp>
+#include <Workphone/Procedural/ProceduralSceneGeneration.hpp>
 #include <Workphone/Scene/Components/Collision.hpp>
 #include <Workphone/Scene/Components/LODGroup.hpp>
 #include <Workphone/Scene/Components/Mesh.hpp>
