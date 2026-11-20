@@ -115,7 +115,8 @@ namespace cityGroundContact
         }
 
         void publish( SceneAssets &assets, const CityRoadTerrainMesh &walks,
-                      const render::TerrainData &terrain, const Transform3<real_Num> &placement )
+                      const render::TerrainData &terrain, const Transform3<real_Num> &placement,
+                      SmartPtr<ITextureForge> forge )
         {
             if( m_sites.empty() )
             {
@@ -174,7 +175,7 @@ namespace cityGroundContact
                 const float q = b.centre.x * b.centre.x + b.centre.z * b.centre.z;
                 return std::tie( p, a.key ) < std::tie( q, b.key );
             } );
-            Geometry mulch, edging, evergreen, perennials, flowers;
+            Geometry mulch, edging, evergreen, perennials, leafTips, flowers;
             SourceBudgetVector<Site> accepted;
             size_t beds = 0, courts = 0;
             const size_t courtLimit = ( m_limit + 6 ) / 7;
@@ -196,7 +197,8 @@ namespace cityGroundContact
                 {
                     continue;
                 }
-                if( emit( site, terrain, placement, mulch, edging, evergreen, perennials, flowers ) )
+                if( emit( site, terrain, placement, mulch, edging, evergreen, perennials, leafTips,
+                          flowers ) )
                 {
                     accepted.push_back( site );
                     if( site.court )
@@ -217,8 +219,35 @@ namespace cityGroundContact
             };
             add( "Terrain city frontage mulch beds", mulch, { .39f, .29f, .21f, 1 } );
             add( "Terrain city frontage stone edging", edging, { .52f, .49f, .42f, 1 } );
-            add( "Terrain city frontage clipped evergreens", evergreen, { .27f, .43f, .19f, 1 } );
-            add( "Terrain city frontage perennials", perennials, { .43f, .49f, .29f, 1 } );
+            if( !leafTips.indices.empty() )
+            {
+                SurfaceBakeParams params;
+                params.size = 128;
+                SurfaceBakeResult crown;
+                forge->bakeFoliage( crown, params );
+                const auto canopy = upload( assets, crown.albedo );
+                const auto addCrown = [&]( const char *name, const Geometry &geometry, ColourF tint ) {
+                    if( !geometry.indices.empty() )
+                    {
+                        auto surface = material( assets, tint, .91f );
+                        surface->setTexture( canopy, 0 );
+                        surface->setUVProjection( 3 );
+                        surface->setTriplanarScale( 2.8f );
+                        mesh( assets, name, geometry, surface );
+                    }
+                };
+                addCrown( "Terrain city frontage clipped evergreens", evergreen, { .67f, .67f, .68f, 1 } );
+                addCrown( "Terrain city frontage perennials", perennials, { .79f, .72f, .71f, 1 } );
+                auto sprigs = material( assets, ColourF::White, .85f );
+                sprigs->setTexture( upload( assets, sprigTexture(), render::TextureMipFilter::Cutout ), 0 );
+                sprigs->setUVProjection( 0 );
+                sprigs->setCutout( true );
+                sprigs->setAlphaClip( .45f );
+                sprigs->setDepthWrite( true );
+                sprigs->setEditorUInt( "uvFilter", 3 );
+                sprigs->setEditorFloat( "uvAniso", 8.f );
+                mesh( assets, "Terrain city frontage leaf tips", leafTips, sprigs );
+            }
             add( "Terrain city frontage flowers", flowers, { .73f, .63f, .35f, 1 } );
             WP_LOG( String( "Terrain city planted frontages=" ) +
                     StringUtil::toString( accepted.size() ) +
@@ -314,7 +343,7 @@ namespace cityGroundContact
                     const float x = std::cos( angle ) * std::cos( pitch );
                     const float z = std::sin( angle ) * std::cos( pitch );
                     const float y = std::sin( pitch );
-                    const float ripple = .89f + .11f * random( key + side + 1 );
+                    const float ripple = .82f + .18f * random( key + side + ring * sides + 1 );
                     vertex( ( along * ( x * xRadius ) + outward * ( z * zRadius ) ) * ripple +
                                 Vector3F( 0, y * height, 0 ),
                             along * ( x / xRadius ) + outward * ( z / zRadius ) +
@@ -345,9 +374,82 @@ namespace cityGroundContact
             }
         }
 
+        static TextureBuffer sprigTexture()
+        {
+            constexpr u32 size = 64;
+            TextureBuffer sprig( size, size );
+            for( u32 y = 0; y < size; ++y )
+            {
+                for( u32 x = 0; x < size; ++x )
+                {
+                    const float v = ( y + .5f ) / size;
+                    const float u = ( x + .5f ) / size - .5f - .025f * std::sin( v * pi );
+                    bool covered = std::abs( u ) < .013f && v > .015f && v < .91f;
+                    Vector3F colour( 87, 100, 56 );
+                    for( int pair = 0; pair < 4; ++pair )
+                    {
+                        const Vector2F tip( .43f - pair * .074f, .245f - pair * .014f );
+                        const Vector2F offset( std::abs( u ), v - .07f - pair * .228f );
+                        const float t = offset.dotProduct( tip ) / tip.lengthSquared();
+                        if( t <= 0 || t >= 1 )
+                        {
+                            continue;
+                        }
+                        const float across = ( offset.y * tip.x - offset.x * tip.y ) / tip.length();
+                        const float width = ( .108f - pair * .013f ) * 4.f * t * ( 1.f - t );
+                        if( std::abs( across ) < width )
+                        {
+                            const float light = .82f + .045f * pair + ( across > 0 ? .12f : 0.f ) +
+                                                ( std::abs( across ) < .009f ? .10f : 0.f );
+                            colour = Vector3F( 111, 140, 73 ) * light;
+                            covered = true;
+                        }
+                    }
+                    auto pixel = sprig.pixel( x, y );
+                    pixel[0] = u8( colour.x );
+                    pixel[1] = u8( colour.y );
+                    pixel[2] = u8( colour.z );
+                    pixel[3] = covered ? 255 : 0;
+                }
+            }
+            return sprig;
+        }
+
+        static void shrubLeaves( Geometry &tips, const Site &site, Vector3F centre,
+                                 float xRadius, float zRadius, float height, u64 key )
+        {
+            const Vector3F up( 0, 1, 0 );
+            const float phase = 2.f * pi * random( key + 48 );
+            const int shoots = std::clamp( int( 60 * ( xRadius + zRadius ) ), 18, 48 );
+            // Each card follows the crown from inside the foliage to a projecting tip.
+            for( int i = 0; i < shoots; ++i )
+            {
+                const u64 shootKey = render::foliageStableHash( key + 51 + i );
+                const float y = -.56f + 1.55f * ( i + .15f + .70f * random( shootKey ) ) / shoots;
+                const float radius = std::sqrt( 1.f - y * y );
+                const float angle = phase + i * 2.399963f + .32f * random( shootKey + 1 );
+                const float x = std::cos( angle ), z = std::sin( angle );
+                const auto radial = site.along * x + site.outward * z;
+                const auto tangent = site.outward * x - site.along * z;
+                const auto root = centre + ( ( site.along * ( x * xRadius ) +
+                                               site.outward * ( z * zRadius ) ) * radius +
+                                             up * ( y * height ) ) * .82f;
+                const auto surfaceNormal = radial * radius + up * y;
+                const auto meridian = up * radius - radial * y;
+                const float heading = ( random( shootKey + 2 ) - .5f ) * 2.8f;
+                const auto stem = ( meridian * std::cos( heading ) + tangent * std::sin( heading ) +
+                                    surfaceNormal * .46f ).normaliseCopy();
+                const float length = .091f + .067f * random( shootKey + 3 );
+                const auto nearSide = surfaceNormal.crossProduct( stem ).normaliseCopy() * ( length * .44f );
+                const auto normal = ( surfaceNormal + up * .34f ).normaliseCopy();
+                const auto tip = root + stem * length;
+                tips.quad( root - nearSide, root + nearSide, tip + nearSide, tip - nearSide, normal );
+            }
+        }
+
         static bool emit( const Site &site, const render::TerrainData &terrain,
                           const Transform3<real_Num> &placement, Geometry &mulch, Geometry &edging,
-                          Geometry &evergreen, Geometry &perennials, Geometry &flowers )
+                          Geometry &evergreen, Geometry &perennials, Geometry &leafTips, Geometry &flowers )
         {
             const Vector3F up( 0, 1, 0 );
             const auto surface = [&]( Vector3F &p ) {
@@ -425,8 +527,9 @@ namespace cityGroundContact
                                           site.halfSpan * ( .28f + .06f * random( key + 6 ) ) );
                 const float z = site.halfDepth * ( .49f + .12f * random( key + 7 ) );
                 plant.y += height * .78f + .06f;
-                shrub( site.formal || i % 2 == 0 ? evergreen : perennials, plant, site.along,
-                       site.outward, x, z, height, key );
+                auto &mature = site.formal || i % 2 == 0 ? evergreen : perennials;
+                shrub( mature, plant, site.along, site.outward, x * .87f, z * .87f, height * .88f, key );
+                shrubLeaves( leafTips, site, plant, x, z, height, key );
                 if( site.court )
                 {
                     // Low sprays connect the mounds at the street-facing edge.
@@ -458,7 +561,7 @@ namespace cityGroundContact
                     const float angle = 2.399963f * flower + 6.283185f * random( key + 10 );
                     const auto head = plant + site.along * ( std::cos( angle ) * x * .50f ) +
                                       site.outward * ( std::sin( angle ) * z * .50f ) +
-                                      up * ( height * .96f );
+                                      up * ( height * .88f );
                     const auto u = site.along * .031f, v = site.outward * .035f;
                     flowers.quad( head - u, head - v, head + u, head + v, up );
                 }

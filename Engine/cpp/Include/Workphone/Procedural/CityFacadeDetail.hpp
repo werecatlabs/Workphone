@@ -140,6 +140,64 @@ namespace cityFacadeDetail
         }
     }
 
+    template <class Panel, class Box, class Point>
+    void houseDoor( Geometry &leaf, Geometry &frame, Geometry &metal, const Panel &panel,
+                    const Box &box, const Point &point, Vector3F normal, float centre, float halfWidth,
+                    float sill, float head, float depth, float latchSide, bool raisedPanels )
+    {
+        const auto fit = cityBuildingWindowKit::fitHouseDoor( halfWidth * 2, head - sill );
+        const float a = centre - fit.width * .5f, b = centre + fit.width * .5f;
+        const float top = sill + fit.height, face = depth - .024f;
+        const float stile = std::min( .12f, fit.width * .16f );
+        const float waist = sill + fit.height * .57f;
+        // The common glazed backing is visible through the upper lights and sidelights.
+        panel( leaf, a, sill, b, waist, face );
+        panel( leaf, a, waist, a + stile, top, face );
+        panel( leaf, b - stile, waist, b, top, face );
+        panel( leaf, a + stile, top - .13f, b - stile, top, face );
+        panel( leaf, centre - .022f, waist, centre + .022f, top - .13f, face );
+        if( fit.width + .13f < halfWidth * 2 )
+        {
+            panel( frame, a - .065f, sill, a, top, face - .01f );
+            panel( frame, b, sill, b + .065f, top, face - .01f );
+        }
+        panel( frame, centre - halfWidth + .06f, top, centre + halfWidth - .06f,
+               std::min( head, top + .08f ), face - .01f );
+
+        const float plate = std::min( fit.width * .30f, .29f );
+        const float letterY = sill + fit.height * .435f;
+        panel( metal, centre - plate * .5f, letterY - .039f, centre + plate * .5f,
+               letterY + .039f, face - .018f );
+        const float lock = centre + latchSide * ( fit.width - stile ) * .5f;
+        const float handleY = sill + fit.height * .49f;
+        panel( metal, lock - .026f, handleY - .08f, lock + .026f, handleY + .038f, face - .019f );
+        box( metal, lock - latchSide * .044f, handleY, .12f, .028f, -face + .048f, .052f );
+        if( raisedPanels )
+        {
+            for( float side : { -1.f, 1.f } )
+            {
+                const float mid = centre + side * fit.width * .215f, half = fit.width * .16f;
+                const float low = sill + fit.height * .085f, high = sill + fit.height * .39f;
+                const float bevel = std::min( .039f, half * .28f );
+                const auto corners = [&]( float inset, float z ) {
+                    return std::array{ point( mid - half + inset, low + inset, z ),
+                                       point( mid + half - inset, low + inset, z ),
+                                       point( mid + half - inset, high - inset, z ),
+                                       point( mid - half + inset, high - inset, z ) };
+                };
+                const auto rim = corners( 0, face - .004f ), field = corners( bevel, face - .034f );
+                leaf.quad( field[0], field[1], field[2], field[3], normal );
+                for( size_t i = 0; i < rim.size(); ++i )
+                {
+                    const auto next = ( i + 1 ) % rim.size();
+                    auto n = ( rim[next] - rim[i] ).crossProduct( field[i] - rim[i] ).normaliseCopy();
+                    if( n.dotProduct( normal ) < 0 ) n = -n;
+                    leaf.quad( rim[i], rim[next], field[next], field[i], n );
+                }
+            }
+        }
+    }
+
     template <class Point>
     void officeStorey( GeometryBatches &geometry, Counts &counts, const Point &point, Vector3F normal,
                        Vector3F along, float span, int bays, float y0, float sill, float head, float y1,

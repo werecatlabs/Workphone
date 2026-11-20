@@ -126,8 +126,13 @@ than sampling only the first portion of the lot array.
 Park paths, benches, planters, bins, utility covers and paving joints use batched
 geometry. Solid props have bounded matching collision proxies; decorative overlays
 remain close to the contact surface. Natural layouts retain parcel/park details and
-omit grid-derived street decorations. Glazing is an opaque approximation with outdoor
-HDR specular response; transmission and furnished interiors remain open.
+omit grid-derived street decorations. Residential windows vary by parcel, floor and bay.
+Drawn linen, partly lowered blinds and daylight on the back wall share a window atlas.
+Detailed street-facing windows set this backing behind clear glass and a finished sill.
+At detailed shopfronts the windows beside the door
+can open into glazed display rooms. Market shelves group printed cartons by product.
+In the planting beds beside entrances, clipped shrubs carry pairs of leaves with
+lighter growth at the tips.
 
 ## Standalone generation components
 
@@ -211,6 +216,8 @@ buildings, selected bays keep their recesses. Between them, ordinary windows
 use a single textured pane with a sash, transom and sill line. Clear glass,
 curtains and partly lowered blinds vary from bay to bay. Entrances always keep
 a recess, and street faces get a larger share of the recessed windows.
+House entrances centre a single panelled leaf on the landing. Wider openings include
+sidelights, and taller openings have a glazed light above the door.
 The window kit distributes projecting sills and heads in rows. Masonry and
 warehouse façades use cambered stonework, civic and Parisian façades use
 pediments, Art Deco uses stepped heads, and timber uses posts and lintels.
@@ -369,11 +376,16 @@ valid children retain activation through their live scene-owned parent hierarchy
 
 Terrain-city streets also have fitted 2.4 m pedestrian strips and roundabout-edge
 walks, 15 cm above terrain, with concrete kerbs and shared mesh collision. Raised
-entrance steps and their handrails fit outside the public footway. Road mouths
-and unsupported terrain pieces stay open. Splitter refuges retain their
-raised concrete rims and inset turf. `--view boulevard` places the terrain-city
-camera beside an approach at pedestrian height; `street` retains the elevated
-junction inspection view.
+entrance steps and their handrails fit outside the public footway. At a house
+the flight follows the width of the door leaf. Buildings with a short setback
+can use their foundation as the top landing and meet the
+measured pavement edge at the bottom. The generator tries a narrower flight
+where the street slopes across the door. Beside diagonal roads the frontage checks
+the road width along its centreline and the paved junction surface. Pale stone
+nosings mark the tread edges, and the step mesh supplies pedestrian collision.
+Road mouths and unsupported terrain pieces stay open. Splitter refuges retain
+their raised concrete rims and inset turf. `--view boulevard` places the camera
+beside an approach at pedestrian height. `--view street` looks down on the junction.
 
 ```powershell
 & .\Tools\powershell\CaptureProceduralRacing.ps1 -Configuration Debug -CityTerrainRoads `

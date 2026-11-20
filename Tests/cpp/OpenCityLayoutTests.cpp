@@ -99,6 +99,27 @@ static void checkBuiltInWindowPlacement()
              "Sparse window heads lost the vertex bound or clustered at one end of a facade" );
 }
 
+static void checkHouseDoorFit()
+{
+    using workphone::scene::procedural_scene::cityBuildingWindowKit::fitHouseDoor;
+    const auto wide = fitHouseDoor( 2.05f, 2.49f );
+    require( wide.width >= .90f && wide.width <= 1.05f && wide.height >= 2.f && wide.height <= 2.12f,
+             "A broad house entrance should have a single person-sized leaf" );
+    for( float width : { .84f, 1.08f, 1.46f, 1.48f, 2.05f } )
+    {
+        for( float height : { 1.90f, 2.11f, 2.35f, 2.36f, 2.49f } )
+        {
+            const auto leaf = fitHouseDoor( width, height );
+            const float side = ( width - leaf.width ) * .5f - .06f;
+            const float above = height - leaf.height - .065f;
+            require( std::abs( side ) < .001f || side > .15f,
+                     "Entrance jambs leave a sliver instead of a usable sidelight" );
+            require( std::abs( above ) < .001f || above > .20f,
+                     "Entrance head leaves a sliver instead of a usable fanlight" );
+        }
+    }
+}
+
 static bool sameLot(const OpenCityLayout::Lot &a,const OpenCityLayout::Lot &b)
 {
     return a.x==b.x && a.z==b.z && a.width==b.width && a.depth==b.depth && a.height==b.height &&
@@ -145,6 +166,7 @@ int main()
 {
     checkFacadeBays();
     checkBuiltInWindowPlacement();
+    checkHouseDoorFit();
     for(unsigned seed : {0u, 7u, 23u, 4294967295u})
     {
         const auto large=OpenCityLayout::generate(seed,10,0);

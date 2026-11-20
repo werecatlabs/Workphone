@@ -1,4 +1,6 @@
 #include <Workphone/Procedural/CityRoadFootways.hpp>
+#include <Workphone/Procedural/CityEntranceStairFit.hpp>
+#include <Workphone/Procedural/CityRoadFootprintDistance.hpp>
 #include <Workphone/Procedural/CityRoadJunctions.hpp>
 #include <Workphone/Interface/Procedural/OpenCityLayout.hpp>
 #include <Workphone/Interface/Procedural/OpenCityRoadSource.hpp>
@@ -106,6 +108,35 @@ namespace
         }
         require( top && skirts, "Footway omitted its top or terrain skirts" );
     }
+    void shopEntranceFlight()
+    {
+        const cityRoadFootprint::Segment diagonal{ -76.094, -14.013, -87.049, -28.295, 6.12 };
+        require( !cityRoadFootprint::overlaps( diagonal, { -72, -31.29, 4.30, 2.53 } ) &&
+                 cityRoadFootprint::overlaps( diagonal, { -82, -21, 4.30, 2.53 } ) &&
+                 cityRoadFootprint::overlaps( { 0, 0, 0, 0, 14 }, { 12, 0, 1, 1 } ),
+                 "Diagonal approach clearance blocked a cafe garden or missed a road reservation" );
+        const std::array<float, 3> reach{ 3.05f, 3.05f, 3.05f };
+        const std::array<float, 3> rim{ 6.55f, 6.56f, 6.57f };
+        const auto fit = cityEntranceSteps::fitToFootway( 7.49f, 1.f, reach, rim );
+        require( fit && fit->risers == 6 && fit->firstRiser > 1.f && fit->tread >= .28f &&
+                 ( 7.49f - fit->base ) / fit->risers <= .18f &&
+                 fit->firstRiser + fit->risers * fit->tread + .14f <= reach[0] - cityEntranceSteps::rimGap,
+                 "Setback shop entrance failed to fit a walkable flight clear of the footway" );
+        const auto narrow = cityEntranceSteps::fitToFootway( 7.334f, 1.f, reach,
+                                                             { 6.432f, 6.476f, 6.520f } );
+        require( !cityEntranceSteps::fitToFootway( 7.334f, 1.f, reach, { 6.407f, 6.476f, 6.545f } ) &&
+                 narrow && narrow->risers == 5 &&
+                 ( reach[0] - cityEntranceSteps::rimGap - narrow->firstRiser -
+                   narrow->risers * narrow->tread ) >= 12.f * .044f - .001f,
+                 "Shop on a sloping street failed to leave enough apron for the narrower flight" );
+        require( !cityEntranceSteps::fitToFootway( 7.49f, 2.2f, reach, rim ) &&
+                 !cityEntranceSteps::fitToFootway( 7.49f, 1.f, { 3.05f, -1.f, 3.05f }, rim ) &&
+                 !cityEntranceSteps::fitToFootway( 7.49f, 1.f, { 3.05f, 2.70f, 3.05f }, rim ) &&
+                 !cityEntranceSteps::fitToFootway( 7.49f, 1.f, reach, { 6.55f, 6.70f, 6.85f } ) &&
+                 !cityEntranceSteps::fitToFootway( 6.56f, 1.f, reach, rim ),
+                 "Stair fit accepted a buried tread, missing or uneven walk edge, or level doorway" );
+    }
+
     void streetsAndTerrain()
     {
         auto s = source(); addRoad( s, 0, { 0, 0, -24 }, { 0, 0, 24 } ); addRoad( s, 1, { -24, 0, 0 }, { 24, 0, 0 } );
@@ -579,6 +610,7 @@ int main()
     };
     try
     {
+        run( "raised shop entrance meets fitted footway", shopEntranceFlight );
         run( "streets and exact terrain", streetsAndTerrain ); run( "four-port roundabout", roundabout );
         run( "oblique roundabout port sidewalk seam", obliqueRoundaboutPortSeam );
         run( "rounded dead-end and unsupported fallback", roundedStreetEnd );

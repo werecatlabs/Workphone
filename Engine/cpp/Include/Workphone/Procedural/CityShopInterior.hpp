@@ -4,12 +4,12 @@ namespace cityShopInterior
 {
     struct Surfaces
     {
-        Geometry lining, rearWall, timber, fittings, display, luminaires, glazing;
+        Geometry lining, rearWall, timber, fittings, display, luminaires, glazing, packages;
     };
 
     struct Materials
     {
-        SmartPtr<render::IMaterial> lining, rearWall, timber, fittings, display, luminaires, glazing;
+        SmartPtr<render::IMaterial> lining, rearWall, timber, fittings, display, luminaires, packages;
     };
 
     void shadeRearWall( SceneAssets &assets, SmartPtr<render::IMaterial> surface )
@@ -52,18 +52,70 @@ namespace cityShopInterior
                              static_cast<u32>( PbsTextureTypes::PBSM_EMISSIVE ) );
     }
 
-    Materials materials( SceneAssets &assets )
+    constexpr u32 labelCount = 8;
+
+    SmartPtr<render::IMaterial> packageMaterial( SceneAssets &assets )
+    {
+        constexpr u32 size = 32;
+        const std::array<Vector3F, labelCount> inks{
+            Vector3F( 168, 66, 47 ), Vector3F( 74, 114, 83 ), Vector3F( 178, 133, 52 ),
+            Vector3F( 58, 103, 134 ), Vector3F( 141, 78, 91 ), Vector3F( 59, 124, 123 ),
+            Vector3F( 180, 99, 54 ), Vector3F( 114, 125, 70 ) };
+        const Vector3F paper( 228, 215, 178 );
+        TextureBuffer labels( size * labelCount, size );
+        for( u32 tile = 0; tile < labelCount; ++tile )
+        {
+            const auto ink = inks[tile];
+            for( u32 y = 0; y < size; ++y )
+            {
+                for( u32 x = 0; x < size; ++x )
+                {
+                    const float u = ( x + .5f ) / size, v = ( y + .5f ) / size;
+                    auto colour = ink;
+                    if( v < .13f || v > .9f )
+                    {
+                        colour = paper * .86f;
+                    }
+                    else if( tile % 2 == 0 && v > .41f && v < .79f )
+                    {
+                        colour = paper;
+                    }
+                    else if( tile % 2 && std::hypot( ( u - .5f ) * 1.4f, v - .57f ) < .27f )
+                    {
+                        colour = paper;
+                    }
+                    if( u > .29f && u < .71f && v > .53f && v < .60f )
+                    {
+                        colour = ink * .52f;
+                    }
+                    if( u > .22f && u < .78f && v > .23f && v < .27f )
+                    {
+                        colour = paper;
+                    }
+                    auto pixel = labels.pixel( tile * size + x, y );
+                    pixel[0] = u8( colour.x );
+                    pixel[1] = u8( colour.y );
+                    pixel[2] = u8( colour.z );
+                    pixel[3] = 255;
+                }
+            }
+        }
+        auto stock = material( assets, ColourF::White, .71f );
+        stock->setUVProjection( 0 );
+        stock->setEmissive( { .27f, .25f, .22f, 1 } );
+        const auto print = upload( assets, labels, render::TextureMipFilter::Colour, labelCount );
+        stock->setTexture( print, static_cast<u32>( PbsTextureTypes::PBSM_DIFFUSE ) );
+        stock->setTexture( print, static_cast<u32>( PbsTextureTypes::PBSM_EMISSIVE ) );
+        return stock;
+    }
+
+    Materials materials( SceneAssets &assets, bool hasStock )
     {
         const auto room = [&]( ColourF colour, ColourF ambient, float roughness ) {
             auto surface = material( assets, colour, roughness );
             surface->setEmissive( ambient );
             return surface;
         };
-        auto glass = material( assets, { .22f, .30f, .32f, .28f }, .17f );
-        glass->setSpecular( { .092f, .101f, .105f, 1 } );
-        glass->setTransparent( true );
-        glass->setBlendMode( 1 );
-        glass->setDepthWrite( false );
         auto rear = room( { .63f, .57f, .50f, 1 }, { .22f, .16f, .105f, 1 }, .82f );
         rear->setUVProjection( 0 );
         shadeRearWall( assets, rear );
@@ -73,7 +125,7 @@ namespace cityShopInterior
                  room( { .20f, .231f, .221f, 1 }, { .026f, .032f, .028f, 1 }, .58f ),
                  room( { .62f, .55f, .44f, 1 }, { .19f, .154f, .101f, 1 }, .70f ),
                  room( { .66f, .53f, .35f, 1 }, { .67f, .48f, .25f, 1 }, .48f ),
-                 glass };
+                 hasStock ? packageMaterial( assets ) : nullptr };
     }
 
     const char *styleName( cityShopfront::Style style )
@@ -174,16 +226,39 @@ namespace cityShopInterior
             {
                 item( surfaces.fittings, side, .32f, .78f, .070f, height * .72f, depth * .36f );
             }
-            for( float y : { .14f, .35f, .56f } )
+            // Neighbouring facings carry the same line of goods. Keep each run
+            // together while allowing the next shelf or window to carry different stock.
+            const int facings = std::clamp( int( width * .69f / .23f ), 4, 8 );
+            const float pitch = width * .69f / facings;
+            for( int shelf = 0; shelf < 3; ++shelf )
             {
+                const float y = .14f + .21f * shelf;
                 item( surfaces.timber, 0, y, .77f, width * .72f, .053f, depth * .38f );
-                for( float s : { -.235f, -.07f, .12f, .253f } )
+                for( int slot = 0; slot < facings; ++slot )
                 {
-                    const float boxHeight =
-                        height * ( .046f + .23f * std::abs( s + relativeSide * y * .27f ) );
-                    auto &goods = s * relativeSide > 0 ? surfaces.display : surfaces.timber;
-                    item( goods, s, y + ( boxHeight + .053f ) / ( height * 2.f ), .72f, width * .126f,
-                          boxHeight, depth * .20f );
+                    const u64 key = render::foliageStableHash( ( u64( variation ) << 32 ) |
+                                                              u32( shelf * 8 + slot / 2 ) );
+                    const u32 tile = u32( key % labelCount );
+                    const float packHeight = std::min( height * .175f, .19f + .027f * ( ( key >> 8 ) % 6 ) );
+                    const float s = ( slot + .5f - facings * .5f ) * pitch / width;
+                    const size_t first = surfaces.packages.uv.size();
+                    item( surfaces.packages, s, y + ( packHeight + .053f ) / ( height * 2.f ),
+                          .69f, std::min( pitch * .86f, .14f + .016f * ( ( key >> 16 ) % 5 ) ),
+                          packHeight, std::min( depth * .20f, .19f ) );
+                    for( size_t i = first; i < surfaces.packages.uv.size(); ++i )
+                    {
+                        auto &uv = surfaces.packages.uv[i];
+                        const auto n = surfaces.packages.normals[i];
+                        if( std::abs( n.y ) > .5f )
+                        {
+                            uv.y = .98f;
+                        }
+                        else if( std::abs( n.dotProduct( normal ) ) < .5f )
+                        {
+                            uv.x *= .18f;
+                        }
+                        uv.x = ( tile + .04f + .92f * uv.x ) / labelCount;
+                    }
                 }
             }
         }

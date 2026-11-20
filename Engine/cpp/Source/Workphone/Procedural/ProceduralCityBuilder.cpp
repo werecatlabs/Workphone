@@ -1,5 +1,7 @@
 #include <Workphone/WorkphonePCH.hpp>
+#include <Workphone/Procedural/CityEntranceStairFit.hpp>
 #include <Workphone/Procedural/CityFacadeLayout.hpp>
+#include <Workphone/Procedural/CityRoadFootprintDistance.hpp>
 #include <Workphone/Procedural/CityBuildingWindowKit.hpp>
 #include "Workphone/Procedural/ProceduralSceneInternal.hpp"
 
@@ -112,7 +114,7 @@ namespace workphone::scene::procedural_scene
                 bool customDetailOutsideFarMesh = false;
                 Geometry walls[3], farWalls[3], glass[3], farGlass[2], roofs, farRoofs, frames, accents;
                 SourceBudgetVector<cityBuildingGlazing::OfficeRibbon> officeRibbons;
-                Geometry windowPanes, timber, tiles, farTiles, officeJoinery;
+                Geometry windowPanes, houseGlass, timber, tiles, farTiles, officeJoinery;
                 Geometry shopfrontFascia[static_cast<size_t>( cityShopfront::Style::Count )],
                     shopfrontLetters, shopfrontDisplays;
                 cityShopInterior::Surfaces shopInterior;
@@ -450,6 +452,8 @@ namespace workphone::scene::procedural_scene
                 const bool office = style == 3, civic = style == 2;
                 const bool terrace = style == 4, parisian = style == 5, warehouse = style == 6;
                 const bool mediterranean = style == 7, artdeco = style == 8, timber = style == 9;
+                const bool domesticStyle = !office && !civic && !warehouse && !artdeco;
+                const u64 household = render::foliageStableHash( lot.id ) ^ seed;
                 const auto &preset = cityBuildingWindowKit::presetForStyle( style );
                 const float variantStep = float( lot.variant % 3 );
                 const float desiredBay = preset.bayWidth + variantStep * preset.bayWidthStep;
@@ -586,18 +590,18 @@ namespace workphone::scene::procedural_scene
                                 }
                                 panel( opaque, left, low, right, high );
                             };
-                            const auto reveal = [&]( float left, float low, float right, float high,
-                                                     float depth ) {
-                                opaque.quad( point( left, low, 0 ), point( left, low, depth ),
-                                             point( left, high, depth ), point( left, high, 0 ), along );
-                                opaque.quad( point( right, low, 0 ), point( right, high, 0 ),
-                                             point( right, high, depth ), point( right, low, depth ),
+                            const auto reveal = [&]( Geometry &lining, float left, float low, float right,
+                                                     float high, float front, float back ) {
+                                lining.quad( point( left, low, front ), point( left, low, back ),
+                                             point( left, high, back ), point( left, high, front ), along );
+                                lining.quad( point( right, low, front ), point( right, high, front ),
+                                             point( right, high, back ), point( right, low, back ),
                                              -along );
-                                opaque.quad( point( left, low, 0 ), point( right, low, 0 ),
-                                             point( right, low, depth ), point( left, low, depth ),
+                                lining.quad( point( left, low, front ), point( right, low, front ),
+                                             point( right, low, back ), point( left, low, back ),
                                              { 0, 1, 0 } );
-                                opaque.quad( point( left, high, 0 ), point( left, high, depth ),
-                                             point( right, high, depth ), point( right, high, 0 ),
+                                lining.quad( point( left, high, front ), point( left, high, back ),
+                                             point( right, high, back ), point( right, high, front ),
                                              { 0, -1, 0 } );
                             };
                             const auto faceBox = [&]( Geometry &g, float s, float y, float width,
@@ -628,13 +632,27 @@ namespace workphone::scene::procedural_scene
                                 ++dressedWindows;
                                 return true;
                             };
+                            const bool retailEntrance =
+                                entrance && ( office || civic || warehouse || parisian || artdeco ||
+                                              ( !terrace && !timber && !mediterranean &&
+                                                lot.variant % 3 != 0 ) );
+                            const bool fieldedDoor = entrance && domesticStyle && !retailEntrance &&
+                                detailedBuildings && !kit.hasModule( CityBuildingPart::Entrance ) &&
+                                admitFacadeDetail( 40 );
                             if( assets.cityTerrainRoads && entrance )
                             {
                                 const float doorOffset =
                                     office ? 0.f : -span * .5f + ( bays / 2 + .5f ) * bayWidth;
-                                const float doorHalfWidth =
+                                float doorHalfWidth =
                                     office ? std::min( .92f, ( span * .5f - .38f ) * .8f )
                                            : std::min( 2.05f, bayWidth * .72f ) * .5f;
+                                if( domesticStyle && !retailEntrance &&
+                                    !kit.hasModule( CityBuildingPart::Entrance ) )
+                                {
+                                    const auto leaf = cityBuildingWindowKit::fitHouseDoor(
+                                        2 * doorHalfWidth, std::min( floorHeight - .35f, 2.65f ) - .16f );
+                                    doorHalfWidth = leaf.width * .5f;
+                                }
                                 buildingEntries.push_back(
                                     { &lot, point( doorOffset, volume.bottom, 0 ) + origin, normal,
                                       along, span, doorOffset, doorHalfWidth } );
@@ -643,22 +661,23 @@ namespace workphone::scene::procedural_scene
                             {
                                 const float y0 = volume.bottom + floor * floorHeight;
                                 const float y1 = floor + 1 == floors ? top : y0 + floorHeight;
-                                const bool retail =
-                                    entrance && floor == 0 &&
-                                    ( office || civic || warehouse || parisian || artdeco ||
-                                      ( !terrace && !timber && !mediterranean &&
-                                        lot.variant % 3 != 0 ) );
+                                const bool retail = retailEntrance && floor == 0;
+                                const bool domestic = domesticStyle && !retail;
                                 const float low = y0 + ( retail ? .28f : office ? .62f : .78f );
                                 const float high = y1 - ( retail ? .42f : office ? .48f : .62f );
                                 auto &glass =
                                     patch.glass[( lot.variant / 7 + axis + ( sign > 0 ? 1 : 0 ) ) % 2];
                                 const auto paneTile = [&]( int bay ) {
-                                    const u64 building = ( u64( lot.variant ) << 32 ) | seed;
+                                    const u64 building = domestic ? household : ( ( u64( lot.variant ) << 32 ) | seed );
                                     const u64 pane = ( u64( tier ) << 40 ) | ( u64( floor ) << 24 ) |
                                                      ( u64( bay ) << 3 ) |
                                                      u64( axis * 2 + ( sign > 0 ) );
                                     const u32 variant =
                                         u32( render::foliageStableHash( building ^ pane ) );
+                                    if( domestic )
+                                    {
+                                        return variant % cityBuildingGlazing::paneVariants;
+                                    }
                                     const u32 roll = variant % 20;
                                     const u32 face =
                                         u32( render::foliageStableHash( building ^ ( pane & 7u ) ) );
@@ -678,7 +697,7 @@ namespace workphone::scene::procedural_scene
                                 };
                                 const auto farWindow = [&]( float left, float bottom, float right,
                                                             float head, int bay, bool plain = false ) {
-                                    const bool shaded = !plain && paneTile( bay ) >= 4;
+                                    const bool shaded = !plain && paneTile( bay ) >= ( domestic ? 2u : 4u );
                                     panel( patch.farGlass[shaded ? 1 : 0], left, bottom, right,
                                            head, -.018f );
                                 };
@@ -694,7 +713,8 @@ namespace workphone::scene::procedural_scene
                                     {
                                         return;
                                     }
-                                    const u32 tile = paneTile( bay ) +
+                                    const u32 tile = ( domestic ? cityBuildingGlazing::domesticStart : 0u ) +
+                                        paneTile( bay ) +
                                         ( framed ? cityBuildingGlazing::paneVariants : 0u );
                                     const float u0 = ( tile + panePadding ) / paneAtlasColumns;
                                     const float u1 = ( tile + 1.f - panePadding ) / paneAtlasColumns;
@@ -721,11 +741,14 @@ namespace workphone::scene::procedural_scene
                                         ? cityShopfront::choose( lot.id, seed, warehouse, artdeco )
                                         : cityShopfront::Style::Market;
                                 u32 displayCount = 0, interiorCount = 0;
+                                const auto roomFits = [&]( float width, float height ) {
+                                    return builtInShopfront && interiorCount + displayCount < 2 &&
+                                           width >= 1.15f && height >= 1.5f &&
+                                           emittedDisplayBays < displayBayLimit;
+                                };
                                 const auto interior = [&]( float left, float right, float bottom,
                                                            float head, float depth, int bay ) {
-                                    if( !builtInShopfront || interiorCount + displayCount >= 2 ||
-                                        right - left < 1.15f || head - bottom < 1.5f ||
-                                        emittedDisplayBays >= displayBayLimit )
+                                    if( !roomFits( right - left, head - bottom ) )
                                     {
                                         return false;
                                     }
@@ -779,15 +802,15 @@ namespace workphone::scene::procedural_scene
                                         wallPanel( -span * .5f, y0, -doorHalfWidth, low );
                                         panel( opaque, -doorHalfWidth, y0, doorHalfWidth, y0 + .16f );
                                         wallPanel( doorHalfWidth, y0, span * .5f, low );
-                                        reveal( left, low, -doorHalfWidth, high, .085f );
-                                        reveal( doorHalfWidth, low, right, high, .085f );
-                                        reveal( -doorHalfWidth, y0 + .16f, doorHalfWidth, doorHead,
-                                                .085f );
+                                        reveal( opaque, left, low, -doorHalfWidth, high, 0, .085f );
+                                        reveal( opaque, doorHalfWidth, low, right, high, 0, .085f );
+                                        reveal( opaque, -doorHalfWidth, y0 + .16f, doorHalfWidth,
+                                                doorHead, 0, .085f );
                                     }
                                     else
                                     {
                                         wallPanel( -span * .5f, y0, span * .5f, low );
-                                        reveal( left, low, right, high, paneDepth );
+                                        reveal( opaque, left, low, right, high, 0, paneDepth );
                                     }
                                     wallPanel( -span * .5f, high, span * .5f, y1 );
                                     panel( opaque, -span * .5f, low, left, high );
@@ -952,7 +975,11 @@ namespace workphone::scene::procedural_scene
                                         const float bottom = door ? y0 + .16f : low;
                                         const float head =
                                             door ? std::min( y1 - .35f, y0 + 2.65f ) : high;
-                                        if( !bayLayout.detailedBay( bay, entrance && floor == 0 ? bays / 2 : -1 ) )
+                                        const bool shopWindow =
+                                            builtInShopfront && std::abs( bay - bays / 2 ) == 1;
+                                        const bool displayRoom = shopWindow && roomFits( right - left, head - bottom );
+                                        const int doorBay = entrance && floor == 0 ? bays / 2 : -1;
+                                        if( !displayRoom && !bayLayout.detailedBay( bay, doorBay ) )
                                         {
                                             // A flush frame and pane preserve the elevation between
                                             // recessed openings without four reveals and a divided shell.
@@ -981,7 +1008,7 @@ namespace workphone::scene::procedural_scene
                                         wallPanel( s0, head, s1, y1 );
                                         panel( opaque, s0, bottom, left, head );
                                         panel( opaque, right, bottom, s1, head );
-                                        reveal( left, bottom, right, head, depth );
+                                        reveal( opaque, left, bottom, right, head, 0, depth );
                                         const bool hasModule = module(
                                             door ? CityBuildingPart::Entrance : CityBuildingPart::Window,
                                             door ? patch.accents : patch.frames, left, bottom, right,
@@ -990,24 +1017,46 @@ namespace workphone::scene::procedural_scene
                                         const bool bayWindow =
                                             terrace && streetFace && !door && !hasModule && floor < 2 &&
                                             ( bay + lot.variant ) % 2 == 0 && admitFacadeDetail( 132 );
-                                        const bool room =
-                                            !door && !hasModule && !bayWindow &&
-                                            interior( left, right, bottom, head, depth, bay );
+                                        const bool room = displayRoom && !hasModule && !bayWindow &&
+                                                          interior( left, right, bottom, head, depth, bay );
                                         if( ( !door || !hasModule ) && !bayWindow && !room )
                                         {
-                                            windowPane( glass, left, bottom, right, head, depth, bay,
+                                            float backing = depth;
+                                            if( domestic && streetFace && detailedBuildings && !door &&
+                                                !hasModule && admitFacadeDetail( 20 ) )
+                                            {
+                                                // Finished internal jambs and a sill separate the sash
+                                                // from the curtain plane as the viewer passes the window.
+                                                backing += std::min( .36f, width * .17f );
+                                                reveal( patch.frames, left, bottom, right, head, depth, backing );
+                                                panel( patch.houseGlass, left, bottom, right, head, depth );
+                                            }
+                                            windowPane( door && domestic ? patch.glass[2] : glass,
+                                                        left, bottom, right, head, backing, bay,
                                                         door || hasModule );
                                         }
-                                        if( !room && !door )
+                                        if( !room && shopWindow )
                                         {
                                             display( left, right, bottom, head, depth, bay );
                                         }
-                                        if( !hasModule )
+                                        if( !hasModule && !( door && domestic && detailedBuildings ) )
                                         {
                                             panel( patch.frames, s - .032f, bottom, s + .032f, head,
                                                    depth - .025f );
                                         }
-                                        farWindow( left, bottom, right, head, bay, door || hasModule );
+                                        if( domestic && door && !hasModule )
+                                        {
+                                            // Carry the solid leaf and its glazed surround into the
+                                            // middle-distance mesh and the imposter built from it.
+                                            const auto leaf = cityBuildingWindowKit::fitHouseDoor( width, head - bottom );
+                                            panel( patch.farGlass[1], left, bottom, right, head, -.018f );
+                                            panel( patch.farGlass[0], s - leaf.width * .5f, bottom,
+                                                   s + leaf.width * .5f, bottom + leaf.height, -.032f );
+                                        }
+                                        else
+                                        {
+                                            farWindow( left, bottom, right, head, bay, door || hasModule );
+                                        }
                                         const bool dressed = !retail && !hasModule && !door && !bayWindow &&
                                             dressWindow( floor, bay, left, right, bottom, head );
                                         if( !dressed && !retail && !door && !bayWindow && !hasModule && streetFace )
@@ -1023,8 +1072,8 @@ namespace workphone::scene::procedural_scene
                                                 // Three glazed faces form a shallow oriel. The
                                                 // occupied wall aperture remains open behind it.
                                                 const float projection = .42f, shoulder = width * .12f;
-                                                panel( glass, left + shoulder, bottom, right - shoulder,
-                                                       head, -projection );
+                                                windowPane( glass, left + shoulder, bottom, right - shoulder,
+                                                            head, -projection, bay, false );
                                                 glass.quad(
                                                     point( left, bottom, 0 ),
                                                     point( left + shoulder, bottom, -projection ),
@@ -1183,10 +1232,23 @@ namespace workphone::scene::procedural_scene
                                            doorS + doorHalfWidth, head, depth );
                                     panel( patch.frames, doorS - doorHalfWidth, head - .065f,
                                            doorS + doorHalfWidth, head, depth );
-                                    faceBox( patch.frames, doorS - .16f, y0 + 1.3f, .025f, .40f,
-                                             -depth + .015f, .025f );
-                                    faceBox( patch.frames, doorS + .16f, y0 + 1.3f, .025f, .40f,
-                                             -depth + .015f, .025f );
+                                    if( domestic && detailedBuildings )
+                                    {
+                                        const std::array<Geometry *, 3> finishes{
+                                            &patch.accents, &patch.timber, &patch.frames };
+                                        cityFacadeDetail::houseDoor(
+                                            *finishes[( household >> 8 ) % finishes.size()], patch.frames,
+                                            patch.officeJoinery, panel, faceBox, point, normal, doorS, doorHalfWidth,
+                                            y0 + .16f, head, depth, household & 2 ? 1.f : -1.f,
+                                            fieldedDoor );
+                                    }
+                                    else
+                                    {
+                                        faceBox( patch.frames, doorS - .16f, y0 + 1.3f, .025f, .40f,
+                                                 -depth + .015f, .025f );
+                                        faceBox( patch.frames, doorS + .16f, y0 + 1.3f, .025f, .40f,
+                                                 -depth + .015f, .025f );
+                                    }
                                     if( office && admitFacadeDetail( 72 ) )
                                     {
                                         for( float side : { -1.f, 1.f } )
@@ -2092,7 +2154,14 @@ namespace workphone::scene::procedural_scene
                 cityBuildingGlazing::build( assets, detailedBuildings );
             const auto shops =
                 emittedShopfronts ? cityShopfront::materials( assets ) : cityShopfront::Materials{};
-            const auto interiors = emittedDisplayBays ? cityShopInterior::materials( assets )
+            const bool hasClearGlass = std::any_of( patches.begin(), patches.end(), []( const auto &p ) {
+                return !p.second.houseGlass.indices.empty() || !p.second.shopInterior.glazing.indices.empty();
+            } );
+            const auto clearGlass = hasClearGlass ? cityBuildingGlazing::clearGlass( assets ) : nullptr;
+            const bool stock = std::any_of( patches.begin(), patches.end(), []( const auto &p ) {
+                return !p.second.shopInterior.packages.indices.empty();
+            } );
+            const auto interiors = emittedDisplayBays ? cityShopInterior::materials( assets, stock )
                                                       : cityShopInterior::Materials{};
             const auto masonry = emittedMasonry ? cityFacadeDetail::materials( assets, facades[2], seed )
                                                 : cityFacadeDetail::Materials{};
@@ -2165,6 +2234,7 @@ namespace workphone::scene::procedural_scene
                              nearRenderers );
                     }
                     add( "LOD0 city glazing", patch.windowPanes, paneMaterial, nearRenderers );
+                    add( "LOD0 city residential glazing", patch.houseGlass, clearGlass, nearRenderers, false );
                     add( "LOD0 city roof detail", patch.roofs, roofMaterial, nearRenderers );
                     add( "LOD0 city rooftop membrane", patch.finishedRoofs.membrane, roofFinish.membrane,
                          nearRenderers );
@@ -2228,10 +2298,12 @@ namespace workphone::scene::procedural_scene
                          interiors.fittings, nearRenderers, false );
                     add( "LOD0 city commercial display room exhibits", patch.shopInterior.display,
                          interiors.display, nearRenderers, false );
+                    add( "LOD0 city commercial display room groceries", patch.shopInterior.packages,
+                         interiors.packages, nearRenderers, false );
                     add( "LOD0 city commercial display room lights", patch.shopInterior.luminaires,
                          interiors.luminaires, nearRenderers, false );
                     add( "LOD0 city commercial display glazing", patch.shopInterior.glazing,
-                         interiors.glazing, nearRenderers, false );
+                         clearGlass, nearRenderers, false );
                     add( "LOD0 city entrance fascia", patch.accents, accentMaterial, nearRenderers );
                     add( "LOD0 city timber details", patch.timber, timberMaterial, nearRenderers );
                     add( "LOD0 city terracotta roofs", patch.tiles, tileMaterial, nearRenderers );

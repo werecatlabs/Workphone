@@ -2,9 +2,10 @@
 
 namespace cityBuildingGlazing
 {
-    // Clear/curtained units followed by the same eight interiors in a sash.
+    // Commercial and domestic panes each have a bare and a framed bank.
     // Each tile stays independent down to the last mip of the horizontal strip.
-    constexpr u32 paneVariants = 8, atlasColumns = 2 * paneVariants, atlasCell = 64;
+    constexpr u32 paneVariants = 8, domesticStart = 2 * paneVariants;
+    constexpr u32 atlasColumns = 4 * paneVariants, atlasCell = 64;
     constexpr float padding = 5.5f / atlasCell;
 
     struct Materials
@@ -83,6 +84,62 @@ namespace cityBuildingGlazing
     {
         const float t = std::clamp( value, 0.f, 1.f );
         return t * t * ( 3.f - 2.f * t );
+    }
+
+    SmartPtr<render::IMaterial> clearGlass( SceneAssets &assets )
+    {
+        auto glass = material( assets, { .22f, .30f, .32f, .28f }, .17f );
+        glass->setSpecular( { .092f, .101f, .105f, 1 } );
+        glass->setTransparent( true );
+        glass->setBlendMode( 1 );
+        glass->setDepthWrite( false );
+        return glass;
+    }
+
+    Vector3F domesticPane( u32 tile, float u, float v )
+    {
+        static const std::array<Vector3F, 4> plaster{
+            Vector3F( 133, 124, 108 ), Vector3F( 111, 126, 125 ),
+            Vector3F( 143, 126, 111 ), Vector3F( 126, 132, 119 ) };
+        const float across = tile % 2 ? 1.f - u : u;
+        const float corner = .13f + .07f * ( tile % 3 );
+        const float returnWall = 1.f - smooth( ( across - corner ) * 44.f );
+        const float ceiling = smooth( ( v - .87f - .24f * std::max( 0.f, corner - across ) ) * 42.f );
+        const float daylight = smooth( ( across + v * .40f - .31f ) * 1.75f );
+        auto colour = plaster[tile % plaster.size()] * ( .61f + .29f * daylight - .19f * returnWall );
+        colour += ( Vector3F( 111, 111, 103 ) - colour ) * ( .81f * ceiling );
+
+        // A low cabinet on the back wall gives the opening a domestic scale.
+        if( tile % 3 != 1 )
+        {
+            const float end = .56f + .13f * ( tile % 3 );
+            const float top = .23f + .06f * ( tile % 2 );
+            const float cabinet = smooth( ( across - corner ) * 40.f ) *
+                                  smooth( ( end - across ) * 40.f ) * smooth( ( top - v ) * 60.f );
+            const auto wood = Vector3F( 76, 66, 54 ) *
+                              ( .89f + .28f * smooth( ( v - top + .05f ) * 28.f ) );
+            colour += ( wood - colour ) * cabinet;
+        }
+        if( tile == 2 || tile == 3 )
+        {
+            const float hem = tile == 2 ? .59f : .36f;
+            const float slat = .95f + .05f * std::cos( ( v - hem ) * 11.f * 2.f * pi );
+            const auto shade = Vector3F( 165, 160, 142 ) * ( slat * ( .92f + .08f * v ) );
+            colour += ( shade - colour ) * smooth( ( v - hem ) * 58.f );
+        }
+        if( tile >= 4 )
+        {
+            // Each panel gathers towards its tie, with a wider hem and header.
+            const float waist = std::abs( v - .43f );
+            const float left = .10f + .048f * ( tile - 4 ) + .44f * waist * waist;
+            const float right = tile == 5 ? .02f : .13f + .05f * ( tile % 3 ) + .36f * waist * waist;
+            const float edge = std::max( left - across, right - ( 1.f - across ) );
+            const float fromJamb = std::min( across, 1.f - across );
+            const float fold = .84f + .16f * std::cos( 2.f * pi * fromJamb * ( 11.f - 4.f * waist ) );
+            const auto linen = tile == 6 ? Vector3F( 164, 177, 162 ) : Vector3F( 202, 187, 165 );
+            colour += ( linen * ( fold * ( .85f + .15f * v ) ) - colour ) * smooth( edge * 56.f );
+        }
+        return colour;
     }
 
     Materials build( SceneAssets &assets, bool detailed )
@@ -164,13 +221,10 @@ namespace cityBuildingGlazing
                         colour += ( blind - colour ) * ( .91f * cover );
                     }
 
-                    const auto atlasX = tile * atlasCell + x;
                     const float recess = 1.f - .10f * jamb - .09f * sill - .12f * head;
-                    colour *= recess;
                     const float paneRoughness = roughness[tile] + .062f * jamb + .057f * sill +
                                                 .040f * head + .017f * smooth( ( .35f - v ) * 3.f );
                     const float paneCavity = 1.f - .19f * jamb - .22f * sill - .20f * head;
-                    writePane( atlasX, y, colour, paneRoughness, paneCavity );
 
                     // A 2 m wide opening has a roughly 55 mm meeting stile and 60 mm casing.
                     // Soften their outlines over one source texel before mip filtering.
@@ -180,12 +234,19 @@ namespace cityBuildingGlazing
                     const float distance = std::min( { casing, stile, transom } );
                     const float frame = 1.f - smooth( ( distance + .009f ) / .018f );
                     const float seal = 1.f - smooth( ( distance - .010f ) / .018f );
-                    auto framed = colour * ( 1.f - .33f * seal );
                     const auto paint = Vector3F( 157.f, 156.f, 146.f ) * ( .90f + .10f * v );
-                    framed += ( paint - framed ) * frame;
-                    writePane( atlasX + paneVariants * atlasCell, y, framed,
-                               paneRoughness + ( .63f - paneRoughness ) * frame,
-                               paneCavity + ( .97f - paneCavity ) * frame );
+                    const auto writePair = [&]( u32 bank, Vector3F pane ) {
+                        const auto atlasX = ( bank + tile ) * atlasCell + x;
+                        pane *= recess;
+                        writePane( atlasX, y, pane, paneRoughness, paneCavity );
+                        auto framed = pane * ( 1.f - .33f * seal );
+                        framed += ( paint - framed ) * frame;
+                        writePane( atlasX + paneVariants * atlasCell, y, framed,
+                                   paneRoughness + ( .63f - paneRoughness ) * frame,
+                                   paneCavity + ( .97f - paneCavity ) * frame );
+                    };
+                    writePair( 0, colour );
+                    writePair( domesticStart, domesticPane( tile, u, v ) );
                 }
             }
         }

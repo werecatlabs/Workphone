@@ -75,7 +75,8 @@ namespace cityGroundContact
             }
         }
 
-        float reach( Vector3F origin, Vector3F outward, bool fromRoad = false ) const
+        float reach( Vector3F origin, Vector3F outward, bool fromRoad = false,
+                     float *rimHeight = nullptr ) const
         {
             constexpr float limit = 16.f;
             const auto end = origin + outward * limit;
@@ -111,6 +112,10 @@ namespace cityGroundContact
                             fraction <= 1.0001f )
                         {
                             closest = distance;
+                            if( rimHeight )
+                            {
+                                *rimHeight = edge.a.y + std::clamp( fraction, 0.f, 1.f ) * delta.y;
+                            }
                         }
                     }
                 }
@@ -141,17 +146,48 @@ namespace cityGroundContact
         float height = 0;
         int risers = 0;
         bool handrails = false;
+        bool meetsWalk = false;
     };
+
+    struct FootwayLanding
+    {
+        cityEntranceSteps::FootwayFit fit;
+        std::array<Vector3F, 3> rim;
+        float end;
+    };
+
+    std::optional<FootwayLanding> footwayLanding( const WalkEdges &edges, const Entry &entry,
+                                                  Vector3F floor, float depth, float half )
+    {
+        std::array<float, 3> reaches{}, heights{};
+        std::array<Vector3F, 3> rim;
+        for( size_t i = 0; i < rim.size(); ++i )
+        {
+            const auto origin = floor + entry.along * ( ( int( i ) - 1 ) * half );
+            reaches[i] = edges.reach( origin, entry.outward, false, &heights[i] );
+            rim[i] = origin + entry.outward * ( reaches[i] - cityEntranceSteps::rimGap );
+            rim[i].y = heights[i];
+        }
+        const auto fit = cityEntranceSteps::fitToFootway( floor.y, depth, reaches, heights );
+        if( !fit )
+        {
+            return {};
+        }
+        return FootwayLanding{ *fit, rim, *std::max_element( reaches.begin(), reaches.end() ) -
+                                          cityEntranceSteps::rimGap };
+    }
 
     template <class Surface, class Clear>
     RaisedApproach buildRaisedApproach( const Entry &entry, float depth, float half, Vector3F floor,
                                         const Surface &surface, const Clear &clear, Geometry &stairs,
-                                        cityEntranceHandrails::Batches &handrails )
+                                        Geometry &nosings, cityEntranceHandrails::Batches &handrails,
+                                        const FootwayLanding *walk = nullptr )
     {
-        constexpr float landing = .83f, tread = .34f, apronRun = .96f;
-        constexpr int maxRisers = 9;
+        constexpr int maxRisers = cityEntranceSteps::maximumRisers;
         const auto outward = entry.outward, along = entry.along;
-        const float start = std::max( .025f, depth + .005f );
+        const float start = walk ? .009f : std::max( .025f, depth + .005f );
+        const float landing = walk ? walk->fit.firstRiser - start : .83f;
+        const float tread = walk ? walk->fit.tread : .34f;
         const auto point = [&]( float s, float u ) { return floor + outward * s + along * u; };
         const auto supported = [&]( float s, std::array<Vector3F, 3> &row ) {
             row = { point( s, -half ), point( s, 0 ), point( s, half ) };
@@ -162,21 +198,35 @@ namespace cityGroundContact
         {
             return {};
         }
-        for( int count = 1; count <= maxRisers; ++count )
+        const int lastCount = walk ? walk->fit.risers : maxRisers;
+        for( int count = walk ? lastCount : 1; count <= lastCount; ++count )
         {
             const float end = start + landing + count * tread;
-            if( !clear( point( start, -half ), point( end + apronRun, half ) ) )
+            const float finish = walk ? walk->end : end + .96f;
+            if( !clear( point( start, -half ), point( finish, half ) ) )
             {
                 continue;
             }
             std::array<Vector3F, 3> lastTread{}, bottom{}, outer{};
-            if( !supported( end - tread, lastTread ) || !supported( end, bottom ) ||
-                !supported( end + apronRun, outer ) )
+            if( !supported( end - tread, lastTread ) || !supported( end, bottom ) )
             {
                 continue;
             }
-            const float base = std::max( { lastTread[0].y, lastTread[1].y, lastTread[2].y, bottom[0].y,
-                                           bottom[1].y, bottom[2].y } );
+            outer = walk ? walk->rim : std::array<Vector3F, 3>{ point( finish, -half ),
+                                                               point( finish, 0 ), point( finish, half ) };
+            auto outerGround = outer;
+            if( !std::all_of( outerGround.begin(), outerGround.end(),
+                              [&]( auto &p ) { return surface( p ); } ) )
+            {
+                continue;
+            }
+            if( !walk )
+            {
+                outer = outerGround;
+            }
+            const float base = walk ? walk->fit.base :
+                std::max( { lastTread[0].y, lastTread[1].y, lastTread[2].y,
+                            bottom[0].y, bottom[1].y, bottom[2].y } );
             const float riser = ( floor.y - base ) / count;
             if( riser < ( count == 1 ? .060f : .10f ) || riser > .181f ||
                 base - std::min( bottom.front().y, bottom.back().y ) > .27f ||
@@ -187,7 +237,7 @@ namespace cityGroundContact
             auto midpoint = ( bottom.front() + outer.back() ) * .5f;
             const float apronMiddle = ( base + outer.back().y ) * .5f;
             if( !surface( midpoint ) || midpoint.y > apronMiddle + .028f ||
-                apronMiddle - midpoint.y > .12f )
+                apronMiddle - midpoint.y > ( walk ? .28f : .12f ) )
             {
                 continue;
             }
@@ -231,6 +281,14 @@ namespace cityGroundContact
                 {
                     const auto drop = Vector3F( 0, riser, 0 );
                     stairs.quad( farLeft - drop, farRight - drop, farRight, farLeft, outward );
+                    // A flush, pale stone nosing wraps over the edge of the tread.
+                    const Vector3F lift( 0, .003f, 0 );
+                    const auto left = farLeft + along * .045f + outward * .003f + lift;
+                    const auto right = farRight - along * .045f + outward * .003f + lift;
+                    nosings.quad( left - outward * .052f, right - outward * .052f, right, left,
+                                  { 0, 1, 0 } );
+                    const Vector3F lip( 0, .027f, 0 );
+                    nosings.quad( left - lip, right - lip, right, left, outward );
                 }
             }
             // Level treads can meet a bank with crossfall. Close both shoulders
@@ -244,12 +302,12 @@ namespace cityGroundContact
                 normal = -normal;
             }
             stairs.quad( apronLeft, apronRight, outer.back(), outer.front(), normal );
-            cheek( bottom.front(), outer.front(), apronLeft, outer.front(), -along );
-            cheek( bottom.back(), outer.back(), apronRight, outer.back(), along );
+            cheek( bottom.front(), outerGround.front(), apronLeft, outer.front(), -along );
+            cheek( bottom.back(), outerGround.back(), apronRight, outer.back(), along );
             const bool railed = cityEntranceHandrails::append(
                 handrails, entry.lot->id,
                 { floor, along, outward, half, start, landing, tread, riser, count }, surface, clear );
-            return { end + apronRun, outer[1].y, count, railed };
+            return { finish, outer[1].y, count, railed, walk != nullptr };
         }
         return {};
     }
@@ -380,10 +438,16 @@ namespace cityGroundContact
             float x0, x1, z0, z1;
         };
 
-        SourceBudgetVector<Bounds> roadBounds;
+        struct ReservedRoad
+        {
+            Bounds bounds;
+            cityRoadFootprint::Segment centreline;
+        };
+        SourceBudgetVector<ReservedRoad> roadBounds;
         const auto addRoadBounds = [&]( Vector3F a, Vector3F b, float radius ) {
-            roadBounds.push_back( { std::min( a.x, b.x ) - radius, std::max( a.x, b.x ) + radius,
-                                    std::min( a.z, b.z ) - radius, std::max( a.z, b.z ) + radius } );
+            roadBounds.push_back( { { std::min( a.x, b.x ) - radius, std::max( a.x, b.x ) + radius,
+                                      std::min( a.z, b.z ) - radius, std::max( a.z, b.z ) + radius },
+                                    { a.x, a.z, b.x, b.z, radius } } );
         };
         const auto &source = assets.roadAuthoring->getSource();
         const auto &roads = assets.roadAuthoring->getBake().roads;
@@ -422,10 +486,19 @@ namespace cityGroundContact
         const auto footprintClear = [&]( Vector3F a, Vector3F b, const OpenCityLayout::Lot *exempt ) {
             const auto x0 = std::min( a.x, b.x ), x1 = std::max( a.x, b.x );
             const auto z0 = std::min( a.z, b.z ), z1 = std::max( a.z, b.z );
-            return std::none_of( roadBounds.begin(), roadBounds.end(),
-                                 [&]( const Bounds &road ) {
-                                     return x0 < road.x1 && x1 > road.x0 && z0 < road.z1 && z1 > road.z0;
-                                 } ) &&
+            const cityRoadFootprint::Rectangle footprint{ ( x0 + x1 ) * .5, ( z0 + z1 ) * .5,
+                                                          x1 - x0, z1 - z0 };
+            // The box around a diagonal road can include gardens well outside the carriageway.
+            // Confirm its swept width and the actual junction paving before excluding a site.
+            const bool roadConflict =
+                std::any_of( roadBounds.begin(), roadBounds.end(), [&]( const auto &road ) {
+                    const auto &box = road.bounds;
+                    return x0 <= box.x1 && x1 >= box.x0 && z0 <= box.z1 && z1 >= box.z0 &&
+                           cityRoadFootprint::overlaps( road.centreline, footprint );
+                } );
+            return !roadConflict &&
+                   ( !roadSurface || ( !roadSurface->overlaps( { a, { a.x, a.y, b.z }, b } ) &&
+                                       !roadSurface->overlaps( { a, b, { b.x, b.y, a.z } } ) ) ) &&
                    parcelClear( { x0, x1, z0, z1 }, exempt );
         };
         Geometry approach, gravel, stoneEdge, courses[2], caps, risers, stairs;
@@ -442,6 +515,8 @@ namespace cityGroundContact
 
         SourceBudgetVector<LandscapeRoute> landscapeRoutes;
         buildFoundationFacing( assets.cityLayout, *terrain, placement, courses, caps );
+        const size_t plinthPieces =
+            ( courses[0].indices.size() + courses[1].indices.size() + caps.indices.size() ) / 6;
         FrontagePlanting planting( assets.cityStreetDetail );
         const Vector3F up( 0, 1, 0 );
         const auto surface = [&]( Vector3F &p ) {
@@ -482,10 +557,24 @@ namespace cityGroundContact
                        !sidewalkSurface.overlaps( { a, { a.x, a.y, b.z }, b } ) &&
                        !sidewalkSurface.overlaps( { a, b, { b.x, b.y, a.z } } );
             };
-            const auto landing = lot.district == OpenCityLayout::District::Commercial
-                                     ? buildRaisedApproach( entry, depth, half, floor, surface,
-                                                            stairClear, stairs, handrails )
-                                     : RaisedApproach{};
+            const auto fitWalk = [&]( float flightHalf ) {
+                const auto walk = footwayLanding( edges, entry, floor, depth, flightHalf );
+                return walk ? buildRaisedApproach( entry, depth, flightHalf, floor, surface, stairClear,
+                                                   stairs, caps, handrails, &*walk )
+                            : RaisedApproach{};
+            };
+            auto landing = buildRaisedApproach( entry, depth, half, floor, surface, stairClear, stairs,
+                                                caps, handrails );
+            if( !landing.end )
+            {
+                landing = fitWalk( half );
+            }
+            // A wide entrance can open onto its level pad and then a narrower
+            // flight where the pavement climbs across the frontage.
+            if( !landing.end && half > .80f )
+            {
+                landing = fitWalk( .80f );
+            }
             if( landing.end > 0 )
             {
                 ++raised;
@@ -579,7 +668,10 @@ namespace cityGroundContact
             const float bedDepth = .66f + .17f * float( lot.variant % 4 );
             if( setback )
             {
-                strip( approach, -half, half, .009f, depth, 0 );
+                if( !landing.meetsWalk )
+                {
+                    strip( approach, -half, half, .009f, depth, 0 );
+                }
                 strip( stoneEdge, -half, half, .009f, std::min( .22f, depth ), .006f );
             }
             else if( !landing.end )
@@ -608,6 +700,11 @@ namespace cityGroundContact
                 }
             }
             ++contacts;
+            if( landing.meetsWalk )
+            {
+                ++connections;
+                continue;
+            }
 
             // Verify both margins and the centre reach the same outward face of the
             // walk without crossing any other parcel between the door and the curb.
@@ -965,7 +1062,7 @@ namespace cityGroundContact
                       .29f );
         publishStone( "Terrain city building stone cap courses", caps, { .88f, .84f, .76f, 1 }, .24f );
         publishStone( "Terrain city building threshold risers", risers, { .77f, .73f, .66f, 1 }, .18f );
-        planting.publish( assets, landscapeClearance, *terrain, placement );
+        planting.publish( assets, landscapeClearance, *terrain, placement, forge );
 
         // The fitted footway's render mesh and collider have already been published.
         // Feed the exact entrance and drainage triangles into later landscape passes.
@@ -996,8 +1093,7 @@ namespace cityGroundContact
             String( "Terrain city building contacts=" ) + StringUtil::toString( contacts ) +
             " fittedWalkConnections=" + StringUtil::toString( connections ) +
             " raisedApproaches=" + StringUtil::toString( raised ) + " stonePlinthPieces=" +
-            StringUtil::toString(
-                ( courses[0].indices.size() + courses[1].indices.size() + caps.indices.size() ) / 6 ) +
+            StringUtil::toString( plinthPieces ) +
             " thresholdRisers=" + StringUtil::toString( risers.indices.size() / 6 ) );
     }
 }  // namespace cityGroundContact

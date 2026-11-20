@@ -39,6 +39,21 @@ namespace workphone::scene::procedural_scene::cityBuildingWindowKit
         return facadePresets[std::clamp( style, 1, cityBuildingStyleMax ) - 1];
     }
 
+    struct DoorLeaf
+    {
+        float width, height;
+    };
+
+    // Keep the leaf centred on the entrance landing. Only split off sidelights
+    // or a fanlight when there is room for the frame and an actual light.
+    constexpr DoorLeaf fitHouseDoor( float openingWidth, float openingHeight )
+    {
+        const float clearWidth = std::max( 0.f, openingWidth - .12f );
+        const float clearHeight = std::max( 0.f, openingHeight - .065f );
+        return { clearWidth >= 1.35f ? .96f : clearWidth,
+                 clearHeight >= 2.29f ? 2.06f : clearHeight };
+    }
+
     // Each block has a front, soffit, top and two exposed ends, with its
     // rear against the wall. Every treatment includes one projecting sill.
     constexpr size_t vertexCost( Head head )
