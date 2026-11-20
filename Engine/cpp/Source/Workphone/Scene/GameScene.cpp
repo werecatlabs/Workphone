@@ -457,12 +457,15 @@ namespace workphone::scene
     void GameScene::load( SmartPtr<ISharedObject> data )
     {
         ScopedLock lock( this, true );
+        
         // A callback can re-enter load while an update owns a borrowed row.
         // Keep that row alive until the update's existing load lock leaves.
         if( isLoadLocked() )
         {
             return;
         }
+
+        ScopedLoadLock loadLock( this );
         const auto previous = getLoadingState();
         try
         {
@@ -493,6 +496,7 @@ namespace workphone::scene
                     }
                 }
             }
+
             m_updateObjects = std::move( candidate );
             setLoadingState( LoadingState::Loaded );
         }
@@ -645,7 +649,9 @@ namespace workphone::scene
         {
             throw std::runtime_error( error.c_str() );
         }
+
         scenePath = installedPath;
+
         // Publish the new path only after the serialized document and graph agree.
         setFilePath( scenePath );
         setLabel( Path::getFileNameWithoutExtension( scenePath ) );
@@ -676,6 +682,7 @@ namespace workphone::scene
         auto tempScenePath = cachePath + "/tmp.fbscene";
 
         WP_ASSERT( !Path::isPathAbsolute( tempScenePath ) );
+
         saveScene( tempScenePath );
         clear();
         loadScene( tempScenePath );
@@ -690,6 +697,7 @@ namespace workphone::scene
                 beginSceneLoad();
                 setLoadingState( LoadingState::Unloading );
             }
+
             // In-flight updates may need the scene mutex before releasing their load lock.
             ScopedLoadstateWait loadstateWait( this );
             ScopedLock sceneLock( this );
@@ -729,6 +737,8 @@ namespace workphone::scene
 
     void GameScene::preUpdate()
     {
+        ScopedLoadLock loadLock( this );
+
         auto task = Thread::getCurrentTask();
         switch( task )
         {
@@ -823,6 +833,8 @@ namespace workphone::scene
 
     void GameScene::update()
     {
+        ScopedLoadLock loadLock( this );
+
         auto task = Thread::getCurrentTask();
         switch( task )
         {
@@ -909,6 +921,7 @@ namespace workphone::scene
     void GameScene::addActor( SmartPtr<IGameActor> actor )
     {
         ScopedLock sceneLock( this );
+
         try
         {
             WP_ASSERT( isValid() );
@@ -935,10 +948,12 @@ namespace workphone::scene
                     }
 
                     reserveUpdateSlots( actor );
+
                     if( m_partitioner )
                     {
                         m_partitioner->addActor( actor );
                     }
+
                     actor->setScene( this );
                     m_actors.push_back( actor );
 
@@ -983,6 +998,7 @@ namespace workphone::scene
     void GameScene::removeActor( SmartPtr<IGameActor> actor )
     {
         ScopedLock sceneLock( this );
+
         try
         {
             WP_ASSERT( isValid() );

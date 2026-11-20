@@ -598,6 +598,7 @@ namespace workphone::scene
 
     void GameActor::preUpdate()
     {
+        ScopedLoadLock loadLock( this );
         GameActorSystem::dispatch( *this, GameActorSystem::Phase::PreUpdate );
     }
 
@@ -633,11 +634,15 @@ namespace workphone::scene
 
     void GameActor::update()
     {
+        ScopedLoadLock loadLock( this );
+
         GameActorSystem::dispatch( *this, GameActorSystem::Phase::Update );
     }
 
     void GameActor::postUpdate()
     {
+        ScopedLoadLock loadLock( this );
+
         GameActorSystem::dispatch( *this, GameActorSystem::Phase::PostUpdate );
 
         if( isDebugDrawEnabled() )
