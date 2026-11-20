@@ -847,9 +847,8 @@ namespace workphone::scene
                     auto applicationManager = core::IApplicationManager::instancePtr();
                     WP_ASSERT( applicationManager );
 
-                    auto &updateObjects = getRegisteredObjects( Thread::UpdateState::Update, task );
-
-                    ScopedLock lock( &updateObjects );
+                    auto &rUpdateObjects = getRegisteredObjects( Thread::UpdateState::Update, task );
+                    auto updateObjects = rUpdateObjects.snapshot();
                     for( auto &actor : updateObjects )
                     {
                         if( actor )
