@@ -8,7 +8,7 @@ namespace workphone::vehicle
     class TailLinkage
     {
     public:
-        TailLinkage() = default;
+        TailLinkage();
 
         physics_Num m_input = 0.0;
         physics_Num m_trim = 0.0;

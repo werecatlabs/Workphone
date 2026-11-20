@@ -76,21 +76,29 @@ namespace workphone
         void setTireModel( TireModel tireModel ) override;
 
         physics_Num getSpringForce() const;
+
         void setSpringForce( physics_Num springForce );
 
         physics_Num getMassFraction() const;
+
         void setMassFraction( physics_Num massFraction );
 
         Vector3<physics_Num> getWheelVelocity() const;
+
         void setWheelVelocity( const Vector3<physics_Num> &wheelVelocity );
 
         SmartPtr<Properties> getProperties() const override;
+
         void setProperties( SmartPtr<Properties> properties ) override;
 
         physics_Num getLateralFrictionCoefficient() const;
+
         void setLateralFrictionCoefficient( physics_Num coefficient );
+
         physics_Num getRollingResistanceCoefficient() const;
+
         void setRollingResistanceCoefficient( physics_Num coefficient );
+        
         bool isGrounded() const;
 
         WP_CLASS_REGISTER_DECL;
