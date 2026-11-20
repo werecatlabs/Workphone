@@ -803,12 +803,15 @@ add_executable(WPActorSceneTests main.cpp UnitTests.cpp UnitTestsFixture.cpp
     MeshAssetBudgetTests.cpp
     ProgressiveMeshOptionsTests.cpp
     PoolTests.cpp)
+
 foreach(property IN ITEMS INCLUDE_DIRECTORIES COMPILE_DEFINITIONS COMPILE_OPTIONS LINK_DIRECTORIES LINK_OPTIONS)
     get_target_property(actor_scene_property UnitTests ${property})
+
     if(actor_scene_property)
         set_property(TARGET WPActorSceneTests PROPERTY ${property} "${actor_scene_property}")
     endif()
 endforeach()
+
 get_target_property(actor_scene_libraries UnitTests LINK_LIBRARIES)
 target_link_libraries(WPActorSceneTests PRIVATE ${actor_scene_libraries})
 set_target_properties(WPActorSceneTests PROPERTIES FOLDER Tests/Cpp)
