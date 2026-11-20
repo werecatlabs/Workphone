@@ -118,6 +118,71 @@ namespace cityRoundaboutSigns
         }
     }
 
+    void islandBoard( const procedural::CityRoadRoundaboutSpec &island,
+                      const cityIslandChevrons::Board &board, Geometry &posts, Geometry &back,
+                      Geometry &field, Geometry &white )
+    {
+        const SignFace face{ board.centre, board.outward };
+        const float w = board.width * .5f, h = board.height * .5f;
+        const auto outline = [&]( float inset ) {
+            const float x = w - inset, y = h - inset, corner = .042f - .45f * inset;
+            return std::array<Vector2F, 8>{ Vector2F( -x + corner, -y ), { x - corner, -y },
+                                            { x, -y + corner }, { x, y - corner }, { x - corner, y },
+                                            { -x + corner, y }, { -x, y - corner }, { -x, -y + corner } };
+        };
+        const auto edge = outline( 0 ), facePrint = outline( .018f );
+        constexpr float depth = -.026f;
+        // The bare aluminium edge wraps around the black reflective face.
+        for( size_t i = 0; i < edge.size(); ++i )
+        {
+            const size_t j = ( i + 1 ) % edge.size();
+            const auto a = face.point( edge[i], 0 ), b = face.point( edge[j], 0 );
+            back.quad( a, b, face.point( edge[j], depth ), face.point( edge[i], depth ),
+                       ( b - a ).crossProduct( face.outward ).normaliseCopy() );
+            back.quad( a, b, face.point( facePrint[j], 0 ), face.point( facePrint[i], 0 ), face.outward );
+        }
+        for( size_t i = 1; i + 2 < edge.size(); i += 2 )
+        {
+            back.quad( face.point( edge[0], depth ), face.point( edge[i], depth ),
+                       face.point( edge[i + 1], depth ), face.point( edge[i + 2], depth ), -face.outward );
+            field.quad( face.point( facePrint[0], 0 ), face.point( facePrint[i], 0 ),
+                        face.point( facePrint[i + 1], 0 ), face.point( facePrint[i + 2], 0 ), face.outward );
+        }
+        for( const float y : { -.54f * h, .54f * h } )
+        {
+            posts.beam( face.point( { -.91f * w, y }, -.042f ),
+                        face.point( { .91f * w, y }, -.042f ), .021f );
+        }
+        for( const float x : { -.60f * w, .60f * w } )
+        {
+            const auto foot = cityIslandChevrons::footing( island, board, x, -.09f );
+            posts.box( foot, { .15f, .043f, .15f } );
+            posts.beam( foot, face.point( { x, h * .78f }, -.09f ), .033f );
+            for( const float y : { -.54f * h, .54f * h } )
+            {
+                back.beam( face.point( { x - .065f, y }, -.12f ),
+                           face.point( { x + .065f, y }, -.12f ), .013f );
+                for( const float bolt : { x - .052f, x + .052f } )
+                {
+                    posts.beam( face.point( { bolt, y }, -.042f ), face.point( { bolt, y }, -.14f ), .009f );
+                }
+            }
+        }
+
+        const float pitch = board.width * .31f;
+        for( int column = -1; column <= 1; ++column )
+        {
+            const auto point = [&]( float x, float y ) {
+                return face.point( { ( column + board.arrowSign * x ) * pitch, y * h }, .004f );
+            };
+            for( float y : { -.82f, .82f } )
+            {
+                white.quad( point( -.37f, y ), point( -.04f, y ), point( .36f, 0 ),
+                            point( .03f, 0 ), face.outward );
+            }
+        }
+    }
+
     void build( SceneAssets &assets, const CityRoadTerrainMesh &footways,
                 const SourceBudgetVector<Vector3F> &lamps, VehicleAppearanceQuality quality )
     {
@@ -265,7 +330,7 @@ namespace cityRoundaboutSigns
             } );
         }
 
-        Geometry posts, metal, red, white, blue, ink;
+        Geometry posts, metal, red, white, blue, ink, islandPlates;
         SourceBudgetVector<Vector3F> installed;
         std::array<std::array<bool, 2>, 49> used{};
         size_t roadsideChecks = 0;
@@ -328,8 +393,22 @@ namespace cityRoundaboutSigns
         }
 
         size_t splitterPorts = 0;
+        size_t boards = 0;
         for( const auto &junction : source.roundabouts )
         {
+            if( splitterPorts >= portLimit )
+            {
+                break;
+            }
+            const auto layout = cityIslandChevrons::layout( junction );
+            for( size_t i = 0; i < layout.count; ++i )
+            {
+                if( layout.boards[i].portIndex < portLimit - splitterPorts )
+                {
+                    islandBoard( junction, layout.boards[i], posts, islandPlates, ink, white );
+                    ++boards;
+                }
+            }
             for( const auto &port : junction.ports )
             {
                 if( splitterPorts >= portLimit )
@@ -417,8 +496,16 @@ namespace cityRoundaboutSigns
         publish( "Terrain city roundabout sign blue faces", blue, { .085f, .31f, .65f, 1 }, .51f,
                  { .001f, .006f, .014f, 1 } );
         publish( "Terrain city roundabout sign lettering", ink, { .090f, .087f, .081f, 1 }, .78f );
+        if( !islandPlates.indices.empty() )
+        {
+            auto aluminium = material( assets, { .49f, .52f, .54f, 1 }, .62f, .32f );
+            // Two-sided sheet metal casts the board silhouette from either side of the island.
+            aluminium->setCullMode( 0 );
+            mesh( assets, "Terrain city island chevron plates", islandPlates, aluminium );
+        }
         WP_LOG( String( "Terrain city roundabout signs yield=" ) + StringUtil::toString( yields ) +
                 " warnings=" + StringUtil::toString( warnings ) +
-                " passSide=" + StringUtil::toString( arrows ) );
+                " passSide=" + StringUtil::toString( arrows ) +
+                " islandBoards=" + StringUtil::toString( u32( boards ) ) );
     }
 }  // namespace cityRoundaboutSigns
