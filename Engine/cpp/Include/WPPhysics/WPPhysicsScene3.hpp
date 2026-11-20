@@ -7,6 +7,7 @@
 
 namespace workphone::physics
 {
+
     /**
      * @class WPPhysicsScene3
      * @brief Concrete implementation of the PhysicsScene3 interface.
@@ -19,6 +20,7 @@ namespace workphone::physics
     public:
         WPPhysicsScene3();
         ~WPPhysicsScene3() override;
+
         SmartPtr<Properties> getProperties() const override;
         void setProperties( SmartPtr<Properties> properties ) override;
 
@@ -138,6 +140,16 @@ namespace workphone::physics
         ContactOptions getContactOptions() const override;
 
     private:
+        void registerBroadphaseProvider( wp_broadphase_provider provider, void *context );
+
+        bool hasBroadphaseProvider();
+
+        wp_scene_collision_matrix resolveCollisionMatrix( const String &layerNames,
+                                                          const String &disabledPairs );
+
+        static void executePhysicsRanges( void *, wp_u32 count, wp_u32 workers,
+                                          wp_physics_range_task task, void *context );
+
         /** @brief Publishes updated transforms of active actors back to the engine. */
         void publishActiveTransforms();
 

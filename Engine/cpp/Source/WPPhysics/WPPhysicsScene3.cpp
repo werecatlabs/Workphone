@@ -9,86 +9,6 @@
 
 namespace workphone::physics
 {
-    void registerBroadphaseProvider( wp_broadphase_provider provider, void *context )
-    {
-        wp_broadphase_register_provider( provider, context );
-    }
-
-    bool hasBroadphaseProvider()
-    {
-        return wp_broadphase_has_provider() != 0;
-    }
-
-    namespace
-    {
-        wp_scene_collision_matrix resolveCollisionMatrix( const String &layerNames,
-                                                          const String &disabledPairs )
-        {
-            StringPairs pairs;
-            if( !parseDisabledCollisionPairs( disabledPairs, pairs ) )
-            {
-                throw std::invalid_argument(
-                    "Disabled collision pairs must contain two layer names per pair." );
-            }
-
-            wp_scene_collision_matrix matrix{};
-            Array<String> layers;
-            // Keep legacy profiles with ambiguous layer lists on their original filter.
-            if( pairs.empty() || !parseCollisionLayerNames( layerNames, layers ) )
-            {
-                return matrix;
-            }
-
-            for( size_t i = 0; i < layers.size(); ++i )
-            {
-                matrix.named_layers |= u32( 1 ) << i;
-                if( layers[i] == "Default" )
-                {
-                    matrix.default_layer = u32( 1 ) << i;
-                }
-            }
-            for( const auto &[first, second] : pairs )
-            {
-                const auto firstLayer = std::find( layers.begin(), layers.end(), first );
-                const auto secondLayer = std::find( layers.begin(), layers.end(), second );
-                if( firstLayer == layers.end() || secondLayer == layers.end() )
-                {
-                    continue;
-                }
-                const auto i = firstLayer - layers.begin();
-                const auto j = secondLayer - layers.begin();
-                matrix.disabled[i] |= u32( 1 ) << j;
-                matrix.disabled[j] |= u32( 1 ) << i;
-            }
-            return matrix;
-        }
-
-        void executePhysicsRanges( void *, wp_u32 count, wp_u32 workers, wp_physics_range_task task,
-                                   void *context )
-        {
-            workers = std::min( workers, count );
-            std::vector<std::thread> threads;
-            wp_u32 next = 0;
-            try
-            {
-                threads.reserve( workers > 0 ? workers - 1 : 0 );
-                for( ; next + 1 < workers; ++next )
-                {
-                    const auto begin = count * next / workers;
-                    const auto end = count * ( next + 1 ) / workers;
-                    threads.emplace_back( [=]() { task( context, begin, end ); } );
-                }
-            }
-            catch( ... )
-            { /* Complete undispatched ranges on the simulation owner. */
-            }
-            task( context, workers ? count * next / workers : 0, count );
-            for( auto &thread : threads )
-            {
-                thread.join();
-            }
-        }
-    }  // namespace
 
     WPPhysicsScene3::WPPhysicsScene3() : m_scene( wp_physics_scene_create() )
     {
@@ -96,7 +16,9 @@ namespace workphone::physics
         {
             throw std::runtime_error( "Failed to create a WPPhysics scene." );
         }
-        wp_physics_scene_set_executor( m_scene, executePhysicsRanges, nullptr );
+
+        wp_physics_scene_set_executor( m_scene, WPPhysicsScene3::executePhysicsRanges, nullptr );
+
         try
         {
             if( auto application = core::IApplicationManager::instancePtr() )
@@ -131,6 +53,7 @@ namespace workphone::physics
     SmartPtr<Properties> WPPhysicsScene3::getProperties() const
     {
         ScopedLock lock( const_cast<WPPhysicsScene3 *>( this ) );
+        
         auto properties = workphone::make_ptr<Properties>();
         const auto options = wp_physics_scene_get_simulation_options( m_scene );
         properties->setProperty( "physics.gravity", wp_physics_scene_get_gravity( m_scene ).y );
@@ -159,7 +82,9 @@ namespace workphone::physics
         {
             return;
         }
+
         ScopedLock lock( this );
+
         auto layerNames = m_collisionLayerNames;
         auto disabledPairs = m_disabledCollisionPairs;
         properties->getPropertyValue( "physics.collisionLayers", layerNames );
@@ -167,6 +92,7 @@ namespace workphone::physics
         const bool updateCollisionMatrix =
             layerNames != m_collisionLayerNames || disabledPairs != m_disabledCollisionPairs;
         wp_scene_collision_matrix matrix{};
+
         if( updateCollisionMatrix )
         {
             matrix = resolveCollisionMatrix( layerNames, disabledPairs );
@@ -188,6 +114,7 @@ namespace workphone::physics
             throw std::runtime_error(
                 "GPU Broadphase requires a registered physics::registerBroadphaseProvider plugin." );
         }
+
         wp_physics_scene_set_simulation_options( m_scene, &options );
         f32 gravity = 0;
         if( properties->getPropertyValue( "physics.gravity", gravity ) )
@@ -196,6 +123,7 @@ namespace workphone::physics
             vector.y = gravity;
             wp_physics_scene_set_gravity( m_scene, vector );
         }
+
         if( updateCollisionMatrix )
         {
             wp_physics_scene_set_collision_matrix( m_scene, &matrix );
@@ -207,6 +135,7 @@ namespace workphone::physics
     void WPPhysicsScene3::update()
     {
         ScopedLoadLock loadLock( this );
+
         if( !loadLock.isLoaded() )
         {
             return;
@@ -709,4 +638,90 @@ namespace workphone::physics
         // This would need to be implemented in the C library
         return ContactOptions();
     }
+
+    bool WPPhysicsScene3::hasBroadphaseProvider()
+    {
+        return wp_broadphase_has_provider() != 0;
+    }
+
+    void WPPhysicsScene3::registerBroadphaseProvider( wp_broadphase_provider provider, void *context )
+    {
+        wp_broadphase_register_provider( provider, context );
+    }
+
+    void WPPhysicsScene3::executePhysicsRanges( void *, wp_u32 count, wp_u32 workers,
+                                                wp_physics_range_task task, void *context )
+    {
+        workers = std::min( workers, count );
+        std::vector<std::thread> threads;
+        wp_u32 next = 0;
+
+        try
+        {
+            threads.reserve( workers > 0 ? workers - 1 : 0 );
+            for( ; next + 1 < workers; ++next )
+            {
+                const auto begin = count * next / workers;
+                const auto end = count * ( next + 1 ) / workers;
+                threads.emplace_back( [=]() { task( context, begin, end ); } );
+            }
+        }
+        catch( ... )
+        { /* Complete undispatched ranges on the simulation owner. */
+        }
+
+        task( context, workers ? count * next / workers : 0, count );
+
+        for( auto &thread : threads )
+        {
+            thread.join();
+        }
+    }
+
+    wp_scene_collision_matrix WPPhysicsScene3::resolveCollisionMatrix( const String &layerNames,
+                                                                       const String &disabledPairs )
+    {
+        StringPairs pairs;
+        if( !parseDisabledCollisionPairs( disabledPairs, pairs ) )
+        {
+            throw std::invalid_argument(
+                "Disabled collision pairs must contain two layer names per pair." );
+        }
+
+        wp_scene_collision_matrix matrix{};
+        Array<String> layers;
+        // Keep legacy profiles with ambiguous layer lists on their original filter.
+        if( pairs.empty() || !parseCollisionLayerNames( layerNames, layers ) )
+        {
+            return matrix;
+        }
+
+        for( size_t i = 0; i < layers.size(); ++i )
+        {
+            matrix.named_layers |= u32( 1 ) << i;
+            if( layers[i] == "Default" )
+            {
+                matrix.default_layer = u32( 1 ) << i;
+            }
+        }
+
+        for( const auto &[first, second] : pairs )
+        {
+            const auto firstLayer = std::find( layers.begin(), layers.end(), first );
+            const auto secondLayer = std::find( layers.begin(), layers.end(), second );
+
+            if( firstLayer == layers.end() || secondLayer == layers.end() )
+            {
+                continue;
+            }
+
+            const auto i = firstLayer - layers.begin();
+            const auto j = secondLayer - layers.begin();
+            matrix.disabled[i] |= u32( 1 ) << j;
+            matrix.disabled[j] |= u32( 1 ) << i;
+        }
+
+        return matrix;
+    }
+
 }  // namespace workphone::physics
