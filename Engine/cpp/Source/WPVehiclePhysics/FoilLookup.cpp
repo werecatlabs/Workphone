@@ -3,4 +3,9 @@
 
 namespace workphone::vehicle
 {
+
+    TFoilLookup::~TFoilLookup() = default;
+
+ TFoilLookup::TFoilLookup() = default;
+
 }

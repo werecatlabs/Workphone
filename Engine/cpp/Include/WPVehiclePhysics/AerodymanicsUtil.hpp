@@ -11,6 +11,7 @@
 
 namespace workphone::vehicle
 {
+
     /**
      * @class AerodymanicsUtil
      * @brief Utility class providing static methods for aerodynamics and helicopter physics

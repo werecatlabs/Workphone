@@ -120,9 +120,7 @@ namespace workphone
         physics_Num m_radius = 0.35;
         physics_Num m_suspensionTravel = 0.52;
         physics_Num m_suspensionDistance = 0.52;
-        bool m_implicitSuspension = false;
-        bool m_tractionControl = false;
-        bool m_antiLockBrakes = false;
+
         physics_Num m_contactAcceleration = 9.81;
         physics_Num m_contactEffectiveMass = 0;
         physics_Num m_springRate = 5000.0;
@@ -156,6 +154,10 @@ namespace workphone
         Vector3<physics_Num> m_localVelo;
         Vector3<physics_Num> m_suspensionForce;
         Vector3<physics_Num> m_roadForce;
+
+        bool m_implicitSuspension = false;
+        bool m_tractionControl = false;
+        bool m_antiLockBrakes = false;
 
         bool m_onGround = false;
         bool m_isSteeringWheel = false;

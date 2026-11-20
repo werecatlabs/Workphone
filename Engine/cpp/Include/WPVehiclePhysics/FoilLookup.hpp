@@ -12,8 +12,8 @@ namespace workphone::vehicle
     class TFoilLookup
     {
     public:
-        TFoilLookup() = default;
-        ~TFoilLookup() = default;
+        TFoilLookup();
+        ~TFoilLookup();
 
         physics_Num m_alpha = 0.0;
         physics_Num m_cl = 0.0;

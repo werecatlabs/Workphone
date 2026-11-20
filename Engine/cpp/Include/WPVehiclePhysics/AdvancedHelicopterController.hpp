@@ -12,6 +12,7 @@
 
 namespace workphone::vehicle
 {
+
     /**
      * @class AdvancedHelicopterController
      * @brief Physically-based helicopter flight controller.

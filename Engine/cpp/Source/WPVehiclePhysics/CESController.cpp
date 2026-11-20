@@ -514,4 +514,15 @@ namespace workphone::vehicle
     {
         m_motor = motor;
     }
+
+    void CESController::setEsc( SmartPtr<IESController> esc )
+    {
+        m_esc = esc;
+    }
+
+    workphone::SmartPtr<workphone::vehicle::IESController> CESController::getEsc() const
+    {
+        return m_esc;
+    }
+
 }  // namespace workphone::vehicle

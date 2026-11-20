@@ -23,15 +23,9 @@ namespace workphone::vehicle
         SmartPtr<IBatteryPack> getBatteryPack() const override;
         void setBatteryPack( SmartPtr<IBatteryPack> batteryPack ) override;
 
-        SmartPtr<IESController> getEsc() const override
-        {
-            return m_esc;
-        }
+        SmartPtr<IESController> getEsc() const override;
 
-        void setEsc( SmartPtr<IESController> esc ) override
-        {
-            m_esc = esc;
-        }
+        void setEsc( SmartPtr<IESController> esc ) override;
 
         SmartPtr<IVehiclePowerUnit> getMotor() const override;
         void setMotor( SmartPtr<IVehiclePowerUnit> motor ) override;

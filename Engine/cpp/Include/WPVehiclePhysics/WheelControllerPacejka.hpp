@@ -7,6 +7,7 @@
 
 namespace workphone
 {
+
     /**
      * @brief Wheel controller implementation using the Pacejka tire model.
      *
@@ -344,36 +345,43 @@ namespace workphone
 
         /** @brief Gets current wheel velocity in world coordinates */
         Vector3<physics_Num> getWheelVelo() const;
+
         /** @brief Sets current wheel velocity in world coordinates */
         void setWheelVelo( const Vector3<physics_Num> &wheelVelo );
 
         /** @brief Gets current wheel velocity in local wheel coordinates */
         Vector3<physics_Num> getLocalVelo() const;
+
         /** @brief Sets current wheel velocity in local wheel coordinates */
         void setLocalVelo( const Vector3<physics_Num> &localVelo );
 
         /** @brief Gets ground normal vector at contact point */
         Vector3<physics_Num> getGroundNormal() const;
+
         /** @brief Sets ground normal vector at contact point */
         void setGroundNormal( const Vector3<physics_Num> &groundNormal );
 
         /** @brief Gets current suspension force vector */
         Vector3<physics_Num> getSuspensionForceVector() const;
+
         /** @brief Sets current suspension force vector */
         void setSuspensionForceVector( const Vector3<physics_Num> &suspensionForce );
 
         /** @brief Gets current road/tire force vector */
         Vector3<physics_Num> getRoadForceVector() const;
+
         /** @brief Sets current road/tire force vector */
         void setRoadForceVector( const Vector3<physics_Num> &roadForce );
 
         /** @brief Gets local up direction vector */
         Vector3<physics_Num> getUp() const;
+
         /** @brief Sets local up direction vector */
         void setUp( const Vector3<physics_Num> &up );
 
         /** @brief Gets local right direction vector */
         Vector3<physics_Num> getRight() const;
+
         /** @brief Sets local right direction vector */
         void setRight( const Vector3<physics_Num> &right );
 
@@ -384,11 +392,13 @@ namespace workphone
 
         /** @brief Gets current wheel rotation quaternion */
         Quaternion<physics_Num> getLocalRotation() const;
+
         /** @brief Sets current wheel rotation quaternion */
         void setLocalRotation( const Quaternion<physics_Num> &localRotation );
 
         /** @brief Gets inverse of current wheel rotation quaternion */
         Quaternion<physics_Num> getInverseLocalRotation() const;
+
         /** @brief Sets inverse of current wheel rotation quaternion */
         void setInverseLocalRotation( const Quaternion<physics_Num> &inverseLocalRotation );
 
@@ -404,16 +414,19 @@ namespace workphone
 
         /** @brief Gets tire grip multiplier (scales all tire forces) */
         physics_Num getGrip() const;
+
         /** @brief Sets tire grip multiplier (scales all tire forces) */
         void setGrip( physics_Num grip ) override;
 
         /** @brief Gets maximum brake torque in Newton-meters */
         physics_Num getBrakeFrictionTorque() const;
+
         /** @brief Sets maximum brake torque in Newton-meters */
         void setBrakeFrictionTorque( physics_Num brakeFrictionTorque );
 
         /** @brief Gets maximum handbrake torque in Newton-meters */
         physics_Num getHandbrakeFrictionTorque() const;
+
         /** @brief Sets maximum handbrake torque in Newton-meters */
         void setHandbrakeFrictionTorque( physics_Num handbrakeFrictionTorque );
 
@@ -698,7 +711,7 @@ namespace workphone
         physics_Num m_suspensionDistance = 1.0;
 
         /** @brief Last skid state for audio/visual effects */
-        int m_lastSkid = 0;
+        s32 m_lastSkid = 0;
 
         /** @brief True if wheel is currently in contact with ground */
         bool m_onGround = false;

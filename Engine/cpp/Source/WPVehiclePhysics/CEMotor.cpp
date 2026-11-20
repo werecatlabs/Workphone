@@ -3,4 +3,9 @@
 
 namespace workphone::vehicle
 {
+
+    CEMotor::~CEMotor() = default;
+
+ CEMotor::CEMotor() = default;
+
 }

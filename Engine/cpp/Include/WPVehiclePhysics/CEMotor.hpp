@@ -36,8 +36,8 @@ namespace workphone::vehicle
     class WPVehiclePhysics_API CEMotor
     {
     public:
-        CEMotor() = default;
-        ~CEMotor() = default;
+        CEMotor();
+        ~CEMotor();
 
         physics_Num m_motorMoI = 0.0;  //
         physics_Num m_motorKv = 0.0;   // RPM/volt of the motor

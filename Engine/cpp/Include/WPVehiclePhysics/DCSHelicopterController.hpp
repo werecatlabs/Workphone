@@ -12,6 +12,7 @@
 
 namespace workphone::vehicle
 {
+
     /**
      * @class DCSHelicopterController
      * @brief High-fidelity helicopter flight controller modelled after DCS-style physics.

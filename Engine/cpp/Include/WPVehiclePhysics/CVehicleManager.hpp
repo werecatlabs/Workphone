@@ -16,6 +16,7 @@ namespace workphone
     public:
         using SourceBudgetObject::operator new;
         using SourceBudgetObject::operator delete;
+
         CVehicleManager();
         ~CVehicleManager() override;
 
