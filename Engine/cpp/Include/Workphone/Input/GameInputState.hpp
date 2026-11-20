@@ -5,23 +5,28 @@
 
 /**
  * @file GameInputState.hpp
- * @brief Simple data container for game input events and mapped actions.
+ * @brief Simple data container holding the event type and action of a game input event.
  */
 
 namespace workphone
 {
     /**
-     * @brief Represents a high-level game input event mapping.
+     * @brief Represents a high-level game input event.
      *
-     * GameInputState stores a hashed event type and the corresponding action
-     * hash. It is used to represent abstracted input events (e.g., "jump",
-     * "fire") after raw input has been mapped by the input system.
+     * GameInputState stores a hashed event type and the hash of the action
+     * that was triggered. It is used to pass abstracted input events (e.g.
+     * "jump", "fire") through the input system after raw input has been
+     * mapped to game actions.
+     *
+     * @note Instances are plain data holders and are not thread-safe.
      */
     class WPCore_API GameInputState : public IGameInputState
     {
     public:
         /**
          * @brief Create an empty GameInputState.
+         *
+         * Both the event type and the action hash are initialized to 0.
          */
         GameInputState();
 
@@ -33,7 +38,7 @@ namespace workphone
         /**
          * @brief Get the hashed event type for this state.
          *
-         * @return hash32 Event type hash
+         * @return hash32 Event type hash (default 0)
          */
         hash32 getEventType() const override;
 
@@ -45,14 +50,14 @@ namespace workphone
         void setEventType( hash32 eventType ) override;
 
         /**
-         * @brief Get the action hash mapped to this event.
+         * @brief Get the hash of the game input action that was triggered.
          *
-         * @return hash32 Action hash
+         * @return hash32 Action hash (default 0)
          */
         hash32 getAction() const override;
 
         /**
-         * @brief Set the action hash to associate with this event.
+         * @brief Set the hash of the game input action that was triggered.
          *
          * @param action Action hash
          */
@@ -61,9 +66,9 @@ namespace workphone
         WP_CLASS_REGISTER_DECL;
 
     protected:
-        /// Hashed event type identifier.
+        /// Hash of the event type, initially 0.
         hash32 m_eventType = 0;
-        /// Hashed action identifier associated with the event.
+        /// Hash of the action that was triggered, initially 0.
         hash32 m_action = 0;
     };
 }  // namespace workphone

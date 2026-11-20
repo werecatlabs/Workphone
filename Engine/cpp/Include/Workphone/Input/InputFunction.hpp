@@ -5,26 +5,29 @@
 
 /**
  * @file InputFunction.hpp
- * @brief Represents a mapped input function (axis/button) with runtime state.
+ * @brief Named input function (axis or button) with its mapping id and runtime channel state.
  */
 
 namespace workphone
 {
 
     /**
-     * @brief Holds information about an input function mapping and its state.
+     * @class InputFunction
+     * @brief A named input function and its current runtime state.
      *
-     * InputFunction stores metadata about a named input function (its string
-     * name and hash), whether it represents an axis or button, the mapping id,
-     * current and previous channel values and whether the input is reversed.
-     * It also tracks the time of the last change to allow queries for time
-     * since the last change.
+     * InputFunction stores a function name together with its hash, whether it is an axis and/or a
+     * button, the id of the mapping it belongs to, whether its value is reversed, and the current
+     * and previous channel values. The time of the last value change is tracked so callers can
+     * query how long the value has been stable.
+     *
+     * Defaults: not an axis, a button, not reversed, map id -1, channel values 0.
      */
     class InputFunction : public ISharedObject
     {
     public:
         /**
-         * @brief Construct a new InputFunction with default values.
+         * @brief Constructs an InputFunction with default values (button, not axis, not reversed,
+         *        map id -1, channel values 0).
          */
         InputFunction();
 
@@ -34,148 +37,159 @@ namespace workphone
         ~InputFunction() override;
 
         /**
-         * @brief Get the human-readable function name.
+         * @brief Gets the function name.
          *
-         * @return String Function name
+         * @return The function name; empty if none has been set.
          */
         String getFunction() const;
 
         /**
-         * @brief Set the human-readable function name.
+         * @brief Sets the function name and updates the function hash to match.
          *
-         * @param functionName Name to set
+         * @param functionName Name to set; its hash becomes the new function hash.
          */
         void setFunction( const String &functionName );
 
         /**
-         * @brief Query whether this function represents an axis input.
+         * @brief Queries whether this function is an axis input.
          *
          * @return true if axis, false otherwise
          */
         bool isAxis() const;
 
         /**
-         * @brief Mark this function as an axis input.
+         * @brief Marks this function as an axis input (or not).
          *
          * @param isAxisInput true to mark as axis
+         * @note Independent of setButton(); the two flags are not kept mutually exclusive.
          */
         void setAxis( bool isAxisInput );
 
         /**
-         * @brief Query whether this function represents a button input.
+         * @brief Queries whether this function is a button input.
          *
-         * @return true if button, false otherwise
+         * @return true if button (the default), false otherwise
          */
         bool getButton() const;
 
         /**
-         * @brief Mark this function as a button input.
+         * @brief Marks this function as a button input (or not).
          *
          * @param isButtonInput true to mark as button
+         * @note Independent of setAxis(); the two flags are not kept mutually exclusive.
          */
         void setButton( bool isButtonInput );
 
         /**
-         * @brief Get the mapping id associated with this function.
+         * @brief Gets the id of the mapping associated with this function.
          *
-         * @return s32 Map identifier
+         * @return The map id, or -1 if none has been set
          */
         s32 getMapId() const;
 
         /**
-         * @brief Set the mapping id associated with this function.
+         * @brief Sets the id of the mapping associated with this function.
          *
          * @param mapId Map identifier
          */
         void setMapId( s32 mapId );
 
         /**
-         * @brief Get the hashed function identifier.
+         * @brief Gets the hash of the function name.
          *
-         * @return hash_type Function hash
+         * @return The function hash
+         * @note The value is only meaningful after setFunction() or setFunctionHash() has been
+         *       called; the constructor does not initialize it.
          */
         hash_type getFunctionHash() const;
 
         /**
-         * @brief Set the hashed function identifier.
+         * @brief Sets the function hash directly.
          *
          * @param hashValue Hash value to set
+         * @note setFunction() overwrites this with the hash of the new name.
          */
         void setFunctionHash( hash_type hashValue );
 
         /**
-         * @brief Query whether the function is reversed (inverted axis).
+         * @brief Queries whether the function is reversed (inverted).
          *
          * @return true if reversed
          */
         bool isReversed() const;
 
         /**
-         * @brief Set whether the function should be treated as reversed.
+         * @brief Sets whether the function is reversed (inverted).
          *
-         * @param isReversedInput true to invert axis values
+         * @param isReversedInput true to mark the function as reversed
+         * @note This only stores the flag; it does not modify the stored channel values.
          */
         void setReversed( bool isReversedInput );
 
         /**
-         * @brief Get the current channel value for this function.
+         * @brief Gets the current channel value.
          *
-         * @return f32 Current value (typically normalized)
+         * @return The current value (typically normalized; button state for buttons)
          */
         f32 getChannelValue() const;
 
         /**
-         * @brief Set the current channel value and update timeSinceChange.
+         * @brief Sets the current channel value.
+         *
+         * When an application manager exists, the value is only updated if it differs from the
+         * current one; in that case the previous value is set to the old current value and the
+         * time of change is set to the timer's current time. Without an application manager the
+         * previous/current values are always updated and the time of change is not touched.
          *
          * @param channelValue New channel value
          */
         void setChannelValue( f32 channelValue );
 
         /**
-         * @brief Get the previous channel value (before last update).
+         * @brief Gets the previous channel value (the value before the last change).
          *
-         * @return f32 Previous channel value
+         * @return The previous channel value
          */
         f32 getPrevChannelValue() const;
 
         /**
-         * @brief Set the previous channel value (used for edge detection).
+         * @brief Sets the previous channel value directly (e.g. for edge detection).
          *
          * @param previousChannelValue Previous channel value
          */
         void setPrevChannelValue( f32 previousChannelValue );
 
         /**
-         * @brief Time interval since the channel last changed value.
+         * @brief Gets the time elapsed since the channel value last changed.
          *
-         * @return time_interval Duration since last change
+         * @return Elapsed time (timer units), or 0 if there is no application manager or timer
          */
         time_interval timeSinceChange() const;
 
         WP_CLASS_REGISTER_DECL;
 
     protected:
-        /// Timestamp of the last channel change.
+        /// Timer time of the last channel value change.
         time_interval m_timeChanged;
 
-        /// Hash value identifying the function name.
+        /// Hash of the function name.
         hash_type m_functionHash;
 
-        /// Mapping id used to reference configuration or control maps.
+        /// Id of the mapping this function belongs to (-1 if none).
         s32 m_mapId;
-        /// Current channel value (normalized axis or button state).
+        /// Current channel value (normalized axis value or button state).
         f32 m_channelValue;
-        /// Previous channel value recorded prior to the last change.
+        /// Channel value before the last change.
         f32 m_prevChannelValue;
 
-        /// Whether this function represents an axis input.
+        /// Whether this function is an axis input.
         bool m_isAxis;
-        /// Whether this function represents a button input.
+        /// Whether this function is a button input.
         bool m_isButton;
-        /// Whether axis values should be inverted.
+        /// Whether the function is reversed (inverted).
         bool m_isReversed;
 
-        /// Human-readable function name.
+        /// Function name.
         String m_function;
     };
 

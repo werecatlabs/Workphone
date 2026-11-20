@@ -5,26 +5,29 @@
 
 /**
  * @file GameInput.hpp
- * @brief Represents a player's input source and readiness state.
+ * @brief Concrete game input: player/joystick assignment, input map and readiness flags.
  */
 
 namespace workphone
 {
 
     /**
-     * @brief Concrete implementation of IGameInput representing a player's
-     *        input interface (keyboard, joystick, dongle, etc.).
+     * @class GameInput
+     * @brief Concrete IGameInput describing one player's input source (keyboard, joystick, dongle).
      *
-     * GameInput holds identification information (player index, joystick id)
-     * and exposes atomic flags describing the readiness of various input
-     * subsystems (dongle, general input, keyboard). This allows thread-safe
-     * queries and updates from different engine systems.
+     * GameInput stores the player index, the joystick id and the GameInputMap that translates raw
+     * keys/buttons into game actions. It also holds atomic readiness flags (dongle, general input,
+     * keyboard) that can be read and written from different threads.
+     *
+     * Defaults: player index 0, joystick id 0, input ready, keyboard input enabled, dongle not
+     * ready.
      */
     class WPCore_API GameInput : public IGameInput
     {
     public:
         /**
-         * @brief Construct a new GameInput object.
+         * @brief Constructs a GameInput with an empty GameInputMap, input ready, keyboard input
+         *        enabled and the dongle not ready.
          */
         GameInput();
 
@@ -34,102 +37,98 @@ namespace workphone
         ~GameInput() override;
 
         /**
-         * @brief Returns whether this GameInput is currently assigned to a
-         *        player or input source.
-         *
-         * @return true if assigned, false otherwise
+         * @copydoc IGameInput::isAssigned
+         * @note This implementation reports the input-ready flag (see isInputReady()).
          */
         bool isAssigned() const override;
 
         /**
-         * @brief Retrieve the input mapping for this GameInput.
-         *
-         * @return SmartPtr<IGameInputMap> Pointer to the associated input map
+         * @copydoc IGameInput::getGameInputMap
          */
         SmartPtr<IGameInputMap> getGameInputMap() const override;
 
         /**
-         * @brief Set the player index associated with this input.
-         *
-         * @param playerIndex Index of the player (usually 0-based)
+         * @copydoc IGameInput::setPlayerIndex
          */
         void setPlayerIndex( u32 playerIndex ) override;
 
         /**
-         * @brief Get the player index associated with this input.
-         *
-         * @return u32 Player index
+         * @copydoc IGameInput::getPlayerIndex
          */
         u32 getPlayerIndex() const override;
 
         /**
-         * @brief Get the joystick identifier for this GameInput.
-         *
-         * @return u32 Joystick id
+         * @copydoc IGameInput::getJoystickId
          */
         u32 getJoystickId() const override;
 
         /**
-         * @brief Set the joystick identifier for this GameInput.
-         *
-         * @param joystickId Joystick id to associate with this input
+         * @copydoc IGameInput::setJoystickId
          */
         void setJoystickId( u32 joystickId ) override;
 
         /**
-         * @brief Query whether the dongle (wireless receiver) is ready.
+         * @brief Queries whether the wireless dongle (receiver) is ready.
          *
          * @return true if the dongle is ready and connected
+         * @note Thread-safe (backed by an atomic flag).
          */
         bool isDongleReady() const;
 
         /**
-         * @brief Set the dongle readiness flag.
+         * @brief Sets the dongle readiness flag.
          *
-         * @param ready True when the dongle is ready/connected
+         * @param ready true when the dongle is ready/connected
+         * @note Thread-safe (backed by an atomic flag).
          */
         void setDongleReady( bool ready );
 
         /**
-         * @brief Query whether input processing is ready for this device.
+         * @brief Queries whether input processing is ready for this device.
          *
-         * @return true if input is ready
+         * @return true if input is ready (the default)
+         * @note Thread-safe (backed by an atomic flag).
          */
         bool isInputReady() const;
 
         /**
-         * @brief Set the general input readiness flag.
+         * @brief Sets the general input readiness flag.
          *
-         * @param ready True when input processing for this device is enabled
+         * @param ready true when input processing for this device is enabled
+         * @note Thread-safe (backed by an atomic flag).
          */
         void setInputReady( bool ready );
 
         /**
-         * @brief Check if keyboard input is enabled for this GameInput.
+         * @brief Queries whether keyboard input is enabled for this GameInput.
          *
-         * @return true if keyboard input is allowed
+         * @return true if keyboard input is accepted (the default)
+         * @note Thread-safe (backed by an atomic flag).
          */
         bool isKeyboardInputEnabled() const;
 
         /**
-         * @brief Enable or disable keyboard input for this GameInput.
+         * @brief Enables or disables keyboard input for this GameInput.
          *
-         * @param enabled True to enable keyboard input, false to disable
+         * @param enabled true to enable keyboard input, false to disable
+         * @note Thread-safe (backed by an atomic flag).
          */
         void setKeyboardInputEnabled( bool enabled );
 
         WP_CLASS_REGISTER_DECL;
 
     protected:
-        /// Atomic flag indicating whether a wireless dongle/receiver is ready.
+        /// Atomic flag indicating whether the wireless dongle/receiver is ready.
         atomic_bool m_dongleReady;
 
         /// Atomic flag indicating whether input processing is ready/enabled.
         atomic_bool m_inputReady;
 
-        /// Atomic flag that controls whether keyboard input should be accepted.
+        /// Atomic flag that controls whether keyboard input is accepted.
         atomic_bool m_keyboardInputEnabled;
+        /// Input map translating keys/buttons into game actions (created in the constructor).
         SmartPtr<IGameInputMap> m_gameInputMap;
+        /// Player index (m_playerIndex) and joystick id (m_joystickId); both default to 0.
         u32 m_playerIndex = 0, m_joystickId = 0;
     };
 

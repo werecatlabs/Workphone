@@ -13,18 +13,21 @@
 namespace workphone
 {
     /**
-     * @brief Central manager for input devices and events.
+     * @class InputManager
+     * @brief Simple in-memory IInputManager implementation holding axis values and manager flags.
      *
-     * InputManager implements IInputManager and stores a list of input events
-     * as well as current/previous button bitfields. It exposes helpers to
-     * query and set axis values, control cursor visibility, and manage simple
-     * playback/recording states.
+     * Axis values are stored per axis id and returned as set; unknown axes read as 0. The cursor
+     * visibility is only recorded in the flag bitmask (IInputManager::cursorVisibleFlag) and does
+     * not touch the OS cursor. play(), record() and stop() are currently no-ops, and the stored
+     * event list and button bitfields are reserved and not used by this implementation.
      */
     class WPCore_API InputManager : public IInputManager
     {
     public:
         /**
          * @brief Construct a new InputManager instance.
+         *
+         * All flags and axis values start cleared, so the cursor flag is initially not set.
          */
         InputManager();
 
@@ -34,90 +37,101 @@ namespace workphone
         ~InputManager() override;
 
         /**
-         * @brief Query whether the OS cursor is currently visible.
+         * @brief Query the cursor visibility flag.
          *
-         * @return true if the cursor is visible
+         * @return true if IInputManager::cursorVisibleFlag is set in the flags.
          */
         bool isCursorVisible() const override;
 
         /**
-         * @brief Show or hide the OS cursor.
+         * @brief Set or clear IInputManager::cursorVisibleFlag.
          *
-         * @param visible True to show the cursor, false to hide it
+         * @note Only the flag is changed; the OS cursor is not touched.
+         *
+         * @param visible True to set the flag, false to clear it.
          */
         void setCursorVisible( bool visible ) override;
 
         /**
-         * @brief Set a normalized axis value (processed) for the given axis.
+         * @brief Set the value of an axis.
          *
-         * @param axis Axis index
-         * @param value Processed axis value (typically [-1,1])
+         * The same value is stored as both the processed and the raw value.
+         *
+         * @param axis Axis identifier.
+         * @param value Axis value, typically in [-1, 1]; stored unmodified.
          */
         void setAxisValue( s32 axis, f32 value ) override;
 
         /**
-         * @brief Get the processed axis value for the given axis.
+         * @brief Get the processed value of an axis.
          *
-         * @param axis Axis index
-         * @return f32 Processed axis value
+         * @param axis Axis identifier.
+         * @return Last value set for the axis, or 0 if it was never set.
          */
         f32 getAxisValue( s32 axis ) override;
 
         /**
-         * @brief Get the raw axis value (before processing) for the given
-         *        axis.
+         * @brief Get the raw value of an axis.
          *
-         * @param axis Axis index
-         * @return f32 Raw axis value
+         * @param axis Axis identifier.
+         * @return Last value set for the axis, or 0 if it was never set.
          */
         f32 getAxisValueRaw( s32 axis ) override;
 
         /**
          * @brief Start playback of recorded input events.
+         *
+         * @note Currently a no-op.
          */
         void play() override;
 
         /**
          * @brief Start recording input events.
+         *
+         * @note Currently a no-op.
          */
         void record() override;
 
         /**
          * @brief Stop playback or recording.
+         *
+         * @note Currently a no-op.
          */
         void stop() override;
 
         /**
-         * @brief Get internal manager flags bitfield.
+         * @brief Get the flags bitmask.
          *
-         * @return u32 Flags value
+         * @return Combination of the IInputManager flag constants.
          */
         u32 getFlags() const override;
 
         /**
-         * @brief Set internal manager flags bitfield.
+         * @brief Replace the flags bitmask.
          *
-         * @param flags Flags to set
+         * @note This overwrites all flags, including IInputManager::cursorVisibleFlag.
+         *
+         * @param flags New combination of IInputManager flag constants.
          */
         void setFlags( u32 flags ) override;
 
         WP_CLASS_REGISTER_DECL;
 
     protected:
-        /// Stored input events queued or recorded by the manager.
+        /// Reserved list of input events; not used by this implementation.
         Array<SmartPtr<IInputEvent>> m_inputEvents;
 
-        /// Bitfield of buttons from the previous update (atomic for thread-safety).
+        /// Reserved button bitfield of the previous update; not used by this implementation.
         atomic_u32 m_previousButtons;
-        /// Bitfield of buttons for the current update (atomic for thread-safety).
+        /// Reserved button bitfield of the current update; not used by this implementation.
         atomic_u32 m_currentButtons;
 
-        /// Stored processed axis values keyed by axis identifier.
+        /// Processed axis values keyed by axis identifier.
         Map<s32, f32> m_axisValues;
-        /// Stored raw axis values keyed by axis identifier.
+        /// Raw axis values keyed by axis identifier.
         Map<s32, f32> m_axisValuesRaw;
 
-        /// Internal flags (bitfield) controlling manager behaviour.
+        /// Flags bitmask built from the IInputManager flag constants.
         u32 m_flags = 0;
     };
 }  // namespace workphone

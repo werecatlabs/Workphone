@@ -3,18 +3,24 @@
 
 #include <Workphone/Interface/Input/IMouseState.hpp>
 
+/**
+ * @file MouseState.hpp
+ * @brief Concrete mouse input state holding positions, button/modifier flags, wheel and drag data.
+ */
+
 namespace workphone
 {
     /**
      * @brief Concrete implementation of the IMouseState interface for mouse input state management.
      *
-     * This class provides a full, in-memory representation of the mouse device state used by the
-     * input subsystem. It stores cursor positions (relative and absolute), per-button states,
-     * wheel motion, modifier key states and drag-related metrics. Instances are intended to be
-     * lightweight and are suitable for being passed between input producers and consumers.
+     * This class provides a plain in-memory representation of the mouse state used by the
+     * input subsystem. It stores cursor positions (relative and absolute), movement and wheel
+     * deltas, the drag displacement, a high-level event type, and a single flags bitfield that
+     * holds button, modifier, dragging and double-click state. Instances are lightweight and
+     * are intended to be passed from input producers to consumers.
      *
-     * @note Implementations are not guaranteed to be thread-safe; synchronize externally if accessed
-     *       from multiple threads.
+     * @note Instances are not thread-safe; synchronize externally if accessed from multiple threads.
+     * @note All setters store their value as is; no validation or clamping is performed.
      *
      * @see IMouseState
      */
@@ -24,8 +30,8 @@ namespace workphone
         /**
          * @brief Default constructor.
          *
-         * Initializes all numeric positions to zero, clears all flags (no buttons pressed,
-         * no modifiers, not dragging), and sets the event type to `Event::Count` (no event).
+         * Initializes all vectors to zero, clears all flags (no buttons pressed, no modifiers,
+         * not dragging, no double click), and sets the event type to `Event::Count` (no event).
          */
         MouseState();
 
@@ -37,66 +43,65 @@ namespace workphone
         ~MouseState() override;
 
         /**
-         * @brief Retrieves the mouse movement delta since the last update.
+         * @brief Retrieves the stored mouse movement delta.
          *
-         * The delta represents the change in cursor position and is commonly used for
-         * relative motion (camera rotation, look controls, etc.).
+         * The delta is the change in cursor position as recorded by the input producer, commonly
+         * used for relative motion (camera rotation, look controls, etc.).
          *
-         * @return Movement delta as `Vector2<real_Num>` in the same coordinate space as
-         *         `getRelativePosition()` (typically pixels or UI units).
+         * @return Movement delta in the same coordinate space as `getRelativePosition()`
+         *         (default `(0, 0)`).
          */
         Vector2<real_Num> getDelta() const override;
 
         /**
          * @brief Stores the mouse movement delta.
          *
-         * @param movePosition Delta movement to store (X, Y). Units are the same as returned
-         *                     by `getDelta()` (typically pixels).
+         * @param movePosition Delta movement to store (X, Y), in the same units as `getDelta()`.
          */
         void setDelta( const Vector2<real_Num> &movePosition ) override;
 
         /**
-         * @brief Returns the mouse position relative to the active window or viewport.
+         * @brief Returns the stored mouse position relative to the active window or viewport.
          *
-         * Relative coordinates are typically normalized to the window or viewport. The exact
-         * coordinate space is implementation-dependent; callers should consult the concrete input
-         * provider if required.
+         * The exact coordinate space (pixels or normalized, and its origin) is determined by the
+         * input provider that fills this state; this class does not interpret it.
          *
-         * @return Relative position as `Vector2<real_Num>` (commonly normalized or pixel-based).
+         * @return Relative position (default `(0, 0)`).
          */
         Vector2<real_Num> getRelativePosition() const override;
 
         /**
          * @brief Sets the mouse relative position.
          *
-         * @param position New relative position (X, Y). If normalized, values are expected
-         *                 in the range [0.0, 1.0]; otherwise values are in pixels.
+         * @param position New relative position (X, Y), in whatever coordinate space the input
+         *                 provider uses.
          */
         void setRelativePosition( const Vector2<real_Num> &position ) override;
 
         /**
-         * @brief Returns the absolute mouse position in global/display coordinates.
+         * @brief Returns the stored absolute mouse position in global/display coordinates.
          *
-         * Absolute coordinates typically reference screen or desktop space (pixels).
+         * Absolute coordinates typically reference screen or desktop space (pixels), as supplied
+         * by the input provider.
          *
-         * @return Absolute position as `Vector2<real_Num>` (pixels).
+         * @return Absolute position (default `(0, 0)`).
          */
         Vector2<real_Num> getAbsolutePosition() const override;
 
         /**
          * @brief Sets the absolute mouse position.
          *
-         * @param position Absolute position (X, Y) in pixels.
+         * @param position Absolute position (X, Y), typically in screen pixels.
          */
         void setAbsolutePosition( const Vector2<real_Num> &position ) override;
 
         /**
-         * @brief Retrieves the wheel motion accumulated since the last update.
+         * @brief Retrieves the stored wheel motion.
          *
          * The X component is used for horizontal scrolling (if supported) and the Y component for
-         * vertical scrolling. Positive/negative sign convention is implementation-dependent.
+         * vertical scrolling. The sign convention is defined by the input provider.
          *
-         * @return Wheel delta as `Vector2<real_Num>`.
+         * @return Wheel delta (default `(0, 0)`).
          */
         Vector2<real_Num> getWheelDelta() const override;
 
@@ -108,58 +113,65 @@ namespace workphone
         void setWheelDelta( const Vector2<real_Num> &wheelDelta ) override;
 
         /**
-         * @brief Returns whether the Shift modifier is currently held.
+         * @brief Returns whether the Shift modifier flag (`MOUSE_SHIFT`) is set.
          *
          * @return true if Shift is pressed; false otherwise.
          */
         bool isShiftPressed() const override;
 
         /**
-         * @brief Sets the Shift modifier state.
+         * @brief Sets or clears the Shift modifier flag (`MOUSE_SHIFT`).
          *
          * @param shiftPressed true to mark Shift as pressed; false to mark as released.
          */
         void setShiftPressed( bool shiftPressed ) override;
 
         /**
-         * @brief Returns whether the Control modifier is currently held.
+         * @brief Returns whether the Control modifier flag (`MOUSE_CONTROL`) is set.
          *
          * @return true if Control is pressed; false otherwise.
          */
         bool isControlPressed() const override;
 
         /**
-         * @brief Sets the Control modifier state.
+         * @brief Sets or clears the Control modifier flag (`MOUSE_CONTROL`).
          *
          * @param controlPressed true to mark Control as pressed; false to mark as released.
          */
         void setControlPressed( bool controlPressed ) override;
 
         /**
-         * @brief Tests whether a mouse button identified by `id` is currently pressed.
+         * @brief Tests whether any of the flag bits in `id` is set in the state flags.
          *
-         * Use `IMouseState::MOUSE_LEFT`, `MOUSE_RIGHT`, `MOUSE_MIDDLE` or other defined flags.
+         * Pass an `IMouseState::MOUSE_*` constant such as `MOUSE_LEFT`, `MOUSE_RIGHT` or
+         * `MOUSE_MIDDLE`. The test is a bitwise "any bit" test against the shared flags word, so
+         * the other `MOUSE_*` constants (modifiers, dragging, double click, released) can be
+         * queried the same way, and combining several constants returns true if any is set.
          *
-         * @param id Button identifier to test.
-         * @return true if the requested button is pressed; false otherwise.
+         * @param id Button/flag bit mask to test.
+         * @return true if at least one bit of `id` is set; false otherwise.
          */
         bool isButtonPressed( u32 id ) const override;
 
         /**
-         * @brief Sets the pressed state for a specific mouse button.
+         * @brief Sets or clears the flag bits of a mouse button in the state flags.
          *
-         * @param id      Button identifier (see `IMouseState`).
-         * @param pressed true to mark the button pressed; false to mark released.
+         * @param id      Button/flag bit mask (see the `IMouseState::MOUSE_*` constants); all
+         *                bits in the mask are set or cleared together.
+         * @param pressed true to set the bits (pressed); false to clear them (released).
+         *
+         * @note Setting `MOUSE_LEFT` does not automatically clear `MOUSE_LEFT_RELEASED` or vice
+         *       versa; callers manage both bits.
          */
         void setButtonPressed( u32 id, bool pressed ) override;
 
         /**
-         * @brief Returns the most recent high-level mouse event type.
+         * @brief Returns the high-level mouse event type stored in this state.
          *
          * This value describes the kind of event that produced the current state (click,
          * move, wheel, etc.). `Event::Count` indicates no specific event.
          *
-         * @return Current event type as `Event`.
+         * @return Current event type (default `Event::Count`).
          */
         Event getEventType() const override;
 
@@ -171,69 +183,70 @@ namespace workphone
         void setEventType( Event eventType ) override;
 
         /**
-         * @brief Returns the accumulated drag displacement since the drag started.
+         * @brief Returns the stored drag displacement.
          *
-         * This value represents how far the cursor has moved while a drag operation was active.
+         * This value is set by the input producer and represents how far the cursor has moved
+         * while a drag operation was active; this class does not accumulate it.
          *
-         * @return Drag displacement as `Vector2<real_Num>` (pixels).
+         * @return Drag displacement (default `(0, 0)`).
          */
         Vector2<real_Num> getDragValue() const override;
 
         /**
-         * @brief Sets the accumulated drag displacement.
+         * @brief Sets the drag displacement.
          *
-         * @param dragValue Total displacement to store (X, Y) in pixels.
+         * @param dragValue Total displacement to store (X, Y).
          */
         void setDragValue( const Vector2<real_Num> &dragValue ) override;
 
         /**
-         * @brief Returns whether a drag operation is currently active.
+         * @brief Returns whether the dragging flag (`MOUSE_DRAGGING`) is set.
          *
          * @return true if dragging; false otherwise.
          */
         bool isDragging() const override;
 
         /**
-         * @brief Sets the dragging state.
+         * @brief Sets or clears the dragging flag (`MOUSE_DRAGGING`).
          *
          * @param dragging true to mark dragging active; false to mark it inactive.
          */
         void setDragging( bool dragging ) override;
 
         /**
-         * @brief Returns whether the last click was detected as a double click.
+         * @brief Returns whether the double-click flag (`MOUSE_DOUBLE_CLICK`) is set.
          *
-         * @return true if last click is a double click; false otherwise.
+         * @return true if the click is flagged as a double click; false otherwise.
          */
         bool isDoubleClick() const override;
 
         /**
-         * @brief Marks whether the last click was a double click.
+         * @brief Sets or clears the double-click flag (`MOUSE_DOUBLE_CLICK`).
          *
-         * @param doubleClick true to mark last click as a double click; false otherwise.
+         * @param doubleClick true to flag the click as a double click; false otherwise.
          */
         void setDoubleClick( bool doubleClick ) override;
 
-        /// Class registration declaration for the WorkPhone reflection/registration system.
+        /// Registers the class with the Workphone RTTI/class registration system.
         WP_CLASS_REGISTER_DECL;
 
     protected:
-        /** @brief Accumulated drag displacement since drag began (pixels). */
+        /** @brief Drag displacement as set by setDragValue(). */
         Vector2<real_Num> m_dragValue;
 
-        /** @brief Delta movement since last update (pixels). */
+        /** @brief Movement delta as set by setDelta(). */
         Vector2<real_Num> m_movePosition;
 
-        /** @brief Mouse position relative to the window/viewport (normalized or pixel units). */
+        /** @brief Mouse position relative to the window/viewport, in the provider's coordinate space. */
         Vector2<real_Num> m_relativePosition;
 
-        /** @brief Absolute mouse position in screen/display coordinates (pixels). */
+        /** @brief Absolute mouse position in screen/display coordinates. */
         Vector2<real_Num> m_absolutePosition;
 
         /** @brief Wheel delta (X horizontal, Y vertical). */
         Vector2<real_Num> m_wheelPosition;
 
-        /** @brief Last recorded mouse event type (default: Event::Count = no event). */
+        /** @brief Current mouse event type (default: Event::Count = no event). */
         Event m_eventType = Event::Count;
 
         /**

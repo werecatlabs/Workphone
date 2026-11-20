@@ -16,21 +16,25 @@ namespace workphone
      *
      * KeyboardState implements IKeyboardState and carries information about a
      * key event or snapshot: the character code, logical key code, raw
-     * platform keycode and modifier flags (shift/control). Flags are exposed
-     * via convenience accessors for common modifier and press/hold queries.
+     * platform keycode and a flags bitfield holding the pressed-down state and
+     * the Shift/Control modifiers.
+     *
+     * @note Instances are plain data holders and are not thread-safe.
      */
     class WPCore_API KeyboardState : public IKeyboardState
     {
     public:
-        /// Flag indicating a key is currently held down.
+        /// Bit (1 << 0) of the flags bitfield: the key is held down.
         static const u32 isPressedDownFlag;
-        /// Flag indicating Shift modifier is active.
+        /// Bit (1 << 1) of the flags bitfield: the Shift modifier is active.
         static const u32 isShiftPressedFlag;
-        /// Flag indicating Control modifier is active.
+        /// Bit (1 << 2) of the flags bitfield: the Control modifier is active.
         static const u32 isControlPressedFlag;
 
         /**
          * @brief Construct a new KeyboardState with default values.
+         *
+         * The character code, key codes and flags are all zero (key up, no modifiers).
          */
         KeyboardState();
 
@@ -40,23 +44,25 @@ namespace workphone
         ~KeyboardState() override;
 
         /**
-         * @brief Get the Unicode/character code produced by the key event.
+         * @brief Get the character code produced by the key event.
          *
-         * @return u32 Character code (Unicode code point)
+         * @return u32 Character code as stored by setChar() (default 0)
          */
         u32 getChar() const override;
 
         /**
          * @brief Set the character code for this keyboard state.
          *
-         * @param character Unicode code point produced by the key event
+         * @param character Character code produced by the key event. The value
+         *                  is stored as is; no encoding is enforced.
          */
         void setChar( u32 character ) override;
 
         /**
-         * @brief Get the logical/keymap keycode for this event.
+         * @brief Get the logical (engine keymap) keycode for this event.
          *
-         * @return u32 Logical key code
+         * @return u32 Logical key code (default 0)
+         * @see isPressedDown( u32 )
          */
         u32 getKeyCode() const override;
 
@@ -70,7 +76,7 @@ namespace workphone
         /**
          * @brief Get the raw/platform-specific keycode.
          *
-         * @return u32 Raw keycode provided by the OS or device
+         * @return u32 Raw keycode provided by the OS or device (default 0)
          */
         u32 getRawKeyCode() const override;
 
@@ -82,23 +88,23 @@ namespace workphone
         void setRawKeyCode( u32 rawKeyCode ) override;
 
         /**
-         * @brief Query whether the key is currently held down.
+         * @brief Query whether the key of this state/event is held down.
          *
-         * @return true if the key is pressed down
+         * @return true if the pressed-down flag is set
          */
         bool isPressedDown() const override;
 
         /**
-         * @brief Set the pressed-down flag for this keyboard state.
+         * @brief Set or clear the pressed-down flag for this keyboard state.
          *
-         * @param pressedDown True if key is held down
+         * @param pressedDown True if the key is held down
          */
         void setPressedDown( bool pressedDown ) override;
 
         /**
-         * @brief Query whether Shift modifier is active for this event.
+         * @brief Query whether the Shift modifier is active for this event.
          *
-         * @return true if Shift is pressed
+         * @return true if the Shift flag is set
          */
         bool isShiftPressed() const override;
 
@@ -110,9 +116,9 @@ namespace workphone
         void setShiftPressed( bool shiftPressed ) override;
 
         /**
-         * @brief Query whether Control modifier is active for this event.
+         * @brief Query whether the Control modifier is active for this event.
          *
-         * @return true if Control is pressed
+         * @return true if the Control flag is set
          */
         bool isControlPressed() const override;
 
@@ -126,16 +132,19 @@ namespace workphone
         WP_CLASS_REGISTER_DECL;
 
         /**
-         * @brief Check whether the provided keycode is currently pressed in
-         *        this state.
+         * @brief Check whether a specific key is held down in this state.
          *
-         * This overload allows testing by keycode rather than the stored
-         * key/char values.
+         * Unlike isPressedDown(), this overload also requires that the stored
+         * logical key code matches @p keycode.
+         *
+         * @param keycode Logical key code to test against getKeyCode()
+         * @return true if @p keycode equals the stored key code and the
+         *         pressed-down flag is set
          */
         bool isPressedDown( u32 keycode ) const override;
 
     protected:
-        /// Unicode/character code associated with the key event.
+        /// Character code associated with the key event.
         u32 m_char;
 
         /// Logical key code (engine keymap) for the event.
@@ -144,7 +153,7 @@ namespace workphone
         /// Raw platform-specific keycode.
         u32 m_rawKeyCode;
 
-        /// Flags bitfield storing pressed and modifier states.
+        /// Flags bitfield storing the pressed-down and Shift/Control modifier bits.
         u32 m_flags = 0;
     };
 }  // namespace workphone

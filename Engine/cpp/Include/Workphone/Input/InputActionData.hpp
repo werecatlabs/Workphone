@@ -5,115 +5,109 @@
 
 /**
  * @file InputActionData.hpp
- * @brief Simple container for input action identifiers.
+ * @brief Simple value container for one input binding (primary/secondary input and action id).
  */
 
 namespace workphone
 {
 
     /**
-     * @brief Implementation of IInputAction that stores primary/secondary
-     *        actions and a mapped action id.
+     * @class InputActionData
+     * @brief Plain-data implementation of IInputAction.
      *
-     * This class is used to represent a mapping from one or two input
-     * identifiers (primary, secondary) to a single action identifier used by
-     * the game or application.
+     * Describes the binding of one game action: the action id and up to two inputs that trigger
+     * it. The primary and secondary inputs are stored as numeric values: for keyboard bindings the
+     * hash of the key name (the readable names can additionally be stored with setPrimaryName()
+     * and setSecondaryName()); for joystick bindings the button index. A value of 0 means unset.
+     *
+     * @see GameInputMap
      */
     class InputActionData : public IInputAction
     {
     public:
         /**
-         * @brief Default-construct an empty InputActionData.
+         * @brief Constructs an empty InputActionData (all ids 0, empty names).
          */
         InputActionData();
 
         /**
-         * @brief Construct with initial primary, secondary and action ids.
+         * @brief Constructs with initial primary and secondary inputs and an action id.
          *
-         * @param first Primary action id
-         * @param second Secondary action id
-         * @param actionId Mapped action id
+         * @param first Primary input (key-name hash or joystick button index)
+         * @param second Secondary input (key-name hash or joystick button index)
+         * @param actionId Id of the action triggered by these inputs
          */
         InputActionData( u32 first, u32 second, u32 actionId );
 
         /**
-         * @brief Get the primary action identifier.
-         *
-         * @return hash_type Primary action id
+         * @copydoc IInputAction::getPrimaryAction
          */
         hash_type getPrimaryAction() const override;
 
         /**
-         * @brief Set the primary action identifier.
-         *
-         * @param primary Primary action id
+         * @copydoc IInputAction::setPrimaryAction
+         * @param primary Primary input (key-name hash or joystick button index)
          */
         void setPrimaryAction( hash_type primary ) override;
 
         /**
-         * @brief Get the secondary action identifier.
-         *
-         * @return hash_type Secondary action id
+         * @copydoc IInputAction::getSecondaryAction
          */
         hash_type getSecondaryAction() const override;
 
         /**
-         * @brief Set the secondary action identifier.
-         *
-         * @param secondary Secondary action id
+         * @copydoc IInputAction::setSecondaryAction
+         * @param secondary Secondary input (key-name hash or joystick button index)
          */
         void setSecondaryAction( hash_type secondary ) override;
 
         /**
-         * @brief Get the mapped action id.
-         *
-         * @return hash_type Action id
+         * @copydoc IInputAction::getActionId
          */
         hash_type getActionId() const override;
 
         /**
-         * @brief Set the mapped action id.
-         *
-         * @param actionId Action id to set
+         * @copydoc IInputAction::setActionId
+         * @param actionId Id of the action triggered by the primary/secondary inputs
          */
         void setActionId( hash_type actionId ) override;
 
         /**
-         * @brief Get the stored primary action name (keyboard key text).
-         * @return Primary action name.
+         * @brief Gets the stored primary key name (keyboard bindings).
+         * @return The primary key name; empty if none was set.
          */
         String getPrimaryName() const;
 
         /**
-         * @brief Set the stored primary action name.
-         * @param name Name to store.
+         * @brief Sets the stored primary key name.
+         * @param name Key name to store. This does not update the primary input value.
          */
         void setPrimaryName( const String &name );
 
         /**
-         * @brief Get the stored secondary action name (keyboard key text).
-         * @return Secondary action name.
+         * @brief Gets the stored secondary key name (keyboard bindings).
+         * @return The secondary key name; empty if none was set.
          */
         String getSecondaryName() const;
 
         /**
-         * @brief Set the stored secondary action name.
-         * @param name Name to store.
+         * @brief Sets the stored secondary key name.
+         * @param name Key name to store. This does not update the secondary input value.
          */
         void setSecondaryName( const String &name );
 
         WP_CLASS_REGISTER_DECL;
 
     protected:
-        /// Primary input identifier (hash).
+        /// Primary input (key-name hash or joystick button index); 0 if unset.
         hash_type m_primary = 0;
-        /// Secondary input identifier (hash).
+        /// Secondary input (key-name hash or joystick button index); 0 if unset.
         hash_type m_secondary = 0;
-        /// Mapped action identifier (hash).
+        /// Id of the action triggered by the primary/secondary inputs.
         hash_type m_actionId = 0;
-        /// Optional human-readable primary name (used for keyboard keys).
+        /// Optional readable primary key name (keyboard bindings only).
         String m_primaryName;
-        /// Optional human-readable secondary name (used for keyboard keys).
+        /// Optional readable secondary key name (keyboard bindings only).
         String m_secondaryName;
     };
 }  // namespace workphone
