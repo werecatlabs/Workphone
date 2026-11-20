@@ -1002,6 +1002,7 @@ namespace workphone::render
     void GraphicsPipeline::enableTAA( bool enabled )
     {
         ScopedLock lock( m_mutex );
+
         if( m_taaEnabled != enabled )
         {
             m_renderSettings.reset();

@@ -100,6 +100,7 @@ namespace workphone
             void load( SmartPtr<ISharedObject> data ) override;
             void unload( SmartPtr<ISharedObject> data ) override;
             void update() override;
+
             /** Draw the current native scene and Editor UI without advancing
              * simulation, resource queues, animation or shader reload work.
              * Explicit UI input is still accepted. Call only between native

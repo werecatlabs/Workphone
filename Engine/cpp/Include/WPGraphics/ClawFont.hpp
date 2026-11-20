@@ -198,6 +198,7 @@ namespace workphone
             SmartPtr<ITexture> getRuntimeAtlas() const override;
             std::shared_ptr<const void> retainRuntimeFont() const override;
             std::shared_ptr<StreamBudgetLease> reserveRuntimeFontStorage( u64, String & ) const override;
+            
             bool getRuntimeWhitePixelUV( Vector2F & ) const override;
 
             WP_CLASS_REGISTER_DECL;

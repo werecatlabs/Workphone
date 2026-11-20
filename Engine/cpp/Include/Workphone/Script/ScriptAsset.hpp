@@ -9,8 +9,11 @@ namespace workphone
     {
     public:
         void loadFromFile( const String &path ) override;
+
         void unload( SmartPtr<ISharedObject> data ) override;
+
         SmartPtr<Properties> getProperties() const override;
+        
         WP_CLASS_REGISTER_DECL;
     };
 }  // namespace workphone

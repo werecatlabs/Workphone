@@ -12,12 +12,14 @@
 #include <WorkphoneCore/workphone_memory.h>
 #include <WorkphoneCore/workphone_draw.h>
 #include <WorkphoneCore/workphone_util.h>
+
 extern "C" {
 #include <WorkphoneCore/workphone_utf8.h>
 }
 
 namespace workphone::render
 {
+
     WP_CLASS_REGISTER_DERIVED( workphone::render, ClawFont, Font );
 
     namespace
@@ -183,6 +185,7 @@ namespace workphone::render
             setLoadingState( m_impl && m_impl->runtime ? LoadingState::Loaded : LoadingState::Error );
             return;
         }
+
         try
         {
             setLoadingState( LoadingState::Loading );
