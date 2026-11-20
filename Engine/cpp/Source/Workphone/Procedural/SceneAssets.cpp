@@ -46,6 +46,8 @@ namespace workphone::scene::procedural_scene
         cityFoliageImpostorResolution( other.cityFoliageImpostorResolution ),
         cityBuildingImpostorResolution( other.cityBuildingImpostorResolution ),
         cityStreetDetailCount( other.cityStreetDetailCount ),
+        cityBinPosition( other.cityBinPosition ),
+        cityBinRoadward( other.cityBinRoadward ),
         cityBuildingStyle( other.cityBuildingStyle ),
         cityBuildingMeshes( other.cityBuildingMeshes ),
         cityBuildingModuleCount( other.cityBuildingModuleCount ),
@@ -140,6 +142,8 @@ namespace workphone::scene::procedural_scene
         swap( cityFoliageImpostorResolution, other.cityFoliageImpostorResolution );
         swap( cityBuildingImpostorResolution, other.cityBuildingImpostorResolution );
         swap( cityStreetDetailCount, other.cityStreetDetailCount );
+        swap( cityBinPosition, other.cityBinPosition );
+        swap( cityBinRoadward, other.cityBinRoadward );
         swap( cityBuildingStyle, other.cityBuildingStyle );
         swap( cityBuildingMeshes, other.cityBuildingMeshes );
         swap( cityBuildingModuleCount, other.cityBuildingModuleCount );

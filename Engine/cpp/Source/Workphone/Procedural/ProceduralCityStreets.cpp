@@ -1,10 +1,125 @@
 #include <Workphone/WorkphonePCH.hpp>
+#include <Workphone/Procedural/CityStreetLamp.hpp>
+#include <Workphone/Procedural/CityStreetTimber.hpp>
 #include "Workphone/Procedural/ProceduralSceneInternal.hpp"
 
 namespace workphone::scene::procedural_scene
 {
     namespace scene_build
     {
+        namespace
+        {
+            constexpr u32 streetTimberSeed = 0x54494d42u;
+
+            void litterBin( Geometry &frame, Geometry &hood, Geometry &staves, Vector3F base,
+                            Vector3F along, float radius, float height, bool preview )
+            {
+                const auto across = Vector3F( -along.z, 0, along.x );
+                const auto up = Vector3F::unitY();
+                const int sides = preview ? 8 : 12;
+                std::array<Vector3F, 12> rim;
+                for( int i = 0; i < sides; ++i )
+                {
+                    const float angle = ( i + .5f ) * 2.f * pi / sides;
+                    rim[i] = ( along * std::cos( angle ) + across * std::sin( angle ) ) * radius;
+                }
+                const auto at = [&]( Vector3F radial, float scale, float level ) {
+                    return base + radial * scale + up * ( height * level );
+                };
+                for( int i = 0; i < sides; ++i )
+                {
+                    const auto a = rim[i], b = rim[( i + 1 ) % sides];
+                    const auto normal = ( a + b ).normaliseCopy();
+                    const auto band = [&]( Geometry &g, float r0, float y0, float r1, float y1,
+                                           Vector3F facing ) {
+                        g.quad( at( a, r0, y0 ), at( b, r0, y0 ), at( b, r1, y1 ), at( a, r1, y1 ),
+                                facing );
+                    };
+                    // The inner wall and floor remain visible through the gap beneath the rain hood.
+                    band( frame, .84f, -.02f, .84f, .70f, normal );
+                    band( frame, .94f, .68f, .94f, .72f, normal );
+                    band( frame, .94f, .72f, .73f, .72f, up );
+                    band( frame, .73f, .72f, .73f, .48f, -normal );
+                    const auto edge = b - a;
+                    const auto left = ( a + edge * .10f ) * .90f, right = ( b - edge * .10f ) * .90f;
+                    const auto leftReturn = ( a + edge * .068f ) * .84f;
+                    const auto rightReturn = ( b - edge * .068f ) * .84f;
+                    const float phase = float( ( i * 7 ) % 16 ) / 32.f;
+                    const float start = i % 2 ? phase + .48f : phase, span = i % 2 ? -.48f : .48f;
+                    const auto strip = [&]( Vector3F from, Vector3F to, float v0, float v1 ) {
+                        staves.quad( at( from, 1, .07f ), at( from, 1, .68f ), at( to, 1, .68f ),
+                                     at( to, 1, .07f ), up.crossProduct( to - from ).normaliseCopy(),
+                                     0, 1, start + v0 * span, start + v1 * span );
+                    };
+                    strip( leftReturn, left, 0, .055f );
+                    strip( left, right, .055f, .945f );
+                    strip( right, rightReturn, .945f, 1 );
+                    band( hood, 1.f, .91f, 1.f, .94f, normal );
+                    const float run = .64f * ( ( a + b ) * .5f ).length();
+                    band( hood, 1.f, .94f, .36f, 1.f,
+                          ( normal * ( height * .06f ) + up * run ).normaliseCopy() );
+                }
+                // Pair opposite chords to close each disc without a degenerate fan at its centre.
+                const auto disc = [&]( Geometry &g, float scale, float level, Vector3F normal ) {
+                    for( int i = 0; i + 1 < sides / 2; ++i )
+                    {
+                        g.quad( at( rim[i], scale, level ), at( rim[i + 1], scale, level ),
+                                at( rim[sides - i - 2], scale, level ),
+                                at( rim[sides - i - 1], scale, level ), normal );
+                    }
+                };
+                disc( frame, .73f, .48f, up );
+                disc( hood, 1.f, .91f, -up );
+                disc( hood, .36f, 1.f, up );
+                for( const float sign : { -1.f, 1.f } )
+                {
+                    const auto post = base + along * ( sign * .78f * radius );
+                    frame.beam( post + up * ( height * .70f ), post + up * ( height * .92f ), .017f );
+                }
+            }
+        }
+
+        SmartPtr<render::IMaterial> streetLampLensMaterial( SceneAssets &assets )
+        {
+            TextureBuffer colour( 128, 64 );
+            for( u32 y = 0; y < colour.height; ++y )
+            {
+                const float v = ( y + .5f ) / colour.height;
+                for( u32 x = 0; x < colour.width; ++x )
+                {
+                    const float u = ( x + .5f ) / colour.width;
+                    // Four by two reflector cups sit behind one clear cover. Each cup has
+                    // eight sloping facets surrounding a small phosphor emitter.
+                    const float column = std::clamp( std::round( ( u - .17f ) / .22f ), 0.f, 3.f );
+                    const float dx = ( u - ( .17f + .22f * column ) ) / .093f;
+                    const float dy = ( v - ( v < .5f ? .30f : .70f ) ) / .178f;
+                    const float radial = std::max( { std::abs( dx ), std::abs( dy ),
+                                                     ( std::abs( dx ) + std::abs( dy ) ) * .7071f } );
+                    const float edge = std::min( { 2.f * u, 2.f * ( 1.f - u ), v, 1.f - v } );
+                    const float gasket = std::clamp( ( .058f - edge ) * 28.f, 0.f, 1.f );
+                    float silver = 173.f + 9.f * v - 55.f * gasket;
+                    if( radial < 1 )
+                    {
+                        const float facet = std::round( ( .67f * dx - .38f * dy ) /
+                                                        std::max( .15f, radial ) * 3.f ) / 3.f;
+                        silver = radial > .84f ? 130.f + 10.f * facet : 206.f + 23.f * facet;
+                    }
+                    const bool emitter = std::abs( dx ) < .22f && std::abs( dy ) < .22f;
+                    auto *pixel = colour.pixel( x, y );
+                    pixel[0] = emitter ? 231 : u8( silver );
+                    pixel[1] = emitter ? 223 : u8( silver + 2 );
+                    pixel[2] = emitter ? 192 : u8( silver + 3 );
+                    pixel[3] = 255;
+                }
+            }
+            auto surface = material( assets, ColourF::White, .34f );
+            surface->setTexture( upload( assets, colour ), 0 );
+            surface->setUVProjection( 0 );
+            surface->setEditorUInt( "uvFilter", 3 );
+            surface->setEditorFloat( "uvAniso", 8.f );
+            return surface;
+        }
+
         void buildCityStreetDressing( SceneAssets &assets, const OpenCityLayout &city,
                                       VehicleAppearanceQuality quality )
         {
@@ -185,9 +300,7 @@ namespace workphone::scene::procedural_scene
                 const float span = xFace ? lot.depth : lot.width;
                 const auto p = Vector3F( lot.x, .15f, lot.z ) + normal * ( half + 1.1f ) -
                                tangent * ( span * .35f );
-                metal.box( p + Vector3F( 0, .45f, 0 ), { .42f, .9f, .42f } );
-                metal.box( p + Vector3F( 0, .93f, 0 ), { .47f, .06f, .47f } );
-                axisBox( dark, p + Vector3F( 0, .75f, 0 ) + normal * .214f, .26f, .10f, .005f, xFace );
+                litterBin( dark, metal, wood, p, tangent, .24f, .96f, preview );
                 staticBox( assets, "City waste bin", p + Vector3F( 0, .48f, 0 ), { .48f, .96f, .48f } );
             }
             const auto street = OpenCityStreetDetails::generate( city, 0, false );
@@ -257,7 +370,10 @@ namespace workphone::scene::procedural_scene
                   material( assets, { .49f, .48f, .42f, 1 }, .9f ) );
             mesh( assets, "City bench frames bins and utility covers", metal,
                   material( assets, { .12f, .15f, .16f, 1 }, .62f, .55f ) );
-            mesh( assets, "City bench timber", wood, material( assets, { .36f, .21f, .10f, 1 }, .8f ) );
+            if( !wood.indices.empty() )
+            {
+                mesh( assets, "City bench timber", wood, cityStreetTimber::finish( assets, streetTimberSeed ) );
+            }
             mesh( assets, "City paving joints and planter soil", dark,
                   material( assets, { .12f, .14f, .11f, 1 }, 1 ) );
             mesh( assets, "City concrete paving joints", joints,
@@ -338,6 +454,7 @@ namespace workphone::scene::procedural_scene
                                              SourceBudgetVector<CityStreetFixture> &installed )
         {
             assets.cityStreetDetailCount = 0;
+            assets.cityBinPosition = assets.cityBinRoadward = Vector3F::zero();
             const int detail = std::clamp( assets.cityStreetDetail, 0, 100 );
             const int density = std::clamp( assets.cityStreetPropDensity, 0, 200 );
             if( detail == 0 || density == 0 || walks.indices.empty() )
@@ -598,25 +715,18 @@ namespace workphone::scene::procedural_scene
                     }
                     break;
                 case CityStreetFixture::Bin:
-                    box( metal, 0, .33f, 0, .37f, .72f, .37f );
-                    box( metal, 0, .79f, 0, .51f, .09f, .51f );
-                    box( metal, 0, .71f, .13f, .41f, .18f, .22f );
-                    for( int slat = -2; slat <= 2; ++slat )
+                    if( assets.cityBinRoadward.lengthSquared() == 0 )
                     {
-                        for( float side : { -.20f, .20f } )
-                        {
-                            box( timber, slat * .077f, .33f, side, .056f, .61f, .036f );
-                            box( timber, side, .33f, slat * .077f, .036f, .61f, .056f );
-                        }
+                        // Admission order is nearest first, independent of the bin's tessellation.
+                        assets.cityBinPosition = site.position;
+                        assets.cityBinRoadward = -site.outward;
                     }
+                    litterBin( metal, enamel, timber, site.position, site.along, .26f, .84f,
+                               quality == VehicleAppearanceQuality::Preview );
                     break;
                 case CityStreetFixture::Lamp:
                     box( stone, 0, .035f, 0, .44f, .13f, .44f );
-                    metal.beam( point( 0, .07f, 0 ), point( 0, .54f, 0 ), .082f );
-                    metal.beam( point( 0, .53f, 0 ), point( 0, 3.43f, 0 ), .044f );
-                    metal.beam( point( 0, 3.43f, 0 ), point( 0, 3.66f, -.52f ), .036f );
-                    box( metal, 0, 3.67f, -.55f, .28f, .10f, .50f );
-                    box( lenses, 0, 3.61f, -.55f, .24f, .035f, .42f );
+                    cityStreetLamp::build( enamel, metal, lenses, point( 0, .10f, 0 ), -site.outward, true );
                     break;
                 case CityStreetFixture::CycleRack:
                     for( float u : { -.58f, 0.f, .58f } )
@@ -650,10 +760,18 @@ namespace workphone::scene::procedural_scene
                 }
             };
             publish( "metal frames", metal, { .13f, .17f, .16f, 1 }, .66f, .5f );
-            publish( "timber slats", timber, { .48f, .28f, .13f, 1 }, .85f );
+            if( !timber.indices.empty() )
+            {
+                mesh( assets, "Terrain city street detail timber slats", timber,
+                      cityStreetTimber::finish( assets, streetTimberSeed ) );
+            }
             publish( "stone planters and plinths", stone, { .67f, .63f, .53f, 1 }, .88f );
             publish( "ornamental grasses", planting, { .31f, .43f, .16f, 1 }, .93f );
-            publish( "pedestrian lamp lenses", lenses, { .86f, .83f, .72f, 1 }, .38f );
+            if( !lenses.indices.empty() )
+            {
+                mesh( assets, "Terrain city street detail pedestrian lamp lenses", lenses,
+                      streetLampLensMaterial( assets ) );
+            }
             publish( "utility enamel", enamel, { .27f, .37f, .34f, 1 }, .62f, .35f );
             assets.cityStreetDetailCount = static_cast<u32>( admitted.size() );
             installed.swap( admitted );
@@ -661,7 +779,7 @@ namespace workphone::scene::procedural_scene
 
         void buildNaturalCityStreets( SceneAssets &assets, const OpenCityLayout &city, Geometry &asphalt,
                                       Geometry &pavement, Geometry &markings, Geometry &streetMetal,
-                                      Geometry &lampGlass, VehicleAppearanceQuality quality )
+                                      Geometry &lampSteel, Geometry &lampGlass, VehicleAppearanceQuality quality )
         {
             const auto &network = city.roads;
             if( network.nodes.empty() || network.edges.empty() || network.nodes.size() > 160 ||
@@ -883,12 +1001,8 @@ namespace workphone::scene::procedural_scene
                     {
                         continue;
                     }
-                    const auto base = centre + Vector3F( 0, .15f, 0 ),
-                               top = base + Vector3F( 0, 6.2f, 0 );
-                    const auto arm = across * ( -side * 1.1f ) + Vector3F( 0, -.15f, 0 );
-                    streetMetal.beam( base, top, .055f );
-                    streetMetal.beam( top, top + arm, .045f );
-                    lampGlass.box( top + arm, { .5f, .1f, .5f } );
+                    const auto base = centre + Vector3F( 0, .15f, 0 );
+                    cityStreetLamp::build( lampSteel, streetMetal, lampGlass, base, across * float( -side ) );
                     staticBox( assets, "City lamp post", base + Vector3F( 0, 3.1f, 0 ),
                                { .12f, 6.2f, .12f } );
                     ++lampCount;

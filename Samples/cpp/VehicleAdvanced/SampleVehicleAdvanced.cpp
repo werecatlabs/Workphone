@@ -620,7 +620,7 @@ namespace workphone
         constexpr const char *utilityCoverActor = "Terrain city carriageway cast iron covers";
         constexpr const char *utilityGrateActor = "Terrain city cast iron storm grates";
 
-        bool utilityNativeReady( const advanced::SceneAssets &assets, const char *name )
+        bool cityMeshNativeReady( const advanced::SceneAssets &assets, const char *name )
         {
             for( const auto &actor : assets.actors )
             {
@@ -3526,6 +3526,35 @@ namespace workphone
                                  << "],\"target\":[" << m_cityParkTarget.x << ',' << m_cityParkTarget.y << ','
                                  << m_cityParkTarget.z << "]}";
                     }
+                    if( m_captureView == "street-lamp" || m_captureView == "street-bin" )
+                    {
+                        const auto eye = m_cameraActor->getWorldTransform().getPosition();
+                        const bool bin = m_captureView == "street-bin";
+                        const bool ready = bin ? cityMeshNativeReady( m_assets, "Terrain city street detail timber slats" ) &&
+                                                 cityMeshNativeReady( m_assets, "Terrain city street detail utility enamel" ) &&
+                                                 cityMeshNativeReady( m_assets, "Terrain city street detail metal frames" ) :
+                                                 cityMeshNativeReady( m_assets, "City lamp lenses" );
+                        const bool selected = bin ? m_assets.cityBinRoadward.lengthSquared() > .99f : !m_cityLampRoadId.empty();
+                        const bool valid = ready && selected && ( eye - m_cityFixtureEye ).lengthSquared() < .0001f;
+                        cityValid = cityValid && valid;
+                        const auto vector = [&]( Vector3F p ) { evidence << '[' << p.x << ',' << p.y << ',' << p.z << ']'; };
+                        if( bin )
+                        {
+                            evidence << ",\n  \"cityStreetBinCamera\":{\"valid\":" << ( valid ? "true" : "false" )
+                                     << ",\"meshesReady\":" << ( ready ? "true" : "false" ) << ",\"base\":";
+                            vector( m_assets.cityBinPosition );
+                        }
+                        else
+                        {
+                            evidence << ",\n  \"cityStreetLampCamera\":{\"valid\":" << ( valid ? "true" : "false" )
+                                     << ",\"lensMeshReady\":" << ( ready ? "true" : "false" )
+                                     << ",\"roadId\":" << advanced::jsonString( m_cityLampRoadId ) << ",\"foundation\":";
+                            vector( m_cityLampFoundation );
+                        }
+                        evidence << ",\"eye\":"; vector( eye );
+                        evidence << ",\"target\":"; vector( m_cityFixtureTarget );
+                        evidence << '}';
+                    }
                     if( m_captureView == "utilities" )
                     {
                         const auto eye = m_cameraActor->getWorldTransform().getPosition();
@@ -3535,8 +3564,8 @@ namespace workphone
                         const bool present = m_cityUtilityCovers > 0 && m_assets.roadAuthoring->getRuntimeSurface(
                             m_cityUtilityPrimary.x, m_cityUtilityPrimary.z, roadHeight, driveable ) && driveable &&
                             std::abs( m_cityUtilityPrimary.y - roadHeight ) < .065f;
-                        const bool coverReady = utilityNativeReady( m_assets, utilityCoverActor );
-                        const bool grateReady = m_cityUtilityHasGrate && utilityNativeReady( m_assets, utilityGrateActor );
+                        const bool coverReady = cityMeshNativeReady( m_assets, utilityCoverActor );
+                        const bool grateReady = m_cityUtilityHasGrate && cityMeshNativeReady( m_assets, utilityGrateActor );
                         const bool valid = present && coverReady && ( !m_cityUtilityHasGrate || grateReady ) &&
                             ( eye - m_cityUtilityEye ).lengthSquared() < .0001f;
                         cityValid = cityValid && valid;
@@ -5968,6 +5997,65 @@ namespace workphone
                 m_cityFrontageTarget.y += .97f;
             }
             selectFacade( layout );
+            if( m_captureView == "street-lamp" )
+            {
+                // The installed foundation identifies the primary lamp across detail levels
+                // and changes to the batched render geometry.
+                float nearestLamp = std::numeric_limits<float>::infinity();
+                for( const auto &actor : m_assets.actors )
+                {
+                    if( !actor || actor->getName() != "Trackside collision: City lamp foundation" ) continue;
+                    const auto centre = actor->getPosition();
+                    const float radiusSq = centre.x * centre.x + centre.z * centre.z;
+                    if( radiusSq >= nearestLamp ) continue;
+                    nearestLamp = radiusSq;
+                    m_cityLampFoundation = centre;
+                }
+                if( !std::isfinite( nearestLamp ) ) throw std::runtime_error( "Street lamp view requires a fitted lamp." );
+                float nearestSegment = std::numeric_limits<float>::infinity();
+                Vector3F roadward{};
+                m_cityLampRoadId.clear();
+                for( const auto &road : bake.roads )
+                {
+                    for( size_t i = 1; i < road.points.size(); ++i )
+                    {
+                        const auto start = road.points[i - 1].position;
+                        auto axis = road.points[i].position - start;
+                        auto offset = m_cityLampFoundation - start;
+                        axis.y = offset.y = 0;
+                        const float lengthSq = axis.lengthSquared();
+                        if( lengthSq < .0001f ) continue;
+                        const auto toRoad = axis * std::clamp( offset.dotProduct( axis ) / lengthSq, 0.f, 1.f ) - offset;
+                        const float distanceSq = toRoad.lengthSquared();
+                        if( distanceSq >= nearestSegment || distanceSq < .0001f ) continue;
+                        nearestSegment = distanceSq;
+                        roadward = toRoad;
+                        m_cityLampRoadId = road.roadId.c_str();
+                    }
+                }
+                if( m_cityLampRoadId.empty() ) throw std::runtime_error( "Street lamp view requires an adjacent road." );
+                roadward.normalise();
+                const Vector3F along( -roadward.z, 0, roadward.x );
+                m_cityFixtureEye = m_cityLampFoundation + along * 9.4f + roadward * .65f;
+                m_cityFixtureTarget = m_cityLampFoundation + roadward * .48f + Vector3F( 0, 3.08f, 0 );
+            }
+            if( m_captureView == "street-bin" )
+            {
+                const auto roadward = m_assets.cityBinRoadward;
+                if( roadward.lengthSquared() < .99f )
+                    throw std::runtime_error( "Street bin view requires an admitted pavement bin." );
+                const Vector3F along( -roadward.z, 0, roadward.x );
+                m_cityFixtureEye = m_assets.cityBinPosition + roadward * 1.18f + along * 2.16f;
+                m_cityFixtureTarget = m_assets.cityBinPosition + Vector3F( 0, .44f, 0 );
+            }
+            if( m_captureView == "street-lamp" || m_captureView == "street-bin" )
+            {
+                const auto terrain = m_assets.roadAuthoring->getTerrainSnapshot();
+                if( !terrain || !render::sampleTerrainHeight( *terrain, m_assets.roadAuthoring->getTerrainPlacement(),
+                                                              m_cityFixtureEye, m_cityFixtureEye.y ) )
+                    throw std::runtime_error( "Street fixture view requires a supported camera position." );
+                m_cityFixtureEye.y += m_captureView == "street-bin" ? 1.50f : 1.86f;
+            }
             if( m_captureView == "hillside" )
             {
                 const auto view = cityHillsideInspectionView( m_assets );
@@ -6468,6 +6556,11 @@ namespace workphone
                         m_cameraActor->setPosition( m_cityParkEye );
                         m_cameraActor->lookAt( m_cityParkTarget, Vector3F::unitY() );
                     }
+                    else if( m_captureView == "street-lamp" || m_captureView == "street-bin" )
+                    {
+                        m_cameraActor->setPosition( m_cityFixtureEye );
+                        m_cameraActor->lookAt( m_cityFixtureTarget, Vector3F::unitY() );
+                    }
                     else if( m_captureView == "utilities" )
                     {
                         m_cameraActor->setPosition( m_cityUtilityEye );
@@ -6700,7 +6793,7 @@ int main( int argc, char **argv )
                    "  --track-smoke-test            Drive one full lap through the physics controller\n"
                    "  --collision-smoke-test        Verify native boxes; circuit garage impact or city road/sidewalk grades\n"
                    "  --validate-circuit           Validate 100 generated closed circuits\n"
-                   "  --capture PATH.bmp --view follow|car|track|corner|junction|hillside|street|boulevard|traffic|frontage|facade|building|utilities|road-profile|park|shopfront|entry-route|rooftop|pitched-roof   Save a rendered view and "
+                   "  --capture PATH.bmp --view follow|car|track|corner|junction|hillside|street|boulevard|traffic|frontage|facade|building|street-lamp|street-bin|utilities|road-profile|park|shopfront|entry-route|rooftop|pitched-roof   Save a rendered view and "
                    "exit\n"
                    "  --view imposter-front|imposter-diagonal|imposter-back|imposter-high  Same city patch from four angles, with exported sprite sheet\n"
                    "  --no-hud --force-lod auto|0|1  Clean captures and tree LOD comparisons\n"
@@ -6735,6 +6828,8 @@ int main( int argc, char **argv )
                    "  --city-building-mesh ROLE PATH  Replace a wall, window, entrance, corner or roof module (repeatable)\n"
                    "  --view street|boulevard       Opposite street-level city inspections; track is the overview\n"
                    "  --view frontage               Close sidewalk inspection (requires --city-terrain-roads)\n"
+                   "  --view street-lamp            Pavement-height inspection of a fitted roadway lamp\n"
+                   "  --view street-bin             Close inspection of an installed pavement litter bin\n"
                    "  --view utilities              Close inspection of a fitted carriageway cover and nearby grate\n"
                    "  --view road-profile           Low view across a fitted road and both pavements\n"
                    "  --view traffic                Fixed view of simulated vehicles on a terrain city road\n"
@@ -7125,7 +7220,7 @@ int main( int argc, char **argv )
         }
         if( captureView != "follow" && captureView != "car" && captureView != "track" &&
             captureView != "corner" && captureView != "junction" && captureView != "hillside" && captureView != "verge" && captureView != "street" && captureView != "boulevard" && captureView != "traffic" &&
-            captureView != "frontage" && captureView != "facade" && captureView != "building" && captureView != "utilities" && captureView != "road-profile" && captureView != "park" && captureView != "shopfront" && captureView != "entry-route" && captureView != "rooftop" && captureView != "pitched-roof" &&
+            captureView != "frontage" && captureView != "facade" && captureView != "building" && captureView != "street-lamp" && captureView != "street-bin" && captureView != "utilities" && captureView != "road-profile" && captureView != "park" && captureView != "shopfront" && captureView != "entry-route" && captureView != "rooftop" && captureView != "pitched-roof" &&
             !isRoadTerrainEditView( captureView ) && !isCityImposterView( captureView ) )
             throw std::runtime_error( "Unknown capture view; use --help for scene and directional imposter review views." );
         if( isCityImposterView( captureView ) && ( !openCity || roadAuthoringShowcase || !cityStreaming ||
@@ -7144,6 +7239,10 @@ int main( int argc, char **argv )
             throw std::runtime_error( "--city-terrain-relief requires --city-terrain-roads." );
         if( captureView == "frontage" && !cityTerrainRoads )
             throw std::runtime_error( "--view frontage requires --city-terrain-roads." );
+        if( captureView == "street-lamp" && ( !cityTerrainRoads || orbit ) )
+            throw std::runtime_error( "--view street-lamp requires --city-terrain-roads and a fixed camera." );
+        if( captureView == "street-bin" && ( !cityTerrainRoads || orbit || cityStreetDetail == 0 || cityStreetPropDensity == 0 ) )
+            throw std::runtime_error( "--view street-bin requires a fixed terrain-city camera and street furniture." );
         if( captureView == "utilities" && ( !cityTerrainRoads || orbit ) )
             throw std::runtime_error( "--view utilities requires --city-terrain-roads and a fixed camera." );
         if( captureView == "road-profile" && ( !cityTerrainRoads || orbit ) )

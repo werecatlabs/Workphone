@@ -12,7 +12,7 @@ param(
     [ValidatePattern('^\d+x\d+$')][string]$Resolution = '1280x720',
     [ValidateSet('auto', 'none', 'msaa2', 'msaa4')][string]$SceneAA = 'auto',
     [ValidateRange(0.1, 3600)][double]$Seconds = 10,
-    [ValidateSet('follow', 'car', 'track', 'corner', 'junction', 'hillside', 'verge', 'street', 'boulevard', 'traffic', 'frontage', 'facade', 'building', 'utilities', 'road-profile', 'park', 'shopfront', 'entry-route', 'rooftop', 'pitched-roof', 'road-edit-before', 'road-edit-after', 'imposter-front', 'imposter-diagonal', 'imposter-back', 'imposter-high')][string[]]$Views = @('car', 'track', 'corner', 'follow'),
+    [ValidateSet('follow', 'car', 'track', 'corner', 'junction', 'hillside', 'verge', 'street', 'boulevard', 'traffic', 'frontage', 'facade', 'building', 'street-lamp', 'street-bin', 'utilities', 'road-profile', 'park', 'shopfront', 'entry-route', 'rooftop', 'pitched-roof', 'road-edit-before', 'road-edit-after', 'imposter-front', 'imposter-diagonal', 'imposter-back', 'imposter-high')][string[]]$Views = @('car', 'track', 'corner', 'follow'),
     [string]$Replay,
     [switch]$NoEffects,
     [switch]$FoliageWorld,
@@ -59,6 +59,10 @@ if ($Views -contains 'traffic' -and (!$CityTerrainRoads -or $CityTrafficDensity 
 }
 if (($CityDebugBlocks -or $CityDebugLots) -and !$CityTerrainRoads) { throw 'City debug overlay capture requires -CityTerrainRoads.' }
 if ($Views -contains 'frontage' -and !$CityTerrainRoads) { throw '-Views frontage requires -CityTerrainRoads.' }
+if ($Views -contains 'street-lamp' -and !$CityTerrainRoads) { throw '-Views street-lamp requires -CityTerrainRoads.' }
+if ($Views -contains 'street-bin' -and (!$CityTerrainRoads -or $CityStreetDetail -eq 0 -or $CityStreetPropDensity -eq 0)) {
+    throw '-Views street-bin requires -CityTerrainRoads and nonzero street detail and prop density.'
+}
 if ($Views -contains 'utilities' -and !$CityTerrainRoads) { throw '-Views utilities requires -CityTerrainRoads.' }
 if ($Views -contains 'road-profile' -and !$CityTerrainRoads) { throw '-Views road-profile requires -CityTerrainRoads.' }
 if ($Views -contains 'park' -and !$CityTerrainRoads) { throw '-Views park requires -CityTerrainRoads.' }
@@ -378,6 +382,17 @@ try {
                 $debug = $run.evidence.terrainCity
                 $run.passed = $run.passed -and $null -ne $debug -and $debug.cityDebugValid -eq $true -and
                     $debug.cityDebugBlocks -eq [bool]$CityDebugBlocks -and $debug.cityDebugLots -eq [bool]$CityDebugLots
+            }
+            if ($view -eq 'street-lamp') {
+                $lamp = $run.evidence.cityStreetLampCamera
+                $run.passed = $run.passed -and $lamp.valid -eq $true -and $lamp.lensMeshReady -eq $true -and
+                    [bool]$lamp.roadId -and @($lamp.foundation).Count -eq 3 -and
+                    @($lamp.eye).Count -eq 3 -and @($lamp.target).Count -eq 3
+            }
+            if ($view -eq 'street-bin') {
+                $bin = $run.evidence.cityStreetBinCamera
+                $run.passed = $run.passed -and $bin.valid -eq $true -and $bin.meshesReady -eq $true -and
+                    @($bin.base).Count -eq 3 -and @($bin.eye).Count -eq 3 -and @($bin.target).Count -eq 3
             }
             if ($view -eq 'utilities') {
                 $utility = $run.evidence.cityUtilitiesCamera
