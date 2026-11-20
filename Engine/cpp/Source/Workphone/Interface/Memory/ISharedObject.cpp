@@ -439,16 +439,19 @@ namespace workphone
         }
     }
 
-    ISharedObject::ScopedLoadLock::ScopedLoadLock( ISharedObject *object ) : m_object( object )
+    ISharedObject::ScopedLoadLock::ScopedLoadLock( ISharedObject *object, bool block ) : m_object( object )
     {
         if( m_object )
         {
-            u32 count = 0u;
-            const u32 maxRetries = 100000u;
-
-            while( m_object->isLoadLocked() && count++ < maxRetries )
+            if( block )
             {
-                Thread::yield();
+                u32 count = 0u;
+                const u32 maxRetries = 100000u;
+
+                while( m_object->isLoadLocked() && count++ < maxRetries )
+                {
+                    Thread::yield();
+                }
             }
 
             m_object->lockLoad();

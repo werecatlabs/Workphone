@@ -67,7 +67,7 @@ namespace workphone
              * @brief Acquire the load lock on @p object.
              * @param object Object whose load-lock count should be incremented. May be null.
              */
-            explicit ScopedLoadLock( ISharedObject *object );
+            explicit ScopedLoadLock( ISharedObject *object, bool block = false );
 
             /**
              * @brief Release the load lock acquired in the constructor.
