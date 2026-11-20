@@ -180,6 +180,7 @@ namespace procedural_buffers_budget_contracts
 
         budget.restore();
         SceneAssets assets;assets.openCity=true;assets.cityBlocks=10;assets.triangles=93;
+        assets.cityBinPosition={7, .25f, 12};assets.cityBinRoadward={0, 0, -1};
         assets.vehicleMaterials.reserve(11);assets.materials.reserve(13);assets.textures.reserve(17);
         assets.meshes.reserve(19);assets.actors.reserve(23);assets.treeLODs.reserve(29);
         assets.circuit.samples.reserve(31);assets.circuit.length=51;
@@ -199,6 +200,7 @@ namespace procedural_buffers_budget_contracts
         }
         budget.set(beforeCopy+inventoriesCost);previous=assets;
         require(previous.openCity && previous.triangles==93 && previous.textures.capacity()==17 && previous.treeLODs.capacity()==29 &&
+                previous.cityBinPosition==assets.cityBinPosition && previous.cityBinRoadward==assets.cityBinRoadward &&
                 previous.vehicle.appearance.textures.bodyLivery.data()!=assets.vehicle.appearance.textures.bodyLivery.data(),
                 "complete scene copy preserves independent inventories, metadata and pixel owners");
         budget.set(budget.used());const auto beforeRetire=sourceBudgetDenialCount();

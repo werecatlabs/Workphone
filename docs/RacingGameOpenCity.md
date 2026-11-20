@@ -119,7 +119,9 @@ simple glazing ribbons. Existing LODSystem selection and hysteresis manage the
 patches. City boundaries remain inside the shared ground collision plane.
 
 Street lamps and bollards use bounded deterministic placement with road and
-junction clearance. Lamps have pole collision proxies; bollards are decorative
+junction clearance. Each roadway lamp curves out over its carriageway with a
+downward-facing lens. Pavement litter bins have an open liner beneath a rain hood.
+Lamps have pole collision proxies; bollards are decorative
 in this tier. With foliage enabled, the existing foliage world distributes its
 bounded tree candidates across park parcels at the 16 cm turf surface, rather
 than sampling only the first portion of the lot array.
@@ -332,6 +334,10 @@ fixtures. Press **Generate** to preview the new setting. Native captures accept
 Use `--view frontage` or `-Views frontage` for a pavement-height look along a
 roundabout approach. The camera uses the road geometry, so density changes
 can be compared from the same spot.
+Use `-Views street-lamp` to inspect a roadway lamp from pavement height. The
+capture records its foundation, adjacent road, camera position and target so
+the same installation can be compared across builds.
+Use `-Views street-bin` for a close view of the nearest litter bin installed on a fitted pavement.
 
 `CityRoadSplineSource` retains strict version-1 compatibility and the
 [hand-editable example](examples/city-road-source-v1.cityroads.json). Version 2 adds

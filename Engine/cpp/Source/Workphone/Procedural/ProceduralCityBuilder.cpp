@@ -4,6 +4,8 @@
 #include <Workphone/Procedural/CityRoadFootprintDistance.hpp>
 #include <Workphone/Procedural/CityBuildingWindowKit.hpp>
 #include <Workphone/Procedural/CityMansardProfile.hpp>
+#include <Workphone/Procedural/CityStreetLamp.hpp>
+#include <Workphone/Procedural/CityStreetTimber.hpp>
 #include "Workphone/Procedural/ProceduralSceneInternal.hpp"
 
 namespace workphone::scene::procedural_scene
@@ -104,7 +106,7 @@ namespace workphone::scene::procedural_scene
                     cityAsphalt->setEditorFloat( "uvTriplanarScale", 1.f / 8.f );
                 }
             }
-            Geometry asphalt, pavement, markings, parks, courtyards, streetMetal, lampGlass;
+            Geometry asphalt, pavement, markings, parks, courtyards, streetMetal, lampSteel, lampGlass;
             SourceBudgetVector<Vector3F> terrainStreetLamps;
             SourceBudgetVector<cityGroundContact::Entry> buildingEntries;
             SourceBudgetVector<cityEntranceWayfinding::Mount> entranceSigns;
@@ -217,7 +219,11 @@ namespace workphone::scene::procedural_scene
                                     size - Vector3F( 0, covered ? .15f : 0, 0 ) );
                     staticBox( assets, "City terrain foundation", centre, size );
                 }
-                SourceBudgetVector<Vector3F> lampCandidates;
+                struct LampCandidate
+                {
+                    Vector3F position, roadward;
+                };
+                SourceBudgetVector<LampCandidate> lampCandidates;
                 const auto &source = assets.roadAuthoring->getSource();
                 const auto &bake = assets.roadAuthoring->getBake();
                 for( size_t road = 0; road < bake.roads.size(); ++road )
@@ -280,7 +286,7 @@ namespace workphone::scene::procedural_scene
                                         assets.roadAuthoring->getTerrainPlacement(), point, height ) )
                                 {
                                     point.y = height;
-                                    lampCandidates.push_back( point );
+                                    lampCandidates.push_back( { point, across * float( -side ) } );
                                 }
                             }
                         }
@@ -288,24 +294,21 @@ namespace workphone::scene::procedural_scene
                 }
                 std::sort( lampCandidates.begin(), lampCandidates.end(),
                            []( const auto &a, const auto &b ) {
-                               return a.lengthSquared() < b.lengthSquared();
+                               return a.position.lengthSquared() < b.position.lengthSquared();
                            } );
                 for( size_t i = 0;
                      i < std::min<size_t>( lampCandidates.size(),
                                            quality == VehicleAppearanceQuality::Preview ? 24 : 64 );
                      ++i )
                 {
-                    const auto ground = lampCandidates[i], base = ground + Vector3F( 0, .15f, 0 ),
-                               top = base + Vector3F( 0, 6.2f, 0 );
+                    const auto &candidate = lampCandidates[i];
+                    const auto ground = candidate.position, base = ground + Vector3F( 0, .15f, 0 );
                     if( assets.cityStreetDetail > 0 )
                     {
                         terrainStreetLamps.push_back( ground );
                     }
                     courtyards.box( ground + Vector3F( 0, .075f, 0 ), { .4f, .15f, .4f } );
-                    streetMetal.beam( base, top, .055f );
-                    const Vector3F arm( .8f, -.1f, .45f );
-                    streetMetal.beam( top, top + arm, .04f );
-                    lampGlass.box( top + arm, { .5f, .1f, .5f } );
+                    cityStreetLamp::build( lampSteel, streetMetal, lampGlass, base, candidate.roadward );
                     staticBox( assets, "City lamp foundation", ground + Vector3F( 0, .075f, 0 ),
                                { .4f, .15f, .4f } );
                     staticBox( assets, "City lamp post", base + Vector3F( 0, 3.1f, 0 ),
@@ -315,7 +318,7 @@ namespace workphone::scene::procedural_scene
             else if( city.naturalRoads )
             {
                 buildNaturalCityStreets( assets, city, asphalt, pavement, markings, streetMetal,
-                                         lampGlass, quality );
+                                         lampSteel, lampGlass, quality );
                 // Natural parcels are already filtered against the entire road
                 // buffer. Their small raised courts anchor buildings and parks
                 // without recreating the old rectangular block grid.
@@ -403,12 +406,8 @@ namespace workphone::scene::procedural_scene
                     const Vector3F p( item.x, item.baseY, item.z );
                     if( item.kind == OpenCityStreetDetails::FurnitureKind::Lamp )
                     {
-                        const Vector3F top = p + Vector3F( 0, 6.2f, 0 );
-                        const Vector3F arm( std::sin( item.yaw ) * 1.25f, -.15f,
-                                            std::cos( item.yaw ) * 1.25f );
-                        streetMetal.beam( p, top, .055f );
-                        streetMetal.beam( top, top + arm, .045f );
-                        lampGlass.box( top + arm, { .5f, .10f, .5f } );
+                        const Vector3F roadward( std::sin( item.yaw ), 0, std::cos( item.yaw ) );
+                        cityStreetLamp::build( lampSteel, streetMetal, lampGlass, p, roadward );
                         staticBox( assets, "City lamp post", p + Vector3F( 0, 3.1f, 0 ),
                                    { .12f, 6.2f, .12f } );
                     }
@@ -2410,8 +2409,12 @@ namespace workphone::scene::procedural_scene
             }
             mesh( assets, "City street furniture", streetMetal,
                   material( assets, { .16f, .19f, .20f, 1 }, .48f, .6f ) );
-            mesh( assets, "City lamp lenses", lampGlass,
-                  material( assets, { .80f, .82f, .76f, 1 }, .35f ) );
+            mesh( assets, "City galvanized lamp columns", lampSteel,
+                  material( assets, { .59f, .62f, .64f, 1 }, .62f, .42f ) );
+            if( !lampGlass.indices.empty() )
+            {
+                mesh( assets, "City lamp lenses", lampGlass, streetLampLensMaterial( assets ) );
+            }
             auto land = material( assets, { .34f, .48f, .25f, 1 }, 1 );
             if( !applyCitySurface( assets, land, CitySurface::Ground, surfaceParams.size, .5f, 3 ) )
             {

@@ -78,6 +78,8 @@ namespace workphone::scene::procedural_scene
         u32 cityFoliageImpostorResolution = 0;
         u32 cityBuildingImpostorResolution = 0;
         u32 cityStreetDetailCount = 0;
+        // Nearest admitted pavement bin; zero roadward direction denotes an empty selection.
+        Vector3F cityBinPosition{}, cityBinRoadward{};
         int cityBuildingStyle = 0;
         std::array<String, 5> cityBuildingMeshes;
         u32 cityBuildingModuleCount = 0;

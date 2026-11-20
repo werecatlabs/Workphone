@@ -145,6 +145,7 @@ namespace workphone::scene::procedural_scene::scene_build
 		const SourceBudgetVector<cityReserveLandscape::Site> *reserveSites = nullptr );
 
 	// ProceduralCityStreets.cpp
+	SmartPtr<render::IMaterial> streetLampLensMaterial( SceneAssets &assets );
 	void buildCityStreetDressing( SceneAssets &assets, const OpenCityLayout &city,
 								  VehicleAppearanceQuality quality );
 	void measureStreetFixtureSupport( CityStreetFixture &site, const Vector3F &a, const Vector3F &b,
@@ -155,7 +156,7 @@ namespace workphone::scene::procedural_scene::scene_build
 										 SourceBudgetVector<CityStreetFixture> &installed );
 	void buildNaturalCityStreets( SceneAssets &assets, const OpenCityLayout &city, Geometry &asphalt,
 								  Geometry &pavement, Geometry &markings, Geometry &streetMetal,
-								  Geometry &lampGlass, VehicleAppearanceQuality quality );
+								  Geometry &lampSteel, Geometry &lampGlass, VehicleAppearanceQuality quality );
 
 	// ProceduralCityVerges.cpp
 	void buildTerrainCityVerges( SceneAssets &assets, const CityRoadTerrainMesh &walks, u32 seed,
