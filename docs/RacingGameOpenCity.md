@@ -198,7 +198,7 @@ city's building masses.
 | 2 | Civic Stone | `civic` | Deep stone surrounds, horizontal courses, and raised roof lanterns |
 | 3 | Modern Office | `modern` | Glazing ribbons, narrow mullions, parapets, and rooftop service equipment |
 | 4 | European Terrace | `terrace` | Projecting bay windows, framed entrances, canopies, and chimneys |
-| 5 | Parisian Mansard | `parisian` | Mansard roof, dormers, cornices, and balconies |
+| 5 | Parisian Mansard | `parisian` | Slate mansard, standing-seam zinc upper roof, glazed dormers, cornices and balconies |
 | 6 | Warehouse Loft | `warehouse` | Brick pilasters, industrial glazing, loading entrance, and sawtooth skylight roof |
 | 7 | Mediterranean | `mediterranean` | Plaster façades, shutters, hipped roof, and entrance pergola canopy |
 | 8 | Art Deco | `artdeco` | Vertical piers, entrance fins, and stepped roof crown |
@@ -223,6 +223,11 @@ warehouse façades use cambered stonework, civic and Parisian façades use
 pediments, Art Deco uses stepped heads, and timber uses posts and lintels.
 The middle LOD carries the pane pattern and groups office windows between
 piers. Building impostors use this same middle-distance geometry.
+
+Mansard dormers have gabled or curved zinc hoods. Their cheeks follow the slate
+slope, and their frames stay visible on all four elevations at middle distance.
+On upper roofs with enough room, brick chimney stacks carry two or three clay
+pots. The `pitched-roof` view shows the roof covering, dormers and stacks up close.
 
 To tune a built-in preset in source, edit its row in the
 [window kit](../Engine/cpp/Include/Workphone/Procedural/CityBuildingWindowKit.hpp).

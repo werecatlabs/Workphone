@@ -313,6 +313,68 @@ namespace cityPitchedRoofCladding
         return true;
     }
 
+    template <class Admit>
+    void cladFace( Surfaces &out, Counts &counts, const Face &face, bool clay, float phase,
+                   const Admit &admit, bool detailed )
+    {
+        const auto pitch = courseSize( clay );
+        auto &surface = clay ? out.clay : out.slate;
+        const Vector3F up( 0, 1, 0 );
+        const auto mix = []( Vector3F a, Vector3F b, float t ) { return a + ( b - a ) * t; };
+        const auto along = ( face.eaveB - face.eaveA ).normaliseCopy();
+        auto run = ( face.crownA + face.crownB - face.eaveA - face.eaveB ) * .5f;
+        run -= along * run.dotProduct( along );
+        const float length = run.length();
+        if( length < .05f )
+        {
+            return;
+        }
+        const auto climb = run / length;
+        auto outward = -climb;
+        outward.y = 0;
+        outward.normalise();
+        const auto uv = [&]( Vector3F p ) {
+            const auto local = p - face.eaveA - up * skin;
+            return Vector3F( phase + local.dotProduct( along ) / ( atlasRepeats * pitch.width ),
+                             local.dotProduct( climb ) / ( atlasRepeats * pitch.rise ), 0 );
+        };
+        const auto skinA = face.eaveA + up * skin, skinB = face.eaveB + up * skin;
+        const auto skinC = face.crownB + up * skin, skinD = face.crownA + up * skin;
+        triangle( surface, skinA, skinB, skinC, up, along, uv );
+        triangle( surface, skinA, skinC, skinD, up, along, uv );
+        ++counts.slopes;
+        if( !detailed )
+        {
+            return;
+        }
+        if( admit( 4u ) )
+        {
+            out.eaves.quad( face.eaveA - up * .031f, face.eaveB - up * .031f, skinB, skinA,
+                            outward );
+            ++counts.eaves;
+        }
+        const u32 rows = u32( length / pitch.rise );
+        const u32 stride = std::max( 1u, ( rows + 11u ) / 12u );
+        const float lip = clay ? .018f : .010f;
+        for( u32 course = 1; course <= rows; course += stride )
+        {
+            const float first = course * pitch.rise;
+            const float width = clay ? .054f : .036f;
+            if( first + width + .067f > length || !admit( 12u ) )
+            {
+                break;
+            }
+            const float lo = first / length, hi = ( first + width ) / length;
+            const auto a = mix( skinA, skinD, lo ), b = mix( skinB, skinC, lo );
+            const auto c = mix( skinB, skinC, hi ), d = mix( skinA, skinD, hi );
+            triangle( surface, a + up * lip, b + up * lip, c, up, along, uv );
+            triangle( surface, a + up * lip, c, d, up, along, uv );
+            triangle( surface, a, b, b + up * lip, outward, along, uv );
+            triangle( surface, a, b + up * lip, a + up * lip, outward, along, uv );
+            ++counts.courses;
+        }
+    }
+
     template <class RoofPoint, class Admit>
     Counts append( Surfaces &out, const RoofPoint &roofPoint, float halfLong, float halfShort,
                    float rise, bool hipped, bool clay, u64 lotId, u32 seed, const Admit &admit,
@@ -328,64 +390,9 @@ namespace cityPitchedRoofCladding
         const u64 key =
             render::foliageStableHash( lotId ^ ( u64( seed ) << 32 ) ^ 0x7069746368726f6full );
         const float phase = float( key & 3u ) * .25f;
-        const auto pitch = courseSize( clay );
-        auto &surface = clay ? out.clay : out.slate;
         auto &caps = clay ? out.clayCaps : out.slateCaps;
-        const Vector3F up( 0, 1, 0 );
-        const auto mix = []( Vector3F a, Vector3F b, float t ) { return a + ( b - a ) * t; };
         const auto appendFace = [&]( const Face &face ) {
-            const auto along = ( face.eaveB - face.eaveA ).normaliseCopy();
-            auto run = ( face.crownA + face.crownB - face.eaveA - face.eaveB ) * .5f;
-            run -= along * run.dotProduct( along );
-            const float length = run.length();
-            if( length < .05f )
-            {
-                return;
-            }
-            const auto climb = run / length;
-            auto outward = -climb;
-            outward.y = 0;
-            outward.normalise();
-            const auto uv = [&]( Vector3F p ) {
-                const auto local = p - face.eaveA - up * skin;
-                return Vector3F( phase + local.dotProduct( along ) / ( atlasRepeats * pitch.width ),
-                                 local.dotProduct( climb ) / ( atlasRepeats * pitch.rise ), 0 );
-            };
-            const auto skinA = face.eaveA + up * skin, skinB = face.eaveB + up * skin;
-            const auto skinC = face.crownB + up * skin, skinD = face.crownA + up * skin;
-            triangle( surface, skinA, skinB, skinC, up, along, uv );
-            triangle( surface, skinA, skinC, skinD, up, along, uv );
-            ++counts.slopes;
-            if( !detailed )
-            {
-                return;
-            }
-            if( admit( 4u ) )
-            {
-                out.eaves.quad( face.eaveA - up * .031f, face.eaveB - up * .031f, skinB, skinA,
-                                outward );
-                ++counts.eaves;
-            }
-            const u32 rows = u32( length / pitch.rise );
-            const u32 stride = std::max( 1u, ( rows + 11u ) / 12u );
-            const float lip = clay ? .018f : .010f;
-            for( u32 course = 1; course <= rows; course += stride )
-            {
-                const float first = course * pitch.rise;
-                const float width = clay ? .054f : .036f;
-                if( first + width + .067f > length || !admit( 12u ) )
-                {
-                    break;
-                }
-                const float lo = first / length, hi = ( first + width ) / length;
-                const auto a = mix( skinA, skinD, lo ), b = mix( skinB, skinC, lo );
-                const auto c = mix( skinB, skinC, hi ), d = mix( skinA, skinD, hi );
-                triangle( surface, a + up * lip, b + up * lip, c, up, along, uv );
-                triangle( surface, a + up * lip, c, d, up, along, uv );
-                triangle( surface, a, b, b + up * lip, outward, along, uv );
-                triangle( surface, a, b + up * lip, a + up * lip, outward, along, uv );
-                ++counts.courses;
-            }
+            cladFace( out, counts, face, clay, phase, admit, detailed );
         };
 
         const auto capped = [&]( Vector2F a, Vector2F b, bool hip, u32 salt ) {

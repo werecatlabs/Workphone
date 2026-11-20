@@ -3,6 +3,7 @@
 #include <Workphone/Procedural/CityFacadeLayout.hpp>
 #include <Workphone/Procedural/CityRoadFootprintDistance.hpp>
 #include <Workphone/Procedural/CityBuildingWindowKit.hpp>
+#include <Workphone/Procedural/CityMansardProfile.hpp>
 #include "Workphone/Procedural/ProceduralSceneInternal.hpp"
 
 namespace workphone::scene::procedural_scene
@@ -40,6 +41,7 @@ namespace workphone::scene::procedural_scene
 #include "Workphone/Procedural/CityRoofDeck.hpp"
 #include "Workphone/Procedural/CityRoofEquipment.hpp"
 #include "Workphone/Procedural/CityPitchedRoofCladding.hpp"
+#include "Workphone/Procedural/CityMansardRoof.hpp"
 #include "Workphone/Procedural/CityRoofDrainage.hpp"
 #include "Workphone/Procedural/CityBuildingImposters.hpp"
 
@@ -106,8 +108,6 @@ namespace workphone::scene::procedural_scene
             SourceBudgetVector<Vector3F> terrainStreetLamps;
             SourceBudgetVector<cityGroundContact::Entry> buildingEntries;
             SourceBudgetVector<cityEntranceWayfinding::Mount> entranceSigns;
-            constexpr u32 paneAtlasColumns = cityBuildingGlazing::atlasColumns;
-            constexpr float panePadding = cityBuildingGlazing::padding;
 
             struct CityPatch
             {
@@ -122,6 +122,7 @@ namespace workphone::scene::procedural_scene
                 cityRoofDeck::Surfaces finishedRoofs;
                 cityRoofEquipment::Surfaces mechanicalRoofs;
                 cityPitchedRoofCladding::Surfaces pitchedRoofs, farPitchedRoofs;
+                Geometry mansardZinc, farMansardZinc;
                 cityRoofDrainage::Surfaces roofDrainage;
                 Array<LODDetailBound> bounds{ Allocator<LODDetailBound>( sourceBudget ) };
             };
@@ -716,12 +717,9 @@ namespace workphone::scene::procedural_scene
                                     const u32 tile = ( domestic ? cityBuildingGlazing::domesticStart : 0u ) +
                                         paneTile( bay ) +
                                         ( framed ? cityBuildingGlazing::paneVariants : 0u );
-                                    const float u0 = ( tile + panePadding ) / paneAtlasColumns;
-                                    const float u1 = ( tile + 1.f - panePadding ) / paneAtlasColumns;
-                                    patch.windowPanes.quad(
+                                    cityBuildingGlazing::pane( patch.windowPanes, tile,
                                         point( left, bottom, depth ), point( right, bottom, depth ),
-                                        point( right, head, depth ), point( left, head, depth ), normal,
-                                        u0, u1, panePadding, 1.f - panePadding );
+                                        point( right, head, depth ), point( left, head, depth ), normal );
                                 };
                                 bool entranceModule = false;
                                 if( high - low < .45f )
@@ -1498,39 +1496,21 @@ namespace workphone::scene::procedural_scene
                         g.quad( a, b, c, d, normal.y < 0 ? -normal : normal );
                     };
                     const int roofBays = std::clamp( int( halfLong * 2 / 4.2f ), 2, 6 );
-                    const int longRoofDormers = std::clamp( int( ( halfLong * 2 - 3.f ) / 3.2f ), 1, 6 );
-                    const int endRoofBays = std::clamp( int( ( halfShort * 2 - 3.f ) / 3.2f ), 1, 4 );
                     const int sawTeeth = std::clamp( int( halfShort * 2 / 4.f ), 2, 4 );
-                    const auto mansardDormers = [&]( auto visit, bool countSilhouettes = false ) {
+                    const auto mansardDormers = [&]( const MansardProfile &profile, auto visit ) {
                         const bool frontageEnd = entranceAxis == ( longX ? 1 : 0 );
-                        // Visit the actual street frontage first so the finite raised
-                        // sash budget is useful even when the street meets a short end.
                         for( bool endFace : { frontageEnd, !frontageEnd } )
                         {
-                            const int nominalCount = endFace ? endRoofBays : longRoofDormers;
-                            const float available =
-                                std::max( 0.f, ( endFace ? halfShort : halfLong ) - 1.5f );
                             for( float side : { float( entranceSign ), float( -entranceSign ) } )
                             {
                                 const bool streetFace =
                                     endFace == frontageEnd && side == float( entranceSign );
-                                const int minimum = std::min( nominalCount, streetFace ? 2 : 1 );
-                                const int count =
-                                    buildingCount > 128
-                                        ? std::clamp(
-                                              int( std::floor( nominalCount *
-                                                               ( 128.f / float( buildingCount ) ) ) ),
-                                              minimum, nominalCount )
-                                        : nominalCount;
-                                if( countSilhouettes )
+                                const auto row = profile.dormers( endFace, streetFace, buildingCount );
+                                nominalMansardSilhouettes += row.nominal;
+                                emittedMansardSilhouettes += row.count;
+                                for( int bay = 0; bay < row.count; ++bay )
                                 {
-                                    nominalMansardSilhouettes += nominalCount;
-                                    emittedMansardSilhouettes += count;
-                                }
-                                for( int bay = 0; bay < count; ++bay )
-                                {
-                                    visit( endFace,
-                                           ( bay + .5f ) * ( 2 * available / count ) - available, side );
+                                    visit( endFace, bay, row.centre( bay ), side );
                                 }
                             }
                         }
@@ -1540,47 +1520,53 @@ namespace workphone::scene::procedural_scene
                         return endFace ? roofPoint( side * ( halfLong - inset ), y, along )
                                        : roofPoint( along, y, side * ( halfShort - inset ) );
                     };
-                    const auto dormerBox = [&]( Geometry &g, bool endFace, float along, float y,
-                                                float side, float inset, float width, float height,
-                                                float depth ) {
-                        if( endFace )
-                        {
-                            roofBox( g, side * ( halfLong - inset ), y, along, depth, height, width );
-                        }
-                        else
-                        {
-                            roofBox( g, along, y, side * ( halfShort - inset ), width, height, depth );
-                        }
-                    };
-                    const auto roofSilhouette = [&]( Geometry &roof ) {
+                    const auto roofSilhouette = [&]( Geometry &roof, bool closeDetail ) {
                         if( parisian )
                         {
-                            // A steep lower skirt and a shallow capped upper deck give a
-                            // mansard an unmistakable silhouette at both render distances.
-                            const float inset = std::min( 1.35f, halfShort * .28f );
-                            for( float side : { -1.f, 1.f } )
+                            const MansardProfile profile( halfLong, halfShort, rise );
+                            auto &zinc = closeDetail ? patch.mansardZinc : patch.farMansardZinc;
+                            auto &stone = closeDetail ? patch.frames : patch.farWalls[2];
+                            cityMansardRoof::cover( closeDetail ? patch.pitchedRoofs : patch.farPitchedRoofs,
+                                zinc, profile, roofPoint, lot.id, admitRoofFinish, closeDetail );
+                            emittedPitchedRoofs = true;
+                            size_t dormers = 0;
+                            mansardDormers( profile,
+                                [&]( bool endFace, int bay, float along, float side ) {
+                                    const auto point = [&]( float x, float y, float inset ) {
+                                        return dormerPoint( endFace, along + x, y, side, inset );
+                                    };
+                                    const Vector3F normal = endFace == longX ? Vector3F( side, 0, 0 )
+                                                                             : Vector3F( 0, 0, side );
+                                    const u64 index = u64( bay * 4 + int( endFace ) * 2 + ( side > 0 ) );
+                                    const u32 pane = u32( render::foliageStableHash( household ^ index ) %
+                                                          cityBuildingGlazing::paneVariants );
+                                    auto &glass = closeDetail ? patch.windowPanes : patch.farGlass[pane >= 2];
+                                    cityMansardRoof::dormer( stone, zinc, glass, profile, point, normal,
+                                                             pane, ( household & 1u ) != 0, closeDetail );
+                                    ++dormers;
+                                } );
+                            const int stacks = profile.stackCount( ( household & 2u ) != 0 );
+                            int pots = 0;
+                            for( int i = 0; i < stacks; ++i )
                             {
-                                slope(
-                                    roof, roofPoint( -halfLong, 0, side * halfShort ),
-                                    roofPoint( halfLong, 0, side * halfShort ),
-                                    roofPoint( halfLong - inset, rise, side * ( halfShort - inset ) ),
-                                    roofPoint( -halfLong + inset, rise, side * ( halfShort - inset ) ) );
-                                slope(
-                                    roof, roofPoint( side * halfLong, 0, -halfShort ),
-                                    roofPoint( side * halfLong, 0, halfShort ),
-                                    roofPoint( side * ( halfLong - inset ), rise, halfShort - inset ),
-                                    roofPoint( side * ( halfLong - inset ), rise, -halfShort + inset ) );
+                                const float end = ( household & 4u ? 1.f : -1.f ) * ( i ? -1.f : 1.f );
+                                const float offset = household & 8u ? -end : end;
+                                const auto stack = profile.stack( end, offset, ( household >> ( 4 + i ) ) & 1u );
+                                // A coarse open pot costs 34 vertices. The rolled lip and
+                                // eight-sided barrel add 50, and the lead apron takes 32 per stack.
+                                const bool finish = closeDetail && admitRoofDetail( 32u + 50u * stack.pots );
+                                cityMansardRoof::chimney( closeDetail ? patch.walls[0] : patch.farWalls[0],
+                                    stone, closeDetail ? patch.tiles : patch.farTiles, roof, zinc, profile,
+                                    stack, roofPoint, roofBox, finish );
+                                pots += stack.pots;
                             }
-                            mansardDormers(
-                                [&]( bool endFace, float along, float side ) {
-                                    dormerBox( roof, endFace, along, 1.18f, side, .43f, 1.26f, 1.66f,
-                                               .76f );
-                                    dormerBox( roof, endFace, along, 2.07f, side, .43f, 1.44f, .12f,
-                                               .92f );
-                                },
-                                true );
-                            roofBox( roof, 0, rise + .04f, 0, ( halfLong - inset ) * 2, .08f,
-                                     ( halfShort - inset ) * 2 );
+                            if( closeDetail || !detailedBuildings )
+                            {
+                                WP_LOG( String( "City mansard lot=" ) + StringUtil::toString( lot.id ) +
+                                        ", dormers=" + StringUtil::toString( u64( dormers ) ) +
+                                        ", stacks=" + StringUtil::toString( stacks ) +
+                                        ", pots=" + StringUtil::toString( pots ) );
+                            }
                             return;
                         }
                         if( warehouse )
@@ -1684,13 +1670,13 @@ namespace workphone::scene::procedural_scene
                     {
                         roofSilhouette( mediterranean ? patch.tiles
                                         : artdeco     ? patch.walls[family]
-                                                      : patch.roofs );
+                                                      : patch.roofs, true );
                     }
                     if( !replacedRoof )
                     {
                         roofSilhouette( mediterranean ? patch.farTiles
                                         : artdeco     ? patch.farWalls[family]
-                                                      : patch.farRoofs );
+                                                      : patch.farRoofs, false );
                     }
                     if( !replacedRoof && ( gabled || hipped ) )
                     {
@@ -1767,34 +1753,7 @@ namespace workphone::scene::procedural_scene
                                     ", vents=" + StringUtil::toString( services.vents ) );
                         }
                     }
-                    if( parisian )
-                    {
-                        mansardDormers( [&]( bool endFace, float along, float side ) {
-                            // Every elevation has glazing. Only the optional raised
-                            // sash consumes the existing per-building trim allowance.
-                            const Vector3F normal =
-                                endFace == longX ? Vector3F( side, 0, 0 ) : Vector3F( 0, 0, side );
-                            patch.glass[1].quad(
-                                dormerPoint( endFace, along - .46f, .62f, side, .035f ),
-                                dormerPoint( endFace, along + .46f, .62f, side, .035f ),
-                                dormerPoint( endFace, along + .46f, 1.82f, side, .035f ),
-                                dormerPoint( endFace, along - .46f, 1.82f, side, .035f ), normal );
-                            if( !admitRoofDetail( 120 ) )
-                            {
-                                return;
-                            }
-                            dormerBox( patch.frames, endFace, along, .59f, side, .035f, 1.12f, .10f,
-                                       .12f );
-                            dormerBox( patch.frames, endFace, along, 1.85f, side, .035f, 1.14f, .10f,
-                                       .12f );
-                            for( float jamb : { -.5f, 0.f, .5f } )
-                            {
-                                dormerBox( patch.frames, endFace, along + jamb, 1.22f, side, .015f,
-                                           .065f, 1.30f, .07f );
-                            }
-                        } );
-                    }
-                    else if( warehouse )
+                    if( warehouse )
                     {
                         const float toothWidth = 2 * halfShort / sawTeeth;
                         for( int tooth = 1; tooth <= sawTeeth; ++tooth )
@@ -1954,10 +1913,7 @@ namespace workphone::scene::procedural_scene
                         StringUtil::toString( u64( buildingCount ) ) +
                         " emitted/nominal dormers across LODs=" +
                         StringUtil::toString( u64( emittedMansardSilhouettes ) ) + "/" +
-                        StringUtil::toString( u64( nominalMansardSilhouettes ) ) +
-                        " silhouette triangles avoided=" +
-                        StringUtil::toString(
-                            u64( nominalMansardSilhouettes - emittedMansardSilhouettes ) * 24 ) );
+                        StringUtil::toString( u64( nominalMansardSilhouettes ) ) );
             }
             kit.finish( builtInSurrounds, dressedLots, officePanelStoreys );
             // Contain exploration within the shared collision plane.
@@ -2172,6 +2128,10 @@ namespace workphone::scene::procedural_scene
             const auto pitchedRoof = emittedPitchedRoofs
                                          ? cityPitchedRoofCladding::materials( assets, seed )
                                          : cityPitchedRoofCladding::Materials{};
+            const bool hasMansards = std::any_of( patches.begin(), patches.end(), []( const auto &patch ) {
+                return !patch.second.farMansardZinc.indices.empty();
+            } );
+            const auto mansardZinc = hasMansards ? cityMansardRoof::zincMaterial( assets, seed ) : nullptr;
             const auto roofDrainage = emittedRoofDrainage ? cityRoofDrainage::materials( assets )
                                                           : cityRoofDrainage::Materials{};
             for( auto &[key, patch] : patches )
@@ -2254,6 +2214,7 @@ namespace workphone::scene::procedural_scene
                          roofEquipment.grilles, nearRenderers );
                     add( "LOD0 city pitched roof slate", patch.pitchedRoofs.slate, pitchedRoof.slate,
                          nearRenderers );
+                    add( "LOD0 city mansard zinc", patch.mansardZinc, mansardZinc, nearRenderers );
                     add( "LOD0 city pitched roof clay", patch.pitchedRoofs.clay, pitchedRoof.clay,
                          nearRenderers );
                     add( "LOD0 city pitched roof slate caps", patch.pitchedRoofs.slateCaps,
@@ -2315,6 +2276,7 @@ namespace workphone::scene::procedural_scene
                 add( "LOD1 city roof silhouette", patch.farRoofs, roofMaterial, farRenderers );
                 add( "LOD1 city pitched roof slate", patch.farPitchedRoofs.slate, pitchedRoof.slate,
                      farRenderers );
+                add( "LOD1 city mansard zinc", patch.farMansardZinc, mansardZinc, farRenderers );
                 add( "LOD1 city pitched roof clay", patch.farPitchedRoofs.clay, pitchedRoof.clay,
                      farRenderers );
                 add( "LOD1 city terracotta silhouette", patch.farTiles, tileMaterial, farRenderers );

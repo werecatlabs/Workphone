@@ -1,6 +1,7 @@
 #include <Workphone/Interface/Procedural/OpenCityLayout.hpp>
 #include <Workphone/Procedural/CityBuildingWindowKit.hpp>
 #include <Workphone/Procedural/CityFacadeLayout.hpp>
+#include <Workphone/Procedural/CityMansardProfile.hpp>
 #include <algorithm>
 #include <stdexcept>
 #include <cmath>
@@ -120,6 +121,61 @@ static void checkHouseDoorFit()
     }
 }
 
+static void checkMansardRoof()
+{
+    using workphone::scene::procedural_scene::MansardProfile;
+    const auto close = []( float a, float b ) { return std::abs( a - b ) < .0001f; };
+    for( float halfWidth : { 1.f, 2.f, 3.69f, 6.f, 13.f } )
+    {
+        for( float stretch : { 0.f, 4.f, 12.f } )
+        {
+            const MansardProfile roof( halfWidth + stretch, halfWidth, 2.65f );
+            const float ridge = roof.ridgeHalfLength(), peak = roof.breakHeight + roof.upperRise;
+            require( close( roof.height( 0, halfWidth ), 0 ) &&
+                     close( roof.height( roof.halfLength - roof.inset, halfWidth - roof.inset ),
+                            roof.breakHeight ) && close( roof.height( ridge, 0 ), peak ) &&
+                     close( roof.height( -ridge, 0 ), peak ), "Mansard slopes missed their common hip or ridge" );
+            if( roof.stackCount( true ) )
+            {
+                const auto stack = roof.stack( -1.f, 1.f, true );
+                for( float dx : { -1.f, 1.f } )
+                {
+                    for( float dz : { -1.f, 1.f } )
+                    {
+                        const float u = stack.u + dx * ( stack.halfLength + .185f );
+                        const float v = stack.v + dz * ( stack.halfWidth + .185f );
+                        const float end = roof.halfLength - std::abs( u );
+                        require( end > roof.inset && end < roof.halfWidth - std::abs( v ) &&
+                                 roof.height( u, v ) < stack.coping,
+                                 "Chimney flashing crossed a hip or its coping entered the roof" );
+                    }
+                }
+            }
+            for( bool endFace : { false, true } )
+            {
+                const float span = endFace ? roof.halfWidth : roof.halfLength;
+                for( size_t buildings : { 1u, 129u, 512u } )
+                {
+                    const auto row = roof.dormers( endFace, true, buildings );
+                    require( row.count <= row.nominal && row.count >= std::min( 2, row.nominal ),
+                             "Dense roof lost its street-facing dormers" );
+                    for( int bay = 0; bay < row.count; ++bay )
+                    {
+                        const float x = row.centre( bay );
+                        const float back = roof.hoodBack( roof.hoodPeak );
+                        require( std::abs( x ) + roof.hoodHalfWidth + back <= span + .0001f &&
+                                 ( !bay || x - row.centre( bay - 1 ) >= 2.f * roof.hoodHalfWidth ),
+                                 "Dormer hood crossed a hip or a neighbouring hood" );
+                        const float h = endFace ? roof.height( roof.halfLength - back, x ) :
+                                                  roof.height( x, roof.halfWidth - back );
+                        require( h >= roof.hoodPeak, "Back of the dormer hood stopped short of the slate" );
+                    }
+                }
+            }
+        }
+    }
+}
+
 static bool sameLot(const OpenCityLayout::Lot &a,const OpenCityLayout::Lot &b)
 {
     return a.x==b.x && a.z==b.z && a.width==b.width && a.depth==b.depth && a.height==b.height &&
@@ -167,6 +223,7 @@ int main()
     checkFacadeBays();
     checkBuiltInWindowPlacement();
     checkHouseDoorFit();
+    checkMansardRoof();
     for(unsigned seed : {0u, 7u, 23u, 4294967295u})
     {
         const auto large=OpenCityLayout::generate(seed,10,0);

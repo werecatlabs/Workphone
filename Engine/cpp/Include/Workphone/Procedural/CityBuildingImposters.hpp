@@ -36,12 +36,13 @@ namespace cityBuildingImposters
     {
         // Median linear reflectance of the shipped scans. Plaster and
         // concrete include the tint used on the corresponding LOD1 mesh.
-        return std::array<std::pair<const Geometry *, ColourF>, 9>{
+        return std::array<std::pair<const Geometry *, ColourF>, 10>{
             { { &patch.farWalls[0], { .122f, .063f, .041f, 1.f } },
               { &patch.farWalls[1], { .247f, .214f, .156f, 1.f } },
               { &patch.farWalls[2], { .306f, .295f, .266f, 1.f } },
               { &patch.farRoofs, { .18f, .21f, .23f, 1.f } },
               { &patch.farPitchedRoofs.slate, { .108f, .123f, .130f, 1.f } },
+              { &patch.farMansardZinc, { .216f, .239f, .250f, 1.f } },
               { &patch.farPitchedRoofs.clay, { .375f, .175f, .100f, 1.f } },
               { &patch.farTiles, { .435f, .20f, .108f, 1.f } },
               { &patch.farGlass[0], { .120f, .146f, .161f, 1.f } },

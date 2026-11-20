@@ -66,7 +66,7 @@ if ($Views -contains 'shopfront' -and !$CityTerrainRoads) { throw '-Views shopfr
 if ($Views -contains 'entry-route' -and !$CityTerrainRoads) { throw '-Views entry-route requires -CityTerrainRoads.' }
 if ($Views -contains 'rooftop' -and ($Scene -ne 'city' -or !$CityTerrainRoads)) { throw '-Views rooftop requires -Scene city and -CityTerrainRoads.' }
 if ($Views -contains 'pitched-roof' -and ($Scene -ne 'city' -or !$CityTerrainRoads)) { throw '-Views pitched-roof requires -Scene city and -CityTerrainRoads.' }
-if ($Views -contains 'pitched-roof' -and $CityBuildingStyle -and $CityBuildingStyle -notin @('district', 'masonry', 'terrace', 'mediterranean', 'timber')) { throw '-Views pitched-roof requires a pitched building style.' }
+if ($Views -contains 'pitched-roof' -and $CityBuildingStyle -and $CityBuildingStyle -notin @('district', 'masonry', 'terrace', 'parisian', 'mediterranean', 'timber')) { throw '-Views pitched-roof requires a pitched building style.' }
 if ($Views -contains 'junction' -and !$CityTerrainRoads) { throw '-Views junction requires -CityTerrainRoads.' }
 if ($Views -contains 'verge' -and !$CityTerrainRoads) { throw '-Views verge requires -CityTerrainRoads.' }
 if (($Views -contains 'hillside' -or $PSBoundParameters.ContainsKey('CityTerrainRelief')) -and !$CityTerrainRoads) { throw 'The hillside view and terrain relief require -CityTerrainRoads.' }

@@ -8,6 +8,13 @@ namespace cityBuildingGlazing
     constexpr u32 atlasColumns = 4 * paneVariants, atlasCell = 64;
     constexpr float padding = 5.5f / atlasCell;
 
+    void pane( Geometry &geometry, u32 tile, Vector3F a, Vector3F b, Vector3F c, Vector3F d,
+               Vector3F normal )
+    {
+        geometry.quad( a, b, c, d, normal, ( tile + padding ) / atlasColumns,
+                       ( tile + 1.f - padding ) / atlasColumns, padding, 1.f - padding );
+    }
+
     struct Materials
     {
         std::array<SmartPtr<render::IMaterial>, 3> plain;

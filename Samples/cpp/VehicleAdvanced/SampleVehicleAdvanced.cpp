@@ -7159,8 +7159,8 @@ int main( int argc, char **argv )
         if( ( captureView == "rooftop" || captureView == "pitched-roof" ) && ( !cityTerrainRoads || orbit ) )
             throw std::runtime_error( "Roof views require --city-terrain-roads and a fixed camera." );
         if( captureView == "pitched-roof" && cityBuildingStyle > 0 && cityBuildingStyle != 1 &&
-            cityBuildingStyle != 4 && cityBuildingStyle != 7 && cityBuildingStyle != 9 )
-            throw std::runtime_error( "--view pitched-roof requires district, masonry, terrace, mediterranean or timber buildings." );
+            cityBuildingStyle != 4 && cityBuildingStyle != 5 && cityBuildingStyle != 7 && cityBuildingStyle != 9 )
+            throw std::runtime_error( "--view pitched-roof requires district, masonry, terrace, parisian, mediterranean or timber buildings." );
         if( captureView == "junction" && !cityTerrainRoads )
             throw std::runtime_error( "--view junction requires --city-terrain-roads." );
         if( captureView == "hillside" && !cityTerrainRoads )
