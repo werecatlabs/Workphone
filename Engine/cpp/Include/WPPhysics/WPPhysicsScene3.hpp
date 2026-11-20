@@ -3,6 +3,7 @@
 
 #include <WPPhysics/WPPhysicsUtil.hpp>
 #include <Workphone/Physics/PhysicsScene3.hpp>
+#include <WorkphonePhysics/workphone_physics_broadphase.h>
 #include <unordered_map>
 
 namespace workphone::physics
@@ -140,10 +141,6 @@ namespace workphone::physics
         ContactOptions getContactOptions() const override;
 
     private:
-        void registerBroadphaseProvider( wp_broadphase_provider provider, void *context );
-
-        bool hasBroadphaseProvider();
-
         wp_scene_collision_matrix resolveCollisionMatrix( const String &layerNames,
                                                           const String &disabledPairs );
 

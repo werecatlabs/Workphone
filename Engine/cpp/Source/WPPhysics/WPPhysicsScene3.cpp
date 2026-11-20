@@ -53,7 +53,7 @@ namespace workphone::physics
     SmartPtr<Properties> WPPhysicsScene3::getProperties() const
     {
         ScopedLock lock( const_cast<WPPhysicsScene3 *>( this ) );
-        
+
         auto properties = workphone::make_ptr<Properties>();
         const auto options = wp_physics_scene_get_simulation_options( m_scene );
         properties->setProperty( "physics.gravity", wp_physics_scene_get_gravity( m_scene ).y );
@@ -637,16 +637,6 @@ namespace workphone::physics
         // Note: C API doesn't have wp_physics_scene_get_contact_options
         // This would need to be implemented in the C library
         return ContactOptions();
-    }
-
-    bool WPPhysicsScene3::hasBroadphaseProvider()
-    {
-        return wp_broadphase_has_provider() != 0;
-    }
-
-    void WPPhysicsScene3::registerBroadphaseProvider( wp_broadphase_provider provider, void *context )
-    {
-        wp_broadphase_register_provider( provider, context );
     }
 
     void WPPhysicsScene3::executePhysicsRanges( void *, wp_u32 count, wp_u32 workers,

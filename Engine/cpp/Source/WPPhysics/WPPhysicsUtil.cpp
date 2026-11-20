@@ -7,6 +7,16 @@
 
 namespace workphone::physics
 {
+    bool hasBroadphaseProvider()
+    {
+        return wp_broadphase_has_provider() != 0;
+    }
+
+    void registerBroadphaseProvider( wp_broadphase_provider provider, void *context )
+    {
+        wp_broadphase_register_provider( provider, context );
+    }
+
     Vector3<real_Num> WPPhysicsUtil::absoluteVector( const Vector3<real_Num> &value )
     {
         return Vector3<real_Num>( Math<real_Num>::Abs( value.X() ), Math<real_Num>::Abs( value.Y() ),

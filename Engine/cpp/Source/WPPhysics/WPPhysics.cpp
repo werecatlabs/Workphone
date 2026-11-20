@@ -1,7 +1,6 @@
 #include "WPPhysics/WPPhysicsPCH.hpp"
 #include "WPPhysics/WPPhysics.hpp"
-#include "WPPhysicsAutoLink.hpp"
-
+#include "WPPhysics/WPPhysicsAutoLink.hpp"
 #include "WPPhysics/WPPhysicsManager2.hpp"
 #include "WPPhysics/WPPhysicsScene2.hpp"
 #include "WPPhysics/WPPhysicsRigidBody2.hpp"
@@ -49,6 +48,7 @@ namespace workphone::physics
         // Application shutdown joins scene owners before unloading plugins.
         // Drop borrowed provider code/context before any later app restart.
         registerBroadphaseProvider( nullptr, nullptr );
+
         FactoryUtil::removeFactory<WPPhysicsTerrainShape3>();
         FactoryUtil::removeFactory<WPPhysicsMeshShape3>();
         FactoryUtil::removeFactory<WPPhysicsPlaneShape3>();
