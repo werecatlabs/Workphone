@@ -16,6 +16,11 @@ namespace workphone
 
     Sound::~Sound() = default;
 
+const workphone::String &Sound::getCategory() const
+    {
+        return m_category;
+    }
+
     void Sound::setCategory( const String &category )
     {
         if( category == "music" || category == "sfx" || category == "voice" )

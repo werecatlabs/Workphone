@@ -22,7 +22,8 @@ namespace workphone
 
         /** Destructor. */
         ~Sound() override;
-        const String &getCategory() const { return m_category; }
+
+        const String &getCategory() const;
         void setCategory( const String &category );
 
         /** @copydoc ISound::play */
