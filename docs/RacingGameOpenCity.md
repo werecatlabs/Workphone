@@ -395,8 +395,13 @@ where the street slopes across the door. Beside diagonal roads the frontage chec
 the road width along its centreline and the paved junction surface. Pale stone
 nosings mark the tread edges, and the step mesh supplies pedestrian collision.
 Road mouths and unsupported terrain pieces stay open. Splitter refuges retain
-their raised concrete rims and inset turf. `--view boulevard` places the camera
-beside an approach at pedestrian height. `--view street` looks down on the junction.
+their raised concrete rims and inset turf. On the central island, two staggered
+courses of granite setts separate the grass from the kerb. Low chevron boards
+face the incoming approaches and follow the roundabout's authored direction.
+Their posts fit the island grade, with clearance for the kerb and adjacent boards.
+Inside the stone band, low shrubs share the beds with drifts of violet salvia and cream yarrow.
+`--view boulevard` places the camera beside an approach at pedestrian height.
+`--view street` looks down on the junction.
 
 ```powershell
 & .\Tools\powershell\CaptureProceduralRacing.ps1 -Configuration Debug -CityTerrainRoads `

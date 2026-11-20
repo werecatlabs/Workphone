@@ -6,6 +6,8 @@
 #include <Workphone/Procedural/CityMansardProfile.hpp>
 #include <Workphone/Procedural/CityStreetLamp.hpp>
 #include <Workphone/Procedural/CityStreetTimber.hpp>
+#include <Workphone/Procedural/CityLeafSprig.hpp>
+#include <Workphone/Procedural/CityIslandChevronLayout.hpp>
 #include "Workphone/Procedural/ProceduralSceneInternal.hpp"
 
 namespace workphone::scene::procedural_scene

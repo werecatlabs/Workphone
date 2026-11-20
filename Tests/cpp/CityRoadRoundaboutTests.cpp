@@ -1,4 +1,5 @@
 #include <Workphone/Interface/Procedural/CityRoadRoundabout.hpp>
+#include <Workphone/Procedural/CityIslandChevronLayout.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
 #include <algorithm>
 #include <cmath>
@@ -296,6 +297,87 @@ namespace
                 "Splitter turf/rim partition changes the original raised footprint area" );
         }
     }
+    void islandChevronBoards()
+    {
+        namespace chevrons = workphone::scene::cityIslandChevrons;
+        for( bool clockwise : { false, true } )
+        {
+            auto spec = source( 4, clockwise );
+            spec.gradeX = .042f; spec.gradeZ = -.023f;
+            spec.ports[0].width = 4.f; spec.ports[2].width = 8.f;
+            const auto signs = chevrons::layout( spec ), repeat = chevrons::layout( spec );
+            require( signs.count == 4 && repeat.count == 4 && signs.boards[0].width < signs.boards[2].width,
+                     "Island boards must fit each approach width" );
+            CityRoadRoundaboutBake bake; String error;
+            check( bakeCityRoadRoundabout( spec, terrain( spec ), bake, error ), error );
+            for( std::size_t i = 0; i < signs.count; ++i )
+            {
+                const auto &board = signs.boards[i];
+                const auto &port = spec.ports[board.portIndex];
+                require( board.portIndex == i && near( board.centre, repeat.boards[i].centre ) &&
+                         near( board.outward, port.outward ), "Island board must face its own approach" );
+                const auto route = std::find_if( bake.routes.begin(), bake.routes.end(), [&]( const auto &r ) {
+                    return r.entryApproachId == port.approachId;
+                } );
+                require( route != bake.routes.end() && route->points.size() > 3, "Missing comparison route" );
+                const auto turn = ( route->points[3] - route->points[2] ).normaliseCopy();
+                require( ( board.right() * board.arrowSign ).dotProduct( turn ) > .90f,
+                         "Chevron points against the authored circulation" );
+                const auto incoming = bake.connections[i].entry.front() - spec.center;
+                require( incoming.dotProduct( board.right() ) *
+                         ( board.centre - spec.center ).dotProduct( board.right() ) > 0,
+                         "Island board offset faces the departing lane" );
+                const float turf = spec.islandRadius - spec.kerbWidth;
+                for( float sign : { -1.f, 1.f } )
+                {
+                    const auto foot = chevrons::footing( spec, board, sign * board.width * .32f, -.10f );
+                    const float radius = std::hypot( foot.x - spec.center.x, foot.z - spec.center.z );
+                    require( std::abs( foot.y - plane( spec, foot.x, foot.z ) - spec.islandHeight ) < .0001f &&
+                             radius > turf - .8f && radius < turf && !bake.containsSurface( foot.x, foot.z ),
+                             "Island board post left the clear shoulder on the sloping island" );
+                    const auto end = board.centre + board.right() * ( sign * board.width * .5f );
+                    require( std::hypot( end.x - spec.center.x, end.z - spec.center.z ) < turf - .15f,
+                             "Island board projects over the kerb" );
+                }
+            }
+        }
+        auto tight = source( 4 );
+        tight.islandRadius = 3.5f; tight.outerRadius = 9.5f; tight.ringSamples = 32;
+        for( auto &port : tight.ports ) port.width = 4;
+        tight.ports[1].outward = { std::cos( .72f ), 0, std::sin( .72f ) };
+        const auto spaced = chevrons::layout( tight );
+        require( spaced.count == 3 && spaced.boards[0].portIndex == 0 && spaced.boards[1].portIndex == 2,
+                 "Closely spaced approaches must not crowd one another's island boards" );
+        tight.islandRadius = 2.4f;
+        require( chevrons::layout( tight ).count == 0, "Small islands must remain clear" );
+
+        auto broad = source( 4 );
+        broad.outerRadius = 116; broad.islandRadius = 110; broad.ringSamples = 32;
+        CityRoadRoundaboutBake bake; String error;
+        check( bakeCityRoadRoundabout( broad, terrain( broad ), bake, error ), error );
+        const auto boards = chevrons::layout( broad );
+        require( boards.count == broad.ports.size(), "Coarse island chords displaced all their boards" );
+        const float step = tau / float( broad.ringSamples - 2 * broad.ports.size() );
+        const float stripOuter = broad.islandRadius - broad.kerbWidth - .012f;
+        const auto edgeGap = [&]( Vector3F point ) {
+            const auto local = point - broad.center;
+            const float sector = std::floor( std::atan2( local.z, local.x ) / step );
+            const float angle = ( sector + .5f ) * step;
+            return stripOuter * std::cos( step * .5f ) - local.x * std::cos( angle ) - local.z * std::sin( angle );
+        };
+        for( std::size_t i = 0; i < boards.count; ++i )
+        {
+            const auto &board = boards.boards[i];
+            for( float sign : { -1.f, 1.f } )
+            {
+                const auto end = board.centre + board.right() * ( sign * board.width * .5f );
+                const auto foot = chevrons::footing( broad, board, sign * board.width * .32f, -.09f );
+                require( edgeGap( end ) >= .145f && edgeGap( foot ) > .12f && edgeGap( foot ) < .8f,
+                         "Board ends and graded footings must fit their local island shoulder" );
+            }
+        }
+    }
+
     void failures()
     {
         const auto spec = source(); String error; CityRoadRoundaboutBake bake;
@@ -361,7 +443,7 @@ namespace
 int main()
 {
     int result = 0;
-    try { geometry(); splitterThresholds(); failures(); budgetDenials(); std::cout << "Roundabout: true annulus, chord joins, raised island/kerb/splitters, grade fit, directed routes and transactional budgets PASS\n"; }
+    try { geometry(); splitterThresholds(); islandChevronBoards(); failures(); budgetDenials(); std::cout << "Roundabout: true annulus, chord joins, raised island/kerb/splitters, grade fit, directed routes and transactional budgets PASS\n"; }
     catch( const std::exception &e ) { std::cerr << "Roundabout: " << e.what() << '\n'; result = 1; }
     WorldStreamingScheduler::shutdownShared(); return result;
 }
