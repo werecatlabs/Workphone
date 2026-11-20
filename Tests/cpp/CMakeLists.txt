@@ -13,7 +13,7 @@ if(WP_BUILD_TESTS)
         target_compile_definitions(FreeImageWebPTests PRIVATE FREEIMAGE_LIB)
         target_include_directories(FreeImageWebPTests PRIVATE ${WP_ROOT}/Dependencies/FreeImage/Source)
         target_link_libraries(FreeImageWebPTests PRIVATE FreeImage)
-        set_target_properties(FreeImageWebPTests PROPERTIES FOLDER Tests/Cpp)
+        set_target_properties(FreeImageWebPTests PROPERTIES FOLDER Tests/Cpp/Graphics)
         add_test(NAME WPGraphics.webp_container_padding COMMAND FreeImageWebPTests)
         set_tests_properties(WPGraphics.webp_container_padding PROPERTIES LABELS "graphics;images;headless" TIMEOUT 30)
     endif()
@@ -21,37 +21,43 @@ if(WP_BUILD_TESTS)
     add_executable(OpenAICredentialTests OpenAICredentialTests.cpp)
     target_compile_features(OpenAICredentialTests PRIVATE cxx_std_17)
     target_include_directories(OpenAICredentialTests PRIVATE ${WP_ROOT}/Engine/cpp/Source/Workphone)
+
     if(WIN32)
         target_link_libraries(OpenAICredentialTests PRIVATE advapi32)
     endif()
-    set_target_properties(OpenAICredentialTests PROPERTIES FOLDER Tests/Cpp)
+
+    set_target_properties(OpenAICredentialTests PROPERTIES FOLDER Tests/Cpp/AI)
     add_test(NAME WPAI.editor_credentials COMMAND OpenAICredentialTests)
     set_tests_properties(WPAI.editor_credentials PROPERTIES LABELS "editor;ai;credentials;headless" TIMEOUT 30)
 
     add_executable(MeshyCredentialTests MeshyCredentialTests.cpp)
     target_compile_features(MeshyCredentialTests PRIVATE cxx_std_17)
     target_include_directories(MeshyCredentialTests PRIVATE ${WP_ROOT}/Engine/cpp/Source/Workphone)
+
     if(WIN32)
         target_link_libraries(MeshyCredentialTests PRIVATE advapi32)
     endif()
-    set_target_properties(MeshyCredentialTests PROPERTIES FOLDER Tests/Cpp)
+
+    set_target_properties(MeshyCredentialTests PROPERTIES FOLDER Tests/Cpp/AI)
     add_test(NAME WPAI.meshy_credentials COMMAND MeshyCredentialTests)
     set_tests_properties(WPAI.meshy_credentials PROPERTIES LABELS "editor;ai;credentials;headless" TIMEOUT 30)
 
     add_executable(Trellis2CredentialTests Trellis2CredentialTests.cpp)
     target_compile_features(Trellis2CredentialTests PRIVATE cxx_std_17)
     target_include_directories(Trellis2CredentialTests PRIVATE ${WP_ROOT}/Engine/cpp/Source/Workphone)
+
     if(WIN32)
         target_link_libraries(Trellis2CredentialTests PRIVATE advapi32)
     endif()
-    set_target_properties(Trellis2CredentialTests PROPERTIES FOLDER Tests/Cpp)
+
+    set_target_properties(Trellis2CredentialTests PROPERTIES FOLDER Tests/Cpp/AI)
     add_test(NAME WPAI.trellis2_credentials COMMAND Trellis2CredentialTests)
     set_tests_properties(WPAI.trellis2_credentials PROPERTIES LABELS "editor;ai;credentials;headless" TIMEOUT 30)
 
     add_executable(TextToImageAssetTests TextToImageAssetTests.cpp)
     target_compile_features(TextToImageAssetTests PRIVATE cxx_std_17)
     target_include_directories(TextToImageAssetTests PRIVATE ${WP_ROOT}/Tools/cpp/Editor/src)
-    set_target_properties(TextToImageAssetTests PROPERTIES FOLDER Tests/Cpp)
+    set_target_properties(TextToImageAssetTests PROPERTIES FOLDER Tests/Cpp/AI)
     add_test(NAME WPEditor.text_to_image_assets COMMAND TextToImageAssetTests)
     set_tests_properties(WPEditor.text_to_image_assets PROPERTIES
         LABELS "editor;ai;filesystem;headless" TIMEOUT 30)
@@ -59,14 +65,14 @@ if(WP_BUILD_TESTS)
     add_executable(EditorSceneRefreshTests EditorSceneRefreshTests.cpp)
     target_compile_features(EditorSceneRefreshTests PRIVATE cxx_std_17)
     target_include_directories(EditorSceneRefreshTests PRIVATE ${WP_ROOT}/Tools/cpp/Editor/src)
-    set_target_properties(EditorSceneRefreshTests PROPERTIES FOLDER Tests/Cpp)
+    set_target_properties(EditorSceneRefreshTests PROPERTIES FOLDER Tests/Cpp/Editor)
     add_test(NAME WPEditor.scene_refresh COMMAND EditorSceneRefreshTests)
     set_tests_properties(WPEditor.scene_refresh PROPERTIES LABELS "editor;graphics;headless" TIMEOUT 30)
 
     add_executable(EditorDeferredScriptEventsTests EditorDeferredScriptEventsTests.cpp)
     target_compile_features(EditorDeferredScriptEventsTests PRIVATE cxx_std_17)
     target_include_directories(EditorDeferredScriptEventsTests PRIVATE ${WP_ROOT}/Tools/cpp/Editor/src)
-    set_target_properties(EditorDeferredScriptEventsTests PROPERTIES FOLDER Tests/Cpp)
+    set_target_properties(EditorDeferredScriptEventsTests PROPERTIES FOLDER Tests/Cpp/Editor)
     add_test(NAME WPLua.editor_deferred_script_events COMMAND EditorDeferredScriptEventsTests)
     set_tests_properties(WPLua.editor_deferred_script_events PROPERTIES
         LABELS "lua;debugger;editor;headless" TIMEOUT 30)
@@ -78,7 +84,7 @@ if(TARGET Workphone AND TARGET WPVehiclePhysics)
     target_include_directories(HelicopterControllerTests PRIVATE
         ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Engine/c/Include ${WP_ROOT}/Dependencies/boost)
     target_link_libraries(HelicopterControllerTests PRIVATE Workphone WPVehiclePhysics)
-    set_target_properties(HelicopterControllerTests PROPERTIES FOLDER Tests/Cpp)
+    set_target_properties(HelicopterControllerTests PROPERTIES FOLDER Tests/Cpp/Vehicle)
     add_test(NAME WPVehicle.helicopter_controller COMMAND HelicopterControllerTests)
     set_tests_properties(WPVehicle.helicopter_controller PROPERTIES LABELS "vehicle;helicopter;headless" TIMEOUT 30)
 
@@ -95,7 +101,7 @@ if(TARGET Workphone AND TARGET WPVehiclePhysics)
                 ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
         endforeach()
     endif()
-    set_target_properties(VehicleFlightInputTests PROPERTIES FOLDER Tests/Cpp)
+    set_target_properties(VehicleFlightInputTests PROPERTIES FOLDER Tests/Cpp/Vehicle)
     add_test(NAME WPVehicle.flight_input COMMAND VehicleFlightInputTests)
     set_tests_properties(WPVehicle.flight_input PROPERTIES LABELS "vehicle;input;headless" TIMEOUT 30)
 endif()
@@ -118,7 +124,7 @@ if(TARGET Workphone)
                 ${WP_ROOT}/Dependencies/lib/windows/boost/$<CONFIG>
                 ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
         endif()
-        set_target_properties(AiImageGenerationTests PROPERTIES FOLDER Tests/Cpp)
+        set_target_properties(AiImageGenerationTests PROPERTIES FOLDER Tests/Cpp/AI)
         add_test(NAME WPAI.image_generation COMMAND AiImageGenerationTests)
         set_tests_properties(WPAI.image_generation PROPERTIES
             LABELS "ai;images;headless" TIMEOUT 60)
@@ -137,7 +143,7 @@ if(TARGET Workphone)
                     ${WP_ROOT}/Dependencies/lib/windows/boost/$<CONFIG>
                     ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
             endif()
-            set_target_properties(${_mesh_test} PROPERTIES FOLDER Tests/Cpp)
+            set_target_properties(${_mesh_test} PROPERTIES FOLDER Tests/Cpp/Mesh)
         endforeach()
         add_test(NAME WPAI.image_to_mesh COMMAND MeshyClientTests)
         add_test(NAME WPAI.trellis2_image_to_mesh COMMAND Trellis2ClientTests)
@@ -158,7 +164,8 @@ if(TARGET Workphone)
             ${WP_ROOT}/Dependencies/lib/windows/boost/$<CONFIG>
             ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
     endif()
-    set_target_properties(RuntimeStartupTests PROPERTIES FOLDER Tests/Cpp)
+
+    set_target_properties(RuntimeStartupTests PROPERTIES FOLDER Tests/Cpp/Runtime)
     add_test(NAME WPRuntime.startup COMMAND RuntimeStartupTests)
     set_tests_properties(WPRuntime.startup PROPERTIES LABELS "runtime;scene;headless" TIMEOUT 30)
 
@@ -178,7 +185,7 @@ if(TARGET Workphone)
             ${WP_ROOT}/Dependencies/lib/windows/boost/$<CONFIG>
             ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
         add_dependencies(PackageConsumerTests WPAssimp)
-        set_target_properties(PackageConsumerTests PROPERTIES FOLDER Tests/Cpp)
+        set_target_properties(PackageConsumerTests PROPERTIES FOLDER Tests/Cpp/Assets)
         add_test(NAME WPRuntime.package_consumers COMMAND PackageConsumerTests)
         set_tests_properties(WPRuntime.package_consumers PROPERTIES
             LABELS "runtime;assets;filesystem;headless" TIMEOUT 30)
@@ -197,7 +204,8 @@ if(TARGET Workphone)
                 ${WP_ROOT}/Dependencies/lib/windows/boost/$<CONFIG>
                 ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
         endif()
-        set_target_properties(BundledMediaTests PROPERTIES FOLDER Tests/Cpp)
+
+        set_target_properties(BundledMediaTests PROPERTIES FOLDER Tests/Cpp/Assets)
         add_test(NAME WPRuntime.bundled_media_catalog COMMAND BundledMediaTests)
         set_tests_properties(WPRuntime.bundled_media_catalog PROPERTIES
             LABELS "runtime;assets;filesystem;database;headless" TIMEOUT 30)
@@ -216,7 +224,7 @@ if(TARGET Workphone)
             ${WP_ROOT}/Dependencies/lib/windows/boost/$<CONFIG>
             ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
     endif()
-    set_target_properties(EditorMediaPathTests PROPERTIES FOLDER Tests/Cpp)
+    set_target_properties(EditorMediaPathTests PROPERTIES FOLDER Tests/Cpp/Editor)
     add_test(NAME WPEditor.bundled_media_paths COMMAND EditorMediaPathTests)
     set_tests_properties(WPEditor.bundled_media_paths PROPERTIES
         LABELS "editor;filesystem;headless" TIMEOUT 30)
@@ -230,7 +238,7 @@ if(TARGET Workphone)
         target_link_directories(WPMaterialParameterLayoutTests PRIVATE
             ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
     endif()
-    set_target_properties(WPMaterialParameterLayoutTests PROPERTIES FOLDER Tests/Cpp)
+    set_target_properties(WPMaterialParameterLayoutTests PROPERTIES FOLDER Tests/Cpp/Graphics)
     add_test(NAME WPGraphics.material_parameter_layout COMMAND WPMaterialParameterLayoutTests)
     set_tests_properties(WPGraphics.material_parameter_layout PROPERTIES LABELS "graphics;material;headless" TIMEOUT 30)
 endif()
@@ -241,7 +249,7 @@ if(TARGET WPNetwork)
         target_compile_definitions(WPNetworkGNSIntegrationTests PRIVATE BOOST_ALL_NO_LIB
             WP_GNS_LOOPBACK_PROFILE="${WP_ROOT}/Samples/cpp/Network/Config/network.gns-loopback.json")
         target_link_libraries(WPNetworkGNSIntegrationTests PRIVATE WPNetwork Workphone)
-        set_target_properties(WPNetworkGNSIntegrationTests PROPERTIES FOLDER Tests/Network)
+        set_target_properties(WPNetworkGNSIntegrationTests PROPERTIES FOLDER Tests/Cpp/Network)
         add_test(NAME WPNetwork.gns_engine COMMAND WPNetworkGNSIntegrationTests)
         set_tests_properties(WPNetwork.gns_engine PROPERTIES LABELS "network;scene;gns;development" TIMEOUT 30)
         if(WIN32)
@@ -249,11 +257,11 @@ if(TARGET WPNetwork)
             target_compile_features(WPNetworkGNSTrustTests PRIVATE cxx_std_17)
             target_compile_definitions(WPNetworkGNSTrustTests PRIVATE BOOST_ALL_NO_LIB)
             target_link_libraries(WPNetworkGNSTrustTests PRIVATE WPNetwork Workphone)
-            set_target_properties(WPNetworkGNSTrustTests PROPERTIES FOLDER Tests/Network)
+            set_target_properties(WPNetworkGNSTrustTests PROPERTIES FOLDER Tests/Cpp/Network)
             add_executable(WPNetworkGNSProofTests NetworkGNSProofTests.cpp)
             target_compile_features(WPNetworkGNSProofTests PRIVATE cxx_std_17)
             target_link_libraries(WPNetworkGNSProofTests PRIVATE GameNetworkingSockets::static)
-            set_target_properties(WPNetworkGNSProofTests PROPERTIES FOLDER Tests/Network)
+            set_target_properties(WPNetworkGNSProofTests PROPERTIES FOLDER Tests/Cpp/Network)
             if(WP_NETWORK_GNS_VALIDATION_OUTPUT)
                 set_target_properties(WPNetworkGNSTrustTests WPNetworkGNSProofTests PROPERTIES
                     RUNTIME_OUTPUT_DIRECTORY "${WP_NETWORK_GNS_VALIDATION_OUTPUT}")
@@ -265,7 +273,7 @@ if(TARGET WPNetwork)
     target_include_directories(WPNetworkIntegrationTests PRIVATE
         ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Engine/c/Include ${WP_ROOT}/Dependencies/boost)
     target_link_libraries(WPNetworkIntegrationTests PRIVATE WPNetwork Workphone)
-    set_target_properties(WPNetworkIntegrationTests PROPERTIES FOLDER Tests/Network)
+    set_target_properties(WPNetworkIntegrationTests PROPERTIES FOLDER Tests/Cpp/Network)
     add_test(NAME WPNetwork.integration COMMAND WPNetworkIntegrationTests)
     set_tests_properties(WPNetwork.integration PROPERTIES LABELS "network;headless;scene" TIMEOUT 30)
 
@@ -275,7 +283,7 @@ if(TARGET WPNetwork)
     target_include_directories(WPNetworkProcessTests PRIVATE
         ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Engine/c/Include ${WP_ROOT}/Dependencies/boost)
     target_link_libraries(WPNetworkProcessTests PRIVATE WPNetwork Workphone)
-    set_target_properties(WPNetworkProcessTests PROPERTIES FOLDER Tests/Network)
+    set_target_properties(WPNetworkProcessTests PROPERTIES FOLDER Tests/Cpp/Network)
     if(WIN32)
         find_program(WP_NETWORK_POWERSHELL NAMES pwsh powershell REQUIRED)
         add_test(NAME WPNetwork.local_multiprocess
@@ -298,19 +306,19 @@ endif()
 if(WIN32 AND TARGET WPGraphics AND WP_GRAPHICS_SYSTEM_CLAW)
     add_executable(WPMaterialSceneCpuPhaseTests MaterialSceneCpuPhaseTests.cpp MaterialSceneCpuPhaseFixture.c)
     target_compile_features(WPMaterialSceneCpuPhaseTests PRIVATE cxx_std_17)
-    set_target_properties(WPMaterialSceneCpuPhaseTests PROPERTIES FOLDER Tests/Cpp)
+    set_target_properties(WPMaterialSceneCpuPhaseTests PROPERTIES FOLDER Tests/Cpp/Graphics)
     add_test(NAME WPGraphics.material_native_phase_contract COMMAND WPMaterialSceneCpuPhaseTests)
     set_tests_properties(WPGraphics.material_native_phase_contract PROPERTIES
         LABELS "graphics;material;cpu;headless" TIMEOUT 30)
     add_executable(WPMaterialSceneCpuAttributionTests MaterialSceneCpuAttributionTests.cpp MaterialSceneCpuNativeFixture.c)
     target_compile_features(WPMaterialSceneCpuAttributionTests PRIVATE cxx_std_17)
-    set_target_properties(WPMaterialSceneCpuAttributionTests PROPERTIES FOLDER Tests/Cpp)
+    set_target_properties(WPMaterialSceneCpuAttributionTests PROPERTIES FOLDER Tests/Cpp/Graphics)
     add_test(NAME WPGraphics.material_scene_cpu_attribution_contract COMMAND WPMaterialSceneCpuAttributionTests)
     set_tests_properties(WPGraphics.material_scene_cpu_attribution_contract PROPERTIES
         LABELS "graphics;material;cpu;headless" TIMEOUT 30)
     add_executable(WPMaterialCpuAttributionTests MaterialCpuAttributionTests.cpp)
     target_compile_features(WPMaterialCpuAttributionTests PRIVATE cxx_std_17)
-    set_target_properties(WPMaterialCpuAttributionTests PROPERTIES FOLDER Tests/Cpp)
+    set_target_properties(WPMaterialCpuAttributionTests PROPERTIES FOLDER Tests/Cpp/Graphics)
     add_test(NAME WPGraphics.material_cpu_attribution_contract COMMAND WPMaterialCpuAttributionTests)
     set_tests_properties(WPGraphics.material_cpu_attribution_contract PROPERTIES
         LABELS "graphics;material;cpu;headless" TIMEOUT 30)
@@ -326,7 +334,7 @@ if(WIN32 AND TARGET WPGraphics AND WP_GRAPHICS_SYSTEM_CLAW)
             WPGraphics Workphone WorkphoneGraphics WorkphoneCore d3d11 d3dcompiler dxguid)
         target_link_directories(WPMaterialProgramCaptureBenchmark PRIVATE
             ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
-        set_target_properties(WPMaterialProgramCaptureBenchmark PROPERTIES FOLDER Tests/Cpp)
+        set_target_properties(WPMaterialProgramCaptureBenchmark PROPERTIES FOLDER Tests/Cpp/Graphics)
         add_executable(WPMaterialProgramBindingTests MaterialProgramBindingTests.cpp)
         target_include_directories(WPMaterialProgramBindingTests PRIVATE
             ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Engine/c/Include
@@ -337,7 +345,7 @@ if(WIN32 AND TARGET WPGraphics AND WP_GRAPHICS_SYSTEM_CLAW)
             WPGraphics Workphone WorkphoneGraphics WorkphoneCore d3d11 d3dcompiler dxguid)
         target_link_directories(WPMaterialProgramBindingTests PRIVATE
             ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
-        set_target_properties(WPMaterialProgramBindingTests PROPERTIES FOLDER Tests/Cpp)
+        set_target_properties(WPMaterialProgramBindingTests PROPERTIES FOLDER Tests/Cpp/Graphics)
         add_test(NAME WPGraphics.material_program_binding COMMAND WPMaterialProgramBindingTests)
         set_tests_properties(WPGraphics.material_program_binding PROPERTIES
             LABELS "graphics;material;gpu;packing" TIMEOUT 60)
@@ -358,7 +366,7 @@ if(WIN32 AND TARGET WPGraphics AND WP_GRAPHICS_SYSTEM_CLAW)
         target_link_directories(ImGuiViewportInputTests PRIVATE
             ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>
             ${WP_ROOT}/Dependencies/lib/windows/boost)
-        set_target_properties(ImGuiViewportInputTests PROPERTIES FOLDER Tests/Cpp)
+        set_target_properties(ImGuiViewportInputTests PROPERTIES FOLDER Tests/Cpp/UI)
         add_test(NAME WPImGui.viewport_input COMMAND ImGuiViewportInputTests)
         set_tests_properties(WPImGui.viewport_input PROPERTIES
             LABELS "ui;editor;headless" TIMEOUT 30)
@@ -406,7 +414,7 @@ if(WIN32 AND TARGET WPGraphics AND WP_GRAPHICS_SYSTEM_CLAW)
                 target_compile_definitions(${graphics_target} PRIVATE
                     WP_TEST_IMGUI WP_TEST_ICON_FONT="${WP_ROOT}/bin/Media/fa-solid-900.ttf")
             endif()
-            set_target_properties(${graphics_target} PROPERTIES FOLDER Tests/Cpp)
+            set_target_properties(${graphics_target} PROPERTIES FOLDER Tests/Cpp/Graphics)
             add_test(NAME ${graphics_test} COMMAND ${graphics_target})
             set_tests_properties(${graphics_test} PROPERTIES LABELS "graphics;gpu" TIMEOUT 120)
             if(graphics_contract STREQUAL "ClawProduction")
@@ -425,6 +433,7 @@ if(WIN32 AND TARGET WPGraphics AND WP_GRAPHICS_SYSTEM_CLAW)
             endif()
         endif()
     endforeach()
+
     add_executable(ClawCubemapTests ClawCubemapTests.cpp)
     target_compile_definitions(ClawCubemapTests PRIVATE BOOST_ALL_NO_LIB FREEIMAGE_LIB)
     target_include_directories(ClawCubemapTests PRIVATE
@@ -436,7 +445,7 @@ if(WIN32 AND TARGET WPGraphics AND WP_GRAPHICS_SYSTEM_CLAW)
     target_link_libraries(ClawCubemapTests PRIVATE WPGraphics WorkphonePlatformWin32 WorkphoneCore d3d11)
     target_link_directories(ClawCubemapTests PRIVATE
         ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
-    set_target_properties(ClawCubemapTests PROPERTIES FOLDER Tests/Cpp)
+    set_target_properties(ClawCubemapTests PROPERTIES FOLDER Tests/Cpp/Graphics)
     add_test(NAME WPGraphics.cubemap_pbr COMMAND ClawCubemapTests)
     add_executable(WPGraphicsClawUIDestructionTests ClawUIDestructionTests.cpp)
     target_include_directories(WPGraphicsClawUIDestructionTests PRIVATE
@@ -450,7 +459,7 @@ if(WIN32 AND TARGET WPGraphics AND WP_GRAPHICS_SYSTEM_CLAW)
         WPGraphics Workphone WorkphoneGraphics WorkphoneCore WorkphonePlatform)
     target_link_directories(WPGraphicsClawUIDestructionTests PRIVATE
         ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
-    set_target_properties(WPGraphicsClawUIDestructionTests PROPERTIES FOLDER Tests/Cpp)
+    set_target_properties(WPGraphicsClawUIDestructionTests PROPERTIES FOLDER Tests/Cpp/Graphics)
     add_test(NAME WPGraphics.claw_ui_destruction COMMAND WPGraphicsClawUIDestructionTests)
     set_tests_properties(WPGraphics.claw_ui_destruction PROPERTIES LABELS "graphics;headless;lifecycle" TIMEOUT 60)
     add_test(NAME WPGraphics.claw_paused_game_ui COMMAND WPGraphicsClawUIDestructionTests --paused-game-ui-only)
@@ -470,7 +479,7 @@ if (WP_BUILD_TESTS)
         target_link_directories(WPFoliageAuthoringTests PRIVATE
             ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
     endif()
-    set_target_properties(WPFoliageAuthoringTests PROPERTIES FOLDER Tests/Cpp)
+    set_target_properties(WPFoliageAuthoringTests PROPERTIES FOLDER Tests/Cpp/Graphics)
     add_test(NAME WPGraphics.foliage_authoring COMMAND WPFoliageAuthoringTests)
     set_tests_properties(WPGraphics.foliage_authoring PROPERTIES LABELS "foliage;headless;authoring" TIMEOUT 60)
     add_test(NAME WPGraphics.foliage_plant_geometry COMMAND WPFoliageAuthoringTests --plant-only)
@@ -486,7 +495,7 @@ if (WP_BUILD_TESTS)
         target_link_directories(WPProceduralFoliageTests PRIVATE
             ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
     endif()
-    set_target_properties(WPProceduralFoliageTests PROPERTIES FOLDER Tests/Cpp)
+    set_target_properties(WPProceduralFoliageTests PROPERTIES FOLDER Tests/Cpp/Graphics)
     add_test(NAME WPGraphics.procedural_foliage COMMAND WPProceduralFoliageTests)
     set_tests_properties(WPGraphics.procedural_foliage PROPERTIES
         LABELS "foliage;headless;scene;procedural" TIMEOUT 30)
@@ -495,11 +504,13 @@ if (WP_BUILD_TESTS)
     target_compile_definitions(WPTerrainContractsTests PRIVATE BOOST_ALL_NO_LIB)
     target_include_directories(WPTerrainContractsTests PRIVATE ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Dependencies/boost)
     target_link_libraries(WPTerrainContractsTests PRIVATE Workphone $<$<PLATFORM_ID:Windows>:psapi>)
+   
     if(WIN32)
         target_link_directories(WPTerrainContractsTests PRIVATE
             ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
     endif()
-    set_target_properties(WPTerrainContractsTests PROPERTIES FOLDER Tests/Cpp)
+    
+    set_target_properties(WPTerrainContractsTests PROPERTIES FOLDER Tests/Cpp/Graphics)
     add_test(NAME WPGraphics.terrain_contracts COMMAND WPTerrainContractsTests)
     set_tests_properties(WPGraphics.terrain_contracts PROPERTIES LABELS "terrain;editor;headless" TIMEOUT 60)
     add_test(NAME WPGraphics.terrain_representative_performance COMMAND WPTerrainContractsTests --performance)
@@ -520,7 +531,7 @@ if (WP_BUILD_TESTS)
                 target_link_directories(${contract_target} PRIVATE
                     ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
             endif()
-            set_target_properties(${contract_target} PROPERTIES FOLDER Tests/Cpp)
+            set_target_properties(${contract_target} PROPERTIES FOLDER Tests/Cpp/Physics)
         endforeach()
         add_test(NAME WPGraphics.foliage_contracts COMMAND WPFoliageContractsTests)
         add_test(NAME WPGraphics.terrain_physics COMMAND WPTerrainPhysicsContractsTests)
@@ -546,7 +557,7 @@ if (WP_BUILD_TESTS)
             target_compile_definitions(WPAssetCatalogTests PRIVATE WP_EDITOR_ASSET_COMMAND_CONTRACTS=1)
         endif()
 
-        set_target_properties(WPAssetCatalogTests PROPERTIES FOLDER Tests/Cpp)
+        set_target_properties(WPAssetCatalogTests PROPERTIES FOLDER Tests/Cpp/Assets)
         add_test(NAME WorkphoneAssets.catalog_contracts COMMAND WPAssetCatalogTests)
         set_tests_properties(WorkphoneAssets.catalog_contracts PROPERTIES LABELS "assets;database;headless" TIMEOUT 60)
     endif()
@@ -614,7 +625,7 @@ if (WP_BUILD_TESTS)
             target_link_libraries(WPScenePickingTests PRIVATE Workphone)
             target_link_directories(WPScenePickingTests PRIVATE
                 ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
-            set_target_properties(WPScenePickingTests PROPERTIES FOLDER Tests/Cpp)
+            set_target_properties(WPScenePickingTests PROPERTIES FOLDER Tests/Cpp/Editor)
             add_test(NAME WPEditor.scene_picking COMMAND WPScenePickingTests)
             set_tests_properties(WPEditor.scene_picking PROPERTIES LABELS "editor;graphics;headless" TIMEOUT 30)
             if(WP_BUILD_RESOURCE_SYSTEM AND TARGET WPSQLite)
@@ -629,7 +640,7 @@ if (WP_BUILD_TESTS)
                     WorkphoneGraphics WorkphoneCore WorkphonePlatformWin32 d3d11)
                 target_link_directories(WPMaterialLoadSequenceTests PRIVATE
                     ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
-                set_target_properties(WPMaterialLoadSequenceTests PROPERTIES FOLDER Tests/Cpp)
+                set_target_properties(WPMaterialLoadSequenceTests PROPERTIES FOLDER Tests/Cpp/Graphics)
                 add_test(NAME WPGraphics.material_load_sequence COMMAND WPMaterialLoadSequenceTests)
                 set_tests_properties(WPGraphics.material_load_sequence PROPERTIES LABELS "graphics;assets;scene;headless" TIMEOUT 30)
                 add_test(NAME WPGraphics.properties_json_contract
@@ -685,7 +696,7 @@ if (WP_BUILD_TESTS)
                 endif()
                 target_link_directories(WPGraphicsCookedResourceTests PRIVATE
                     ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
-                set_target_properties(WPGraphicsCookedResourceTests PROPERTIES FOLDER Tests/Cpp)
+                set_target_properties(WPGraphicsCookedResourceTests PROPERTIES FOLDER Tests/Cpp/Graphics)
                 add_test(NAME WPGraphics.cooked_material_resource COMMAND WPGraphicsCookedResourceTests)
                 set_tests_properties(WPGraphics.cooked_material_resource PROPERTIES LABELS "graphics;gpu;assets" TIMEOUT 90)
             endif()
@@ -750,12 +761,12 @@ endif()
 
 add_executable(VehicleAudioMixTests VehicleAudioMixTests.cpp)
 target_include_directories(VehicleAudioMixTests PRIVATE ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Samples/cpp/VehicleAdvanced)
-set_target_properties(VehicleAudioMixTests PROPERTIES FOLDER Tests/Cpp)
+set_target_properties(VehicleAudioMixTests PROPERTIES FOLDER Tests/Cpp/Vehicle)
 add_test(NAME WPVehicle.audio_mix COMMAND VehicleAudioMixTests)
 
 add_executable(VehicleDecalTests VehicleDecalTests.cpp)
 target_include_directories(VehicleDecalTests PRIVATE ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Samples/cpp/VehicleAdvanced)
-set_target_properties(VehicleDecalTests PROPERTIES FOLDER Tests/Cpp)
+set_target_properties(VehicleDecalTests PROPERTIES FOLDER Tests/Cpp/Vehicle)
 add_test(NAME WPVehicle.skid_decals COMMAND VehicleDecalTests)
 
 if(TARGET WorkphonePhysics)
@@ -763,17 +774,17 @@ if(TARGET WorkphonePhysics)
     target_include_directories(PhysicsSceneCapacityTests PRIVATE
         ${WP_ROOT}/Engine/c/Include/WorkphonePhysics ${WP_ROOT}/Engine/c/Include/WorkphoneCore)
     target_link_libraries(PhysicsSceneCapacityTests PRIVATE WorkphonePhysics WorkphoneCore)
-    set_target_properties(PhysicsSceneCapacityTests PROPERTIES FOLDER Tests/Cpp)
+    set_target_properties(PhysicsSceneCapacityTests PROPERTIES FOLDER Tests/Cpp/Physics)
     add_test(NAME WPPhysics.scene_capacity COMMAND PhysicsSceneCapacityTests)
     add_executable(VehicleHandlingTests VehicleHandlingTests.cpp)
     target_include_directories(VehicleHandlingTests PRIVATE ${WP_ROOT}/Engine/cpp/Include)
-    set_target_properties(VehicleHandlingTests PROPERTIES FOLDER Tests/Cpp)
+    set_target_properties(VehicleHandlingTests PROPERTIES FOLDER Tests/Cpp/Vehicle)
     add_test(NAME WPVehicle.assisted_handling COMMAND VehicleHandlingTests)
     add_executable(VehicleInertiaTests VehicleInertiaTests.cpp)
     target_include_directories(VehicleInertiaTests PRIVATE
         ${WP_ROOT}/Engine/c/Include/WorkphonePhysics ${WP_ROOT}/Engine/c/Include/WorkphoneCore)
     target_link_libraries(VehicleInertiaTests PRIVATE WorkphonePhysics WorkphoneCore)
-    set_target_properties(VehicleInertiaTests PROPERTIES FOLDER Tests/Cpp)
+    set_target_properties(VehicleInertiaTests PROPERTIES FOLDER Tests/Cpp/Vehicle)
     add_test(NAME WPPhysics.rotated_vehicle_inertia COMMAND VehicleInertiaTests)
 endif()
 
@@ -788,7 +799,7 @@ if(TARGET Workphone)
         ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Dependencies/boost ${WP_ROOT}/Tests/cpp/UnitTests)
     target_link_libraries(WPAnimationCoreTests PRIVATE $<TARGET_LINKER_FILE:Workphone>)
     add_dependencies(WPAnimationCoreTests Workphone)
-    set_target_properties(WPAnimationCoreTests PROPERTIES FOLDER Tests/Cpp)
+    set_target_properties(WPAnimationCoreTests PROPERTIES FOLDER Tests/Cpp/Animation)
     add_test(NAME WPAnimation.core_contracts COMMAND WPAnimationCoreTests)
     if(TARGET WPAssimp)
         add_executable(WPAnimationImportTests AnimationImportTests.cpp)
@@ -819,7 +830,7 @@ if(TARGET Workphone)
             endif()
             add_dependencies(WPAnimationImportTests WPGraphics WPSQLite)
         endif()
-        set_target_properties(WPAnimationImportTests PROPERTIES FOLDER Tests/Cpp)
+        set_target_properties(WPAnimationImportTests PROPERTIES FOLDER Tests/Cpp/Animation)
         add_test(NAME WPAnimation.import_contracts COMMAND WPAnimationImportTests)
         if(TARGET Meshopt)
             add_executable(WPAssimpCompressedImportTests AssimpCompressedImportTests.cpp)
@@ -839,7 +850,7 @@ if(TARGET Workphone)
             target_link_libraries(WPAssimpCompressedImportTests PRIVATE
                 $<TARGET_LINKER_FILE:WPAssimp> Meshopt)
             add_dependencies(WPAssimpCompressedImportTests WPAssimp)
-            set_target_properties(WPAssimpCompressedImportTests PROPERTIES FOLDER Tests/Cpp)
+            set_target_properties(WPAssimpCompressedImportTests PROPERTIES FOLDER Tests/Cpp/Assets)
             add_test(NAME WPAssimp.compressed_import COMMAND WPAssimpCompressedImportTests)
             set_tests_properties(WPAssimp.compressed_import PROPERTIES
                 LABELS "assets;import;headless" TIMEOUT 30)
@@ -850,11 +861,13 @@ if(TARGET Workphone)
     target_compile_definitions(StateContextListenerTests PRIVATE BOOST_ALL_NO_LIB)
     target_include_directories(StateContextListenerTests PRIVATE ${WP_ROOT}/Engine/cpp/Include)
     target_link_libraries(StateContextListenerTests PRIVATE Workphone)
+
     if(WIN32)
         target_link_directories(StateContextListenerTests PRIVATE
             ${WP_ROOT}/Dependencies/lib/windows/boost
             ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
     endif()
+
     set_target_properties(StateContextListenerTests PROPERTIES FOLDER Tests/Cpp)
     add_test(NAME Workphone.state_listener_fanout COMMAND StateContextListenerTests)
 
@@ -862,61 +875,72 @@ if(TARGET Workphone)
     target_compile_definitions(MeshImposterTests PRIVATE BOOST_ALL_NO_LIB)
     target_include_directories(MeshImposterTests PRIVATE ${WP_ROOT}/Engine/cpp/Include)
     target_link_libraries(MeshImposterTests PRIVATE Workphone)
+
     if(WIN32)
         target_link_directories(MeshImposterTests PRIVATE
             ${WP_ROOT}/Dependencies/lib/windows/boost
             ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
     endif()
-    set_target_properties(MeshImposterTests PROPERTIES FOLDER Tests/Cpp)
+
+    set_target_properties(MeshImposterTests PROPERTIES FOLDER Tests/Cpp/Graphics)
     add_test(NAME Workphone.mesh_imposters COMMAND MeshImposterTests)
 
     add_executable(OpenCityLayoutTests OpenCityLayoutTests.cpp)
     target_compile_definitions(OpenCityLayoutTests PRIVATE BOOST_ALL_NO_LIB)
     target_include_directories(OpenCityLayoutTests PRIVATE ${WP_ROOT}/Engine/cpp/Include)
     target_link_libraries(OpenCityLayoutTests PRIVATE Workphone)
+
     if(WIN32)
         target_link_directories(OpenCityLayoutTests PRIVATE
             ${WP_ROOT}/Dependencies/lib/windows/boost
             ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
     endif()
-    set_target_properties(OpenCityLayoutTests PROPERTIES FOLDER Tests/Cpp)
+
+    set_target_properties(OpenCityLayoutTests PROPERTIES FOLDER Tests/Cpp/Procedural)
     add_test(NAME Workphone.open_city_layout COMMAND OpenCityLayoutTests)
     add_executable(OpenCityStreetDetailsTests OpenCityStreetDetailsTests.cpp)
     target_compile_definitions(OpenCityStreetDetailsTests PRIVATE BOOST_ALL_NO_LIB)
     target_include_directories(OpenCityStreetDetailsTests PRIVATE ${WP_ROOT}/Engine/cpp/Include)
     target_link_libraries(OpenCityStreetDetailsTests PRIVATE Workphone)
+
     if(WIN32)
         target_link_directories(OpenCityStreetDetailsTests PRIVATE
             ${WP_ROOT}/Dependencies/lib/windows/boost
             ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
     endif()
-    set_target_properties(OpenCityStreetDetailsTests PROPERTIES FOLDER Tests/Cpp)
+
+    set_target_properties(OpenCityStreetDetailsTests PROPERTIES FOLDER Tests/Cpp/Procedural)
     add_test(NAME Workphone.open_city_street_details COMMAND OpenCityStreetDetailsTests)
     add_executable(OpenCityRoadNetworkTests OpenCityRoadNetworkTests.cpp)
     target_compile_definitions(OpenCityRoadNetworkTests PRIVATE BOOST_ALL_NO_LIB)
     target_include_directories(OpenCityRoadNetworkTests PRIVATE ${WP_ROOT}/Engine/cpp/Include)
     target_link_libraries(OpenCityRoadNetworkTests PRIVATE Workphone)
+
     if(WIN32)
         target_link_directories(OpenCityRoadNetworkTests PRIVATE
             ${WP_ROOT}/Dependencies/lib/windows/boost
             ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
     endif()
-    set_target_properties(OpenCityRoadNetworkTests PROPERTIES FOLDER Tests/Cpp)
+
+    set_target_properties(OpenCityRoadNetworkTests PROPERTIES FOLDER Tests/Cpp/Procedural)
     add_test(NAME Workphone.open_city_road_network COMMAND OpenCityRoadNetworkTests)
     set_tests_properties(Workphone.open_city_road_network PROPERTIES TIMEOUT 60)
     add_executable(CityRoadSplineSourceTests CityRoadSplineSourceTests.cpp)
     target_compile_definitions(CityRoadSplineSourceTests PRIVATE BOOST_ALL_NO_LIB)
     target_include_directories(CityRoadSplineSourceTests PRIVATE ${WP_ROOT}/Engine/cpp/Include)
     target_link_libraries(CityRoadSplineSourceTests PRIVATE Workphone)
+
     if(WIN32)
         target_link_directories(CityRoadSplineSourceTests PRIVATE
             ${WP_ROOT}/Dependencies/lib/windows/boost
             ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
     endif()
-    set_target_properties(CityRoadSplineSourceTests PROPERTIES FOLDER Tests/Cpp)
+
+    set_target_properties(CityRoadSplineSourceTests PROPERTIES FOLDER Tests/Cpp/Procedural)
     add_test(NAME Workphone.city_road_spline_source COMMAND CityRoadSplineSourceTests
         ${WP_ROOT}/docs/examples/city-road-source-v1.cityroads.json)
     set_tests_properties(Workphone.city_road_spline_source PROPERTIES TIMEOUT 60)
+
     foreach(city_road_test IN ITEMS CityRoadRoundabout CityRoadTerrainMesh CityRoadTerrainFit CityRoadAuthoring OpenCityRoadSource CityRoadParcelSupport CityRoadFootways CitySurfaceLibrary CityTrafficSimulation)
         add_executable(${city_road_test}Tests ${city_road_test}Tests.cpp)
         target_compile_definitions(${city_road_test}Tests PRIVATE BOOST_ALL_NO_LIB)
@@ -927,7 +951,7 @@ if(TARGET Workphone)
                 ${WP_ROOT}/Dependencies/lib/windows/boost
                 ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
         endif()
-        set_target_properties(${city_road_test}Tests PROPERTIES FOLDER Tests/Cpp)
+        set_target_properties(${city_road_test}Tests PROPERTIES FOLDER Tests/Cpp/Procedural)
     endforeach()
     add_test(NAME Workphone.city_road_roundabout COMMAND CityRoadRoundaboutTests)
     add_test(NAME Workphone.city_road_terrain_mesh COMMAND CityRoadTerrainMeshTests)
@@ -969,7 +993,7 @@ if(WIN32 AND WP_ENABLE_LUA AND TARGET WPLuaBind)
     target_link_directories(TerrainLuaBindingTests PRIVATE
         ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
     add_dependencies(TerrainLuaBindingTests WPLuaBind Workphone)
-    set_target_properties(TerrainLuaBindingTests PROPERTIES FOLDER Tests/Cpp)
+    set_target_properties(TerrainLuaBindingTests PROPERTIES FOLDER Tests/Cpp/Graphics)
     add_test(NAME WPGraphics.terrain_lua_workflow COMMAND TerrainLuaBindingTests)
     set_tests_properties(WPGraphics.terrain_lua_workflow PROPERTIES LABELS "terrain;editor;lua" TIMEOUT 60)
     # Scene bindings call concrete Lua classes which are not DLL-exported.
@@ -987,7 +1011,7 @@ if(WIN32 AND WP_ENABLE_LUA AND TARGET WPLuaBind)
     target_link_libraries(VehicleLuaBindingTests PRIVATE
         $<TARGET_LINKER_FILE:WPLuaBind> $<TARGET_LINKER_FILE:Workphone> lua lua_cjson luabind Boost::json $<$<PLATFORM_ID:Windows>:ws2_32>)
     add_dependencies(VehicleLuaBindingTests WPLuaBind Workphone)
-    set_target_properties(VehicleLuaBindingTests PROPERTIES FOLDER Tests/Cpp)
+    set_target_properties(VehicleLuaBindingTests PROPERTIES FOLDER Tests/Cpp/Vehicle)
     add_test(NAME WPVehicle.lua_presentation_bindings COMMAND VehicleLuaBindingTests)
 
     add_executable(LuaRuntimeTests LuaRuntimeTests.cpp
@@ -1003,12 +1027,14 @@ if(WIN32 AND WP_ENABLE_LUA AND TARGET WPLuaBind)
     target_link_libraries(LuaRuntimeTests PRIVATE
         $<TARGET_LINKER_FILE:WPLuaBind> $<TARGET_LINKER_FILE:Workphone> lua lua_cjson luabind Boost::json $<$<PLATFORM_ID:Windows>:ws2_32>)
     add_dependencies(LuaRuntimeTests WPLuaBind Workphone)
+
     if(TARGET WPSQLite)
         target_compile_definitions(LuaRuntimeTests PRIVATE WP_LUA_ASSET_TESTS=1)
         target_link_libraries(LuaRuntimeTests PRIVATE $<TARGET_LINKER_FILE:WPSQLite>)
         add_dependencies(LuaRuntimeTests WPSQLite)
     endif()
-    set_target_properties(LuaRuntimeTests PROPERTIES FOLDER Tests/Cpp)
+
+    set_target_properties(LuaRuntimeTests PROPERTIES FOLDER Tests/Cpp/Scripting)
     add_test(NAME WPLua.runtime_contracts COMMAND LuaRuntimeTests)
     set_tests_properties(WPLua.runtime_contracts PROPERTIES TIMEOUT 60)
     add_executable(LuaDebuggerTests LuaDebuggerTests.cpp
@@ -1023,9 +1049,10 @@ if(WIN32 AND WP_ENABLE_LUA AND TARGET WPLuaBind)
     target_link_libraries(LuaDebuggerTests PRIVATE $<TARGET_LINKER_FILE:WPLuaBind> $<TARGET_LINKER_FILE:Workphone>
         lua lua_cjson luabind Boost::json $<$<PLATFORM_ID:Windows>:ws2_32>)
     add_dependencies(LuaDebuggerTests WPLuaBind Workphone)
-    set_target_properties(LuaDebuggerTests PROPERTIES FOLDER Tests/Cpp)
+    set_target_properties(LuaDebuggerTests PROPERTIES FOLDER Tests/Cpp/Scripting)
     add_test(NAME WPLua.debugger_integration COMMAND LuaDebuggerTests)
     set_tests_properties(WPLua.debugger_integration PROPERTIES TIMEOUT 60)
+
     foreach(lua_host_target VehicleLuaBindingTests LuaRuntimeTests LuaDebuggerTests)
         if(WIN32)
             target_link_directories(${lua_host_target} PRIVATE
@@ -1067,15 +1094,16 @@ if (WP_BUILD_TESTS)
         list(APPEND WP_TERRAIN_VALIDATION_TARGETS Editor)
     endif()
     add_custom_target(WPTerrainValidation DEPENDS ${WP_TERRAIN_VALIDATION_TARGETS})
-    set_target_properties(WPTerrainValidation PROPERTIES FOLDER Tests)
+    set_target_properties(WPTerrainValidation PROPERTIES FOLDER Tests/Cpp/Graphics)
 endif()
+
 if(WP_BUILD_TESTS AND TARGET Workphone)
     add_executable(WPPlanarGraphTests PlanarGraphTests.cpp)
     target_include_directories(WPPlanarGraphTests PRIVATE
         ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Dependencies/boost)
     target_link_libraries(WPPlanarGraphTests PRIVATE $<TARGET_LINKER_FILE:Workphone>)
     add_dependencies(WPPlanarGraphTests Workphone)
-    set_target_properties(WPPlanarGraphTests PROPERTIES FOLDER Tests/Cpp)
+    set_target_properties(WPPlanarGraphTests PROPERTIES FOLDER Tests/Cpp/Procedural)
     add_test(NAME WPProcedural.planar_graph COMMAND WPPlanarGraphTests)
 endif()
 
@@ -1087,7 +1115,7 @@ if(WP_BUILD_TESTS AND TARGET WPProcedural)
     target_link_libraries(WPLandscapeSetupTests PRIVATE
         $<TARGET_LINKER_FILE:Workphone> $<TARGET_LINKER_FILE:WPProcedural>)
     add_dependencies(WPLandscapeSetupTests Workphone WPProcedural)
-    set_target_properties(WPLandscapeSetupTests PROPERTIES FOLDER Tests/Cpp)
+    set_target_properties(WPLandscapeSetupTests PROPERTIES FOLDER Tests/Cpp/Procedural)
     add_test(NAME WPGraphics.landscape_setup COMMAND WPLandscapeSetupTests)
     set_tests_properties(WPGraphics.landscape_setup PROPERTIES
         LABELS "landscape;terrain;foliage;procedural" TIMEOUT 120
@@ -1101,7 +1129,7 @@ if(WP_BUILD_TESTS AND TARGET WPProcedural)
     target_link_libraries(WPProceduralCityTests PRIVATE
         $<TARGET_LINKER_FILE:Workphone> $<TARGET_LINKER_FILE:WPProcedural>)
     add_dependencies(WPProceduralCityTests Workphone WPProcedural)
-    set_target_properties(WPProceduralCityTests PROPERTIES FOLDER Tests/Cpp)
+    set_target_properties(WPProceduralCityTests PROPERTIES FOLDER Tests/Cpp/Procedural)
     add_test(NAME WPProcedural.city_production COMMAND WPProceduralCityTests --report_level=detailed)
     set_tests_properties(WPProcedural.city_production PROPERTIES
         WORKING_DIRECTORY "$<TARGET_FILE_DIR:WPProceduralCityTests>"
@@ -1114,11 +1142,12 @@ if(WP_BUILD_TESTS AND TARGET WPProcedural)
     target_link_libraries(WPBlockGeneratorTests PRIVATE
         $<TARGET_LINKER_FILE:Workphone> $<TARGET_LINKER_FILE:WPProcedural>)
     add_dependencies(WPBlockGeneratorTests Workphone WPProcedural)
-    set_target_properties(WPBlockGeneratorTests PROPERTIES FOLDER Tests/Cpp)
+    set_target_properties(WPBlockGeneratorTests PROPERTIES FOLDER Tests/Cpp/Procedural)
     add_test(NAME WPProcedural.block_generator COMMAND WPBlockGeneratorTests)
     set_tests_properties(WPProcedural.block_generator PROPERTIES
         WORKING_DIRECTORY "$<TARGET_FILE_DIR:WPBlockGeneratorTests>" TIMEOUT 60)
 endif()
+
 if(WIN32)
     add_executable(WPGraphicsParticleComputeDX11Tests
         GraphicsProduction/ParticleComputeDX11Tests.c
@@ -1136,11 +1165,13 @@ if(WIN32)
     set_tests_properties(WPGraphics.project_gpu_particles_warp PROPERTIES
         SKIP_RETURN_CODE 77 ENVIRONMENT "WP_PARTICLE_TEST_WARP=1")
 endif()
+
 add_executable(WPHierarchicalDepthOcclusionTests HierarchicalDepthOcclusionTests.cpp)
 target_compile_features(WPHierarchicalDepthOcclusionTests PRIVATE cxx_std_17)
 target_include_directories(WPHierarchicalDepthOcclusionTests PRIVATE "${WP_ROOT}/Engine/cpp/Include")
 set_target_properties(WPHierarchicalDepthOcclusionTests PROPERTIES FOLDER Tests/Cpp)
 add_test(NAME WPGraphics.hierarchical_depth_occlusion COMMAND WPHierarchicalDepthOcclusionTests)
+
 if(WIN32)
     add_executable(WPDepthReadbackDX11Tests GraphicsProduction/DepthReadbackDX11Tests.cpp
         "${WP_ROOT}/Engine/c/Source/WorkphonePlatformWin32/workphone_graphics_depth_readback_dx11.c")
