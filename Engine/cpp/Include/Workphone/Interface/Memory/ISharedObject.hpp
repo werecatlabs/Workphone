@@ -812,31 +812,6 @@ namespace workphone
         return m_loadingState;
     }
 
-    WPForceInline ISharedObject::ScopedLoadLock::ScopedLoadLock( ISharedObject *object ) :
-        m_object( object )
-    {
-        if( m_object )
-        {
-            u32 count = 0u;
-            const u32 maxRetries = 100000u;
-            
-            while( m_object->isLoadLocked() && count++ < maxRetries )
-            {
-                Thread::yield();
-            }
-
-            m_object->lockLoad();
-        }
-    }
-
-    WPForceInline ISharedObject::ScopedLoadLock::~ScopedLoadLock()
-    {
-        if( m_object )
-        {
-            m_object->unlockLoad();
-        }
-    }
-
     WPForceInline void ISharedObject::lockLoad()
     {
         ++m_loadLockCount;

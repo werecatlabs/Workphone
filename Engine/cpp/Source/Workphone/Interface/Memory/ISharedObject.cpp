@@ -431,6 +431,30 @@ namespace workphone
         setScriptData( nullptr );
     }
 
+    ISharedObject::ScopedLoadLock::~ScopedLoadLock()
+    {
+        if( m_object )
+        {
+            m_object->unlockLoad();
+        }
+    }
+
+    ISharedObject::ScopedLoadLock::ScopedLoadLock( ISharedObject *object ) : m_object( object )
+    {
+        if( m_object )
+        {
+            u32 count = 0u;
+            const u32 maxRetries = 100000u;
+
+            while( m_object->isLoadLocked() && count++ < maxRetries )
+            {
+                Thread::yield();
+            }
+
+            m_object->lockLoad();
+        }
+    }
+
     void ISharedObject::setLoadingState( LoadingState state )
     {
         auto triggerEvents = getObjectFlags();
