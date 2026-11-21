@@ -23,4 +23,39 @@ namespace workphone::ui
         return m_model;
     }
 
+void IUIAnimationGraph::Model::unlock_shared()
+    {
+        auto app = core::IApplicationManager::instancePtr();
+        auto graphics = app->getGraphicsSystemPtr();
+        graphics->unlock();
+    }
+
+    void IUIAnimationGraph::Model::unlock()
+    {
+        auto app = core::IApplicationManager::instancePtr();
+        auto graphics = app->getGraphicsSystemPtr();
+        graphics->unlock();
+    }
+
+    void IUIAnimationGraph::Model::lock_shared()
+    {
+        auto app = core::IApplicationManager::instancePtr();
+        auto graphics = app->getGraphicsSystemPtr();
+        graphics->lock();
+    }
+
+    bool IUIAnimationGraph::Model::try_lock()
+    {
+        auto app = core::IApplicationManager::instancePtr();
+        auto graphics = app->getGraphicsSystemPtr();
+        return graphics->try_lock();
+    }
+
+    void IUIAnimationGraph::Model::lock()
+    {
+        auto app = core::IApplicationManager::instancePtr();
+        auto graphics = app->getGraphicsSystemPtr();
+        graphics->lock();
+    }
+
 }  // namespace workphone::ui

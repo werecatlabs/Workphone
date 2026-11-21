@@ -16,6 +16,12 @@ namespace workphone
         public:
             void update() override;
 
+            void lock();
+
+            bool try_lock();
+
+            void unlock();
+
             WP_CLASS_REGISTER_DECL;
 
         private:
@@ -56,6 +62,8 @@ namespace workphone
             Vector2F m_dragOrigin = Vector2F::zero();
             Vector2F m_dragStart = Vector2F::zero();
             Vector2F m_addPosition = Vector2F::zero();
+
+            mutable RecursiveSpinMutex m_mutex;
         };
     }  // namespace ui
 }  // namespace workphone

@@ -7,11 +7,26 @@ namespace workphone::ui
 
     void ImGuiAnimationGraph::update()
     {
-#if WP_BUILD_IMGUI
         if( isVisible() )
         {
+            ScopedLock lock( this );
             draw();
         }
-#endif
     }
+
+    void ImGuiAnimationGraph::unlock()
+    {
+        m_mutex.unlock();
+    }
+
+    bool ImGuiAnimationGraph::try_lock()
+    {
+        return m_mutex.try_lock();
+    }
+
+    void ImGuiAnimationGraph::lock()
+    {
+        m_mutex.lock();
+    }
+
 }  // namespace workphone::ui

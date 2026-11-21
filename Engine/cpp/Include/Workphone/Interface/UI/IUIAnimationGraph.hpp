@@ -36,11 +36,8 @@ namespace workphone
                 Array<animation::AnimationGraphSample> samples;
             };
 
-            // Both tasks hold mutex while using the model. The renderer edits the draft
-            // and queues requests. The Application task applies them to the Animator.
-            struct Model
+            struct WPCore_API Model
             {
-                std::mutex mutex;
                 animation::AnimationGraphDefinition edited;
                 Array<animation::AnimationGraphClip> availableClips;
                 Array<animation::AnimationGraphParameter> liveChanges;
@@ -52,6 +49,16 @@ namespace workphone
                 bool selectionChanged = false;
                 bool dirty = false;
                 bool resetView = true;  // Consumed by the widget after loading a different draft.
+
+                void lock();
+
+                bool try_lock();
+
+                void lock_shared();
+
+                void unlock();
+
+                void unlock_shared();
             };
 
             IUIAnimationGraph();

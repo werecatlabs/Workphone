@@ -145,9 +145,11 @@ namespace workphone::ui
     void ImGuiAnimationGraph::draw()
     {
         auto &model = getModel();
-        const std::lock_guard guard( model.mutex );
+        ScopedLock modelLock( &model );
         if( model.resetView )
         {
+            ScopedLock lock( this );
+
             model.resetView = false;
             // Alternate IDs so pending inputs cannot reach the next draft and ImGui
             // can reuse the child windows when switching between Animators.

@@ -548,6 +548,8 @@ namespace workphone::ui
 
     void ImGuiAnimationGraph::drawPoseNodes()
     {
+        ScopedLock lock( this );
+
         auto &model = getModel();
         if( ImGui::Button( "Add Clip Node" ) )
         {

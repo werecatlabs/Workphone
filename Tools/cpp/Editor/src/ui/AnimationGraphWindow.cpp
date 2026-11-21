@@ -67,7 +67,7 @@ namespace workphone::editor
             if( m_graphUI )
             {
                 auto &model = m_graphUI->getModel();
-                const std::lock_guard modelLock( model.mutex );
+                ScopedLock modelLock( &model );
                 loadFromAnimator( nullptr, model );
             }
             m_graphUI = nullptr;
@@ -321,7 +321,7 @@ namespace workphone::editor
         }
 
         auto &model = m_graphUI->getModel();
-        std::unique_lock modelLock( model.mutex );
+        ScopedLock modelLock( &model );
         auto selected = findSelectedAnimator();
         model.selectionChanged = selected != m_animator;
         if( model.selectionChanged &&
@@ -377,7 +377,7 @@ namespace workphone::editor
 
         const bool refreshPreview = ( model.playback.available && model.playback.playing ) ||
                                     action == ui::IUIAnimationGraph::Action::Stop;
-        modelLock.unlock();
+        
         if( refreshPreview )
         {
             auto app = core::IApplicationManager::instancePtr();

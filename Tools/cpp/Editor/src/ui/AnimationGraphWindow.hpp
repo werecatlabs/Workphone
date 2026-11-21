@@ -7,6 +7,7 @@
 
 namespace workphone::editor
 {
+
     class AnimationGraphWindow : public EditorWindow
     {
     public:
@@ -31,6 +32,7 @@ namespace workphone::editor
         SmartPtr<ui::IUIAnimationGraph> m_graphUI;
         SmartPtr<scene::Animator> m_animator;
     };
+
 }  // namespace workphone::editor
 
 #endif  // AnimationGraphWindow_h__
