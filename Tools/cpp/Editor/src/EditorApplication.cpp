@@ -47,6 +47,7 @@
 #include <commands/PasteSelectionCmd.hpp>
 #include <commands/RemoveSelectionCmd.hpp>
 #include <editor/EditorManager.hpp>
+#include <editor/McpPlaytest.hpp>
 #include <editor/Project.hpp>
 #include <jobs/JobRendererSetup.hpp>
 #include <jobs/PlaymodeJob.hpp>
@@ -2503,6 +2504,12 @@ namespace workphone::editor
             {
             case State::Editor:
             {
+                // An MCP client can already have an open, dirty scene before the
+                // first Editor state transition. Its project is selected explicitly.
+                if( m_mcpSessionEnabled )
+                {
+                    break;
+                }
                 auto applicationManager = core::IApplicationManager::instance();
                 WP_ASSERT( applicationManager );
 
@@ -3402,6 +3409,12 @@ namespace workphone::editor
                 {
                     auto inputManager = createProjectInputBackend(
                         factoryManager, applicationManager->getPlayerSettings() );
+                    const bool privateKeyboard = m_mcpSessionEnabled && inputManager &&
+                        inputManager->getTypeInfo() == InputDeviceManager::typeInfo();
+                    if( privateKeyboard )
+                    {
+                        inputManager = createMcpInputDevice( applicationManager->getPlayerSettings() );
+                    }
                     if( inputManager )
                     {
                         applicationManager->setInputDeviceManager( inputManager );
@@ -3410,7 +3423,7 @@ namespace workphone::editor
 
 #if defined WP_PLATFORM_WIN32
                         inputManager->setCreateMouse( true );
-                        inputManager->setCreateKeyboard( true );
+                        inputManager->setCreateKeyboard( !privateKeyboard );
 #elif defined WP_PLATFORM_APPLE
                         inputManager->setCreateMouse( false );
                         inputManager->setCreateKeyboard( false );

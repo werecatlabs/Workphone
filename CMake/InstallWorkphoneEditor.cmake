@@ -49,6 +49,9 @@ foreach(_target IN LISTS _editor_runtime_targets)
 endforeach()
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/editor-package.cfg" DESTINATION . COMPONENT WorkphoneEditor)
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/wp_plugins_runtime.cfg" DESTINATION bin COMPONENT WorkphoneEditor)
+install(FILES "${WP_ROOT}/Tools/python/workphone_mcp.py" "${WP_ROOT}/Tools/python/workphone_control.py"
+    DESTINATION Tools/python COMPONENT WorkphoneEditor)
+install(FILES "${WP_ROOT}/docs/EDITOR_MCP.md" DESTINATION . COMPONENT WorkphoneEditor)
 install(DIRECTORY "${WP_ROOT}/bin/Media/Scripts/" DESTINATION Media/Scripts COMPONENT WorkphoneEditor
     FILES_MATCHING PATTERN "*.lua" PATTERN "*.sql")
 file(GLOB _editor_media "${WP_ROOT}/bin/Media/*.mat" "${WP_ROOT}/bin/Media/*.png"

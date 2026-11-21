@@ -57,6 +57,8 @@ namespace workphone::editor
     {
         std::filesystem::path root;
         std::filesystem::path workspace;
+        std::filesystem::path mcpWorkspace;
+        std::filesystem::path developmentBin;
         bool smoke = false;
         std::filesystem::path validationCaptureDirectory;
         std::filesystem::path runtimeScenePackage;
@@ -130,7 +132,8 @@ namespace workphone::editor
                     }
                     validationCaptureDirectory = argv[i];
                 }
-                else if( argument == "--package-root" || argument == "--workspace" )
+                else if( argument == "--package-root" || argument == "--workspace" ||
+                         argument == "--mcp-workspace" )
                 {
                     if( ++i == argc )
                     {
@@ -140,6 +143,14 @@ namespace workphone::editor
                     {
                         root = argv[i];
                         explicitRoot = true;
+                    }
+                    else if( argument == "--mcp-workspace" )
+                    {
+                        mcpWorkspace = std::filesystem::canonical( argv[i] );
+                        if( !std::filesystem::is_directory( mcpWorkspace ) )
+                        {
+                            throw std::runtime_error( "MCP projects require a workspace directory" );
+                        }
                     }
                     else
                     {
@@ -174,6 +185,23 @@ namespace workphone::editor
                 runtimeSceneCollisions != "prefer-earlier" )
             {
                 throw std::runtime_error( "Unknown runtime package collision policy" );
+            }
+            if( !mcpWorkspace.empty() )
+            {
+                // The stdio launcher provides a fresh startup directory for each session.
+                if( workspace.empty() || !std::filesystem::is_directory( workspace ) ||
+                    smoke || !runtimeScenePackage.empty() )
+                {
+                    throw std::runtime_error( "MCP requires a private Editor --workspace" );
+                }
+                workspace = std::filesystem::canonical( workspace );
+                if( !installed && !explicitRoot )
+                {
+                    developmentBin = std::filesystem::path( executable ).parent_path();
+                    root.clear();
+                    std::filesystem::current_path( workspace );
+                    return;
+                }
             }
             if( !installed && !explicitRoot && !smoke && workspace.empty() )
             {
