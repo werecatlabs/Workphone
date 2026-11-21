@@ -17,12 +17,13 @@ int main( int argc, char *argv[] )
 {
     // A Debug build remains usable as an Editor. CTest supplies explicit Boost
     // arguments; launching the executable normally opens the real native UI.
-    bool runtimeScene = false;
+    bool launchEditor = argc == 1 || ( argc > 1 && strcmp( argv[1], "--interactive" ) == 0 );
     for( int i = 1; i < argc; ++i )
     {
-        runtimeScene = runtimeScene || strncmp( argv[i], "--runtime-scene-", 16 ) == 0;
+        launchEditor = launchEditor || strncmp( argv[i], "--runtime-scene-", 16 ) == 0 ||
+                       strcmp( argv[i], "--mcp-workspace" ) == 0;
     }
-    if( argc == 1 || runtimeScene || ( argc > 1 && strcmp( argv[1], "--interactive" ) == 0 ) )
+    if( launchEditor )
     {
         return runInteractiveEditor( argc, argv );
     }
@@ -81,6 +82,7 @@ int main( int argc, char *argv[] )
 #endif
 
 #include "EditorPackage.hpp"
+#include "EditorMcpSession.hpp"
 
 namespace
 {
@@ -158,6 +160,7 @@ static int runInteractiveEditor( int argc, char *argv[] )
                 printf(
                     "Usage: Editor [--interactive] [--software|--dx11] [--workspace PATH] "
                     "[--package-root PATH] [--package-smoke] [--validation-capture-directory PATH] "
+                    "[--mcp-workspace PROJECTS --workspace SESSION] "
                     "[--runtime-scene-package PATH --runtime-scene-uuid UUID [--runtime-scene-target "
                     "pc] [--runtime-scene-overlay PATH ...] [--runtime-scene-collisions "
                     "reject|identical|prefer-earlier] [--runtime-scene-validate]]\n" );
@@ -197,6 +200,8 @@ static int runInteractiveEditor( int argc, char *argv[] )
         try
         {
             auto app = workphone::make_ptr<editor::PackagedEditorApplication>();
+            const bool mcp = !package.mcpWorkspace.empty();
+            app->setMcpSessionEnabled( mcp );
             const bool runtimeSceneValidation = !package.runtimeScenePackage.empty() &&
                                                 ( package.runtimeSceneValidate || package.smoke );
             if( !package.runtimeScenePackage.empty() )
@@ -220,6 +225,15 @@ static int runInteractiveEditor( int argc, char *argv[] )
                 app->catalogFile =
                     ( package.workspace / "Cache/media-assets.db" ).generic_string().c_str();
             }
+            else if( mcp )
+            {
+                const auto media = std::filesystem::canonical( package.developmentBin /
+                                                              "../../../../../Media" );
+                app->mediaDirectory = media.generic_string().c_str();
+                app->pluginConfiguration =
+                    ( package.developmentBin / "wp_plugins_editor.cfg" ).generic_string().c_str();
+                app->catalogFile = ( package.workspace / "Cache/media-assets.db" ).generic_string().c_str();
+            }
             else
             {
                 app->mediaDirectory = app->Application::getMediaPath();
@@ -235,7 +249,7 @@ static int runInteractiveEditor( int argc, char *argv[] )
             const auto maxThreads = 12;
             const auto numThreads = (s32)Thread::hardware_concurrency();
             const auto threads = Math<s32>::min( numThreads, maxThreads );
-            app->setActiveThreads( package.smoke || runtimeSceneValidation ? 0 : threads );
+            app->setActiveThreads( mcp || package.smoke || runtimeSceneValidation ? 0 : threads );
             //app->setActiveThreads( 0 );
 
             app->setCreateFrameStatistics( false );
@@ -247,7 +261,7 @@ static int runInteractiveEditor( int argc, char *argv[] )
 
 #if !WP_FINAL
             auto flags = app->getApplicationFlags();
-            if( package.root.empty() )
+            if( package.root.empty() && !mcp )
             {
                 app->setApplicationFlags( flags | core::IApplication::developerModeFlag );
             }
@@ -286,6 +300,10 @@ static int runInteractiveEditor( int argc, char *argv[] )
                         throw std::runtime_error( app->runtimeSceneDiagnostic().c_str() );
                     }
                     std::cout << "Runtime scene package loaded" << std::endl;
+                }
+                else if( mcp )
+                {
+                    editor::runMcpSession( *app, package.mcpWorkspace, package.workspace );
                 }
                 else if( !package.smoke )
                 {

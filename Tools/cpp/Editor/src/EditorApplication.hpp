@@ -122,6 +122,9 @@ namespace workphone
              */
             void enterPlayMode();
 
+            /** Use explicit project selection and MCP playtest input. Set before loading. */
+            void setMcpSessionEnabled( bool enabled ) { m_mcpSessionEnabled = enabled; }
+
             /**
              * @brief Stops play mode in the editor application.
              */
@@ -306,6 +309,7 @@ namespace workphone
             // Renderer type selection
             render::IGraphicsSystem::RenderApi m_rendererType = render::IGraphicsSystem::RenderApi::DX11;
             bool m_rendererTypeExplicit = false;
+            bool m_mcpSessionEnabled = false;
             String m_luaDebuggerToken;
             String m_luaDebuggerEndpoint;
         };

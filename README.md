@@ -8,6 +8,8 @@ from **Window > Text to Image**.
 It also supports [image-to-mesh generation](docs/EDITOR_IMAGE_TO_MESH.md) with Meshy or hosted TRELLIS 2 (fal.ai)
 from **Window > Image to Mesh**.
 
+An MCP client can [create and playtest games in the Windows Editor](docs/EDITOR_MCP.md).
+
 ## Supported Backends
 * Direct3D 11
 * OpenGL 3.3+

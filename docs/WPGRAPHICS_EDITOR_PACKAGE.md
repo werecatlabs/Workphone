@@ -17,6 +17,8 @@ settings, logs and caches use `%LOCALAPPDATA%/Workphone/Editor`. Use
 Existing checkout settings, asset databases and personal layouts are excluded.
 Windows x64 and the Microsoft Visual C++ x64 release Redistributable are required.
 
+The packaged Editor includes a [local MCP server for game creation and playtesting](EDITOR_MCP.md).
+
 ## Build a standalone Windows game
 
 Save your project and its scenes, then choose **File → Build Game…**. The build
