@@ -139,6 +139,7 @@ namespace workphone::ui
 
     void ImGuiAnimationGraph::drawInspector( f32 width, f32 height )
     {
+        const auto &edited = getModel().edited;
         if( ImGui::BeginChild( "##AnimationGraphProperties", { width, height }, true ) )
         {
             if( ImGui::BeginTabBar( "##AnimationGraphTabs" ) )
@@ -163,7 +164,7 @@ namespace workphone::ui
                     ImGui::Spacing();
                     if( ImGui::CollapsingHeader( "States and transitions" ) )
                     {
-                        for( const auto &state : m_edited.getStates() )
+                        for( const auto &state : edited.getStates() )
                         {
                             ImGui::PushID( &state );
                             if( ImGui::Selectable( state.id.c_str(), m_selectedState == state.id ) )
@@ -173,7 +174,7 @@ namespace workphone::ui
                             ImGui::PopID();
                         }
                         ImGui::Separator();
-                        const auto &transitions = m_edited.getTransitions();
+                        const auto &transitions = edited.getTransitions();
                         for( size_t i = 0; i < transitions.size(); ++i )
                         {
                             ImGui::PushID( static_cast<int>( i ) );
@@ -206,19 +207,20 @@ namespace workphone::ui
     bool ImGuiAnimationGraph::chooseClip( const char *label, String &id )
     {
         using namespace animation_graph_inspector;
-        if( !chooseItem( label, id, m_availableClips,
+        auto &model = getModel();
+        if( !chooseItem( label, id, model.availableClips,
                          []( const auto &clip ) -> const String & { return clip.id; },
                          []( const auto & ) { return true; } ) )
         {
             return false;
         }
-        if( !m_edited.findClip( id ) )
+        if( !model.edited.findClip( id ) )
         {
-            const auto clip = std::find_if( m_availableClips.begin(), m_availableClips.end(),
+            const auto clip = std::find_if( model.availableClips.begin(), model.availableClips.end(),
                                             [&]( const auto &item ) { return item.id == id; } );
-            if( clip == m_availableClips.end() || !m_edited.addClip( *clip ) )
+            if( clip == model.availableClips.end() || !model.edited.addClip( *clip ) )
             {
-                m_status = "The selected animation clip is unavailable.";
+                model.status = "The selected animation clip is unavailable.";
                 return false;
             }
         }
@@ -229,7 +231,7 @@ namespace workphone::ui
                                                  std::optional<bool> isBoolean )
     {
         return animation_graph_inspector::chooseItem(
-            label, name, m_edited.getParameters(),
+            label, name, getModel().edited.getParameters(),
             []( const auto &parameter ) -> const String & { return parameter.name; },
             [&]( const auto &parameter ) { return !isBoolean || parameter.isBoolean == *isBoolean; } );
     }
@@ -237,7 +239,7 @@ namespace workphone::ui
     bool ImGuiAnimationGraph::chooseState( const char *label, String &id, const String &excluded )
     {
         return animation_graph_inspector::chooseItem(
-            label, id, m_edited.getStates(),
+            label, id, getModel().edited.getStates(),
             []( const auto &state ) -> const String & { return state.id; },
             [&]( const auto &state ) { return state.id != excluded; } );
     }
@@ -245,7 +247,8 @@ namespace workphone::ui
     void ImGuiAnimationGraph::drawStateInspector()
     {
         using namespace animation_graph_inspector;
-        const auto *state = m_edited.findState( m_selectedState );
+        auto &model = getModel();
+        const auto *state = model.edited.findState( m_selectedState );
         if( !state )
         {
             m_selectedState.clear();
@@ -257,7 +260,7 @@ namespace workphone::ui
         ImGui::SetNextItemWidth( -1.0f );
         if( editName( "##StateName", name ) )
         {
-            if( m_edited.renameState( m_selectedState, name ) )
+            if( model.edited.renameState( m_selectedState, name ) )
             {
                 if( m_linkSource == m_selectedState )
                 {
@@ -268,7 +271,7 @@ namespace workphone::ui
             }
             else
             {
-                m_status = "Enter a unique state name.";
+                model.status = "Enter a unique state name.";
             }
             return;
         }
@@ -281,33 +284,33 @@ namespace workphone::ui
             candidate.poseNodeId.clear();
             changed = true;
         }
-        if( !m_edited.getPoseNodes().empty() )
+        if( !model.edited.getPoseNodes().empty() )
         {
-            changed |= chooseItem( "Pose Node", candidate.poseNodeId, m_edited.getPoseNodes(),
+            changed |= chooseItem( "Pose Node", candidate.poseNodeId, model.edited.getPoseNodes(),
                                    []( const auto &node ) -> const String & { return node.id; },
                                    []( const auto & ) { return true; } );
         }
-        if( changed && m_edited.editState( candidate ) )
+        if( changed && model.edited.editState( candidate ) )
         {
             markEdited();
         }
 
         ImGui::Spacing();
-        ImGui::BeginDisabled( m_selectedState == m_edited.getInitialState() );
+        ImGui::BeginDisabled( m_selectedState == model.edited.getInitialState() );
         if( ImGui::Button( "Set as Entry" ) )
         {
-            m_edited.setInitialState( m_selectedState );
+            model.edited.setInitialState( m_selectedState );
             markEdited();
         }
         ImGui::EndDisabled();
         ImGui::SameLine();
-        ImGui::BeginDisabled( m_edited.getStates().size() < 2 );
+        ImGui::BeginDisabled( model.edited.getStates().size() < 2 );
         if( ImGui::Button( "Make Transition" ) )
         {
             m_linkSource = m_selectedState;
         }
         ImGui::EndDisabled();
-        if( ImGui::Button( "Delete State" ) && m_edited.removeState( m_selectedState ) )
+        if( ImGui::Button( "Delete State" ) && model.edited.removeState( m_selectedState ) )
         {
             if( m_linkSource == m_selectedState )
             {
@@ -321,14 +324,15 @@ namespace workphone::ui
     void ImGuiAnimationGraph::drawTransitionInspector()
     {
         using namespace animation_graph_inspector;
+        auto &edited = getModel().edited;
         const auto index = *m_selectedTransition;
-        if( index >= m_edited.getTransitions().size() )
+        if( index >= edited.getTransitions().size() )
         {
             m_selectedTransition.reset();
             return;
         }
 
-        auto draft = m_edited.getTransitions()[index];
+        auto draft = edited.getTransitions()[index];
         ImGui::TextDisabled( "Transition" );
         auto changed = chooseState( "From", draft.fromState, draft.toState );
         changed |= chooseState( "To", draft.toState, draft.fromState );
@@ -370,7 +374,7 @@ namespace workphone::ui
             auto &condition = draft.conditions[i];
             if( chooseParameter( "Parameter", condition.parameter, std::nullopt ) )
             {
-                const auto *parameter = m_edited.findParameter( condition.parameter );
+                const auto *parameter = edited.findParameter( condition.parameter );
                 condition.isBoolean = parameter->isBoolean;
                 condition.comparison = animation::AnimationGraphComparison::Equal;
                 changed = true;
@@ -403,7 +407,7 @@ namespace workphone::ui
             ImGui::PopID();
             ImGui::Separator();
         }
-        const auto &parameters = m_edited.getParameters();
+        const auto &parameters = edited.getParameters();
         ImGui::BeginDisabled( parameters.empty() );
         if( ImGui::Button( "Add Condition" ) )
         {
@@ -419,7 +423,7 @@ namespace workphone::ui
         {
             ImGui::TextDisabled( "Add a parameter to create a condition." );
         }
-        if( ImGui::Button( "Delete Transition" ) && m_edited.removeTransition( index ) )
+        if( ImGui::Button( "Delete Transition" ) && edited.removeTransition( index ) )
         {
             m_selectedTransition.reset();
             markEdited();
@@ -428,7 +432,7 @@ namespace workphone::ui
         if( changed )
         {
             size_t updated = index;
-            if( m_edited.updateTransition( index, draft, &updated ) )
+            if( edited.updateTransition( index, draft, &updated ) )
             {
                 m_selectedTransition = updated;
                 markEdited();
@@ -439,6 +443,7 @@ namespace workphone::ui
     void ImGuiAnimationGraph::drawParameters()
     {
         using namespace animation_graph_inspector;
+        auto &model = getModel();
         if( ImGui::Button( "Add Parameter" ) )
         {
             m_newParameterName.fill( '\0' );
@@ -465,10 +470,10 @@ namespace workphone::ui
             {
                 name = name.substr( first, name.find_last_not_of( " \t\r\n" ) - first + 1 );
             }
-            const auto valid = first != String::npos && !m_edited.findParameter( name );
+            const auto valid = first != String::npos && !model.edited.findParameter( name );
             ImGui::BeginDisabled( !valid );
             if( ( ImGui::Button( "Create" ) || submit ) && valid &&
-                m_edited.addParameter( { name, m_newParameterIsBoolean } ) )
+                model.edited.addParameter( { name, m_newParameterIsBoolean } ) )
             {
                 markEdited();
                 ImGui::CloseCurrentPopup();
@@ -481,7 +486,7 @@ namespace workphone::ui
             ImGui::EndPopup();
         }
 
-        auto parameters = m_edited.getParameters();
+        auto parameters = model.edited.getParameters();
         if( parameters.empty() )
         {
             ImGui::TextWrapped( "Parameters drive transition conditions and pose nodes." );
@@ -503,18 +508,18 @@ namespace workphone::ui
             {
                 changed |= inputNumber( "Default", parameter->floatValue );
             }
-            const auto live = std::find_if( m_playback.parameterValues.begin(),
-                                            m_playback.parameterValues.end(), [&]( const auto &item ) {
+            const auto live = std::find_if( model.playback.parameterValues.begin(),
+                                            model.playback.parameterValues.end(), [&]( const auto &item ) {
                                                 return item.name == parameter->name;
                                             } );
-            if( live != m_playback.parameterValues.end() )
+            if( live != model.playback.parameterValues.end() )
             {
                 auto preview = *live;
                 const auto update = preview.isBoolean ? ImGui::Checkbox( "Live", &preview.booleanValue )
                                                       : inputNumber( "Live", preview.floatValue );
                 if( update )
                 {
-                    m_liveChanges.push_back( std::move( preview ) );
+                    model.liveChanges.push_back( std::move( preview ) );
                 }
                 if( ImGui::IsItemHovered() )
                 {
@@ -522,7 +527,7 @@ namespace workphone::ui
                 }
             }
 
-            ImGui::BeginDisabled( usesParameter( m_edited, parameter->name ) );
+            ImGui::BeginDisabled( usesParameter( model.edited, parameter->name ) );
             if( ImGui::SmallButton( "Delete Parameter" ) )
             {
                 parameter = parameters.erase( parameter );
@@ -535,7 +540,7 @@ namespace workphone::ui
             ImGui::EndDisabled();
             ImGui::PopID();
         }
-        if( changed && m_edited.setParameters( parameters ) )
+        if( changed && model.edited.setParameters( parameters ) )
         {
             markEdited();
         }
@@ -543,29 +548,30 @@ namespace workphone::ui
 
     void ImGuiAnimationGraph::drawPoseNodes()
     {
+        auto &model = getModel();
         if( ImGui::Button( "Add Clip Node" ) )
         {
             ImGui::OpenPopup( "Choose pose clip" );
         }
         if( ImGui::BeginPopup( "Choose pose clip" ) )
         {
-            for( const auto &clip : m_availableClips )
+            for( const auto &clip : model.availableClips )
             {
                 if( ImGui::Selectable( clip.id.c_str() ) )
                 {
-                    if( !m_edited.findClip( clip.id ) && !m_edited.addClip( clip ) )
+                    if( !model.edited.findClip( clip.id ) && !model.edited.addClip( clip ) )
                     {
-                        m_status = "The selected animation clip is unavailable.";
+                        model.status = "The selected animation clip is unavailable.";
                         break;
                     }
                     animation::AnimationGraphPoseNodeDefinition node;
                     node.clipId = clip.id;
                     node.id = clip.id + " Pose";
-                    for( u32 i = 2; m_edited.findPoseNode( node.id ); ++i )
+                    for( u32 i = 2; model.edited.findPoseNode( node.id ); ++i )
                     {
                         node.id = clip.id + " Pose " + StringUtil::toString( i );
                     }
-                    if( m_edited.addPoseNode( node ) )
+                    if( model.edited.addPoseNode( node ) )
                     {
                         m_selectedPoseNode = node.id;
                         m_poseDraft = node;
@@ -575,12 +581,12 @@ namespace workphone::ui
             }
             ImGui::EndPopup();
         }
-        if( m_availableClips.empty() )
+        if( model.availableClips.empty() )
         {
             ImGui::TextDisabled( "The Animator needs clips before adding pose nodes." );
         }
 
-        const auto &nodes = m_edited.getPoseNodes();
+        const auto &nodes = model.edited.getPoseNodes();
         for( const auto &node : nodes )
         {
             ImGui::PushID( &node );
@@ -602,6 +608,7 @@ namespace workphone::ui
     {
         using namespace animation_graph_inspector;
         using Type = animation::AnimationGraphPoseNodeType;
+        auto &model = getModel();
         auto &node = *m_poseDraft;
         auto type = static_cast<int>( node.type );
         if( ImGui::Combo( "Type", &type, NodeTypes, 3 ) )
@@ -624,7 +631,7 @@ namespace workphone::ui
                                        ? std::optional<bool>{}
                                        : std::optional<bool>{ false };
             chooseParameter( "Parameter", node.parameter, isBoolean );
-            if( const auto *parameter = m_edited.findParameter( node.parameter );
+            if( const auto *parameter = model.edited.findParameter( node.parameter );
                 parameter && isBoolean && parameter->isBoolean )
             {
                 node.parameter.clear();
@@ -659,9 +666,9 @@ namespace workphone::ui
                 ImGui::PopID();
             }
             String child;
-            if( chooseItem( "Add Input", child, m_edited.getPoseNodes(),
+            if( chooseItem( "Add Input", child, model.edited.getPoseNodes(),
                             []( const auto &item ) -> const String & { return item.id; },
-                            [&]( const auto &item ) { return canUseChild( m_edited, node.id, item.id ); } ) )
+                            [&]( const auto &item ) { return canUseChild( model.edited, node.id, item.id ); } ) )
             {
                 node.childNodeIds.push_back( child );
             }
@@ -717,19 +724,19 @@ namespace workphone::ui
                             ( i == 0 || node.blendRanges[i - 1].parameterHigh <= range.parameterLow );
                 }
             }
-            if( valid && m_edited.editPoseNode( node ) )
+            if( valid && model.edited.editPoseNode( node ) )
             {
                 markEdited();
             }
             else
             {
-                m_status = "Check the pose node's clip, parameter, inputs or range limits.";
+                model.status = "Check the pose node's clip, parameter, inputs or range limits.";
             }
         }
         ImGui::SameLine();
-        const bool referenced = usesPoseNode( m_edited, node.id );
+        const bool referenced = usesPoseNode( model.edited, node.id );
         ImGui::BeginDisabled( referenced );
-        if( ImGui::Button( "Delete" ) && m_edited.removePoseNode( node.id ) )
+        if( ImGui::Button( "Delete" ) && model.edited.removePoseNode( node.id ) )
         {
             m_selectedPoseNode.clear();
             m_poseDraft.reset();
@@ -737,5 +744,5 @@ namespace workphone::ui
         }
         ImGui::EndDisabled();
     }
-}  // namespace workphone::editor
+}  // namespace workphone::ui
 #endif

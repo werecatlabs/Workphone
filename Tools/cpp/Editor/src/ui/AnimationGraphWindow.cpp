@@ -3,7 +3,6 @@
 #include <Workphone/Workphone.hpp>
 #include <Workphone/Scene/Components/Animator.hpp>
 #include <algorithm>
-#include <cmath>
 #include <map>
 #include <utility>
 
@@ -37,38 +36,51 @@ namespace workphone::editor
         window->setSize( { 1080.0f, 690.0f } );
         window->setVisible( false, false );
 
-        m_graphUI = uiManager->addElementByType<ui::IUIAnimationGraph>();
-        window->addChild( m_graphUI );
+        auto graphUI = uiManager->addElementByType<ui::IUIAnimationGraph>();
+        if( graphUI )
+        {
+            if( auto properties = window->getProperties() )
+            {
+                properties->setProperty( "initialPlacement", String( "floating" ) );
+                window->setProperties( properties );
+            }
+            window->addChild( graphUI );
+        }
+        else if( auto message = uiManager->addElementByType<ui::IUIText>() )
+        {
+            message->setText( "The animation graph canvas requires the ImGui Editor." );
+            window->addChild( message );
+        }
 
-        const std::lock_guard guard( m_mutex );
+        const std::lock_guard guard( m_windowMutex );
         setParentWindow( window );
-        m_window = window;
+        m_graphUI = graphUI;
     }
 
     void AnimationGraphWindow::unload( SmartPtr<ISharedObject> data )
     {
         SmartPtr<ui::IUIWindow> window;
         {
-            const std::lock_guard guard( m_mutex );
-            window = m_window;
-            m_window = nullptr;
-            m_animator = nullptr;
-            m_edited.clear();
-            m_availableClips.clear();
-            m_liveChanges.clear();
-            m_playback = {};
-            m_action = ui::IUIAnimationGraph::Action::None;
+            const std::lock_guard guard( m_windowMutex );
+            window = getParentWindow();
+            setParentWindow( nullptr );
+            if( m_graphUI )
+            {
+                auto &model = m_graphUI->getModel();
+                const std::lock_guard modelLock( model.mutex );
+                loadFromAnimator( nullptr, model );
+            }
+            m_graphUI = nullptr;
         }
         if( window )
         {
-            setParentWindow( nullptr );
             auto app = core::IApplicationManager::instancePtr();
             if( auto uiManager = app ? app->getUI() : nullptr )
             {
                 uiManager->removeElement( window );
             }
-            EditorWindow::unload( data );
         }
+        EditorWindow::unload( data );
     }
 
     SmartPtr<scene::Animator> AnimationGraphWindow::findSelectedAnimator() const
@@ -110,29 +122,20 @@ namespace workphone::editor
         return nullptr;
     }
 
-    void AnimationGraphWindow::loadFromAnimator( SmartPtr<scene::Animator> animator )
+    void AnimationGraphWindow::loadFromAnimator( SmartPtr<scene::Animator> animator, Model &model )
     {
         m_animator = std::move( animator );
-        m_edited.clear();
-        m_availableClips.clear();
-        m_liveChanges.clear();
-        m_playback = {};
-        m_action = ui::IUIAnimationGraph::Action::None;
-        m_status.clear();
-        m_targetName.clear();
-        m_ambiguousClipCount = 0;
-        m_selectionChanged = false;
-        m_dirty = false;
-        m_graphLoadFailed = false;
-        m_fitOnDraw = true;
-        m_panning = false;
-        m_selectedState.clear();
-        m_selectedPoseNode.clear();
-        m_poseDraft.reset();
-        m_selectedTransition.reset();
-        m_showInspector = false;
-        m_linkSource.clear();
-        m_draggedState.clear();
+        model.edited.clear();
+        model.availableClips.clear();
+        model.liveChanges.clear();
+        model.playback = {};
+        model.action = ui::IUIAnimationGraph::Action::None;
+        model.status.clear();
+        model.targetName.clear();
+        model.ambiguousClipCount = 0;
+        model.selectionChanged = false;
+        model.dirty = false;
+        model.resetView = true;
 
         if( !m_animator )
         {
@@ -141,49 +144,49 @@ namespace workphone::editor
 
         if( auto actor = m_animator->getActor() )
         {
-            m_targetName = actor->getName();
+            model.targetName = actor->getName();
         }
-        if( m_targetName.empty() )
+        if( model.targetName.empty() )
         {
-            m_targetName = "Animator";
+            model.targetName = "Animator";
         }
 
+        bool graphLoadFailed = false;
         try
         {
-            m_graphLoadFailed = !m_animator->prepareAnimationGraphClips();
+            graphLoadFailed = !m_animator->prepareAnimationGraphClips();
         }
         catch( const std::exception &error )
         {
             WP_LOG_EXCEPTION( error );
-            m_graphLoadFailed = true;
+            graphLoadFailed = true;
         }
         if( const auto *graph = m_animator->getAnimationGraph() )
         {
-            m_edited = graph->getDefinition();
-            m_availableClips = m_edited.getClips();
-            m_selectedState = m_edited.getInitialState();
+            model.edited = graph->getDefinition();
+            model.availableClips = model.edited.getClips();
 
             // Older graphs can refer to external parameters without declaring defaults.
-            for( const auto &transition : m_edited.getTransitions() )
+            for( const auto &transition : model.edited.getTransitions() )
             {
                 for( const auto &condition : transition.conditions )
                 {
-                    if( !m_edited.findParameter( condition.parameter ) )
+                    if( !model.edited.findParameter( condition.parameter ) )
                     {
-                        m_edited.addParameter( { condition.parameter, condition.isBoolean } );
+                        model.edited.addParameter( { condition.parameter, condition.isBoolean } );
                     }
                 }
             }
-            for( const auto &node : m_edited.getPoseNodes() )
+            for( const auto &node : model.edited.getPoseNodes() )
             {
                 if( node.type != animation::AnimationGraphPoseNodeType::Clip &&
-                    !m_edited.findParameter( node.parameter ) )
+                    !model.edited.findParameter( node.parameter ) )
                 {
                     const auto usesBool = node.type == animation::AnimationGraphPoseNodeType::Selector &&
                                           node.childNodeIds.size() == 2 &&
                                           graph->getBoolParameter( node.parameter, false ) ==
                                               graph->getBoolParameter( node.parameter, true );
-                    m_edited.addParameter( { node.parameter, usesBool } );
+                    model.edited.addParameter( { node.parameter, usesBool } );
                 }
             }
         }
@@ -207,10 +210,10 @@ namespace workphone::editor
             const auto name = source->getName();
             if( name.empty() || counts[name] > 1 )
             {
-                ++m_ambiguousClipCount;
+                ++model.ambiguousClipCount;
                 continue;
             }
-            if( m_edited.findClip( name ) )
+            if( model.edited.findClip( name ) )
             {
                 continue;
             }
@@ -228,72 +231,72 @@ namespace workphone::editor
             }
             if( clip.isValid() )
             {
-                m_availableClips.push_back( std::move( clip ) );
+                model.availableClips.push_back( std::move( clip ) );
             }
         }
 
-        if( m_graphLoadFailed )
+        if( graphLoadFailed )
         {
-            m_status = m_animator->getPlaybackStatus();
-            if( m_status.empty() )
+            model.status = m_animator->getPlaybackStatus();
+            if( model.status.empty() )
             {
-                m_status = "The animator's saved animation graph or clips could not be loaded.";
+                model.status = "The animator's saved animation graph or clips could not be loaded.";
             }
         }
     }
 
-    void AnimationGraphWindow::applyGraph()
+    void AnimationGraphWindow::applyGraph( Model &model )
     {
         try
         {
-            if( m_edited.getStates().empty() )
+            if( model.edited.getStates().empty() )
             {
                 m_animator->clearAnimationGraph();
-                m_status = "Graph removed from Animator. Save the scene to keep this change.";
+                model.status = "Graph removed from Animator. Save the scene to keep this change.";
             }
-            else if( m_animator->setAuthoredAnimationGraph( m_edited ) )
+            else if( m_animator->setAuthoredAnimationGraph( model.edited ) )
             {
-                m_status = "Graph applied to Animator. Save the scene to keep this change.";
+                model.status = "Graph applied to Animator. Save the scene to keep this change.";
             }
             else
             {
-                m_status = "Cannot apply this graph. Check clip assignments and pose node inputs.";
+                model.status = "Cannot apply this graph. Check clip assignments and pose node inputs.";
                 return;
             }
             if( auto actor = m_animator->getActor() )
             {
                 actor->setDirty( true );
             }
-            m_dirty = false;
+            model.dirty = false;
         }
         catch( const std::exception &error )
         {
             WP_LOG_EXCEPTION( error );
-            m_status = "Applying the animation graph failed.";
+            model.status = "Applying the animation graph failed.";
         }
     }
 
-    void AnimationGraphWindow::updatePlayback()
+    void AnimationGraphWindow::updatePlayback( Model &model )
     {
         const auto *graph = m_animator->getAnimationGraph();
-        m_playback.available = graph != nullptr;
-        m_playback.playing = m_animator->isPlaying();
-        m_playback.paused = m_animator->isPaused();
+        model.playback.available = graph != nullptr;
+        model.playback.playing = m_animator->isPlaying();
+        model.playback.paused = m_animator->isPaused();
         if( !graph )
         {
-            m_playback.state.clear();
-            m_playback.destination.clear();
-            m_playback.parameterValues.clear();
-            m_playback.samples.clear();
+            model.playback.state.clear();
+            model.playback.destination.clear();
+            model.playback.parameterValues.clear();
+            model.playback.samples.clear();
             return;
         }
 
-        m_playback.state = graph->getCurrentState();
-        m_playback.destination = graph->getDestinationState();
-        m_playback.progress = graph->getTransitionProgress();
-        m_playback.samples = graph->getSamples();
-        m_playback.parameterValues.clear();
-        for( auto parameter : m_edited.getParameters() )
+        model.playback.state = graph->getCurrentState();
+        model.playback.destination = graph->getDestinationState();
+        model.playback.progress = graph->getTransitionProgress();
+        model.playback.samples = graph->getSamples();
+        model.playback.parameterValues.clear();
+        for( auto parameter : model.edited.getParameters() )
         {
             if( parameter.isBoolean )
             {
@@ -304,25 +307,28 @@ namespace workphone::editor
             {
                 parameter.floatValue = graph->getFloatParameter( parameter.name, parameter.floatValue );
             }
-            m_playback.parameterValues.push_back( std::move( parameter ) );
+            model.playback.parameterValues.push_back( std::move( parameter ) );
         }
     }
 
     void AnimationGraphWindow::update()
     {
-        const std::lock_guard guard( m_mutex );
-        if( !m_window || !m_window->isVisible() )
+        const std::lock_guard guard( m_windowMutex );
+        auto parent = getParentWindow();
+        if( !parent || !parent->isVisible() || !m_graphUI )
         {
             return;
         }
 
+        auto &model = m_graphUI->getModel();
+        std::unique_lock modelLock( model.mutex );
         auto selected = findSelectedAnimator();
-        m_selectionChanged = selected != m_animator;
-        if( m_selectionChanged &&
-            ( !m_dirty || !m_animator || !m_animator->getActor() || !m_animator->isLoaded() ||
-              m_action == ui::IUIAnimationGraph::Action::Revert ) )
+        model.selectionChanged = selected != m_animator;
+        if( model.selectionChanged &&
+            ( !model.dirty || !m_animator || !m_animator->getActor() || !m_animator->isLoaded() ||
+              model.action == ui::IUIAnimationGraph::Action::Revert ) )
         {
-            loadFromAnimator( std::move( selected ) );
+            loadFromAnimator( std::move( selected ), model );
         }
 
         if( !m_animator )
@@ -330,14 +336,14 @@ namespace workphone::editor
             return;
         }
 
-        const auto action = std::exchange( m_action, ui::IUIAnimationGraph::Action::None );
+        const auto action = std::exchange( model.action, ui::IUIAnimationGraph::Action::None );
         switch( action )
         {
         case ui::IUIAnimationGraph::Action::Apply:
-            applyGraph();
+            applyGraph( model );
             break;
         case ui::IUIAnimationGraph::Action::Revert:
-            loadFromAnimator( m_animator );
+            loadFromAnimator( m_animator, model );
             break;
         case ui::IUIAnimationGraph::Action::Play:
             m_animator->play();
@@ -354,7 +360,7 @@ namespace workphone::editor
 
         if( auto *graph = m_animator->getAnimationGraph() )
         {
-            for( const auto &parameter : m_liveChanges )
+            for( const auto &parameter : model.liveChanges )
             {
                 if( parameter.isBoolean )
                 {
@@ -366,11 +372,13 @@ namespace workphone::editor
                 }
             }
         }
-        m_liveChanges.clear();
-        updatePlayback();
+        model.liveChanges.clear();
+        updatePlayback( model );
 
-        if( ( m_playback.available && m_playback.playing ) ||
-            action == ui::IUIAnimationGraph::Action::Stop )
+        const bool refreshPreview = ( model.playback.available && model.playback.playing ) ||
+                                    action == ui::IUIAnimationGraph::Action::Stop;
+        modelLock.unlock();
+        if( refreshPreview )
         {
             auto app = core::IApplicationManager::instancePtr();
             auto window =

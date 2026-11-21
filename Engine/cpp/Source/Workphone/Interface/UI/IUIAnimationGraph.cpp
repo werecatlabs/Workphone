@@ -1,6 +1,6 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Interface/UI/IUIAnimationGraph.hpp>
-#include <Workphone/Core/StringUtil.hpp>
+#include <Workphone/Interface/Animation/IAnimation.hpp>
 #include <Workphone/System/RttiClassDefinition.hpp>
 
 namespace workphone::ui
@@ -10,12 +10,17 @@ namespace workphone::ui
 
     IUIAnimationGraph::~IUIAnimationGraph() = default;
 
-    IUIAnimationGraph::IUIAnimationGraph( u32 poolTypeId )
+    IUIAnimationGraph::IUIAnimationGraph( u32 poolTypeId ) : IUIElement( poolTypeId )
     {
     }
 
-    IUIAnimationGraph::IUIAnimationGraph()
+    IUIAnimationGraph::IUIAnimationGraph() : IUIAnimationGraph( typeInfo() )
     {
+    }
+
+    IUIAnimationGraph::Model &IUIAnimationGraph::getModel()
+    {
+        return m_model;
     }
 
 }  // namespace workphone::ui

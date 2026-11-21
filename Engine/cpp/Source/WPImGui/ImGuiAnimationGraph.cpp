@@ -1,59 +1,17 @@
 #include <WPImGui/WPImGuiPCH.hpp>
 #include <WPImGui/ImGuiAnimationGraph.hpp>
 
-namespace workphone
+namespace workphone::ui
 {
-    namespace ui
+    WP_CLASS_REGISTER_DERIVED( workphone::ui, ImGuiAnimationGraph, ImGuiElement<IUIAnimationGraph> );
+
+    void ImGuiAnimationGraph::update()
     {
-        WP_CLASS_REGISTER_DERIVED( workphone::ui, ImGuiAnimationGraph, ImGuiElement<IUIAnimationGraph> );
-
-        ImGuiAnimationGraph::ImGuiAnimationGraph()
-        {
-        }
-
-        ImGuiAnimationGraph::~ImGuiAnimationGraph()
-        {
-        }
-
-        void ImGuiAnimationGraph::load( SmartPtr<ISharedObject> data )
-        {
-            //#if WP_BUILD_IMGUI
-            //            if( auto native = workphone::dynamic_pointer_cast<ui::ImGuiWindow>( window ) )
-            //            {
-            //                auto properties = window->getProperties();
-            //                properties->setProperty( "initialPlacement", String( "floating" ) );
-            //                window->setProperties( properties );
-            //                AtomicWeakPtr<AnimationGraphWindow> weak;
-            //                weak = this;
-            //                native->setContentRenderer( [weak]( const ui::ImGuiWindow::ContentContext &frame ) {
-            //                    if( auto owner = weak.load().lock() )
-            //                    {
-            //                        const animation_graph_ui::ScopedImGuiContext scope( frame );
-            //                        owner->draw();
-            //                    }
-            //                } );
-            //            }
-            //            else
-            //#endif
-        }
-
-        void ImGuiAnimationGraph::unload( SmartPtr<ISharedObject> data )
-        {
-        }
-
-        void ImGuiAnimationGraph::update()
+#if WP_BUILD_IMGUI
+        if( isVisible() )
         {
             draw();
         }
-
-        SmartPtr<Properties> ImGuiAnimationGraph::getProperties() const
-        {
-            return nullptr;
-        }
-
-        void ImGuiAnimationGraph::setProperties( SmartPtr<Properties> properties )
-        {
-        }
-
-    }  // namespace ui
-}  // namespace workphone
+#endif
+    }
+}  // namespace workphone::ui

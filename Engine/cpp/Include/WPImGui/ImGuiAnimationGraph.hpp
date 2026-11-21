@@ -3,35 +3,22 @@
 
 #include <WPImGui/WPImGuiPrerequisites.hpp>
 #include <WPImGui/ImGuiElement.hpp>
-#include <Workphone/Atomics/AtomicFloat.hpp>
-#include <Workphone/Atomics/AtomicObject.hpp>
 #include <Workphone/Interface/UI/IUIAnimationGraph.hpp>
+#include <array>
+#include <optional>
 
 namespace workphone
 {
     namespace ui
     {
-
         class ImGuiAnimationGraph : public ImGuiElement<IUIAnimationGraph>
         {
         public:
-            ImGuiAnimationGraph();
-
-            ~ImGuiAnimationGraph() override;
-            
-            void load( SmartPtr<ISharedObject> data ) override;
-
-            void unload(SmartPtr<ISharedObject> data) override;
-            
             void update() override;
-            
-            SmartPtr<Properties> getProperties() const override;
-
-            void setProperties(SmartPtr<Properties> properties) override;
 
             WP_CLASS_REGISTER_DECL;
 
-        protected:
+        private:
             void draw();
             void drawToolbar();
             void drawCanvas( f32 width, f32 height );
@@ -52,23 +39,7 @@ namespace workphone
             void fitCanvas( Vector2F size );
             void markEdited();
 
-        // Scene and playback reads run on the Application task. The renderer only
-            // reads snapshots and changes the draft or enqueues an action under this lock.
-            std::mutex m_mutex;
-            SmartPtr<ui::IUIWindow> m_window;
-            SmartPtr<scene::Animator> m_animator;
-            animation::AnimationGraphDefinition m_edited;
-            Array<animation::AnimationGraphClip> m_availableClips;
-            Array<animation::AnimationGraphParameter> m_liveChanges;
-            Playback m_playback;
-            Action m_action = Action::None;
-            String m_targetName;
-            String m_status;
-            size_t m_ambiguousClipCount = 0;
-            bool m_selectionChanged = false;
-            bool m_dirty = false;
-            bool m_graphLoadFailed = false;
-
+            bool m_inputScope = false;
             String m_selectedState;
             String m_selectedPoseNode;
             std::optional<animation::AnimationGraphPoseNodeDefinition> m_poseDraft;
@@ -86,8 +57,7 @@ namespace workphone
             Vector2F m_dragStart = Vector2F::zero();
             Vector2F m_addPosition = Vector2F::zero();
         };
-
     }  // namespace ui
 }  // namespace workphone
 
-#endif // ImGuiAnimationGraph_h__
+#endif  // ImGuiAnimationGraph_h__

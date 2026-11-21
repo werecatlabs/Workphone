@@ -144,68 +144,92 @@ namespace workphone::ui
 
     void ImGuiAnimationGraph::draw()
     {
-        const std::lock_guard guard( m_mutex );
-        if( !m_window )
+        auto &model = getModel();
+        const std::lock_guard guard( model.mutex );
+        if( model.resetView )
         {
-            return;
+            model.resetView = false;
+            // Alternate IDs so pending inputs cannot reach the next draft and ImGui
+            // can reuse the child windows when switching between Animators.
+            m_inputScope = !m_inputScope;
+            m_selectedState = model.edited.getInitialState();
+            m_selectedPoseNode.clear();
+            m_selectedTransition.reset();
+            m_poseDraft.reset();
+            m_showInspector = false;
+            m_newParameterName.fill( '\0' );
+            m_newParameterIsBoolean = false;
+            m_draggedState.clear();
+            m_linkSource.clear();
+            m_panning = false;
+            m_fitOnDraw = true;
         }
+
+        ImGui::PushID( this );
+        ImGui::PushID( static_cast<int>( m_inputScope ) );
+        ImGui::BeginDisabled( !isEnabled() );
 
         drawToolbar();
         ImGui::Separator();
 
-        if( !m_animator )
+        if( model.targetName.empty() )
         {
             ImGui::TextDisabled( "Select an actor with an Animator component." );
-            return;
         }
-
-        const auto available = ImGui::GetContentRegionAvail();
-        const bool sideBySide = available.x >= 680.0f;
-        const auto inspectorWidth = sideBySide ? std::clamp( available.x * 0.33f, 300.0f, 380.0f )
-                                               : available.x;
-        const auto canvasWidth =
-            sideBySide ? available.x - inspectorWidth - ImGui::GetStyle().ItemSpacing.x : available.x;
-        const auto canvasHeight = sideBySide ? std::max( available.y, 180.0f )
-                                            : std::clamp( available.y * 0.55f, 180.0f, 330.0f );
-        ImGui::BeginDisabled( m_action == Action::Apply || m_action == Action::Revert );
-        drawCanvas( canvasWidth, canvasHeight );
-        if( sideBySide )
+        else
         {
-            ImGui::SameLine();
+            const auto available = ImGui::GetContentRegionAvail();
+            const bool sideBySide = available.x >= 680.0f;
+            const auto inspectorWidth = sideBySide ? std::clamp( available.x * 0.33f, 300.0f, 380.0f )
+                                                   : available.x;
+            const auto canvasWidth =
+                sideBySide ? available.x - inspectorWidth - ImGui::GetStyle().ItemSpacing.x : available.x;
+            const auto canvasHeight = sideBySide ? std::max( available.y, 180.0f )
+                                                : std::clamp( available.y * 0.55f, 180.0f, 330.0f );
+            ImGui::BeginDisabled( model.action == Action::Apply || model.action == Action::Revert );
+            drawCanvas( canvasWidth, canvasHeight );
+            if( sideBySide )
+            {
+                ImGui::SameLine();
+            }
+            drawInspector( inspectorWidth, sideBySide ? canvasHeight : 320.0f );
+            ImGui::EndDisabled();
         }
-        drawInspector( inspectorWidth, sideBySide ? canvasHeight : 320.0f );
         ImGui::EndDisabled();
+        ImGui::PopID();
+        ImGui::PopID();
     }
 
     void ImGuiAnimationGraph::drawToolbar()
     {
-        if( !m_targetName.empty() )
+        auto &model = getModel();
+        if( !model.targetName.empty() )
         {
-            ImGui::TextUnformatted( m_targetName.c_str() );
-            if( m_dirty )
+            ImGui::TextUnformatted( model.targetName.c_str() );
+            if( model.dirty )
             {
                 ImGui::SameLine();
                 ImGui::TextColored( { 0.93f, 0.69f, 0.35f, 1.0f }, "Unapplied edits" );
             }
         }
 
-        ImGui::BeginDisabled( !m_animator || m_action != Action::None );
-        ImGui::BeginDisabled( !m_dirty || ( m_edited.getStates().empty() && !m_playback.available ) );
+        ImGui::BeginDisabled( model.targetName.empty() || model.action != Action::None );
+        ImGui::BeginDisabled( !model.dirty || ( model.edited.getStates().empty() && !model.playback.available ) );
         if( ImGui::Button( "Apply" ) )
         {
-            m_action = Action::Apply;
+            model.action = Action::Apply;
         }
         ImGui::EndDisabled();
         ImGui::SameLine();
-        if( ImGui::Button( m_dirty ? "Revert" : "Reload" ) )
+        if( ImGui::Button( model.dirty ? "Revert" : "Reload" ) )
         {
-            if( m_dirty )
+            if( model.dirty )
             {
                 ImGui::OpenPopup( "Revert graph changes?" );
             }
             else
             {
-                m_action = Action::Revert;
+                model.action = Action::Revert;
             }
         }
         if( ImGui::BeginPopupModal( "Revert graph changes?", nullptr, ImGuiWindowFlags_AlwaysAutoResize ) )
@@ -213,7 +237,7 @@ namespace workphone::ui
             ImGui::TextUnformatted( "Discard all unapplied changes to this animation graph?" );
             if( ImGui::Button( "Discard changes" ) )
             {
-                m_action = Action::Revert;
+                model.action = Action::Revert;
                 ImGui::CloseCurrentPopup();
             }
             ImGui::SameLine();
@@ -224,53 +248,53 @@ namespace workphone::ui
             ImGui::EndPopup();
         }
         ImGui::SameLine();
-        ImGui::BeginDisabled( !m_playback.available || m_playback.playing );
+        ImGui::BeginDisabled( !model.playback.available || model.playback.playing );
         if( ImGui::Button( "Play" ) )
         {
-            m_action = Action::Play;
+            model.action = Action::Play;
         }
         ImGui::EndDisabled();
         ImGui::SameLine();
-        ImGui::BeginDisabled( !m_playback.playing );
+        ImGui::BeginDisabled( !model.playback.playing );
         if( ImGui::Button( "Pause" ) )
         {
-            m_action = Action::Pause;
+            model.action = Action::Pause;
         }
         ImGui::EndDisabled();
         ImGui::SameLine();
-        ImGui::BeginDisabled( !( m_playback.playing || m_playback.paused ) );
+        ImGui::BeginDisabled( !( model.playback.playing || model.playback.paused ) );
         if( ImGui::Button( "Stop" ) )
         {
-            m_action = Action::Stop;
+            model.action = Action::Stop;
         }
         ImGui::EndDisabled();
         ImGui::EndDisabled();
 
-        if( !m_playback.state.empty() && ( m_playback.playing || m_playback.paused ) )
+        if( !model.playback.state.empty() && ( model.playback.playing || model.playback.paused ) )
         {
             if( ImGui::GetContentRegionAvail().x > 720.0f )
             {
                 ImGui::SameLine( 0.0f, 18.0f );
             }
-            const auto mode = m_playback.paused ? "Paused" : "Preview";
-            if( m_playback.destination.empty() )
+            const auto mode = model.playback.paused ? "Paused" : "Preview";
+            if( model.playback.destination.empty() )
             {
-                ImGui::Text( "%s  %s", mode, m_playback.state.c_str() );
+                ImGui::Text( "%s  %s", mode, model.playback.state.c_str() );
             }
             else
             {
-                ImGui::Text( "%s  %s > %s   %.0f%%", mode, m_playback.state.c_str(),
-                             m_playback.destination.c_str(), m_playback.progress * 100.0f );
+                ImGui::Text( "%s  %s > %s   %.0f%%", mode, model.playback.state.c_str(),
+                             model.playback.destination.c_str(), model.playback.progress * 100.0f );
             }
         }
 
-        if( m_selectionChanged && m_dirty )
+        if( model.selectionChanged && model.dirty )
         {
             ImGui::TextWrapped( "Selection changed. Apply or revert this graph to switch to the new selection." );
         }
-        if( !m_status.empty() )
+        if( !model.status.empty() )
         {
-            ImGui::TextWrapped( "%s", m_status.c_str() );
+            ImGui::TextWrapped( "%s", model.status.c_str() );
         }
     }
 
@@ -278,7 +302,7 @@ namespace workphone::ui
     {
         using namespace animation_graph_canvas;
         m_fitOnDraw = false;
-        const auto &states = m_edited.getStates();
+        const auto &states = getModel().edited.getStates();
         if( states.empty() )
         {
             m_camera = { 32.0f, 36.0f };
@@ -304,6 +328,7 @@ namespace workphone::ui
     void ImGuiAnimationGraph::drawCanvas( f32 width, f32 height )
     {
         using namespace animation_graph_canvas;
+        auto &model = getModel();
         const auto visible = ImGui::BeginChild( "##AnimationStateCanvas", { width, height }, true,
                                                ImGuiWindowFlags_NoScrollbar |
                                                    ImGuiWindowFlags_NoScrollWithMouse );
@@ -313,16 +338,16 @@ namespace workphone::ui
             return;
         }
         const auto canvasWidth = ImGui::GetContentRegionAvail().x;
-        ImGui::BeginDisabled( m_availableClips.empty() && m_edited.getPoseNodes().empty() );
+        ImGui::BeginDisabled( model.availableClips.empty() && model.edited.getPoseNodes().empty() );
         if( ImGui::Button( "Add State" ) )
         {
             // Use the first vacant cell within the graph's ordinary layout.
-            for( size_t i = 0; i <= m_edited.getStates().size(); ++i )
+            for( size_t i = 0; i <= model.edited.getStates().size(); ++i )
             {
                 const Vector2F slot( NodeSpacingX * static_cast<f32>( i % 3 ),
                                      NodeSpacingY * static_cast<f32>( i / 3 ) );
                 bool occupied = false;
-                const auto &states = m_edited.getStates();
+                const auto &states = model.edited.getStates();
                 for( size_t index = 0; index < states.size(); ++index )
                 {
                     const auto delta = positionOf( states[index], index ) - slot;
@@ -406,7 +431,7 @@ namespace workphone::ui
         }
 
         const auto start = origin + m_camera;
-        const auto &states = m_edited.getStates();
+        const auto &states = model.edited.getStates();
         std::vector<Node> nodes;
         nodes.reserve( states.size() );
         for( size_t index = 0; index < states.size(); ++index )
@@ -427,12 +452,12 @@ namespace workphone::ui
             return it != nodes.end() ? &*it : nullptr;
         };
 
-        const auto &transitions = m_edited.getTransitions();
+        const auto &transitions = model.edited.getTransitions();
         std::map<std::pair<const Node *, const Node *>, int> lanes;
         std::optional<size_t> hoveredEdge;
         auto closest = 81.0f;
         std::optional<Edge> highlightedEdge;
-        const bool previewing = m_playback.playing || m_playback.paused;
+        const bool previewing = model.playback.playing || model.playback.paused;
         for( size_t i = 0; i < transitions.size(); ++i )
         {
             const auto &transition = transitions[i];
@@ -444,8 +469,8 @@ namespace workphone::ui
             }
             const auto lane = lanes[{ from, to }]++;
             const auto edge = makeEdge( from->output(), to->input(), m_zoom, lane );
-            const auto active = previewing && m_playback.state == transition.fromState &&
-                                m_playback.destination == transition.toState;
+            const auto active = previewing && model.playback.state == transition.fromState &&
+                                model.playback.destination == transition.toState;
             if( m_selectedTransition == i )
             {
                 highlightedEdge = edge;
@@ -480,9 +505,9 @@ namespace workphone::ui
         for( const auto &node : nodes )
         {
             const auto &state = *node.state;
-            const bool entry = state.id == m_edited.getInitialState();
+            const bool entry = state.id == model.edited.getInitialState();
             const bool active = previewing &&
-                                ( state.id == m_playback.state || state.id == m_playback.destination );
+                                ( state.id == model.playback.state || state.id == model.playback.destination );
             const bool selected = state.id == m_selectedState || state.id == m_linkSource;
             const auto radius = std::max( 3.0f, 7.0f * m_zoom );
             const auto color = active ? Active : entry ? Entry : Accent;
@@ -515,11 +540,11 @@ namespace workphone::ui
             }
             if( active )
             {
-                const auto sample = std::find_if( m_playback.samples.begin(), m_playback.samples.end(),
+                const auto sample = std::find_if( model.playback.samples.begin(), model.playback.samples.end(),
                                                    [&]( const auto &value ) {
                                                        return value.stateId == state.id;
                                                    } );
-                if( sample != m_playback.samples.end() )
+                if( sample != model.playback.samples.end() )
                 {
                     const auto progress = std::clamp( sample->normalizedTime, 0.0f, 1.0f );
                     const auto left = node.min.X() + 7.0f * m_zoom;
@@ -531,11 +556,11 @@ namespace workphone::ui
         }
         if( states.empty() )
         {
-            const char *hint = m_availableClips.empty() ? "Import animation clips onto this Animator."
+            const char *hint = model.availableClips.empty() ? "Import animation clips onto this Animator."
                                                        : "Add a state from a clip or pose node.";
             list.AddText( native( origin + Vector2F( 17.0f, 15.0f ) ),
                           ImGui::GetColorU32( ImGuiCol_TextDisabled ), hint );
-            if( m_ambiguousClipCount )
+            if( model.ambiguousClipCount )
             {
                 list.AddText( native( origin + Vector2F( 17.0f, 36.0f ) ),
                               ImGui::GetColorU32( ImGuiCol_TextDisabled ), "Clips need unique names to appear here." );
@@ -582,7 +607,7 @@ namespace workphone::ui
         if( !m_draggedState.empty() && ImGui::IsMouseDragging( ImGuiMouseButton_Left ) )
         {
             const auto position = m_dragOrigin + ( mouse - m_dragStart ) * ( 1.0f / m_zoom );
-            if( m_edited.setStatePosition( m_draggedState, position.X(), position.Y() ) )
+            if( model.edited.setStatePosition( m_draggedState, position.X(), position.Y() ) )
             {
                 markEdited();
             }
@@ -621,9 +646,9 @@ namespace workphone::ui
                 m_linkSource = m_selectedState;
             }
             if( ImGui::MenuItem( "Set as Entry", nullptr, false,
-                                 m_selectedState != m_edited.getInitialState() ) )
+                                 m_selectedState != model.edited.getInitialState() ) )
             {
-                m_edited.setInitialState( m_selectedState );
+                model.edited.setInitialState( m_selectedState );
                 markEdited();
             }
             ImGui::EndPopup();
@@ -658,10 +683,11 @@ namespace workphone::ui
     void ImGuiAnimationGraph::addState( const String &clipId, const String &poseNodeId,
                                          Vector2F position )
     {
+        auto &model = getModel();
         animation::AnimationGraphState state;
         const auto &base = poseNodeId.empty() ? clipId : poseNodeId;
         state.id = base;
-        for( u32 index = 2; m_edited.findState( state.id ); ++index )
+        for( u32 index = 2; model.edited.findState( state.id ); ++index )
         {
             state.id = base + " " + StringUtil::toString( index );
         }
@@ -670,17 +696,17 @@ namespace workphone::ui
         state.editorX = position.X();
         state.editorY = position.Y();
         state.hasEditorPosition = true;
-        if( !clipId.empty() && !m_edited.findClip( clipId ) )
+        if( !clipId.empty() && !model.edited.findClip( clipId ) )
         {
-            const auto clip = std::find_if( m_availableClips.begin(), m_availableClips.end(),
+            const auto clip = std::find_if( model.availableClips.begin(), model.availableClips.end(),
                                             [&]( const auto &item ) { return item.id == clipId; } );
-            if( clip == m_availableClips.end() || !m_edited.addClip( *clip ) )
+            if( clip == model.availableClips.end() || !model.edited.addClip( *clip ) )
             {
-                m_status = "The selected animation clip is unavailable.";
+                model.status = "The selected animation clip is unavailable.";
                 return;
             }
         }
-        if( m_edited.addState( state ) )
+        if( model.edited.addState( state ) )
         {
             selectState( state.id );
             markEdited();
@@ -696,7 +722,7 @@ namespace workphone::ui
         transition.exitTime = 1.0f;
         transition.synchronize = false;
         size_t index = 0;
-        if( m_edited.addTransition( transition, &index ) )
+        if( getModel().edited.addTransition( transition, &index ) )
         {
             selectTransition( index );
             markEdited();
@@ -705,14 +731,15 @@ namespace workphone::ui
 
     void ImGuiAnimationGraph::drawAddStateMenu( Vector2F position )
     {
-        if( m_availableClips.empty() && m_edited.getPoseNodes().empty() )
+        const auto &model = getModel();
+        if( model.availableClips.empty() && model.edited.getPoseNodes().empty() )
         {
             ImGui::TextDisabled( "No animation clips or pose nodes" );
             return;
         }
-        if( !m_availableClips.empty() && ImGui::BeginMenu( "From Clip" ) )
+        if( !model.availableClips.empty() && ImGui::BeginMenu( "From Clip" ) )
         {
-            for( const auto &clip : m_availableClips )
+            for( const auto &clip : model.availableClips )
             {
                 if( ImGui::MenuItem( clip.id.c_str() ) )
                 {
@@ -721,9 +748,9 @@ namespace workphone::ui
             }
             ImGui::EndMenu();
         }
-        if( !m_edited.getPoseNodes().empty() && ImGui::BeginMenu( "From Pose Node" ) )
+        if( !model.edited.getPoseNodes().empty() && ImGui::BeginMenu( "From Pose Node" ) )
         {
-            for( const auto &node : m_edited.getPoseNodes() )
+            for( const auto &node : model.edited.getPoseNodes() )
             {
                 if( ImGui::MenuItem( node.id.c_str() ) )
                 {
@@ -736,8 +763,9 @@ namespace workphone::ui
 
     void ImGuiAnimationGraph::markEdited()
     {
-        m_dirty = true;
-        m_status.clear();
+        auto &model = getModel();
+        model.dirty = true;
+        model.status.clear();
     }
-}  // namespace workphone::editor
+}  // namespace workphone::ui
 #endif

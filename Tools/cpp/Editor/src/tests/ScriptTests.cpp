@@ -41,6 +41,9 @@
 
 #if WP_EDITOR_TESTS
 #    include <boost/test/unit_test.hpp>
+#    include <Workphone/Animation/Animation.hpp>
+#    include <Workphone/Interface/UI/IUIAnimationGraph.hpp>
+#    include <Workphone/Scene/Components/Animator.hpp>
 
 using namespace workphone;
 using namespace workphone::editor;
@@ -850,6 +853,82 @@ BOOST_AUTO_TEST_CASE( editor_ui_control_unload_test )
             ui->removeElement( parent );
         }
     }
+}
+
+BOOST_AUTO_TEST_CASE( editor_animation_graph_widget_handoff_test )
+{
+    EditorApplicationGuard app;
+    app.loadSingleThreaded();
+    auto manager = core::IApplicationManager::instance();
+    auto window = EditorManager::getSingletonPtr()->getUI()->getAnimationGraphWindow();
+    BOOST_REQUIRE( window );
+    BOOST_REQUIRE( window->getParentWindow() );
+    auto children = window->getParentWindow()->getChildren();
+    BOOST_REQUIRE_EQUAL( children.size(), 1u );
+    auto graph = dynamic_pointer_cast<ui::IUIAnimationGraph>( children.front() );
+    BOOST_REQUIRE( graph );
+
+    auto game = manager->getGameManager();
+    auto actor = game->createActor();
+    actor->setName( "Graph preview actor" );
+    auto animator = actor->addComponent<scene::Animator>();
+    auto clip = make_ptr<workphone::Animation>();
+    clip->setName( "Idle clip" );
+    clip->setLength( 1.0f );
+    animator->addAnimation( static_pointer_cast<IAnimation>( clip ) );
+    auto selection = manager->getSelectionManager();
+    selection->clearSelection();
+    selection->addSelectedObject( actor );
+    window->setWindowVisible( true );
+    app.updateApplication();
+
+    using Action = ui::IUIAnimationGraph::Action;
+    auto &model = graph->getModel();
+    {
+        const std::lock_guard guard( model.mutex );
+        BOOST_REQUIRE_EQUAL( model.targetName, actor->getName() );
+        BOOST_REQUIRE_EQUAL( model.availableClips.size(), 1u );
+        BOOST_REQUIRE( model.edited.addClip( model.availableClips.front() ) );
+        BOOST_REQUIRE( model.edited.addState( { "Idle", "Idle clip" } ) );
+        model.dirty = true;
+        model.action = Action::Apply;
+    }
+    app.updateApplication();
+    BOOST_REQUIRE( animator->hasAnimationGraph() );
+    BOOST_CHECK_EQUAL( animator->getGraphState(), "Idle" );
+    {
+        const std::lock_guard guard( model.mutex );
+        BOOST_CHECK( !model.dirty );
+        BOOST_CHECK_EQUAL( model.playback.state, "Idle" );
+        model.action = Action::Play;
+    }
+    app.updateApplication();
+    BOOST_CHECK( animator->isPlaying() );
+    {
+        const std::lock_guard guard( model.mutex );
+        BOOST_CHECK( model.playback.playing );
+        BOOST_REQUIRE( model.edited.addState( { "Pending", "Idle clip" } ) );
+        model.dirty = true;
+    }
+
+    selection->clearSelection();
+    app.updateApplication();
+    {
+        const std::lock_guard guard( model.mutex );
+        BOOST_CHECK( model.selectionChanged );
+        BOOST_CHECK_EQUAL( model.targetName, actor->getName() );
+        BOOST_CHECK( model.edited.findState( "Pending" ) );
+        model.action = Action::Revert;
+    }
+    app.updateApplication();
+    {
+        const std::lock_guard guard( model.mutex );
+        BOOST_CHECK( model.targetName.empty() );
+        BOOST_CHECK( model.edited.getStates().empty() );
+        BOOST_CHECK( !model.dirty );
+    }
+    BOOST_CHECK( !animator->getAnimationGraph()->getDefinition().findState( "Pending" ) );
+    game->destroyActor( actor );
 }
 
 BOOST_AUTO_TEST_CASE( editor_material_selection_visibility_test )

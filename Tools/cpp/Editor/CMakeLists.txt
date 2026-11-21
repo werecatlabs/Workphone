@@ -1156,6 +1156,7 @@ if (WP_EDITOR_TESTS)
         editor_script_window_properties_bridge_test
         editor_project_settings_live_bridge_test
         editor_input_window_live_values_test
+        editor_animation_graph_widget_handoff_test
         editor_window_callbacks_disconnect_test
         editor_material_selection_visibility_test
         editor_material_parameters_test
