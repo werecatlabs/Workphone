@@ -317,6 +317,7 @@ namespace workphone
              * @see Component::getProperties
              */
             SmartPtr<Properties> getProperties() const override;
+            SmartPtr<ISharedObject> toData() const override;
 
             /**
              * @brief Set this component's properties from a serialized object.
@@ -342,8 +343,14 @@ namespace workphone
              */
             void setSkeleton( SmartPtr<ISkeleton> skeleton );
 
-            /** Installs a tools-authored animation graph and resets it to its initial state. */
+            /** Installs a runtime animation graph and resets it to its initial state. */
             bool setAnimationGraph( const animation::AnimationGraphDefinition &definition );
+
+            /** Installs a graph and saves its clip bindings and definition with the component. */
+            bool setAuthoredAnimationGraph( const animation::AnimationGraphDefinition &definition );
+
+            /** Makes imported clips and a deferred authored graph available without starting playback. */
+            bool prepareAnimationGraphClips();
 
             /** Removes the graph and returns the component to selected-clip playback. */
             void clearAnimationGraph();
@@ -351,6 +358,12 @@ namespace workphone
             bool hasAnimationGraph() const;
             animation::AnimationGraphInstance *getAnimationGraph();
             const animation::AnimationGraphInstance *getAnimationGraph() const;
+
+            void setGraphBool( const String &name, bool value );
+            bool getGraphBool( const String &name ) const;
+            void setGraphFloat( const String &name, f32 value );
+            f32 getGraphFloat( const String &name ) const;
+            String getGraphState() const;
 
             /** Gets the post-animation IK pass evaluated after clip/graph sampling. */
             animation::AnimationIKSystem &getIKSystem();
@@ -398,6 +411,7 @@ namespace workphone
             String m_playbackStatus;
 
             animation::AnimationGraphInstance m_animationGraph;
+            SmartPtr<Properties> m_authoredAnimationGraph;
             animation::AnimationIKSystem m_ikSystem;
             Array<animation::AnimationIKSolveResult> m_lastIKSolveResults =
                 makeSourceBudgetSnapshot<animation::AnimationIKSolveResult>();

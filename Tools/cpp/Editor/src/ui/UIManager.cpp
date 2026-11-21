@@ -1412,6 +1412,12 @@ namespace workphone::editor
             setAnimationWindow( nullptr );
         }
 
+        if( auto animationGraph = getAnimationGraphWindow() )
+        {
+            animationGraph->unload( nullptr );
+            setAnimationGraphWindow( nullptr );
+        }
+
         if( auto cutsceneWindow = getCutsceneWindow() )
         {
             cutsceneWindow->unload( nullptr );

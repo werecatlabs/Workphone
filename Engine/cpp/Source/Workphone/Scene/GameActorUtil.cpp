@@ -1,4 +1,5 @@
 #include <Workphone/WorkphonePCH.hpp>
+#include <Workphone/Animation/AnimationGraphProperties.hpp>
 #include <Workphone/Scene/GameActorUtil.hpp>
 #include <Workphone/Scene/GameScene.hpp>
 #include <Workphone/ApplicationUtil.hpp>
@@ -480,14 +481,16 @@ namespace workphone::scene
             }
         };
         index( index, data );
-        auto copy = [&]( auto &&self, SmartPtr<Properties> source ) -> SmartPtr<Properties> {
+        auto copy = [&]( auto &&self, SmartPtr<Properties> source, bool remapReferences )
+            -> SmartPtr<Properties> {
             auto result = workphone::make_ptr<Properties>();
             result->setName( source->getName() );
             for( auto property : source->getPropertiesAsArray() )
             {
                 // Prefab provenance names the immutable template node. Only its
                 // instanceUuid is a reference into the graph being cloned.
-                if( source->getName() == "identity" && property.getName() == "sourceUuid" )
+                if( !remapReferences ||
+                    ( source->getName() == "identity" && property.getName() == "sourceUuid" ) )
                 {
                     result->setProperty( property );
                     continue;
@@ -521,11 +524,14 @@ namespace workphone::scene
             }
             for( auto child : source->getChildren() )
             {
-                result->addChild( self( self, child ) );
+                // Animation state, clip and parameter names and event payloads are literals.
+                result->addChild( self( self, child,
+                                        remapReferences &&
+                                            child->getName() != animation::animationGraphPropertiesName ) );
             }
             return result;
         };
-        return copy( copy, data );
+        return copy( copy, data, true );
     }
 
     Array<SmartPtr<IGameActor>> GameActorUtil::loadSceneActors(

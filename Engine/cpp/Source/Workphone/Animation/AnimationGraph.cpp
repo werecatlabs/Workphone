@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <optional>
 #include <type_traits>
 
 namespace workphone::animation
@@ -18,6 +19,7 @@ namespace workphone::animation
         // SmartPtr's legacy move constructor has no noexcept declaration; Array
         // therefore copies clip candidates before publication during growth.
         static_assert( std::is_nothrow_move_assignable_v<AnimationGraphClip> );
+        static_assert( std::is_nothrow_move_assignable_v<AnimationGraphState> );
         static_assert( std::is_nothrow_move_constructible_v<AnimationGraphTransition> &&
                        std::is_nothrow_move_assignable_v<AnimationGraphTransition> );
         static_assert( std::is_nothrow_move_constructible_v<AnimationGraphPoseNodeDefinition> &&
@@ -86,7 +88,13 @@ namespace workphone::animation
     bool AnimationGraphState::isValid() const
     {
         return !id.empty() && ( !clipId.empty() || !poseNodeId.empty() ) && std::isfinite( speed ) &&
-               speed >= 0.0f;
+               speed >= 0.0f &&
+               ( !hasEditorPosition || ( std::isfinite( editorX ) && std::isfinite( editorY ) ) );
+    }
+
+    bool AnimationGraphParameter::isValid() const
+    {
+        return !name.empty() && std::isfinite( floatValue );
     }
 
     bool AnimationGraphTransition::isValid() const
@@ -99,6 +107,7 @@ namespace workphone::animation
     AnimationGraphDefinition::AnimationGraphDefinition( const AnimationGraphDefinition &other ) :
         m_clips( makeSourceBudgetSnapshot( other.m_clips ) ),
         m_states( makeSourceBudgetSnapshot( other.m_states ) ),
+        m_parameters( makeSourceBudgetSnapshot( other.m_parameters ) ),
         m_initialState( other.m_initialState ),
         m_boneMask( other.m_boneMask )
     {
@@ -131,6 +140,7 @@ namespace workphone::animation
         m_states.swap( other.m_states );
         m_transitions.swap( other.m_transitions );
         m_poseNodes.swap( other.m_poseNodes );
+        m_parameters.swap( other.m_parameters );
         m_initialState.swap( other.m_initialState );
         m_boneMask.swap( other.m_boneMask );
     }
@@ -147,15 +157,7 @@ namespace workphone::animation
 
     bool AnimationGraphDefinition::addState( const AnimationGraphState &state )
     {
-        if( !state.isValid() || findState( state.id ) )
-        {
-            return false;
-        }
-        if( !state.clipId.empty() && !findClip( state.clipId ) )
-        {
-            return false;
-        }
-        if( !state.poseNodeId.empty() && !findPoseNode( state.poseNodeId ) )
+        if( !canUseState( state ) || findState( state.id ) )
         {
             return false;
         }
@@ -169,22 +171,213 @@ namespace workphone::animation
         return true;
     }
 
+    bool AnimationGraphDefinition::canUseState( const AnimationGraphState &state ) const
+    {
+        return state.isValid() && ( state.clipId.empty() || findClip( state.clipId ) ) &&
+               ( state.poseNodeId.empty() || findPoseNode( state.poseNodeId ) );
+    }
+
+    bool AnimationGraphDefinition::editState( const AnimationGraphState &state )
+    {
+        if( !canUseState( state ) )
+        {
+            return false;
+        }
+        auto found = std::find_if( m_states.begin(), m_states.end(),
+                                   [&]( const AnimationGraphState &value ) {
+                                       return value.id == state.id;
+                                   } );
+        if( found == m_states.end() )
+        {
+            return false;
+        }
+        AnimationGraphState candidate( state );
+        *found = std::move( candidate );
+        return true;
+    }
+
+    bool AnimationGraphDefinition::renameState( const String &id, const String &newId )
+    {
+        if( newId.empty() || !findState( id ) )
+        {
+            return false;
+        }
+        if( id == newId )
+        {
+            return true;
+        }
+        if( findState( newId ) )
+        {
+            return false;
+        }
+
+        AnimationGraphDefinition candidate( *this );
+        for( auto &state : candidate.m_states )
+        {
+            if( state.id == id )
+            {
+                state.id = newId;
+                break;
+            }
+        }
+        for( auto &transition : candidate.m_transitions )
+        {
+            if( transition.fromState == id )
+            {
+                transition.fromState = newId;
+            }
+            if( transition.toState == id )
+            {
+                transition.toState = newId;
+            }
+        }
+        if( candidate.m_initialState == id )
+        {
+            candidate.m_initialState = newId;
+        }
+        swap( candidate );
+        return true;
+    }
+
+    bool AnimationGraphDefinition::setStatePosition( const String &id, f32 x, f32 y )
+    {
+        auto found = std::find_if( m_states.begin(), m_states.end(),
+                                   [&]( const AnimationGraphState &state ) {
+                                       return state.id == id;
+                                   } );
+        if( found == m_states.end() || !std::isfinite( x ) || !std::isfinite( y ) )
+        {
+            return false;
+        }
+        found->editorX = x;
+        found->editorY = y;
+        found->hasEditorPosition = true;
+        return true;
+    }
+
+    bool AnimationGraphDefinition::canUseTransition( const AnimationGraphTransition &transition ) const
+    {
+        return transition.isValid() && findState( transition.fromState ) &&
+               findState( transition.toState );
+    }
+
+    size_t AnimationGraphDefinition::transitionInsertionIndex( s32 priority ) const
+    {
+        size_t index = 0;
+        while( index < m_transitions.size() && m_transitions[index].priority >= priority )
+        {
+            ++index;
+        }
+        return index;
+    }
+
     bool AnimationGraphDefinition::addTransition( const AnimationGraphTransition &transition )
     {
-        if( !transition.isValid() || !findState( transition.fromState ) ||
-            !findState( transition.toState ) )
+        return addTransition( transition, nullptr );
+    }
+
+    bool AnimationGraphDefinition::addTransition( const AnimationGraphTransition &transition,
+                                                  size_t *newIndex )
+    {
+        if( !canUseTransition( transition ) )
         {
             return false;
         }
         auto candidate = admittedTransition( transition );
-        size_t index = 0;
-        while( index < m_transitions.size() && m_transitions[index].priority >= candidate.priority )
-        {
-            ++index;
-        }
+        const auto index = transitionInsertionIndex( candidate.priority );
         m_transitions.push_back( std::move( candidate ) );
         std::rotate( m_transitions.begin() + index, m_transitions.end() - 1, m_transitions.end() );
+        if( newIndex )
+        {
+            *newIndex = index;
+        }
         return true;
+    }
+
+    bool AnimationGraphDefinition::updateTransition( size_t index,
+                                                     const AnimationGraphTransition &transition,
+                                                     size_t *newIndex )
+    {
+        if( index >= m_transitions.size() || !canUseTransition( transition ) )
+        {
+            return false;
+        }
+        auto candidate = admittedTransition( transition );
+        auto destination = index;
+        if( candidate.priority != m_transitions[index].priority )
+        {
+            destination = transitionInsertionIndex( candidate.priority );
+            if( destination > index )
+            {
+                --destination;
+            }
+        }
+
+        m_transitions[index] = std::move( candidate );
+        auto begin = m_transitions.begin();
+        if( destination < index )
+        {
+            std::rotate( begin + destination, begin + index, begin + index + 1 );
+        }
+        else if( destination > index )
+        {
+            std::rotate( begin + index, begin + index + 1, begin + destination + 1 );
+        }
+        if( newIndex )
+        {
+            *newIndex = destination;
+        }
+        return true;
+    }
+
+    bool AnimationGraphDefinition::removeTransition( size_t index )
+    {
+        if( index >= m_transitions.size() )
+        {
+            return false;
+        }
+        m_transitions.erase( m_transitions.begin() + index );
+        return true;
+    }
+
+    bool AnimationGraphDefinition::addParameter( const AnimationGraphParameter &parameter )
+    {
+        if( !parameter.isValid() || findParameter( parameter.name ) )
+        {
+            return false;
+        }
+        m_parameters.push_back( parameter );
+        return true;
+    }
+
+    bool AnimationGraphDefinition::setParameters( const Array<AnimationGraphParameter> &parameters )
+    {
+        for( auto entry = parameters.begin(); entry != parameters.end(); ++entry )
+        {
+            if( !entry->isValid() ||
+                std::any_of( parameters.begin(), entry, [&]( const AnimationGraphParameter &other ) {
+                    return entry->name == other.name;
+                } ) )
+            {
+                return false;
+            }
+        }
+        auto candidate = makeSourceBudgetSnapshot( parameters );
+        m_parameters.swap( candidate );
+        return true;
+    }
+
+    const AnimationGraphParameter *AnimationGraphDefinition::findParameter( const String &name ) const
+    {
+        const auto found = std::find_if(
+            m_parameters.begin(), m_parameters.end(),
+            [&]( const AnimationGraphParameter &parameter ) { return parameter.name == name; } );
+        return found != m_parameters.end() ? &*found : nullptr;
+    }
+
+    const Array<AnimationGraphParameter> &AnimationGraphDefinition::getParameters() const
+    {
+        return m_parameters;
     }
 
     bool AnimationGraphDefinition::removeClip( const String &id )
@@ -260,6 +453,7 @@ namespace workphone::animation
         m_states = makeSourceBudgetSnapshot<AnimationGraphState>();
         m_transitions = makeSourceBudgetSnapshot<AnimationGraphTransition>();
         m_poseNodes = makeSourceBudgetSnapshot<AnimationGraphPoseNodeDefinition>();
+        m_parameters = makeSourceBudgetSnapshot<AnimationGraphParameter>();
         m_initialState.release();
         IAnimationState::BoneBlendMask{}.swap( m_boneMask );
     }
@@ -346,6 +540,24 @@ namespace workphone::animation
             return false;
         }
         m_poseNodes.push_back( admittedNode( node ) );
+        return true;
+    }
+
+    bool AnimationGraphDefinition::editPoseNode( const AnimationGraphPoseNodeDefinition &node )
+    {
+        if( !node.isValid() )
+        {
+            return false;
+        }
+        auto found = std::find_if( m_poseNodes.begin(), m_poseNodes.end(),
+                                   [&]( const AnimationGraphPoseNodeDefinition &value ) {
+                                       return value.id == node.id;
+                                   } );
+        if( found == m_poseNodes.end() )
+        {
+            return false;
+        }
+        *found = admittedNode( node );
         return true;
     }
 
@@ -501,6 +713,40 @@ namespace workphone::animation
         {
             traversal.reserve( candidate.getPoseNodes().size() + 1 );
         }
+        // Authored defaults are evaluated as part of the new initial pose. Preserve
+        // dynamically named inputs used by legacy definitions and stage any changed maps
+        // so a failed initial evaluation can restore the previous graph and its inputs.
+        std::optional<SourceBudgetMap<String, bool>> boolParameters;
+        std::optional<SourceBudgetMap<String, f32>> floatParameters;
+        const auto discardOverride = []( const String &name, const auto &current, auto &staged ) {
+            if( current.find( name ) != current.end() )
+            {
+                if( !staged )
+                {
+                    staged.emplace( current );
+                }
+                staged->erase( name );
+            }
+        };
+        for( const auto *graph : { &m_definition, &candidate } )
+        {
+            for( const auto &parameter : graph->getParameters() )
+            {
+                discardOverride( parameter.name, m_boolParameters, boolParameters );
+                discardOverride( parameter.name, m_floatParameters, floatParameters );
+            }
+        }
+        const auto swapParameters = [&]() {
+            if( boolParameters )
+            {
+                m_boolParameters.swap( *boolParameters );
+            }
+            if( floatParameters )
+            {
+                m_floatParameters.swap( *floatParameters );
+            }
+        };
+        swapParameters();
         m_definition.swap( candidate );
         m_traversalScratch.swap( traversal );
         try
@@ -511,6 +757,7 @@ namespace workphone::animation
         {
             m_definition.swap( candidate );
             m_traversalScratch.swap( traversal );
+            swapParameters();
             throw;
         }
         m_staging.samples.clear();
@@ -634,7 +881,7 @@ namespace workphone::animation
                     m_transitionDuration = 0.0f;
                 }
             }
-            else if( const auto transition = findTransition() )
+            else if( const auto transition = findTransition( currentAdvance.looped ) )
             {
                 beginTransition( *transition );
             }
@@ -738,7 +985,12 @@ namespace workphone::animation
     bool AnimationGraphInstance::getBoolParameter( const String &name, bool defaultValue ) const
     {
         const auto found = m_boolParameters.find( name );
-        return found != m_boolParameters.end() ? found->second : defaultValue;
+        if( found != m_boolParameters.end() )
+        {
+            return found->second;
+        }
+        const auto parameter = m_definition.findParameter( name );
+        return parameter && parameter->isBoolean ? parameter->booleanValue : defaultValue;
     }
 
     void AnimationGraphInstance::setFloatParameter( const String &name, f32 value )
@@ -752,12 +1004,22 @@ namespace workphone::animation
     f32 AnimationGraphInstance::getFloatParameter( const String &name, f32 defaultValue ) const
     {
         const auto found = m_floatParameters.find( name );
-        return found != m_floatParameters.end() ? found->second : defaultValue;
+        if( found != m_floatParameters.end() )
+        {
+            return found->second;
+        }
+        const auto parameter = m_definition.findParameter( name );
+        return parameter && !parameter->isBoolean ? parameter->floatValue : defaultValue;
     }
 
     const String &AnimationGraphInstance::getCurrentState() const
     {
         return m_currentState;
+    }
+
+    const String &AnimationGraphInstance::getDestinationState() const
+    {
+        return m_destinationState;
     }
 
     bool AnimationGraphInstance::isTransitioning() const
@@ -836,7 +1098,7 @@ namespace workphone::animation
         return true;
     }
 
-    const AnimationGraphTransition *AnimationGraphInstance::findTransition() const
+    const AnimationGraphTransition *AnimationGraphInstance::findTransition( bool looped ) const
     {
         const auto duration = getStateEffectiveDuration( m_currentState );
         const auto currentNormalizedTime =
@@ -844,7 +1106,8 @@ namespace workphone::animation
         for( const auto &transition : m_definition.getTransitions() )
         {
             if( transition.fromState == m_currentState &&
-                ( transition.exitTime < 0.0f || currentNormalizedTime >= transition.exitTime ) &&
+                ( looped || transition.exitTime < 0.0f ||
+                  currentNormalizedTime >= transition.exitTime ) &&
                 conditionsMet( transition ) )
             {
                 return &transition;
@@ -1226,19 +1489,22 @@ namespace workphone::animation
             {
                 return;
             }
-            const auto lastChildIndex = static_cast<u32>( node->childNodeIds.size() - 1 );
-            u32 childIdx = 0;
-            const auto isBool = m_boolParameters.find( node->parameter ) != m_boolParameters.end();
+            const auto lastChildIndex = node->childNodeIds.size() - 1;
+            size_t childIdx = 0;
+            const auto parameter = m_definition.findParameter( node->parameter );
+            const auto isBool = parameter ? parameter->isBoolean
+                                          : m_boolParameters.find( node->parameter ) !=
+                                                m_boolParameters.end();
             if( isBool && node->childNodeIds.size() == 2 )
             {
-                childIdx = getBoolParameter( node->parameter, false ) ? 1u : 0u;
+                childIdx = getBoolParameter( node->parameter ) ? 1 : 0;
             }
             else
             {
-                const auto parameterValue = getFloatParameter( node->parameter, 0.0f );
-                const auto rawIndex = static_cast<s32>( std::floor( parameterValue + 0.5f ) );
-                childIdx =
-                    static_cast<u32>( std::clamp( rawIndex, 0, static_cast<s32>( lastChildIndex ) ) );
+                const auto parameterValue = getFloatParameter( node->parameter );
+                const auto rawIndex = std::round( static_cast<f64>( parameterValue ) );
+                childIdx = static_cast<size_t>(
+                    std::clamp( rawIndex, 0.0, static_cast<f64>( lastChildIndex ) ) );
             }
 
             evaluatePoseTree( stateId, node->childNodeIds[childIdx], normalizedTimeValue, weight,

@@ -1,11 +1,16 @@
 #pragma once
+#include <Workphone/Animation/Animation.hpp>
+#include <Workphone/Animation/AnimationGraphProperties.hpp>
 #include <Workphone/System/AnimationResourceCompiler.hpp>
 #include <Workphone/System/SkeletonResourceCompiler.hpp>
+#include <Workphone/System/SceneResourceCompiler.hpp>
 #include <Workphone/System/ResourceCompilerRegistry.hpp>
 #include <Workphone/System/RuntimeAssetContext.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
 #include <Workphone/Scene/Components/Animator.hpp>
+#include <Workphone/Scene/GameActorUtil.hpp>
 #include <Workphone/Interface/Mesh/IGraphicsBone.hpp>
+#include <Workphone/Core/DataUtil.hpp>
 #include <Workphone/Core/StringUtil.hpp>
 #include <Workphone/Core/PropertiesBinarySerializer.hpp>
 #include <filesystem>
@@ -46,6 +51,97 @@ namespace animation_resource_contracts
     {std::ofstream file(path,std::ios::binary);file.write(value.data(),value.size());BOOST_REQUIRE(file.good());}
     inline void seal(RuntimeResource &value)
     {value.header.payloadSize=value.payload.size();value.header.payloadHash=hashBytes(value.payload.data(),value.payload.size());}
+
+    inline constexpr const char *inlineActorUuid = "2f02a09a-f85f-4197-9942-4539702dac21";
+
+    inline std::shared_ptr<RuntimeResource> cookInlineGraph( const std::filesystem::path &source,
+                                                            const String &rigId, const String &rigUuid )
+    {
+        using namespace workphone::animation;
+        auto clip = make_ptr<workphone::Animation>();
+        clip->setName( "Idle" );
+        clip->setLength( 1.0f );
+        AnimationGraphDefinition graph;
+        AnimationGraphClip binding;
+        binding.id = "idleAlias";
+        binding.animation = clip;
+        const auto track = binding.eventTimeline.addTrack( "Steps" );
+        BOOST_REQUIRE_NE( track, AnimationEventTimeline::InvalidIndex );
+        BOOST_REQUIRE_NE( binding.eventTimeline.addEvent( track, { "Step", inlineActorUuid, .25f, 0, true } ),
+                          AnimationEventTimeline::InvalidIndex );
+        binding.syncTrack = AnimationSyncTrack::fromTimeline( binding.eventTimeline );
+        BOOST_REQUIRE( graph.addClip( binding ) );
+        BOOST_REQUIRE( graph.addParameter( { "speed", false, .375f, false } ) );
+        AnimationGraphPoseNodeDefinition pose;
+        pose.id = "IdlePose";
+        pose.clipId = binding.id;
+        BOOST_REQUIRE( graph.addPoseNode( pose ) );
+        AnimationGraphState idle;
+        idle.id = "Idle";
+        idle.poseNodeId = pose.id;
+        idle.editorX = -123.45678f;
+        idle.editorY = 48.25f;
+        idle.hasEditorPosition = true;
+        BOOST_REQUIRE( graph.addState( idle ) );
+        IAnimationState::BoneBlendMask mask{ 1.0f, 0.25f };
+        BOOST_REQUIRE( graph.setBoneBlendMask( mask ) );
+
+        scene::Animator animator;
+        BOOST_REQUIRE( animator.setAuthoredAnimationGraph( graph ) );
+        auto component = static_pointer_cast<Properties>( animator.toData() );
+        component->setName( "component" );
+        component->setProperty( "componentType", "workphone::scene::Animator" );
+        component->setProperty( "uuid", "aeab9aba-7fd0-43c7-855d-e9d820bf7159" );
+        component->setProperty( "animationAssetUuid", rigUuid );
+        // Match an Animator attached to an actor in the Editor. The detached test
+        // component has no FSM and reports the non-serializable Count sentinel.
+        component->getPropertyObject( "state" ).setValueAsEnum(
+            static_cast<s32>( scene::IComponent::State::Edit ) );
+        auto actor = make_ptr<Properties>();
+        actor->setProperty( "uuid", inlineActorUuid );
+        actor->addChild( component );
+        const auto instance = scene::GameActorUtil::createInstanceData( actor );
+        BOOST_CHECK_NE( instance->getProperty( "uuid" ), inlineActorUuid );
+        const auto instanceGraph = instance->getChild( "component" )->getChild( animationGraphPropertiesName );
+        AnimationGraphDefinition cloned;
+        BOOST_REQUIRE( readAnimationGraphProperties( *instanceGraph, { clip }, cloned ) );
+        BOOST_CHECK_EQUAL( cloned.getClips().front().eventTimeline.getTracks().front().events.front().payload,
+                           inlineActorUuid );
+
+        const auto file = source / "inline.prefab";
+        save( file, DataUtil::toString( actor.get(), true ) );
+
+        SceneResourceCompiler compiler;
+        CompileContext context;
+        context.resourceId = ResourceID( "data://inline.prefab" );
+        context.sourcePath = file.u8string().c_str();
+        context.assetBindings = std::make_shared<const std::map<String, ResourceID>>(
+            std::map<String, ResourceID>{ { rigUuid, ResourceID( rigId ) } } );
+        DependencySet dependencies;
+        String error;
+        BOOST_REQUIRE_MESSAGE( compiler.getDependencies( context, dependencies, error ), error );
+        std::ostringstream payload;
+        Array<String> messages;
+        BOOST_REQUIRE_MESSAGE( compiler.compile( context, payload, messages ) == CompilationStatus::Success,
+                               ( messages.empty() ? "Inline graph cook failed" : messages.front().c_str() ) );
+        const auto bytes = payload.str();
+        auto result = std::make_shared<RuntimeResource>();
+        result->header.resourceId = context.resourceId;
+        result->header.resourceType = context.resourceId.type();
+        result->header.compilerVersion = compiler.versionFor( result->header.resourceType );
+        result->header.sourceHash = 1;
+        result->header.installDependencies = dependencies.installDependencies;
+        result->payload.resize( bytes.size() );
+        std::memcpy( result->payload.data(), bytes.data(), bytes.size() );
+        seal( *result );
+
+        auto savedGraph = component->getChild( animationGraphPropertiesName );
+        BOOST_REQUIRE( savedGraph );
+        savedGraph->getChild( "state" )->setProperty( "x", "1junk" );
+        save( file, DataUtil::toString( actor.get(), true ) );
+        BOOST_CHECK( !compiler.getDependencies( context, dependencies, error ) );
+        return result;
+    }
 }
 
 BOOST_AUTO_TEST_CASE(typed_animation_authoring_reference_roundtrip_contract)
@@ -71,7 +167,8 @@ BOOST_AUTO_TEST_CASE(typed_animation_graph_mask_source_free_owner_contract)
     using namespace animation_resource_contracts;namespace fs=std::filesystem;
     const auto parent=fs::temp_directory_path(),folder=parent/fs::u8path(("wp-animation-family-"+StringUtil::getUUID()).c_str());fs::create_directories(folder/"source");fs::create_directories(folder/"package");
     struct Cleanup {fs::path parent,folder;~Cleanup(){std::error_code ignored;if(folder.parent_path()==parent&&folder.filename().u8string().find("wp-animation-family-")==0)fs::remove_all(folder,ignored);}} cleanup{parent,folder};
-    const String rigId="data://rig.skelres",maskId="data://upper.amask",graphId="data://actor.agraph";
+    const String rigId="data://rig.skelres",maskId="data://upper.amask",graphId="data://actor.agraph",
+                 positionedId="data://positioned.agraph";
     save(folder/"source"/"rig.skelres",rigText());save(folder/"source"/"upper.amask",R"({"version":1,"rig":"data://rig.skelres","defaultWeight":1,"bones":[{"bone":"Root","weight":0},{"bone":"Child","weight":0.25}]})");save(folder/"source"/"actor.agraph",graphText());
     auto registry=std::make_shared<ResourceCompilerRegistry>();String error;
     BOOST_REQUIRE(registry->registerCompiler(std::make_shared<SkeletonResourceCompiler>(),&error));BOOST_REQUIRE(registry->registerCompiler(std::make_shared<AnimationResourceCompiler>(),&error));
@@ -92,6 +189,13 @@ BOOST_AUTO_TEST_CASE(typed_animation_graph_mask_source_free_owner_contract)
     const auto reject=[&](String value,bool dependencyPhase=true){save(fs::u8path(invalid.sourcePath.c_str()),value);DependencySet dependencies;Array<String> messages;std::ostringstream output;
         if(dependencyPhase)BOOST_CHECK_MESSAGE(!compiler.getDependencies(invalid,dependencies,error),"Unexpected accepted dependency schema: "<<value);else BOOST_CHECK_MESSAGE(compiler.compile(invalid,output,messages)==CompilationStatus::Failure,"Unexpected accepted compiled schema for "<<invalid.resourceId.str()<<": "<<value);};
     auto changed=[](String value,const String &from,const String &to){const auto at=value.find(from);BOOST_REQUIRE(at!=String::npos);value.replace(at,from.size(),to);return value;};
+    const String idleState = R"({"id":"Idle","clip":"idle","speed":1})";
+    save( folder / "source" / "positioned.agraph",
+          changed( graphText(), idleState,
+                   R"({"id":"Idle","clip":"idle","speed":1,"position":[-128,32.5]})" ) );
+    cook( positionedId, "positioned.agraph" );
+    reject( changed( graphText(), idleState,
+                     R"({"id":"Idle","clip":"idle","speed":1,"position":[24]})" ) );
     reject(changed(graphText(),"\"version\":1","\"version\":1,\"unknown\":true"));
     reject(changed(graphText(),"\"children\":[\"idlePose\",\"movePose\"]","\"children\":[\"blendPose\",\"movePose\"]"));
     reject(changed(graphText(),"\"to\":\"Move\"","\"to\":\"Missing\""));
@@ -101,6 +205,8 @@ BOOST_AUTO_TEST_CASE(typed_animation_graph_mask_source_free_owner_contract)
     invalid.resourceId=ResourceID("data://bad.amask");invalid.sourcePath=(folder/"source"/"bad.amask").u8string().c_str();
     reject(R"({"version":1,"rig":"data://rig.skelres","defaultWeight":1,"bones":[{"bone":"Missing","weight":0.5}]})",false);
     reject(R"({"version":1,"rig":"data://rig.skelres","defaultWeight":1,"bones":[{"bone":"Root","weight":1.5}]})");
+    const String inlineRigUuid = "dd174347-ffe2-4002-813e-b49181c2200e";
+    auto inlinePrefab = cookInlineGraph( folder / "source", rigId, inlineRigUuid );
     fs::remove_all(folder/"source"); // Only sealed compiled containers survive.
     std::map<String,std::shared_ptr<const RuntimeResource>> loaded;
     std::function<std::shared_ptr<const RuntimeResource>(const String&)> read=[&](const String &id){const auto existing=loaded.find(id);if(existing!=loaded.end())return existing->second;
@@ -108,7 +214,46 @@ BOOST_AUTO_TEST_CASE(typed_animation_graph_mask_source_free_owner_contract)
         for(const auto &dependency:value->header.installDependencies)value->dependencies.push_back(read(dependency.str()));loaded[id]=value;return std::shared_ptr<const RuntimeResource>(value);};
     const auto graph=read(graphId),mask=read(maskId);BOOST_CHECK_EQUAL(std::memcmp(graph->payload.data(),"WPAG",4),0);BOOST_CHECK_EQUAL(std::memcmp(mask->payload.data(),"WPAM",4),0);
     IAnimationState::BoneBlendMask weights;BOOST_REQUIRE(AnimationResourceCompiler::decodeMask(*mask,weights,error));BOOST_REQUIRE_EQUAL(weights.size(),2u);BOOST_CHECK_EQUAL(weights[0],0);BOOST_CHECK_CLOSE(weights[1],.25f,.001f);
-    {AnimationGraphResource native;const bool decoded=AnimationResourceCompiler::decodeGraph(*graph,native,error);BOOST_REQUIRE_MESSAGE(decoded,error.c_str());BOOST_REQUIRE_MESSAGE(native.skeleton,"Successful graph decode must publish its native skeleton");BOOST_CHECK_MESSAGE(native.definition.isValid(),"Successful graph decode must publish its validated native evaluator definition");}
+    {AnimationGraphResource native;const bool decoded=AnimationResourceCompiler::decodeGraph(*graph,native,error);BOOST_REQUIRE_MESSAGE(decoded,error.c_str());BOOST_REQUIRE_MESSAGE(native.skeleton,"Successful graph decode must publish its native skeleton");BOOST_CHECK_MESSAGE(native.definition.isValid(),"Successful graph decode must publish its validated native evaluator definition");
+    const auto blend = native.definition.findParameter( "blend" );
+    BOOST_REQUIRE( blend );
+    BOOST_CHECK_EQUAL( blend->floatValue, 1.0f );
+    BOOST_CHECK( !native.definition.findState( "Idle" )->hasEditorPosition );}
+    {
+        AnimationGraphResource positioned;
+        BOOST_REQUIRE_MESSAGE( AnimationResourceCompiler::decodeGraph( *read( positionedId ), positioned, error ),
+                               error );
+        const auto idle = positioned.definition.findState( "Idle" );
+        BOOST_REQUIRE( idle && idle->hasEditorPosition );
+        BOOST_CHECK_EQUAL( idle->editorX, -128.0f );
+        BOOST_CHECK_EQUAL( idle->editorY, 32.5f );
+        BOOST_CHECK( !positioned.definition.findState( "Move" )->hasEditorPosition );
+    }
+    {
+        inlinePrefab->dependencies.push_back( read( rigId ) );
+        const auto cooked = decodeActorGraphResource( inlinePrefab, error );
+        BOOST_REQUIRE_MESSAGE( cooked, error );
+        auto runtime = createActorGraphRuntimeContext( cooked, "pc", true, error );
+        BOOST_REQUIRE_MESSAGE( runtime, error );
+        auto data = make_ptr<Properties>();
+        BOOST_REQUIRE_MESSAGE( PropertiesBinarySerializer::deserialize( inlinePrefab->payload, *data, &error ),
+                               error );
+        scene::Animator animator;
+        animator.configureRuntimeAssets( runtime );
+        animator.setProperties( data->getChild( "component" ) );
+        BOOST_REQUIRE( animator.hasAnimationGraph() );
+        const auto &definition = animator.getAnimationGraph()->getDefinition();
+        const auto state = definition.findState( "Idle" );
+        const auto binding = definition.findClip( "idleAlias" );
+        BOOST_REQUIRE( state && binding );
+        BOOST_CHECK_EQUAL( state->editorX, -123.45678f );
+        BOOST_CHECK_EQUAL( state->poseNodeId, "IdlePose" );
+        BOOST_CHECK_EQUAL( animator.getGraphFloat( "speed" ), .375f );
+        BOOST_CHECK_EQUAL( binding->eventTimeline.getTracks().front().events.front().payload, inlineActorUuid );
+        BOOST_CHECK_EQUAL( binding->syncTrack.getMarkers().front().id, "Step" );
+        BOOST_CHECK_EQUAL( definition.getBoneBlendMask().at( 1 ), .25f );
+        animator.unload( nullptr );
+    }
     const String uuid="4c721f54-3b86-4b4e-a4ab-1489482b0f88";auto context=std::make_shared<RuntimeAssetContext>();
     context->resolve=[graph,uuid](const String &id,String &error)->std::shared_ptr<const RuntimeResource>{if(id==uuid)return graph;error="UUID absent from captured animation graph";return {};};
     scene::Animator first,second;first.configureRuntimeAssets(context);second.configureRuntimeAssets(context);auto properties=make_ptr<Properties>();properties->setProperty("animationAssetUuid",uuid);
@@ -119,7 +264,7 @@ BOOST_AUTO_TEST_CASE(typed_animation_graph_mask_source_free_owner_contract)
     a->setFloatParameter("blend",.5f);a->update(0);first.onUpdate();BOOST_CHECK_CLOSE(first.getSkeleton()->getBone("Child")->getPosition().x,.5f,.001f);
     a->setFloatParameter("select",1);BOOST_REQUIRE(a->forceState("Select",.5f));first.onUpdate();BOOST_CHECK_CLOSE(first.getSkeleton()->getBone("Child")->getPosition().x,1.0f,.001f);
     BOOST_CHECK_SMALL(second.getSkeleton()->getBone("Child")->getPosition().x,.0001f);BOOST_CHECK_EQUAL(b->getFloatParameter("blend"),1.0f);
-    auto broken=std::make_shared<RuntimeResource>(*graph);broken->payload[4]=2;seal(*broken);const auto previous=first.getSkeleton();BOOST_CHECK(!first.loadResource(broken,error));BOOST_CHECK(first.getSkeleton()==previous&&first.hasAnimationGraph());
+    auto broken=std::make_shared<RuntimeResource>(*graph);broken->payload[4]=3;seal(*broken);const auto previous=first.getSkeleton();BOOST_CHECK(!first.loadResource(broken,error));BOOST_CHECK(first.getSkeleton()==previous&&first.hasAnimationGraph());
     broken=std::make_shared<RuntimeResource>(*graph);broken->payload.back()^=1;BOOST_CHECK(!first.loadResource(broken,error));BOOST_CHECK(first.getSkeleton()==previous);
     auto badMask=std::make_shared<RuntimeResource>(*mask);const u32 nan=0x7fc00000;std::memcpy(badMask->payload.data()+badMask->payload.size()-4,&nan,4);seal(*badMask);BOOST_CHECK(!AnimationResourceCompiler::decodeMask(*badMask,weights,error));
     auto wrongRig=std::make_shared<RuntimeResource>(*loaded.at(rigId));++wrongRig->header.sourceHash;badMask=std::make_shared<RuntimeResource>(*mask);badMask->dependencies={wrongRig};broken=std::make_shared<RuntimeResource>(*graph);broken->dependencies={loaded.at(rigId),badMask};BOOST_CHECK(!first.loadResource(broken,error));BOOST_CHECK(first.getSkeleton()==previous);

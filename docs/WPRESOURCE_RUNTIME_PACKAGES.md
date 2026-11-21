@@ -1275,6 +1275,8 @@ so partial weights do not accumulate drift across frames.
 A mask source has exactly `version`, `rig`, `defaultWeight` and `bones`; each bone
 has `bone` and `weight`. A graph uses `version`, `rig`, `initialState`, `clips`,
 `parameters`, `states` and `transitions`, with optional `mask` and `nodes`.
+A state may include an optional `position: [x, y]` for its canvas layout. Cooks
+keep reading positionless graph payloads and preserve coordinates where supplied.
 The complete graph recipe is exercised in `Tests/cpp/AnimationResourceContracts.hpp`.
 
 Retarget source has exactly `version`, `source`, `target`, `clips` and `bones`.

@@ -23,6 +23,7 @@
 #include <Workphone/Mesh/Bone.hpp>
 #include <Workphone/Mesh/XMLSkeletonSerializer.hpp>
 #include <Workphone/Animation/Animation.hpp>
+#include <Workphone/Animation/AnimationGraphProperties.hpp>
 #include <Workphone/Animation/ActorAnimationTrack.hpp>
 #include <Workphone/Animation/KeyFrameTransform3.hpp>
 #include <Workphone/Scene/Components/Mesh.hpp>
@@ -33,6 +34,7 @@
 #include <fstream>
 #include <algorithm>
 #include <cmath>
+#include <optional>
 
 namespace workphone::scene
 {
@@ -140,6 +142,21 @@ namespace workphone::scene
             default:
                 return Animator::STATE_STOPPED;
             }
+        }
+
+        SmartPtr<Properties> copyGraphProperties( const Properties &source )
+        {
+            auto copy = make_ptr<Properties>();
+            copy->setName( source.getName() );
+            for( const auto &property : source.getPropertiesAsArray() )
+            {
+                copy->addProperty( property );
+            }
+            for( const auto &child : source.getChildren() )
+            {
+                copy->addChild( copyGraphProperties( *child ) );
+            }
+            return copy;
         }
     }  // namespace
 
@@ -419,7 +436,7 @@ namespace workphone::scene
             return;
         }
 
-        if( !m_animationGraph.isValid() && m_animations.empty() && !restoreRuntimeAnimations() )
+        if( !m_animationGraph.isValid() && !prepareAnimationGraphClips() )
         {
             m_state = STATE_STOPPED;
             return;
@@ -1116,17 +1133,6 @@ namespace workphone::scene
                 auto clips = makeSourceBudgetSnapshot( decoded.skeleton->getAnimations() );
                 auto editable = makeSourceBudgetSnapshot<SmartPtr<Animation>>();
                 animation::AnimationGraphInstance graph( decoded.definition );
-                for( const auto &parameter : decoded.parameters )
-                {
-                    if( parameter.boolean )
-                    {
-                        graph.setBoolParameter( parameter.name, parameter.booleanValue );
-                    }
-                    else
-                    {
-                        graph.setFloatParameter( parameter.name, parameter.value );
-                    }
-                }
                 if( !graph.isValid() || sourceBudgetDenialCount() != epoch )
                 {
                     error = "Animation graph installation memory budget exhausted";
@@ -1518,11 +1524,33 @@ namespace workphone::scene
         return properties;
     }
 
+    SmartPtr<ISharedObject> Animator::toData() const
+    {
+        auto properties = static_pointer_cast<Properties>( Component::toData() );
+        if( properties && m_authoredAnimationGraph )
+        {
+            properties->setPropertyAsEnum( playbackStateStr, static_cast<s32>( STATE_STOPPED ),
+                                           getPlaybackStateNames() );
+            properties->addChild( copyGraphProperties( *m_authoredAnimationGraph ) );
+        }
+        return properties;
+    }
+
     void Animator::setProperties( SmartPtr<Properties> properties )
     {
         if( !properties )
         {
             return;
+        }
+
+        SmartPtr<Properties> authoredGraph;
+        if( auto graph = properties->getChild( animation::animationGraphPropertiesName ) )
+        {
+            if( !animation::validateAnimationGraphProperties( *graph ) )
+            {
+                throw std::runtime_error( "Invalid Animator animation graph" );
+            }
+            authoredGraph = copyGraphProperties( *graph );
         }
 
         // Authoring retains the typed reference for save/recook. Preview still
@@ -1548,6 +1576,44 @@ namespace workphone::scene
                 throw std::runtime_error( error.c_str() );
             }
         }
+
+        std::optional<animation::AnimationGraphInstance> replacementGraph;
+        if( authoredGraph )
+        {
+            replacementGraph.emplace();
+            animation::AnimationGraphDefinition definition;
+            if( !m_animations.empty() &&
+                animation::readAnimationGraphProperties( *authoredGraph, m_animations, definition ) )
+            {
+                if( !replacementGraph->setDefinition( definition ) )
+                {
+                    throw std::runtime_error( "Invalid Animator animation graph definition" );
+                }
+            }
+            else if( m_runtimeAssetsMode )
+            {
+                throw std::runtime_error( "Animator graph clips are missing from the cooked rig" );
+            }
+        }
+
+        struct RestoreGraphOnFailure
+        {
+            animation::AnimationGraphInstance &active;
+            SmartPtr<Properties> &activeProperties;
+            std::optional<animation::AnimationGraphInstance> &retired;
+            SmartPtr<Properties> &retiredProperties;
+            bool published = false;
+            bool committed = false;
+
+            ~RestoreGraphOnFailure()
+            {
+                if( published && !committed )
+                {
+                    active.swap( *retired );
+                    std::swap( activeProperties, retiredProperties );
+                }
+            }
+        } restoreGraph{ m_animationGraph, m_authoredAnimationGraph, replacementGraph, authoredGraph };
 
         properties->getPropertyValue( "animationCachePath", m_animationCachePath );
 
@@ -1664,6 +1730,13 @@ namespace workphone::scene
             restoreIK.published = true;
         }
 
+        if( replacementGraph )
+        {
+            m_animationGraph.swap( *replacementGraph );
+            std::swap( m_authoredAnimationGraph, authoredGraph );
+            restoreGraph.published = true;
+        }
+
         setSelectedAnimationIndex( selectedIndex );
         setAnimationSpeed( animationSpeed );
         setAnimationWeight( animationWeight );
@@ -1712,6 +1785,7 @@ namespace workphone::scene
         restoreApply.committed = true;
         restoreIK.committed = true;
         restoreClips.committed = true;
+        restoreGraph.committed = true;
     }
 
     Array<SmartPtr<ISharedObject>> Animator::getChildObjects() const
@@ -1750,12 +1824,51 @@ namespace workphone::scene
             m_runtimeAnimation.reset();
         }
 #endif
+        m_authoredAnimationGraph = nullptr;
+        return true;
+    }
+
+    bool Animator::setAuthoredAnimationGraph( const animation::AnimationGraphDefinition &definition )
+    {
+        auto properties = animation::writeAnimationGraphProperties( definition );
+        if( !properties || !setAnimationGraph( definition ) )
+        {
+            return false;
+        }
+        m_authoredAnimationGraph = std::move( properties );
+        m_playbackStatus.clear();
+        return true;
+    }
+
+    bool Animator::prepareAnimationGraphClips()
+    {
+        if( m_animationGraph.isValid() )
+        {
+            return true;
+        }
+        if( m_animations.empty() && !restoreRuntimeAnimations() )
+        {
+            return false;
+        }
+        if( m_authoredAnimationGraph )
+        {
+            animation::AnimationGraphDefinition definition;
+            if( !animation::readAnimationGraphProperties( *m_authoredAnimationGraph, m_animations,
+                                                          definition ) ||
+                !m_animationGraph.setDefinition( definition ) )
+            {
+                m_playbackStatus = "Animation graph clips are missing or ambiguous in the loaded rig.";
+                return false;
+            }
+        }
+        m_playbackStatus.clear();
         return true;
     }
 
     void Animator::clearAnimationGraph()
     {
         m_animationGraph.clear();
+        m_authoredAnimationGraph = nullptr;
     }
 
     bool Animator::hasAnimationGraph() const
@@ -1771,6 +1884,37 @@ namespace workphone::scene
     const animation::AnimationGraphInstance *Animator::getAnimationGraph() const
     {
         return hasAnimationGraph() ? &m_animationGraph : nullptr;
+    }
+
+    void Animator::setGraphBool( const String &name, bool value )
+    {
+        if( hasAnimationGraph() || ( m_authoredAnimationGraph && prepareAnimationGraphClips() ) )
+        {
+            m_animationGraph.setBoolParameter( name, value );
+        }
+    }
+
+    bool Animator::getGraphBool( const String &name ) const
+    {
+        return hasAnimationGraph() && m_animationGraph.getBoolParameter( name );
+    }
+
+    void Animator::setGraphFloat( const String &name, f32 value )
+    {
+        if( hasAnimationGraph() || ( m_authoredAnimationGraph && prepareAnimationGraphClips() ) )
+        {
+            m_animationGraph.setFloatParameter( name, value );
+        }
+    }
+
+    f32 Animator::getGraphFloat( const String &name ) const
+    {
+        return hasAnimationGraph() ? m_animationGraph.getFloatParameter( name ) : 0.0f;
+    }
+
+    String Animator::getGraphState() const
+    {
+        return hasAnimationGraph() ? m_animationGraph.getCurrentState() : String();
     }
 
     animation::AnimationIKSystem &Animator::getIKSystem()

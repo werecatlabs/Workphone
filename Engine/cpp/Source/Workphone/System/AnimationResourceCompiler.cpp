@@ -5,6 +5,7 @@
 #include <Workphone/Interface/Animation/IAnimation.hpp>
 #include <Workphone/Interface/Mesh/IGraphicsBone.hpp>
 #include <rapidjson/document.h>
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <set>
@@ -19,6 +20,8 @@ namespace workphone::resource
     namespace
     {
         constexpr size_t maximumBytes = 256u << 10;
+        constexpr u32 graphVersion = 1;
+        constexpr u32 graphVersionWithPositions = 2;
         using namespace animation;
 
         void require( bool value, const char *message )
@@ -496,7 +499,7 @@ namespace workphone::resource
             count( root["states"], 128 );
             for( const auto &entry : root["states"].GetArray() )
             {
-                fields( entry, { "id", "speed" }, { "clip", "node" } );
+                fields( entry, { "id", "speed" }, { "clip", "node", "position" } );
                 AnimationGraphState state;
                 state.id = text( entry["id"] );
                 state.speed = number( entry["speed"] );
@@ -507,6 +510,14 @@ namespace workphone::resource
                 if( entry.HasMember( "node" ) )
                 {
                     state.poseNodeId = text( entry["node"] );
+                }
+                if( entry.HasMember( "position" ) )
+                {
+                    const auto &position = entry["position"];
+                    require( count( position, 2 ) == 2, "Graph state position requires two coordinates" );
+                    state.editorX = number( position[rapidjson::SizeType( 0 )] );
+                    state.editorY = number( position[rapidjson::SizeType( 1 )] );
+                    state.hasEditorPosition = true;
                 }
                 out.states.push_back( std::move( state ) );
             }
@@ -635,8 +646,12 @@ namespace workphone::resource
 
         void write( std::ostream &out, const Graph &graph )
         {
+            const bool hasPositions = std::any_of(
+                graph.states.begin(), graph.states.end(),
+                []( const AnimationGraphState &state ) { return state.hasEditorPosition; } );
+            // Keep existing inputs byte-compatible. Only newly positioned source needs version two.
             out.write( "WPAG", 4 );
-            word( out, 1 );
+            word( out, hasPositions ? graphVersionWithPositions : graphVersion );
             string( out, graph.rig );
             string( out, graph.mask );
             string( out, graph.initial );
@@ -686,6 +701,15 @@ namespace workphone::resource
                 string( out, state.clipId );
                 string( out, state.poseNodeId );
                 scalar( out, state.speed );
+                if( hasPositions )
+                {
+                    word( out, state.hasEditorPosition );
+                    if( state.hasEditorPosition )
+                    {
+                        scalar( out, state.editorX );
+                        scalar( out, state.editorY );
+                    }
+                }
             }
             word( out, u32( graph.transitions.size() ) );
             for( const auto &transition : graph.transitions )
@@ -708,7 +732,7 @@ namespace workphone::resource
             }
         }
 
-        Graph readGraph( Reader &in )
+        Graph readGraph( Reader &in, u32 version )
         {
             Graph graph;
             graph.rig = in.string( 1024 );
@@ -772,6 +796,12 @@ namespace workphone::resource
                 state.clipId = in.string( 128, true );
                 state.poseNodeId = in.string( 128, true );
                 state.speed = in.scalar();
+                if( version == graphVersionWithPositions && in.boolean() )
+                {
+                    state.editorX = in.scalar();
+                    state.editorY = in.scalar();
+                    state.hasEditorPosition = true;
+                }
                 graph.states.push_back( std::move( state ) );
             }
             size = in.count( 256 );
@@ -953,6 +983,12 @@ namespace workphone::resource
             auto skeleton = SkeletonResourceCompiler::decode( *rig, error );
             require( bool( skeleton ), error.empty() ? "Graph rig is invalid" : error.c_str() );
             AnimationGraphDefinition definition;
+            for( const auto &parameter : graph.parameters )
+            {
+                require( definition.addParameter( { parameter.name, parameter.boolean, parameter.value,
+                                                    parameter.booleanValue } ),
+                         "Invalid native graph parameter" );
+            }
             for( const auto &clip : graph.clips )
             {
                 AnimationGraphClip native;
@@ -1146,8 +1182,10 @@ namespace workphone::resource
         {
             auto work = admitted( value, "agraph", "WPAG", error );
             Reader in{ value.payload, 4 };
-            require( in.word() == 1, "Unsupported graph encoding" );
-            const auto graph = readGraph( in );
+            const auto version = in.word();
+            require( version == graphVersion || version == graphVersionWithPositions,
+                     "Unsupported graph encoding" );
+            const auto graph = readGraph( in, version );
             require( in.at == value.payload.size(), "Trailing animation graph data" );
             Array<String> expected{ graph.rig };
             if( !graph.mask.empty() )

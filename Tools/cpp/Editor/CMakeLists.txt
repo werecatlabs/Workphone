@@ -340,6 +340,13 @@ else()
     add_executable(Editor ${HEADER_FILES} ${SOURCE_FILES})
 endif()
 
+if (WP_BUILD_IMGUI AND TARGET imgui)
+    target_include_directories(Editor PRIVATE "${WP_ROOT}/Dependencies/imgui")
+    if (WIN32 AND TARGET WPImGui)
+        target_link_libraries(Editor WPImGui imgui)
+    endif()
+endif()
+
 # Settings query the provider registry exported by the native physics module.
 if (WP_BUILD_PHYSICS3)
     target_link_libraries(Editor WPPhysics)

@@ -46,6 +46,20 @@ namespace workphone::animation
          */
         String poseNodeId;
 
+        f32 editorX = 0.0f;
+        f32 editorY = 0.0f;
+        bool hasEditorPosition = false;
+
+        bool isValid() const;
+    };
+
+    struct WPCore_API AnimationGraphParameter
+    {
+        String name;
+        bool isBoolean = false;
+        f32 floatValue = 0.0f;
+        bool booleanValue = false;
+
         bool isValid() const;
     };
 
@@ -93,7 +107,19 @@ namespace workphone::animation
         void swap( AnimationGraphDefinition &other ) noexcept;
         bool addClip( const AnimationGraphClip &clip );
         bool addState( const AnimationGraphState &state );
+        bool editState( const AnimationGraphState &state );
+        bool renameState( const String &id, const String &newId );
+        bool setStatePosition( const String &id, f32 x, f32 y );
         bool addTransition( const AnimationGraphTransition &transition );
+        bool addTransition( const AnimationGraphTransition &transition, size_t *newIndex );
+        bool updateTransition( size_t index, const AnimationGraphTransition &transition,
+                               size_t *newIndex = nullptr );
+        bool removeTransition( size_t index );
+
+        bool addParameter( const AnimationGraphParameter &parameter );
+        bool setParameters( const Array<AnimationGraphParameter> &parameters );
+        const AnimationGraphParameter *findParameter( const String &name ) const;
+        const Array<AnimationGraphParameter> &getParameters() const;
 
         bool removeClip( const String &id );
         bool removeState( const String &id );
@@ -111,6 +137,7 @@ namespace workphone::animation
 
         /** Pose node tree authoring API (Esoterica-derived blend/selector nodes). */
         bool addPoseNode( const AnimationGraphPoseNodeDefinition &node );
+        bool editPoseNode( const AnimationGraphPoseNodeDefinition &node );
         bool removePoseNode( const String &id );
         const AnimationGraphPoseNodeDefinition *findPoseNode( const String &id ) const;
         const Array<AnimationGraphPoseNodeDefinition> &getPoseNodes() const;
@@ -119,12 +146,18 @@ namespace workphone::animation
         const IAnimationState::BoneBlendMask &getBoneBlendMask() const;
 
     private:
+        bool canUseState( const AnimationGraphState &state ) const;
+        bool canUseTransition( const AnimationGraphTransition &transition ) const;
+        size_t transitionInsertionIndex( s32 priority ) const;
+
         Array<AnimationGraphClip> m_clips = makeSourceBudgetSnapshot<AnimationGraphClip>();
         Array<AnimationGraphState> m_states = makeSourceBudgetSnapshot<AnimationGraphState>();
         Array<AnimationGraphTransition> m_transitions =
             makeSourceBudgetSnapshot<AnimationGraphTransition>();
         Array<AnimationGraphPoseNodeDefinition> m_poseNodes =
             makeSourceBudgetSnapshot<AnimationGraphPoseNodeDefinition>();
+        Array<AnimationGraphParameter> m_parameters =
+            makeSourceBudgetSnapshot<AnimationGraphParameter>();
         String m_initialState;
         IAnimationState::BoneBlendMask m_boneMask;
     };
@@ -152,6 +185,7 @@ namespace workphone::animation
         explicit AnimationGraphInstance( const AnimationGraphDefinition &definition );
         AnimationGraphInstance( const AnimationGraphInstance &other );
         AnimationGraphInstance &operator=( const AnimationGraphInstance &other );
+        void swap( AnimationGraphInstance &other ) noexcept;
 
         bool setDefinition( const AnimationGraphDefinition &definition );
         const AnimationGraphDefinition &getDefinition() const;
@@ -169,6 +203,7 @@ namespace workphone::animation
         f32 getFloatParameter( const String &name, f32 defaultValue = 0.0f ) const;
 
         const String &getCurrentState() const;
+        const String &getDestinationState() const;
         bool isTransitioning() const;
         f32 getTransitionProgress() const;
         const Array<AnimationGraphSample> &getSamples() const;
@@ -188,7 +223,6 @@ namespace workphone::animation
         void beginRuntimeMutation();
         void swapRuntime( RuntimeState &state ) noexcept;
         void rollbackRuntimeMutation() noexcept;
-        void swap( AnimationGraphInstance &other ) noexcept;
         Array<const String *> &traversalScratch() const;
 
         struct AdvanceResult
@@ -198,7 +232,7 @@ namespace workphone::animation
         };
 
         bool conditionsMet( const AnimationGraphTransition &transition ) const;
-        const AnimationGraphTransition *findTransition() const;
+        const AnimationGraphTransition *findTransition( bool looped ) const;
         const AnimationGraphClip *getClipForState( const String &stateId ) const;
         AdvanceResult advanceState( const String &stateId, f32 time, f32 deltaTime ) const;
         void sampleEvents( const String &stateId, f32 previousTime, const AdvanceResult &advance );

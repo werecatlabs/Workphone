@@ -2606,6 +2606,10 @@ namespace workphone::ui
                                     m_dockProjectId = dockId;
                                 }
 
+                                if( nativeWindow )
+                                {
+                                    nativeWindow->drawContent();
+                                }
                                 auto children = window->getChildren();
                                 for( auto &child : children )
                                 {

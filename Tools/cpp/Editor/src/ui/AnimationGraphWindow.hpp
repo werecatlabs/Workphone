@@ -1,192 +1,109 @@
 #ifndef AnimationGraphWindow_h__
 #define AnimationGraphWindow_h__
 
-#include <EditorPrerequisites.hpp>
 #include <ui/EditorWindow.hpp>
-#include <Workphone/Scene/Components/Animator.hpp>
 #include <Workphone/Animation/AnimationGraph.hpp>
-#include <Workphone/Animation/AnimationGraphNodes.hpp>
-#include <Workphone/Interface/UI/IUIButton.hpp>
-#include <Workphone/Interface/UI/IUIText.hpp>
-#include <Workphone/Interface/UI/IUITreeCtrl.hpp>
-#include <Workphone/Interface/UI/IUILabelSliderPair.hpp>
-#include <Workphone/Interface/UI/IUILabelTextInputPair.hpp>
-#include <Workphone/Interface/UI/IUILabelTogglePair.hpp>
-#include <Workphone/Interface/UI/IUILabelDropdownPair.hpp>
+#include <Workphone/Math/Vector2.hpp>
+#include <array>
+#include <mutex>
+#include <optional>
 
 namespace workphone::editor
 {
-    /**
-     * @brief Data-driven animation graph editor window.
-     *
-     * Surfaces the full AnimationGraphDefinition (parameters, states, transitions and
-     * Esoterica-derived pose nodes such as 1D blend spaces and selectors) to the editor with
-     * live preview against the selected Animator. Edits are made against a local copy and
-     * committed to the Animator with Apply, keeping authoring fully data-driven.
-     */
     class AnimationGraphWindow : public EditorWindow
     {
     public:
-        class WindowListener : public IEventListener
-        {
-        public:
-            Parameter handleEvent( EventType eventType, hash_type eventValue,
-                                   const Array<Parameter> &arguments, SmartPtr<ISharedObject> sender,
-                                   SmartPtr<ISharedObject> object, SmartPtr<IEvent> event ) override;
-
-            SmartPtr<AnimationGraphWindow> getOwner() const;
-            void setOwner( SmartPtr<AnimationGraphWindow> owner );
-
-            WP_CLASS_REGISTER_DECL;
-
-        private:
-            AtomicWeakPtr<AnimationGraphWindow> m_owner;
-        };
-
-        AnimationGraphWindow();
         ~AnimationGraphWindow() override;
-
         void load( SmartPtr<ISharedObject> data ) override;
         void unload( SmartPtr<ISharedObject> data ) override;
         void update() override;
-        void updateSelection() override;
-
-        void refresh();
 
         WP_CLASS_REGISTER_DECL;
 
-    protected:
-        enum class WidgetId
+    private:
+        enum class Action
         {
             None,
-            Refresh,
             Apply,
-            ResetGraph,
+            Revert,
             Play,
             Pause,
-            Stop,
-            StateTree,
-            TransitionTree,
-            PoseNodeTree,
-            ParameterTree,
-            AddState,
-            RemoveState,
-            SetInitial,
-            AddTransition,
-            RemoveTransition,
-            AddCondition,
-            RemoveCondition,
-            AddPoseNode,
-            RemovePoseNode,
-            AddParameter,
-            RemoveParameter,
-            SelectedId,
-            SelectedClipId,
-            SelectedPoseNodeId,
-            SelectedSpeed,
-            SelectedDuration,
-            SelectedExitTime,
-            SelectedPriority,
-            SelectedSync,
-            SelectedFromState,
-            SelectedToState,
-            SelectedParameter,
-            SelectedIsBool,
-            SelectedBoolValue,
-            SelectedThreshold,
-            SelectedComparison,
-            SelectedNodeType,
-            SelectedChildren,
-            SelectedBlendRanges,
-            LiveParamValue,
-            LiveParamBool
+            Stop
         };
 
-        enum class SelectionKind
+        struct Playback
         {
-            None,
-            State,
-            Transition,
-            Condition,
-            PoseNode,
-            Parameter
-        };
-
-        struct AuthoredParameter
-        {
-            String name;
-            bool isBool = false;
-            f32 floatValue = 0.0f;
-            bool boolValue = false;
+            using Parameter = animation::AnimationGraphParameter;
+            String state;
+            String destination;
+            f32 progress = 0.0f;
+            bool available = false;
+            bool playing = false;
+            bool paused = false;
+            Array<Parameter> parameterValues;
+            Array<animation::AnimationGraphSample> samples;
         };
 
         SmartPtr<scene::Animator> findSelectedAnimator() const;
-        void loadFromAnimator();
-        void rebuildTrees();
-        void syncEditor();
-        void applyEditedGraph();
-        void setStatus( const String &status );
+        void loadFromAnimator( SmartPtr<scene::Animator> animator );
+        void applyGraph();
+        void updatePlayback();
 
-        void addState();
-        void removeState();
-        void addTransition();
-        void removeTransition();
-        void addCondition();
-        void removeCondition();
-        void addPoseNode();
-        void removePoseNode();
-        void addParameter();
-        void removeParameter();
+#if WP_BUILD_IMGUI
+        void draw();
+        void drawToolbar();
+        void drawCanvas( f32 width, f32 height );
+        void drawInspector( f32 width, f32 height );
+        void drawStateInspector();
+        void drawTransitionInspector();
+        void drawParameters();
+        void drawPoseNodes();
+        void drawPoseNodeInspector();
+        bool chooseClip( const char *label, String &id );
+        bool chooseParameter( const char *label, String &name, std::optional<bool> isBoolean );
+        bool chooseState( const char *label, String &id, const String &excluded );
+        void addState( const String &clipId, const String &poseNodeId, Vector2F position );
+        void addTransition( const String &from, const String &to );
+        void drawAddStateMenu( Vector2F position );
+        void selectState( const String &id );
+        void selectTransition( size_t index );
+        void fitCanvas( Vector2F size );
+        void markEdited();
+#endif
 
-        void onSelectionChanged( WidgetId source );
-        void applyEditorFields();
-        void applyLiveParameter();
-
-        animation::AnimationGraphState *getSelectedState();
-        animation::AnimationGraphTransition *getSelectedTransition();
-        animation::AnimationGraphCondition *getSelectedCondition();
-        animation::AnimationGraphPoseNodeDefinition *getSelectedPoseNode();
-        AuthoredParameter *getSelectedParameter();
-
-        const String comparisonLabel( animation::AnimationGraphComparison comparison ) const;
-        const String nodeTypeLabel( animation::AnimationGraphPoseNodeType type ) const;
-
+        // Scene and playback reads run on the Application task. The renderer only
+        // reads snapshots and changes the draft or enqueues an action under this lock.
+        std::mutex m_mutex;
+        SmartPtr<ui::IUIWindow> m_window;
         SmartPtr<scene::Animator> m_animator;
         animation::AnimationGraphDefinition m_edited;
-        Array<AuthoredParameter> m_parameters;
-        SelectionKind m_selectionKind = SelectionKind::None;
-        String m_selectedId;
-        u32 m_selectedTransitionIndex = 0;
-        u32 m_selectedConditionIndex = 0;
+        Array<animation::AnimationGraphClip> m_availableClips;
+        Array<animation::AnimationGraphParameter> m_liveChanges;
+        Playback m_playback;
+        Action m_action = Action::None;
+        String m_targetName;
+        String m_status;
+        size_t m_ambiguousClipCount = 0;
+        bool m_selectionChanged = false;
+        bool m_dirty = false;
+        bool m_graphLoadFailed = false;
 
-        SmartPtr<ui::IUIWindow> m_window;
-        SmartPtr<IEventListener> m_windowListener;
-        SmartPtr<ui::IUIText> m_statusText;
-        SmartPtr<ui::IUITreeCtrl> m_stateTree;
-        SmartPtr<ui::IUITreeCtrl> m_transitionTree;
-        SmartPtr<ui::IUITreeCtrl> m_poseNodeTree;
-        SmartPtr<ui::IUITreeCtrl> m_parameterTree;
-
-        SmartPtr<ui::IUILabelTextInputPair> m_idText;
-        SmartPtr<ui::IUILabelTextInputPair> m_clipIdText;
-        SmartPtr<ui::IUILabelTextInputPair> m_poseNodeIdText;
-        SmartPtr<ui::IUILabelSliderPair> m_speedSlider;
-        SmartPtr<ui::IUILabelSliderPair> m_durationSlider;
-        SmartPtr<ui::IUILabelSliderPair> m_exitTimeSlider;
-        SmartPtr<ui::IUILabelSliderPair> m_prioritySlider;
-        SmartPtr<ui::IUILabelSliderPair> m_thresholdSlider;
-        SmartPtr<ui::IUILabelTextInputPair> m_parameterText;
-        SmartPtr<ui::IUILabelTextInputPair> m_fromStateText;
-        SmartPtr<ui::IUILabelTextInputPair> m_toStateText;
-        SmartPtr<ui::IUILabelTogglePair> m_syncToggle;
-        SmartPtr<ui::IUILabelTogglePair> m_isBoolToggle;
-        SmartPtr<ui::IUILabelTogglePair> m_boolValueToggle;
-        SmartPtr<ui::IUILabelDropdownPair> m_comparisonDropdown;
-        SmartPtr<ui::IUILabelDropdownPair> m_nodeTypeDropdown;
-        SmartPtr<ui::IUILabelTextInputPair> m_childrenText;
-        SmartPtr<ui::IUILabelTextInputPair> m_blendRangesText;
-        SmartPtr<ui::IUILabelSliderPair> m_liveParamValueSlider;
-        SmartPtr<ui::IUILabelTogglePair> m_liveParamBoolToggle;
+        String m_selectedState;
+        String m_selectedPoseNode;
+        std::optional<animation::AnimationGraphPoseNodeDefinition> m_poseDraft;
+        std::optional<size_t> m_selectedTransition;
+        bool m_showInspector = false;
+        std::array<char, 128> m_newParameterName{};
+        bool m_newParameterIsBoolean = false;
+        Vector2F m_camera = Vector2F::zero();
+        f32 m_zoom = 1.0f;
+        bool m_fitOnDraw = true;
+        bool m_panning = false;
+        String m_draggedState;
+        String m_linkSource;
+        Vector2F m_dragOrigin = Vector2F::zero();
+        Vector2F m_dragStart = Vector2F::zero();
+        Vector2F m_addPosition = Vector2F::zero();
     };
 }  // namespace workphone::editor
 

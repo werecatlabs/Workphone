@@ -2359,6 +2359,10 @@ namespace workphone::editor
                         editorUI->updateGamePackageWindow();
                         editorUI->updateTextToImageWindow();
                         editorUI->updateImageToMeshWindow();
+                        if( auto animationGraph = editorUI->getAnimationGraphWindow() )
+                        {
+                            animationGraph->update();
+                        }
                         auto packageWindow = editorUI->getPackageWindow();
                         if( packageWindow && packageWindow->isLoaded() &&
                             packageWindow->isWindowVisible() )

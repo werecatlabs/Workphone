@@ -4,6 +4,9 @@
 #include <WPImGui/WPImGuiPrerequisites.hpp>
 #include <WPImGui/ImGuiWindowT.hpp>
 #include <Workphone/Interface/UI/IUIWindow.hpp>
+#include <functional>
+
+struct ImGuiContext;
 
 namespace workphone
 {
@@ -17,6 +20,16 @@ namespace workphone
         class ImGuiWindow : public ImGuiWindowT<IUIWindow>
         {
         public:
+            struct ContentContext
+            {
+                ImGuiContext *context;
+                void *( *allocate )( size_t, void * );
+                void ( *free )( void *, void * );
+                void *allocatorData;
+            };
+
+            using ContentRenderer = std::function<void( const ContentContext & )>;
+
             ImGuiWindow();
             ~ImGuiWindow() override;
 
@@ -32,10 +45,15 @@ namespace workphone
              */
             bool applyInitialPlacement() const;
 
+            /** Draw custom contents inside the active native window. Set during window creation. */
+            void setContentRenderer( ContentRenderer renderer );
+            void drawContent() const;
+
             WP_CLASS_REGISTER_DECL;
 
         private:
             atomic_bool m_initiallyFloating = false;
+            ContentRenderer m_contentRenderer;
         };
     }  // namespace ui
 }  // namespace workphone

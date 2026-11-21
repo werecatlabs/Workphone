@@ -1,4 +1,5 @@
 #include <Workphone/WorkphonePCH.hpp>
+#include <Workphone/Animation/AnimationGraphProperties.hpp>
 #include <Workphone/System/SceneResourceCompiler.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
 #include <Workphone/Core/PropertiesBinarySerializer.hpp>
@@ -153,7 +154,10 @@ namespace workphone::resource
             Components,
             Component,
             LODLevel,
-            DetailBound
+            DetailBound,
+            AnimationGraph,
+            AnimationGraphRecord,
+            EmptyAnimatorGroup
         };
         using JSON = rapidjson::Value;
         const String bindingAttribute = "compiledResourceId";
@@ -966,6 +970,7 @@ namespace workphone::resource
                 result->getPropertyObject( binding.first ).setAttribute( bindingAttribute, id.str() );
             }
             std::set<String> transforms;
+            bool animationGraphSeen = false;
             for( const auto &child : node["children"].GetArray() )
             {
                 require( child.IsObject() && child.HasMember( "handle_name" ),
@@ -1006,6 +1011,27 @@ namespace workphone::resource
                              "Unsupported cooked LOD child" );
                     childRole = name == "lodLevel" ? Role::LODLevel : Role::DetailBound;
                 }
+                else if( role == Role::Component && component == "Animator" )
+                {
+                    if( !cooked && ( name == "clips" || name == "ikConstraints" ) )
+                    {
+                        // The component emits empty groups for the legacy Inspector controls.
+                        const auto count = name == "clips" ? "editableClipCount" : "constraintCount";
+                        const auto empty = parseNode( child, Role::EmptyAnimatorGroup, depth + 1,
+                                                      nodes, identities, lease, cooked );
+                        require( empty->getNumProperties() == 1 && empty->getProperty( count ) == "0",
+                                 "Cooked Animator cannot install legacy clip or IK authoring groups" );
+                        continue;
+                    }
+                    require( name == animation::animationGraphPropertiesName && !animationGraphSeen,
+                             "Unsupported or duplicate cooked Animator child" );
+                    animationGraphSeen = true;
+                    childRole = Role::AnimationGraph;
+                }
+                else if( role == Role::AnimationGraph || role == Role::AnimationGraphRecord )
+                {
+                    childRole = Role::AnimationGraphRecord;
+                }
                 else
                 {
                     require( false, "Transform cannot contain child groups" );
@@ -1024,6 +1050,11 @@ namespace workphone::resource
                 }
                 result->addChild(
                     parseNode( child, childRole, depth + 1, nodes, identities, lease, cooked ) );
+            }
+            if( role == Role::AnimationGraph )
+            {
+                require( animation::validateAnimationGraphProperties( *result ),
+                         "Invalid cooked Animator animation graph" );
             }
             return result;
         }
@@ -1104,9 +1135,17 @@ namespace workphone::resource
                 }
                 if( auto animator = components.find( "Animator" ); animator != components.end() )
                 {
-                    require( !animator->second->getProperty( "animationAssetUuid" ).empty() ||
-                                 meshRef( "Skeleton" ),
+                    const auto &properties = animator->second;
+                    const auto asset = properties->getProperty( "animationAssetUuid" );
+                    require( !asset.empty() || meshRef( "Skeleton" ),
                              "Cooked Animator requires animationAssetUuid or a typed Mesh skeleton" );
+                    if( !asset.empty() && properties->hasChild( animation::animationGraphPropertiesName ) )
+                    {
+                        const ResourceID id( properties->getPropertyObject( "animationAssetUuid" )
+                                                 .getAttribute( bindingAttribute ) );
+                        require( id.type() != ResourceTypeID( "amorph" ),
+                                 "An authored Animator state graph requires a skeleton animation asset" );
+                    }
                 }
             }
             for( const auto &child : data->getChildren() )
@@ -1260,7 +1299,6 @@ namespace workphone::resource
             file.read( bytes.data(), bytes.size() );
             require( bool( file ), "Incomplete actor graph source read" );
             auto data = parseJSON( bytes, context.resourceId.type() == ResourceTypeID( "fbscene" ) );
-            inspectRelationships( data );
             inspectLODReferences( data, false );
             AssetBindings bindings;
             std::set<String> objectIdentities;
@@ -1292,6 +1330,7 @@ namespace workphone::resource
                          "Conflicting captured cooked UUID binding" );
                 properties.getPropertyObject( field ).setAttribute( bindingAttribute, id.str() );
             } );
+            inspectRelationships( data );
             inspectLODReferences( data, true );
             return { std::move( budget ), std::move( data ), std::move( bindings ) };
         }

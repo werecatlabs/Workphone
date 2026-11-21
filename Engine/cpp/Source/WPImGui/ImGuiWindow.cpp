@@ -58,6 +58,22 @@ namespace workphone::ui
         return true;
     }
 
+    void ImGuiWindow::setContentRenderer( ContentRenderer renderer )
+    {
+        m_contentRenderer = std::move( renderer );
+    }
+
+    void ImGuiWindow::drawContent() const
+    {
+        if( m_contentRenderer )
+        {
+            ContentContext frame{};
+            frame.context = ImGui::GetCurrentContext();
+            ImGui::GetAllocatorFunctions( &frame.allocate, &frame.free, &frame.allocatorData );
+            m_contentRenderer( frame );
+        }
+    }
+
     void ImGuiWindow::update()
     {
         auto applicationManager = core::IApplicationManager::instance();
@@ -90,6 +106,7 @@ namespace workphone::ui
                 {
                     try
                     {
+                        drawContent();
                         auto children = window->getChildren();
                         for( auto &child : children )
                         {
