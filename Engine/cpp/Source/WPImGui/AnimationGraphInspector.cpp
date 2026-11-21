@@ -1,5 +1,5 @@
-#include <EditorPCH.hpp>
-#include <ui/AnimationGraphWindow.hpp>
+#include <WPImGui/WPImGuiPCH.hpp>
+#include <WPImGui/ImGuiAnimationGraph.hpp>
 #include <Workphone/Core/StringUtil.hpp>
 
 #if WP_BUILD_IMGUI
@@ -9,7 +9,7 @@
 #    include <set>
 #    include <vector>
 
-namespace workphone::editor
+namespace workphone::ui
 {
     namespace animation_graph_inspector
     {
@@ -137,7 +137,7 @@ namespace workphone::editor
         }
     }  // namespace animation_graph_inspector
 
-    void AnimationGraphWindow::drawInspector( f32 width, f32 height )
+    void ImGuiAnimationGraph::drawInspector( f32 width, f32 height )
     {
         if( ImGui::BeginChild( "##AnimationGraphProperties", { width, height }, true ) )
         {
@@ -203,7 +203,7 @@ namespace workphone::editor
         ImGui::EndChild();
     }
 
-    bool AnimationGraphWindow::chooseClip( const char *label, String &id )
+    bool ImGuiAnimationGraph::chooseClip( const char *label, String &id )
     {
         using namespace animation_graph_inspector;
         if( !chooseItem( label, id, m_availableClips,
@@ -225,7 +225,7 @@ namespace workphone::editor
         return true;
     }
 
-    bool AnimationGraphWindow::chooseParameter( const char *label, String &name,
+    bool ImGuiAnimationGraph::chooseParameter( const char *label, String &name,
                                                  std::optional<bool> isBoolean )
     {
         return animation_graph_inspector::chooseItem(
@@ -234,7 +234,7 @@ namespace workphone::editor
             [&]( const auto &parameter ) { return !isBoolean || parameter.isBoolean == *isBoolean; } );
     }
 
-    bool AnimationGraphWindow::chooseState( const char *label, String &id, const String &excluded )
+    bool ImGuiAnimationGraph::chooseState( const char *label, String &id, const String &excluded )
     {
         return animation_graph_inspector::chooseItem(
             label, id, m_edited.getStates(),
@@ -242,7 +242,7 @@ namespace workphone::editor
             [&]( const auto &state ) { return state.id != excluded; } );
     }
 
-    void AnimationGraphWindow::drawStateInspector()
+    void ImGuiAnimationGraph::drawStateInspector()
     {
         using namespace animation_graph_inspector;
         const auto *state = m_edited.findState( m_selectedState );
@@ -318,7 +318,7 @@ namespace workphone::editor
         }
     }
 
-    void AnimationGraphWindow::drawTransitionInspector()
+    void ImGuiAnimationGraph::drawTransitionInspector()
     {
         using namespace animation_graph_inspector;
         const auto index = *m_selectedTransition;
@@ -436,7 +436,7 @@ namespace workphone::editor
         }
     }
 
-    void AnimationGraphWindow::drawParameters()
+    void ImGuiAnimationGraph::drawParameters()
     {
         using namespace animation_graph_inspector;
         if( ImGui::Button( "Add Parameter" ) )
@@ -541,7 +541,7 @@ namespace workphone::editor
         }
     }
 
-    void AnimationGraphWindow::drawPoseNodes()
+    void ImGuiAnimationGraph::drawPoseNodes()
     {
         if( ImGui::Button( "Add Clip Node" ) )
         {
@@ -598,7 +598,7 @@ namespace workphone::editor
         }
     }
 
-    void AnimationGraphWindow::drawPoseNodeInspector()
+    void ImGuiAnimationGraph::drawPoseNodeInspector()
     {
         using namespace animation_graph_inspector;
         using Type = animation::AnimationGraphPoseNodeType;

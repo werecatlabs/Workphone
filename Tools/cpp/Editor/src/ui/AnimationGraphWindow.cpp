@@ -7,42 +7,9 @@
 #include <map>
 #include <utility>
 
-#if WP_BUILD_IMGUI
-#    include <WPImGui/ImGuiWindow.hpp>
-#    include <imgui.h>
-#endif
-
 namespace workphone::editor
 {
     WP_CLASS_REGISTER_DERIVED( workphone::editor, AnimationGraphWindow, EditorWindow );
-
-#if WP_BUILD_IMGUI
-    namespace animation_graph_ui
-    {
-        // The renderer can live in another module in a shared-engine build.
-        struct ScopedImGuiContext
-        {
-            explicit ScopedImGuiContext( const ui::ImGuiWindow::ContentContext &frame ) :
-                previous( ImGui::GetCurrentContext() )
-            {
-                ImGui::GetAllocatorFunctions( &allocate, &free, &allocatorData );
-                ImGui::SetAllocatorFunctions( frame.allocate, frame.free, frame.allocatorData );
-                ImGui::SetCurrentContext( frame.context );
-            }
-
-            ~ScopedImGuiContext()
-            {
-                ImGui::SetCurrentContext( previous );
-                ImGui::SetAllocatorFunctions( allocate, free, allocatorData );
-            }
-
-            ImGuiContext *previous;
-            ImGuiMemAllocFunc allocate;
-            ImGuiMemFreeFunc free;
-            void *allocatorData;
-        };
-    }
-#endif
 
     AnimationGraphWindow::~AnimationGraphWindow()
     {
@@ -70,25 +37,6 @@ namespace workphone::editor
         window->setSize( { 1080.0f, 690.0f } );
         window->setVisible( false, false );
 
-#if WP_BUILD_IMGUI
-        if( auto native = workphone::dynamic_pointer_cast<ui::ImGuiWindow>( window ) )
-        {
-            auto properties = window->getProperties();
-            properties->setProperty( "initialPlacement", String( "floating" ) );
-            window->setProperties( properties );
-            AtomicWeakPtr<AnimationGraphWindow> weak;
-            weak = this;
-            native->setContentRenderer(
-                [weak]( const ui::ImGuiWindow::ContentContext &frame ) {
-                    if( auto owner = weak.load().lock() )
-                    {
-                        const animation_graph_ui::ScopedImGuiContext scope( frame );
-                        owner->draw();
-                    }
-                } );
-        }
-        else
-#endif
         {
             auto message = uiManager->addElementByType<ui::IUIText>();
             message->setText( "The animation graph canvas requires the ImGui Editor." );
@@ -112,7 +60,7 @@ namespace workphone::editor
             m_availableClips.clear();
             m_liveChanges.clear();
             m_playback = {};
-            m_action = Action::None;
+            m_action = ui::IUIAnimationGraph::Action::None;
         }
         if( window )
         {
@@ -172,7 +120,7 @@ namespace workphone::editor
         m_availableClips.clear();
         m_liveChanges.clear();
         m_playback = {};
-        m_action = Action::None;
+        m_action = ui::IUIAnimationGraph::Action::None;
         m_status.clear();
         m_targetName.clear();
         m_ambiguousClipCount = 0;
@@ -273,10 +221,9 @@ namespace workphone::editor
             animation::AnimationGraphClip clip;
             clip.id = name;
             clip.animation = source;
-            const auto descriptor = std::find_if( descriptors.begin(), descriptors.end(),
-                                                   [&]( const auto &item ) {
-                                                       return item && item->getName() == name;
-                                                   } );
+            const auto descriptor =
+                std::find_if( descriptors.begin(), descriptors.end(),
+                              [&]( const auto &item ) { return item && item->getName() == name; } );
             if( descriptor != descriptors.end() )
             {
                 clip.loop = ( *descriptor )->isLooping();
@@ -353,7 +300,8 @@ namespace workphone::editor
         {
             if( parameter.isBoolean )
             {
-                parameter.booleanValue = graph->getBoolParameter( parameter.name, parameter.booleanValue );
+                parameter.booleanValue =
+                    graph->getBoolParameter( parameter.name, parameter.booleanValue );
             }
             else
             {
@@ -374,8 +322,8 @@ namespace workphone::editor
         auto selected = findSelectedAnimator();
         m_selectionChanged = selected != m_animator;
         if( m_selectionChanged &&
-            ( !m_dirty || !m_animator || !m_animator->getActor() ||
-              !m_animator->isLoaded() || m_action == Action::Revert ) )
+            ( !m_dirty || !m_animator || !m_animator->getActor() || !m_animator->isLoaded() ||
+              m_action == ui::IUIAnimationGraph::Action::Revert ) )
         {
             loadFromAnimator( std::move( selected ) );
         }
@@ -385,22 +333,22 @@ namespace workphone::editor
             return;
         }
 
-        const auto action = std::exchange( m_action, Action::None );
+        const auto action = std::exchange( m_action, ui::IUIAnimationGraph::Action::None );
         switch( action )
         {
-        case Action::Apply:
+        case ui::IUIAnimationGraph::Action::Apply:
             applyGraph();
             break;
-        case Action::Revert:
+        case ui::IUIAnimationGraph::Action::Revert:
             loadFromAnimator( m_animator );
             break;
-        case Action::Play:
+        case ui::IUIAnimationGraph::Action::Play:
             m_animator->play();
             break;
-        case Action::Pause:
+        case ui::IUIAnimationGraph::Action::Pause:
             m_animator->pause();
             break;
-        case Action::Stop:
+        case ui::IUIAnimationGraph::Action::Stop:
             m_animator->stop();
             break;
         default:
@@ -424,11 +372,13 @@ namespace workphone::editor
         m_liveChanges.clear();
         updatePlayback();
 
-        if( ( m_playback.available && m_playback.playing ) || action == Action::Stop )
+        if( ( m_playback.available && m_playback.playing ) ||
+            action == ui::IUIAnimationGraph::Action::Stop )
         {
             auto app = core::IApplicationManager::instancePtr();
-            auto window = app ? workphone::dynamic_pointer_cast<ui::IUIRenderWindow>(
-                                    app->getSceneRenderWindow() ) : nullptr;
+            auto window =
+                app ? workphone::dynamic_pointer_cast<ui::IUIRenderWindow>( app->getSceneRenderWindow() )
+                    : nullptr;
             auto texture = window ? window->getRenderTexture() : nullptr;
             if( auto target = texture ? texture->getRenderTarget() : nullptr )
             {

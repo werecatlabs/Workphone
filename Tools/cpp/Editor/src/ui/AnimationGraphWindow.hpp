@@ -4,6 +4,7 @@
 #include <ui/EditorWindow.hpp>
 #include <Workphone/Animation/AnimationGraph.hpp>
 #include <Workphone/Math/Vector2.hpp>
+#include <Workphone/Interface/UI/IUIAnimationGraph.hpp>
 #include <array>
 #include <mutex>
 #include <optional>
@@ -17,60 +18,16 @@ namespace workphone::editor
 
         void load( SmartPtr<ISharedObject> data ) override;
         void unload( SmartPtr<ISharedObject> data ) override;
+
         void update() override;
 
         WP_CLASS_REGISTER_DECL;
 
     private:
-        enum class Action
-        {
-            None,
-            Apply,
-            Revert,
-            Play,
-            Pause,
-            Stop
-        };
-
-        struct Playback
-        {
-            using Parameter = animation::AnimationGraphParameter;
-            String state;
-            String destination;
-            f32 progress = 0.0f;
-            bool available = false;
-            bool playing = false;
-            bool paused = false;
-            Array<Parameter> parameterValues;
-            Array<animation::AnimationGraphSample> samples;
-        };
-
         SmartPtr<scene::Animator> findSelectedAnimator() const;
         void loadFromAnimator( SmartPtr<scene::Animator> animator );
         void applyGraph();
         void updatePlayback();
-
-#if WP_BUILD_IMGUI
-        void draw();
-        void drawToolbar();
-        void drawCanvas( f32 width, f32 height );
-        void drawInspector( f32 width, f32 height );
-        void drawStateInspector();
-        void drawTransitionInspector();
-        void drawParameters();
-        void drawPoseNodes();
-        void drawPoseNodeInspector();
-        bool chooseClip( const char *label, String &id );
-        bool chooseParameter( const char *label, String &name, std::optional<bool> isBoolean );
-        bool chooseState( const char *label, String &id, const String &excluded );
-        void addState( const String &clipId, const String &poseNodeId, Vector2F position );
-        void addTransition( const String &from, const String &to );
-        void drawAddStateMenu( Vector2F position );
-        void selectState( const String &id );
-        void selectTransition( size_t index );
-        void fitCanvas( Vector2F size );
-        void markEdited();
-#endif
 
         // Scene and playback reads run on the Application task. The renderer only
         // reads snapshots and changes the draft or enqueues an action under this lock.
@@ -80,8 +37,8 @@ namespace workphone::editor
         animation::AnimationGraphDefinition m_edited;
         Array<animation::AnimationGraphClip> m_availableClips;
         Array<animation::AnimationGraphParameter> m_liveChanges;
-        Playback m_playback;
-        Action m_action = Action::None;
+        ui::IUIAnimationGraph::Playback m_playback;
+        ui::IUIAnimationGraph::Action m_action = ui::IUIAnimationGraph::Action::None;
         String m_targetName;
         String m_status;
         size_t m_ambiguousClipCount = 0;

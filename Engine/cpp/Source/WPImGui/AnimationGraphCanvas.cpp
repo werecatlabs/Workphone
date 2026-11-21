@@ -1,5 +1,5 @@
-#include <EditorPCH.hpp>
-#include <ui/AnimationGraphWindow.hpp>
+#include <WPImGui/WPImGuiPCH.hpp>
+#include <WPImGui/ImGuiAnimationGraph.hpp>
 #include <Workphone/Core/StringUtil.hpp>
 
 #if WP_BUILD_IMGUI
@@ -9,7 +9,7 @@
 #    include <map>
 #    include <vector>
 
-namespace workphone::editor
+namespace workphone::ui
 {
     namespace animation_graph_canvas
     {
@@ -142,7 +142,7 @@ namespace workphone::editor
         }
     }  // namespace animation_graph_canvas
 
-    void AnimationGraphWindow::draw()
+    void ImGuiAnimationGraph::draw()
     {
         const std::lock_guard guard( m_mutex );
         if( !m_window )
@@ -177,7 +177,7 @@ namespace workphone::editor
         ImGui::EndDisabled();
     }
 
-    void AnimationGraphWindow::drawToolbar()
+    void ImGuiAnimationGraph::drawToolbar()
     {
         if( !m_targetName.empty() )
         {
@@ -274,7 +274,7 @@ namespace workphone::editor
         }
     }
 
-    void AnimationGraphWindow::fitCanvas( Vector2F size )
+    void ImGuiAnimationGraph::fitCanvas( Vector2F size )
     {
         using namespace animation_graph_canvas;
         m_fitOnDraw = false;
@@ -301,7 +301,7 @@ namespace workphone::editor
         m_camera = ( size - content * m_zoom ) * 0.5f - low * m_zoom;
     }
 
-    void AnimationGraphWindow::drawCanvas( f32 width, f32 height )
+    void ImGuiAnimationGraph::drawCanvas( f32 width, f32 height )
     {
         using namespace animation_graph_canvas;
         const auto visible = ImGui::BeginChild( "##AnimationStateCanvas", { width, height }, true,
@@ -641,21 +641,21 @@ namespace workphone::editor
         ImGui::EndChild();
     }
 
-    void AnimationGraphWindow::selectState( const String &id )
+    void ImGuiAnimationGraph::selectState( const String &id )
     {
         m_selectedState = id;
         m_selectedTransition.reset();
         m_showInspector = true;
     }
 
-    void AnimationGraphWindow::selectTransition( size_t index )
+    void ImGuiAnimationGraph::selectTransition( size_t index )
     {
         m_selectedTransition = index;
         m_selectedState.clear();
         m_showInspector = true;
     }
 
-    void AnimationGraphWindow::addState( const String &clipId, const String &poseNodeId,
+    void ImGuiAnimationGraph::addState( const String &clipId, const String &poseNodeId,
                                          Vector2F position )
     {
         animation::AnimationGraphState state;
@@ -688,7 +688,7 @@ namespace workphone::editor
         }
     }
 
-    void AnimationGraphWindow::addTransition( const String &from, const String &to )
+    void ImGuiAnimationGraph::addTransition( const String &from, const String &to )
     {
         animation::AnimationGraphTransition transition;
         transition.fromState = from;
@@ -703,7 +703,7 @@ namespace workphone::editor
         }
     }
 
-    void AnimationGraphWindow::drawAddStateMenu( Vector2F position )
+    void ImGuiAnimationGraph::drawAddStateMenu( Vector2F position )
     {
         if( m_availableClips.empty() && m_edited.getPoseNodes().empty() )
         {
@@ -734,7 +734,7 @@ namespace workphone::editor
         }
     }
 
-    void AnimationGraphWindow::markEdited()
+    void ImGuiAnimationGraph::markEdited()
     {
         m_dirty = true;
         m_status.clear();
