@@ -8,7 +8,7 @@ namespace workphone
     namespace ui
     {
 
-        class IUIAnimationGraph
+        class IUIAnimationGraph : public IUIElement
         {
         public:
             IUIAnimationGraph();
