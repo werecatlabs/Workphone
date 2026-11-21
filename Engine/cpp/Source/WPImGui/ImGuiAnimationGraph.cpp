@@ -46,7 +46,7 @@ namespace workphone
             draw();
         }
 
-        workphone::SmartPtr<workphone::Properties> ImGuiAnimationGraph::getProperties() const
+        SmartPtr<Properties> ImGuiAnimationGraph::getProperties() const
         {
             return nullptr;
         }
