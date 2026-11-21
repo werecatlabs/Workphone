@@ -8,7 +8,7 @@ namespace workphone
     namespace ui
     {
 
-        class IUIAnimationGraph : public IUIElement
+        class WPCore_API IUIAnimationGraph : public IUIElement
         {
         public:
             enum class Action

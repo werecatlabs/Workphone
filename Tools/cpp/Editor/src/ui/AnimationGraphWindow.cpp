@@ -37,11 +37,8 @@ namespace workphone::editor
         window->setSize( { 1080.0f, 690.0f } );
         window->setVisible( false, false );
 
-        {
-            auto message = uiManager->addElementByType<ui::IUIText>();
-            message->setText( "The animation graph canvas requires the ImGui Editor." );
-            window->addChild( message );
-        }
+        m_graphUI = uiManager->addElementByType<ui::IUIAnimationGraph>();
+        window->addChild( m_graphUI );
 
         const std::lock_guard guard( m_mutex );
         setParentWindow( window );

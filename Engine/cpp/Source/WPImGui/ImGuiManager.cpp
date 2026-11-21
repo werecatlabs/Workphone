@@ -1,5 +1,6 @@
 #include <WPImGui/WPImGuiPCH.hpp>
 #include <WPImGui/ImGuiManager.hpp>
+#include <WPImGui/ImGuiAnimationGraph.hpp>
 #include <WPImGui/ImGuiApplication.hpp>
 #include <WPImGui/ImGuiButton.hpp>
 #include <WPImGui/ImGuiCollapsingHeader.hpp>
@@ -78,6 +79,7 @@ namespace workphone::ui
             setFactoryManager( factoryManager );
 
             FactoryUtil::addFactory<ImGuiAbout>( factoryManager );
+            FactoryUtil::addFactory<ImGuiAnimationGraph>( factoryManager );
             FactoryUtil::addFactory<ImGuiApplication>( factoryManager );
             FactoryUtil::addFactory<ImGuiButton>( factoryManager );
             FactoryUtil::addFactory<ImGuiCollapsingHeader>( factoryManager );

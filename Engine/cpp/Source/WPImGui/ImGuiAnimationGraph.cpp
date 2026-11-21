@@ -5,6 +5,7 @@ namespace workphone
 {
     namespace ui
     {
+        WP_CLASS_REGISTER_DERIVED( workphone::ui, ImGuiAnimationGraph, ImGuiElement<IUIAnimationGraph> );
 
         ImGuiAnimationGraph::ImGuiAnimationGraph()
         {

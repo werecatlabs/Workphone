@@ -9,6 +9,11 @@
 #include <mutex>
 #include <optional>
 
+namespace workphone::ui
+{
+    class IUIAnimationGraph;
+}
+
 namespace workphone::editor
 {
     class AnimationGraphWindow : public EditorWindow
@@ -62,6 +67,8 @@ namespace workphone::editor
         Vector2F m_dragOrigin = Vector2F::zero();
         Vector2F m_dragStart = Vector2F::zero();
         Vector2F m_addPosition = Vector2F::zero();
+
+        SmartPtr<ui::IUIAnimationGraph> m_graphUI;
     };
 }  // namespace workphone::editor
 

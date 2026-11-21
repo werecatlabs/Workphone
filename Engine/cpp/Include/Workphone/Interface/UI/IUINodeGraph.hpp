@@ -7,7 +7,7 @@ namespace workphone
 {
     namespace ui
     {
-        class IUINodeGraph : public IUIElement
+        class WPCore_API IUINodeGraph : public IUIElement
         {
         public:
             IUINodeGraph();
