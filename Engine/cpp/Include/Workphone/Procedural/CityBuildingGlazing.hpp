@@ -2,17 +2,24 @@
 
 namespace cityBuildingGlazing
 {
-    // Commercial and domestic panes each have a bare and a framed bank.
+    // Commercial and domestic panes each have a bare and a framed bank. The
+    // office bank sits behind the curtain wall's separately modelled mullions.
     // Each tile stays independent down to the last mip of the horizontal strip.
     constexpr u32 paneVariants = 8, domesticStart = 2 * paneVariants;
-    constexpr u32 atlasColumns = 4 * paneVariants, atlasCell = 64;
+    constexpr u32 officeStart = 4 * paneVariants, atlasColumns = officeStart + paneVariants, atlasCell = 64;
     constexpr float padding = 5.5f / atlasCell;
 
+    constexpr float officeBlindHem( u32 tile )
+    {
+        return tile == 6 ? .56f : .31f;
+    }
+
     void pane( Geometry &geometry, u32 tile, Vector3F a, Vector3F b, Vector3F c, Vector3F d,
-               Vector3F normal )
+               Vector3F normal, float bottom = 0.f )
     {
         geometry.quad( a, b, c, d, normal, ( tile + padding ) / atlasColumns,
-                       ( tile + 1.f - padding ) / atlasColumns, padding, 1.f - padding );
+                       ( tile + 1.f - padding ) / atlasColumns,
+                       padding + bottom * ( 1.f - 2.f * padding ), 1.f - padding );
     }
 
     struct Materials
@@ -149,6 +156,80 @@ namespace cityBuildingGlazing
         return colour;
     }
 
+    Vector3F officePane( u32 tile, float u, float v )
+    {
+        const float x = tile & 1u ? 1.f - u : u;
+        const auto band = []( float value, float low, float high ) {
+            return smooth( ( value - low ) * 56.f + .5f ) * smooth( ( high - value ) * 56.f + .5f );
+        };
+        // Adjacent bays look into the same floor. Hold the near ceiling,
+        // back-wall head and floor at common heights across both pane edges.
+        const bool hasPartition = tile == 1 || tile == 4 || tile == 7;
+        const float jamb = hasPartition ? band( x, .13f, .27f ) : 0.f;
+        const float returnDepth = jamb * std::clamp( ( x - .13f ) / .14f, 0.f, 1.f );
+        const float head = .74f + .14f * returnDepth, foot = .12f - .07f * returnDepth;
+        const float daylight = .79f + .13f * v + .08f * smooth( ( x + .35f * v ) * 1.2f );
+        // Raking daylight from the window leaves a soft wedge on the plaster.
+        const float wash = smooth( ( .85f * x + .50f * v - .59f ) * 3.4f );
+        auto colour = Vector3F( 139, 135, 122 ) * ( daylight - .22f * jamb + .13f * wash );
+        const auto finish = [&]( Vector3F surface, float coverage ) {
+            colour += ( surface - colour ) * coverage;
+        };
+        finish( Vector3F( 82, 86, 84 ) * daylight, smooth( ( foot - v ) * 52.f ) );
+        finish( Vector3F( 145, 147, 142 ) * ( .82f + .18f * v ),
+                smooth( ( v - head ) * 52.f ) );
+        // The shadow at the soffit and inset ceiling light both run back along
+        // the partition return, where it projects towards the glass.
+        finish( Vector3F( 92, 97, 95 ), .65f * band( v, head - .025f, head ) );
+        if( tile != 2 && tile != 5 )
+        {
+            const float lightV = v - .048f * x;
+            finish( Vector3F( 175, 178, 167 ), band( lightV, .836f, .861f ) * band( x, .36f, .66f ) );
+        }
+        const auto rect = [&]( float l, float b, float r, float t, Vector3F surface ) {
+            finish( surface, band( x, l, r ) * band( v, b, t ) );
+        };
+        if( tile == 2 || tile == 4 )
+        {
+            // A partly glazed meeting-room door against the back wall.
+            rect( .34f, .105f, .57f, .70f, { 81, 83, 76 } );
+            rect( .355f, .12f, .554f, .682f, { 133, 117, 94 } );
+            rect( .38f, .34f, .526f, .65f, { 91, 108, 106 } );
+            rect( .49f, .30f, .535f, .317f, { 164, 161, 149 } );
+        }
+        if( tile == 0 || tile == 3 || tile == 5 || tile == 7 )
+        {
+            const bool meeting = tile == 5;
+            const float end = meeting ? .82f : .66f;
+            // Upholstered chair backs behind the timber edge soften its silhouette.
+            const auto chair = [&]( float centre ) {
+                const float dx = ( x - centre ) / .053f, dy = ( v - .315f ) / .075f;
+                finish( { 80, 95, 91 }, smooth( ( 1.f - dx * dx - dy * dy ) * 4.f ) );
+                rect( centre - .032f, .236f, centre + .032f, .296f, { 76, 88, 84 } );
+            };
+            chair( meeting ? .38f : .55f );
+            if( meeting ) chair( .68f );
+            rect( .249f, .047f, .268f, .243f, { 76, 79, 76 } );
+            rect( end - .053f, .047f, end - .034f, .243f, { 76, 79, 76 } );
+            const float edge = v - .035f * ( x - .20f );
+            finish( { 150, 131, 105 }, band( x, .21f, end ) * band( edge, .231f, .255f ) );
+            if( !meeting )
+            {
+                rect( .366f, .252f, .389f, .307f, { 73, 78, 77 } );
+                rect( .290f, .302f, .464f, .433f, { 62, 70, 73 } );
+                rect( .302f, .317f, .451f, .421f, { 78, 92, 97 } );
+            }
+        }
+        if( tile >= 6 )
+        {
+            const float hem = officeBlindHem( tile );
+            const auto fabric = Vector3F( 169, 168, 152 ) * ( .91f + .09f * v );
+            finish( fabric, .96f * smooth( ( v - hem ) * 56.f ) );
+            finish( Vector3F( 113, 115, 107 ), band( v, hem, hem + .027f ) );
+        }
+        return colour;
+    }
+
     Materials build( SceneAssets &assets, bool detailed )
     {
         Materials result{ { material( assets, { .178f, .199f, .210f, 1 }, .18f ),
@@ -254,6 +335,8 @@ namespace cityBuildingGlazing
                     };
                     writePair( 0, colour );
                     writePair( domesticStart, domesticPane( tile, u, v ) );
+                    writePane( ( officeStart + tile ) * atlasCell + x, y, officePane( tile, u, v ) * recess,
+                               paneRoughness, paneCavity );
                 }
             }
         }

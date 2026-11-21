@@ -118,7 +118,7 @@ namespace workphone::scene::procedural_scene
                 bool customDetailOutsideFarMesh = false;
                 Geometry walls[3], farWalls[3], glass[3], farGlass[2], roofs, farRoofs, frames, accents;
                 SourceBudgetVector<cityBuildingGlazing::OfficeRibbon> officeRibbons;
-                Geometry windowPanes, houseGlass, timber, tiles, farTiles, officeJoinery;
+                Geometry windowPanes, clearFacadeGlass, timber, tiles, farTiles, officeJoinery;
                 Geometry shopfrontFascia[static_cast<size_t>( cityShopfront::Style::Count )],
                     shopfrontLetters, shopfrontDisplays;
                 cityShopInterior::Surfaces shopInterior;
@@ -667,18 +667,28 @@ namespace workphone::scene::procedural_scene
                                 const bool domestic = domesticStyle && !retail;
                                 const float low = y0 + ( retail ? .28f : office ? .62f : .78f );
                                 const float high = y1 - ( retail ? .42f : office ? .48f : .62f );
+                                const bool officeStorey =
+                                    office && ( !groundFloor || floor > 0 ) && high - low >= 1.45f;
                                 auto &glass =
                                     patch.glass[( lot.variant / 7 + axis + ( sign > 0 ? 1 : 0 ) ) % 2];
-                                const auto paneTile = [&]( int bay ) {
+                                const auto paneTile = [&]( int bay, bool includeBlind = true ) {
                                     const u64 building = domestic ? household : ( ( u64( lot.variant ) << 32 ) | seed );
-                                    const u64 pane = ( u64( tier ) << 40 ) | ( u64( floor ) << 24 ) |
-                                                     ( u64( bay ) << 3 ) |
-                                                     u64( axis * 2 + ( sign > 0 ) );
+                                    const u64 row = ( u64( tier ) << 40 ) | ( u64( floor ) << 24 ) |
+                                                    u64( axis * 2 + ( sign > 0 ) );
+                                    const u64 pane = row | ( u64( bay ) << 3 );
                                     const u32 variant =
                                         u32( render::foliageStableHash( building ^ pane ) );
                                     if( domestic )
                                     {
                                         return variant % cityBuildingGlazing::paneVariants;
+                                    }
+                                    if( officeStorey )
+                                    {
+                                        // Blinds serve a room, which often spans two neighbouring bays.
+                                        const u64 room = row | ( u64( bay / 2 ) << 3 );
+                                        const auto fitout = render::foliageStableHash( household ^ room );
+                                        return includeBlind && fitout % 5 == 0
+                                                   ? u32( 6 + ( ( fitout >> 8 ) & 1 ) ) : variant % 6;
                                     }
                                     const u32 roll = variant % 20;
                                     const u32 face =
@@ -715,10 +725,10 @@ namespace workphone::scene::procedural_scene
                                     {
                                         return;
                                     }
-                                    const u32 tile = ( domestic ? cityBuildingGlazing::domesticStart : 0u ) +
-                                        paneTile( bay ) +
+                                    const u32 bank = officeStorey ? cityBuildingGlazing::officeStart :
+                                        ( domestic ? cityBuildingGlazing::domesticStart : 0u ) +
                                         ( framed ? cityBuildingGlazing::paneVariants : 0u );
-                                    cityBuildingGlazing::pane( patch.windowPanes, tile,
+                                    cityBuildingGlazing::pane( patch.windowPanes, bank + paneTile( bay ),
                                         point( left, bottom, depth ), point( right, bottom, depth ),
                                         point( right, head, depth ), point( left, head, depth ), normal );
                                 };
@@ -790,6 +800,80 @@ namespace workphone::scene::procedural_scene
                                     const float doorHead = std::min( high, y0 + 2.7f );
                                     const float paneDepth =
                                         builtInShopfront ? cityShopfront::glassDepth : .085f;
+                                    // A single outer sheet and four internal returns enclose the row.
+                                    // Thin partitions split the fit-out into rooms every two bays.
+                                    const int partitions = ( bays - 1 ) / 2;
+                                    const bool canRecess =
+                                        dressOfficeMasonry && officeStorey && streetFace && floor < 3 &&
+                                        right - left > 1.5f;
+                                    size_t roomVertices = 20 + 12 * partitions;
+                                    if( canRecess )
+                                    {
+                                        for( int bay = 0; bay < bays; bay += 2 )
+                                            if( paneTile( bay ) >= 6 ) roomVertices += 4;
+                                    }
+                                    const bool recessedOffice = canRecess && admitFacadeDetail( roomVertices );
+                                    constexpr float roomDepth = .64f, splay = .11f;
+                                    if( recessedOffice )
+                                    {
+                                        const float back = paneDepth + roomDepth;
+                                        const auto corners = [&]( float inset, float spread ) {
+                                            return std::array<Vector3F, 4>{
+                                                point( left - spread, low - spread, inset ),
+                                                point( right + spread, low - spread, inset ),
+                                                point( right + spread, high + spread, inset ),
+                                                point( left - spread, high + spread, inset ) };
+                                        };
+                                        const auto front = corners( paneDepth, 0 );
+                                        const auto rear = corners( back, splay );
+                                        const auto up = Vector3F::unitY();
+                                        const std::array<Vector3F, 4> inward{ up, -along, -up, along };
+                                        patch.clearFacadeGlass.quad( front[0], front[1], front[2], front[3], normal );
+                                        for( int edge = 0; edge < 4; ++edge )
+                                        {
+                                            const int next = ( edge + 1 ) % 4;
+                                            const auto n =
+                                                ( inward[edge] - normal * ( splay / roomDepth ) ).normaliseCopy();
+                                            patch.frames.quad( front[edge], front[next], rear[next],
+                                                               rear[edge], n );
+                                        }
+                                        constexpr float partitionSetback = .08f, half = .022f;
+                                        const float nose = paneDepth + partitionSetback;
+                                        const float noseSplay = splay * partitionSetback / roomDepth;
+                                        for( int bay = 2; bay < bays; bay += 2 )
+                                        {
+                                            const float s = -span * .5f + bay * bayWidth;
+                                            for( float side : { -1.f, 1.f } )
+                                            {
+                                                const float edge = s + side * half;
+                                                patch.frames.quad(
+                                                    point( edge, low - noseSplay, nose ),
+                                                    point( edge, high + noseSplay, nose ),
+                                                    point( edge, high + splay, back ),
+                                                    point( edge, low - splay, back ), along * side );
+                                            }
+                                            panel( patch.frames, s - half, low - noseSplay, s + half,
+                                                   high + noseSplay, nose );
+                                        }
+                                        // Blinds hang just inside the glass and cover only the head
+                                        // of their room. The unshaded fit-out continues behind them.
+                                        constexpr float clothDepth = .15f;
+                                        const float clothTop = high + splay * ( clothDepth - paneDepth ) / roomDepth;
+                                        for( int bay = 0; bay < bays; bay += 2 )
+                                        {
+                                            const u32 tile = paneTile( bay );
+                                            if( tile < 6 ) continue;
+                                            const float hem = cityBuildingGlazing::officeBlindHem( tile );
+                                            const float bottom = low + ( high - low ) * hem;
+                                            const float a = std::max( left, -span * .5f + bay * bayWidth ) + .022f;
+                                            const float b = std::min( right, -span * .5f + ( bay + 2 ) * bayWidth ) - .022f;
+                                            cityBuildingGlazing::pane( patch.windowPanes,
+                                                cityBuildingGlazing::officeStart + tile,
+                                                point( a, bottom, clothDepth ), point( b, bottom, clothDepth ),
+                                                point( b, clothTop, clothDepth ), point( a, clothTop, clothDepth ),
+                                                normal, hem );
+                                        }
+                                    }
                                     if( entrance && floor == 0 )
                                     {
                                         entranceModule = module(
@@ -842,6 +926,16 @@ namespace workphone::scene::procedural_scene
                                             windowPane( patch.glass[surface], leftEdge, low, rightEdge,
                                                         high, paneDepth, bay, false );
                                             displayPane( rightEdge, paneRight );
+                                        }
+                                        else if( recessedOffice )
+                                        {
+                                            const float a = bay == 0 ? left - splay : paneLeft;
+                                            const float b = bay + 1 == bays ? right + splay : paneRight;
+                                            const float back = paneDepth + roomDepth;
+                                            cityBuildingGlazing::pane( patch.windowPanes,
+                                                cityBuildingGlazing::officeStart + paneTile( bay, false ),
+                                                point( a, low - splay, back ), point( b, low - splay, back ),
+                                                point( b, high + splay, back ), point( a, high + splay, back ), normal );
                                         }
                                         else
                                         {
@@ -900,7 +994,8 @@ namespace workphone::scene::procedural_scene
                                     patch.officeRibbons.push_back( cityBuildingGlazing::officeRibbon(
                                         point( left, low, -.018f ), point( right, low, -.018f ),
                                         normal, high - low, span, .38f, bays,
-                                        [&]( int bay ) { return !anyWindowModule && paneTile( bay ) >= 4; } ) );
+                                        [&]( int bay ) { return !anyWindowModule &&
+                                            paneTile( bay ) >= ( officeStorey ? 6u : 4u ); } ) );
                                     if( detailedBuildings && !anyWindowModule &&
                                         ( streetFace || floor < 3 ) )
                                     {
@@ -1028,7 +1123,7 @@ namespace workphone::scene::procedural_scene
                                                 // from the curtain plane as the viewer passes the window.
                                                 backing += std::min( .36f, width * .17f );
                                                 reveal( patch.frames, left, bottom, right, head, depth, backing );
-                                                panel( patch.houseGlass, left, bottom, right, head, depth );
+                                                panel( patch.clearFacadeGlass, left, bottom, right, head, depth );
                                             }
                                             windowPane( door && domestic ? patch.glass[2] : glass,
                                                         left, bottom, right, head, backing, bay,
@@ -2112,7 +2207,7 @@ namespace workphone::scene::procedural_scene
             const auto shops =
                 emittedShopfronts ? cityShopfront::materials( assets ) : cityShopfront::Materials{};
             const bool hasClearGlass = std::any_of( patches.begin(), patches.end(), []( const auto &p ) {
-                return !p.second.houseGlass.indices.empty() || !p.second.shopInterior.glazing.indices.empty();
+                return !p.second.clearFacadeGlass.indices.empty() || !p.second.shopInterior.glazing.indices.empty();
             } );
             const auto clearGlass = hasClearGlass ? cityBuildingGlazing::clearGlass( assets ) : nullptr;
             const bool stock = std::any_of( patches.begin(), patches.end(), []( const auto &p ) {
@@ -2195,7 +2290,7 @@ namespace workphone::scene::procedural_scene
                              nearRenderers );
                     }
                     add( "LOD0 city glazing", patch.windowPanes, paneMaterial, nearRenderers );
-                    add( "LOD0 city residential glazing", patch.houseGlass, clearGlass, nearRenderers, false );
+                    add( "LOD0 city clear facade glazing", patch.clearFacadeGlass, clearGlass, nearRenderers, false );
                     add( "LOD0 city roof detail", patch.roofs, roofMaterial, nearRenderers );
                     add( "LOD0 city rooftop membrane", patch.finishedRoofs.membrane, roofFinish.membrane,
                          nearRenderers );

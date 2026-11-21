@@ -131,6 +131,11 @@ remain close to the contact surface. Natural layouts retain parcel/park details 
 omit grid-derived street decorations. Residential windows vary by parcel, floor and bay.
 Drawn linen, partly lowered blinds and daylight on the back wall share a window atlas.
 Detailed street-facing windows set this backing behind clear glass and a finished sill.
+Upper floors in modern offices share a ceiling line across each ribbon of windows.
+At close range, the panes show desks, meeting tables and glazed partitions.
+Detailed street-facing ribbons set these interiors 64 cm behind the exterior glass,
+with reveals and room dividers visible at an angle. Neighbouring bays can share
+a partly lowered roller blind.
 At detailed shopfronts the windows beside the door
 can open into glazed display rooms. Market shelves group printed cartons by product.
 In the planting beds beside entrances, clipped shrubs carry pairs of leaves with
