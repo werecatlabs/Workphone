@@ -17,6 +17,14 @@ namespace workphone::ui
         m_label = label;
     }
 
+    IUITabItem::IUITabItem( u32 poolTypeId ) : IUIElement( poolTypeId )
+    {
+    }
+
+    IUITabItem::IUITabItem() : IUIElement( IUITabItem::typeInfo() )
+    {
+    }
+
     IUITabItem::~IUITabItem() = default;
 
 }  // namespace workphone::ui

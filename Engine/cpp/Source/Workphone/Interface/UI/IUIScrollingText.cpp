@@ -8,6 +8,14 @@ namespace workphone::ui
 
     WP_CLASS_REGISTER_DERIVED( workphone::ui, IUIScrollingText, IUIElement );
 
+    IUIScrollingText::IUIScrollingText( u32 poolTypeId ) : IUIElement( poolTypeId )
+    {
+    }
+
+    IUIScrollingText::IUIScrollingText() : IUIElement( IUIScrollingText::typeInfo() )
+    {
+    }
+
     IUIScrollingText::~IUIScrollingText() = default;
 
 }  // namespace workphone::ui

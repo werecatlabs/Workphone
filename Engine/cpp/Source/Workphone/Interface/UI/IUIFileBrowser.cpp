@@ -7,6 +7,14 @@ namespace workphone::ui
 {
     WP_CLASS_REGISTER_DERIVED( workphone::ui, IUIFileBrowser, IUIElement );
 
+    IUIFileBrowser::IUIFileBrowser( u32 poolTypeId ) : IUIDialogBox( poolTypeId )
+    {
+    }
+
+    IUIFileBrowser::IUIFileBrowser() : IUIDialogBox( IUIFileBrowser::typeInfo() )
+    {
+    }
+
     IUIFileBrowser::~IUIFileBrowser() = default;
 
 }  // namespace workphone::ui

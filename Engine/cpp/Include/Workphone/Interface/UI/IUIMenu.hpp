@@ -14,13 +14,9 @@ namespace workphone
         class WPCore_API IUIMenu : public IUIElement
         {
         public:
-            IUIMenu() : IUIElement( IUIMenu::typeInfo() )
-            {
-            }
+            IUIMenu();
 
-            IUIMenu( u32 poolTypeId ) : IUIElement( poolTypeId )
-            {
-            }
+            IUIMenu( u32 poolTypeId );
 
             /**
              * @brief Virtual destructor

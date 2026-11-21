@@ -7,6 +7,14 @@ namespace workphone::ui
 {
     WP_CLASS_REGISTER_DERIVED( workphone::ui, IUIPropertyGrid, IUIElement );
 
+    IUIPropertyGrid::IUIPropertyGrid( u32 poolTypeId ) : IUIElement( poolTypeId )
+    {
+    }
+
+    IUIPropertyGrid::IUIPropertyGrid() : IUIElement( IUIPropertyGrid::typeInfo() )
+    {
+    }
+
     IUIPropertyGrid::~IUIPropertyGrid() = default;
 
 }  // namespace workphone::ui

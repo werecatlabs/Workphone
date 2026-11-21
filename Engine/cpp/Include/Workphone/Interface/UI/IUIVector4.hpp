@@ -17,13 +17,9 @@ namespace workphone
         class WPCore_API IUIVector4 : public IUIElement
         {
         public:
-            IUIVector4() : IUIElement( IUIVector4::typeInfo() )
-            {
-            }
+            IUIVector4();
 
-            IUIVector4( u32 poolTypeId ) : IUIElement( poolTypeId )
-            {
-            }
+            IUIVector4( u32 poolTypeId );
 
             /**
              * @brief Virtual destructor

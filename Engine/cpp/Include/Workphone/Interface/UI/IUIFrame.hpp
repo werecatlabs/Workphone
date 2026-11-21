@@ -12,13 +12,9 @@ namespace workphone
         class WPCore_API IUIFrame : public IUIElement
         {
         public:
-            IUIFrame() : IUIElement( IUIFrame::typeInfo() )
-            {
-            }
+            IUIFrame();
 
-            IUIFrame( u32 poolTypeId ) : IUIElement( poolTypeId )
-            {
-            }
+            IUIFrame( u32 poolTypeId );
 
             /** Destructor. */
             ~IUIFrame() override;

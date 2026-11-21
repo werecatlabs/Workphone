@@ -10,13 +10,9 @@ namespace workphone
         class WPCore_API IUIProgressBar : public IUIElement
         {
         public:
-            IUIProgressBar() : IUIElement( IUIProgressBar::typeInfo() )
-            {
-            }
+            IUIProgressBar();
 
-            IUIProgressBar( u32 poolTypeId ) : IUIElement( poolTypeId )
-            {
-            }
+            IUIProgressBar( u32 poolTypeId );
 
             ~IUIProgressBar() override;
 

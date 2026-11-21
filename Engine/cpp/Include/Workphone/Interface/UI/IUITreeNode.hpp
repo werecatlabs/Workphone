@@ -24,13 +24,9 @@ namespace workphone
                 Count          ///< Total number of types.
             };
 
-            IUITreeNode() : IUIElement( IUITreeNode::typeInfo() )
-            {
-            }
+            IUITreeNode();
 
-            IUITreeNode( u32 poolTypeId ) : IUIElement( poolTypeId )
-            {
-            }
+            IUITreeNode( u32 poolTypeId );
 
             /** Virtual destructor. */
             ~IUITreeNode() override;

@@ -10,13 +10,9 @@ namespace workphone
         class WPCore_API IUIDial : public IUIElement
         {
         public:
-            IUIDial() : IUIElement( IUIDial::typeInfo() )
-            {
-            }
+            IUIDial();
 
-            IUIDial( u32 poolTypeId ) : IUIElement( poolTypeId )
-            {
-            }
+            IUIDial( u32 poolTypeId );
 
             /** Virtual destructor. */
             ~IUIDial() override;

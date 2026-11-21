@@ -7,6 +7,14 @@ namespace workphone::ui
 {
     WP_CLASS_REGISTER_DERIVED( workphone::ui, IUIMenu, IUIElement );
 
+    IUIMenu::IUIMenu( u32 poolTypeId ) : IUIElement( poolTypeId )
+    {
+    }
+
+    IUIMenu::IUIMenu() : IUIElement( IUIMenu::typeInfo() )
+    {
+    }
+
     IUIMenu::~IUIMenu() = default;
 
 }  // namespace workphone::ui

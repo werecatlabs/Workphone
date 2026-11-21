@@ -30,5 +30,24 @@ namespace workphone::ui
     {
     }
 
+    IUIText::IUIText( u32 poolTypeId ) : IUIElement( poolTypeId )
+    {
+    }
+
+    workphone::SmartPtr<workphone::render::IFont> IUIText::getRuntimeFont() const
+    {
+        return nullptr;
+    }
+
+    bool IUIText::setRuntimeFont( SmartPtr<render::IFont> font )
+    {
+        return !font;
+    }
+
+    bool IUIText::setRuntimeLiteralText( bool enabled )
+    {
+        return !enabled;
+    }
+
     IUIText::~IUIText() = default;
 }  // namespace workphone::ui

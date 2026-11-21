@@ -12,13 +12,9 @@ namespace workphone
         class WPCore_API IUITabBar : public IUIElement
         {
         public:
-            IUITabBar() : IUIElement( IUITabBar::typeInfo() )
-            {
-            }
+            IUITabBar();
 
-            IUITabBar( u32 poolTypeId ) : IUIElement( poolTypeId )
-            {
-            }
+            IUITabBar( u32 poolTypeId );
 
             /** Destructor. */
             ~IUITabBar() override;

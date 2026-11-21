@@ -30,13 +30,9 @@ namespace workphone
                 Indeterminate
             };
 
-            IUIToggle() : IUIButton( IUIToggle::typeInfo() )
-            {
-            }
+            IUIToggle();
 
-            IUIToggle( u32 poolTypeId ) : IUIButton( poolTypeId )
-            {
-            }
+            IUIToggle( u32 poolTypeId );
 
             /** Destructor. */
             ~IUIToggle() override;

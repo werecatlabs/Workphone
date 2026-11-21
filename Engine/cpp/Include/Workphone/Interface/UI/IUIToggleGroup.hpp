@@ -13,13 +13,9 @@ namespace workphone
         class WPCore_API IUIToggleGroup : public IUIElement
         {
         public:
-            IUIToggleGroup() : IUIElement( IUIToggleGroup::typeInfo() )
-            {
-            }
+            IUIToggleGroup();
 
-            IUIToggleGroup( u32 poolTypeId ) : IUIElement( poolTypeId )
-            {
-            }
+            IUIToggleGroup( u32 poolTypeId );
 
             /** Destructor. */
             ~IUIToggleGroup() override;

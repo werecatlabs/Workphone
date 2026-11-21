@@ -11,13 +11,9 @@ namespace workphone
         class WPCore_API IUISearchBar : public IUIElement
         {
         public:
-            IUISearchBar() : IUIElement( IUISearchBar::typeInfo() )
-            {
-            }
+            IUISearchBar();
 
-            IUISearchBar( u32 poolTypeId ) : IUIElement( poolTypeId )
-            {
-            }
+            IUISearchBar( u32 poolTypeId );
 
             /** Virtual destructor. */
             ~IUISearchBar() override;

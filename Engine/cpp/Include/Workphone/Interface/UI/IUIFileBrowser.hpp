@@ -52,13 +52,9 @@ namespace workphone
                 FilterMode_Dirs = 0x02    ///< Show directories
             };
 
-            IUIFileBrowser() : IUIDialogBox( IUIFileBrowser::typeInfo() )
-            {
-            }
+            IUIFileBrowser();
 
-            IUIFileBrowser( u32 poolTypeId ) : IUIDialogBox( poolTypeId )
-            {
-            }
+            IUIFileBrowser( u32 poolTypeId );
 
             /**
              * @brief Virtual destructor.

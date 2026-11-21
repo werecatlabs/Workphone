@@ -12,13 +12,9 @@ namespace workphone
         class WPCore_API IUIEventWindow : public IUIWindow
         {
         public:
-            IUIEventWindow() : IUIWindow( IUIEventWindow::typeInfo() )
-            {
-            }
+            IUIEventWindow();
 
-            IUIEventWindow( u32 poolTypeId ) : IUIWindow( poolTypeId )
-            {
-            }
+            IUIEventWindow( u32 poolTypeId );
 
             /** Destructor. */
             ~IUIEventWindow() override;

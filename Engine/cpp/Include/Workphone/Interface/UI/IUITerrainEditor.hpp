@@ -15,13 +15,9 @@ namespace workphone
             /** Hash for a selected terrain texture. */
             static const hash_type selectTerrainTextureHash;
 
-            IUITerrainEditor() : IUIElement( IUITerrainEditor::typeInfo() )
-            {
-            }
+            IUITerrainEditor();
 
-            IUITerrainEditor( u32 poolTypeId ) : IUIElement( poolTypeId )
-            {
-            }
+            IUITerrainEditor( u32 poolTypeId );
 
             /** Destructor. */
             ~IUITerrainEditor() override;

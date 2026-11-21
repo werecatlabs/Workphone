@@ -23,13 +23,9 @@ namespace workphone
                 Email
             };
 
-            IUITextEntry() : IUIText( IUITextEntry::typeInfo() )
-            {
-            }
+            IUITextEntry();
 
-            IUITextEntry( u32 poolTypeId ) : IUIText( poolTypeId )
-            {
-            }
+            IUITextEntry( u32 poolTypeId );
 
             /** Destructor. */
             ~IUITextEntry() override;

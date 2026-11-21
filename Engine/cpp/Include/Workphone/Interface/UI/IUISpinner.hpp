@@ -16,13 +16,9 @@ namespace workphone
         class WPCore_API IUISpinner : public IUIElement
         {
         public:
-            IUISpinner() : IUIElement( IUISpinner::typeInfo() )
-            {
-            }
+            IUISpinner();
 
-            IUISpinner( u32 poolTypeId ) : IUIElement( poolTypeId )
-            {
-            }
+            IUISpinner( u32 poolTypeId );
 
             /**
              * @brief Destructor

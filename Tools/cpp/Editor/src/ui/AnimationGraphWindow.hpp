@@ -14,6 +14,7 @@ namespace workphone::editor
     {
     public:
         ~AnimationGraphWindow() override;
+
         void load( SmartPtr<ISharedObject> data ) override;
         void unload( SmartPtr<ISharedObject> data ) override;
         void update() override;

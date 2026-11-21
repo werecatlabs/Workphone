@@ -7,6 +7,14 @@ namespace workphone::ui
 {
     WP_CLASS_REGISTER_DERIVED( workphone::ui, IUITerrainEditor, IUIElement );
 
+    IUITerrainEditor::IUITerrainEditor( u32 poolTypeId ) : IUIElement( poolTypeId )
+    {
+    }
+
+    IUITerrainEditor::IUITerrainEditor() : IUIElement( IUITerrainEditor::typeInfo() )
+    {
+    }
+
     const hash_type IUITerrainEditor::selectTerrainTextureHash =
         StringUtil::getHash( "selectTerrainTexture" );
 

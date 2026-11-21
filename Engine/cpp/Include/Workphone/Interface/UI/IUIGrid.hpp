@@ -12,13 +12,9 @@ namespace workphone
         class WPCore_API IUIGrid : public IUIElement
         {
         public:
-            IUIGrid() : IUIElement( IUIGrid::typeInfo() )
-            {
-            }
+            IUIGrid();
 
-            IUIGrid( u32 poolTypeId ) : IUIElement( poolTypeId )
-            {
-            }
+            IUIGrid( u32 poolTypeId );
 
             /** Destructor. */
             ~IUIGrid() override;

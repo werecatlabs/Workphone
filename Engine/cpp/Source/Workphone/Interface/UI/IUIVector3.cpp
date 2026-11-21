@@ -7,5 +7,13 @@ namespace workphone::ui
 {
     WP_CLASS_REGISTER_DERIVED( workphone::ui, IUIVector3, IUIElement );
 
+    IUIVector3::IUIVector3( u32 poolTypeId ) : IUIElement( poolTypeId )
+    {
+    }
+
+    IUIVector3::IUIVector3() : IUIElement( IUIVector3::typeInfo() )
+    {
+    }
+
     IUIVector3::~IUIVector3() = default;
 }  // namespace workphone::ui

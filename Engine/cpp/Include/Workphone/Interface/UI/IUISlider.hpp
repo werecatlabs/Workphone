@@ -12,13 +12,9 @@ namespace workphone
         class WPCore_API IUISlider : public IUIElement
         {
         public:
-            IUISlider() : IUIElement( IUISlider::typeInfo() )
-            {
-            }
+            IUISlider();
 
-            IUISlider( u32 poolTypeId ) : IUIElement( poolTypeId )
-            {
-            }
+            IUISlider( u32 poolTypeId );
 
             /** Virtual destructor. */
             ~IUISlider() override;

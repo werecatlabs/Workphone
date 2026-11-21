@@ -16,13 +16,9 @@ namespace workphone
         class WPCore_API IUIProfilerWindow : public IUIElement
         {
         public:
-            IUIProfilerWindow() : IUIElement( IUIProfilerWindow::typeInfo() )
-            {
-            }
+            IUIProfilerWindow();
 
-            IUIProfilerWindow( u32 poolTypeId ) : IUIElement( poolTypeId )
-            {
-            }
+            IUIProfilerWindow( u32 poolTypeId );
 
             /**
              * @brief Virtual destructor

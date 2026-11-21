@@ -7,6 +7,14 @@ namespace workphone::ui
 {
     WP_CLASS_REGISTER_DERIVED( workphone::ui, IUISearchBar, IUIElement );
 
+    IUISearchBar::IUISearchBar( u32 poolTypeId ) : IUIElement( poolTypeId )
+    {
+    }
+
+    IUISearchBar::IUISearchBar() : IUIElement( IUISearchBar::typeInfo() )
+    {
+    }
+
     IUISearchBar::~IUISearchBar() = default;
 
 }  // namespace workphone::ui

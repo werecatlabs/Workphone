@@ -37,9 +37,7 @@ namespace workphone
 
             IUIText();
 
-            IUIText( u32 poolTypeId ) : IUIElement( poolTypeId )
-            {
-            }
+            IUIText( u32 poolTypeId );
 
             /** Virtual destructor. */
             ~IUIText() override;
@@ -55,10 +53,11 @@ namespace workphone
              * @return The current text of the element.
              */
             virtual String getText() const = 0;
+
             /** Captured runtime labels bypass authoring localization lookups. */
-            virtual bool setRuntimeLiteralText(bool enabled){return !enabled;}
-            virtual bool setRuntimeFont(SmartPtr<render::IFont> font){return !font;}
-            virtual SmartPtr<render::IFont> getRuntimeFont() const{return nullptr;}
+            virtual bool setRuntimeLiteralText( bool enabled );
+            virtual bool setRuntimeFont( SmartPtr<render::IFont> font );
+            virtual SmartPtr<render::IFont> getRuntimeFont() const;
 
             /**
              * @brief Sets the size of the text.

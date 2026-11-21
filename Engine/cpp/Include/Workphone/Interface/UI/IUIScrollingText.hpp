@@ -12,13 +12,9 @@ namespace workphone
         class WPCore_API IUIScrollingText : public IUIElement
         {
         public:
-            IUIScrollingText() : IUIElement( IUIScrollingText::typeInfo() )
-            {
-            }
+            IUIScrollingText();
 
-            IUIScrollingText( u32 poolTypeId ) : IUIElement( poolTypeId )
-            {
-            }
+            IUIScrollingText( u32 poolTypeId );
 
             /** Destructor. */
             ~IUIScrollingText() override;

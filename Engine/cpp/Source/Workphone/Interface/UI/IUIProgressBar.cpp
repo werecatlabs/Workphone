@@ -7,6 +7,14 @@ namespace workphone::ui
 {
     WP_CLASS_REGISTER_DERIVED( workphone::ui, IUIProgressBar, IUIElement );
 
+    IUIProgressBar::IUIProgressBar( u32 poolTypeId ) : IUIElement( poolTypeId )
+    {
+    }
+
+    IUIProgressBar::IUIProgressBar() : IUIElement( IUIProgressBar::typeInfo() )
+    {
+    }
+
     IUIProgressBar::~IUIProgressBar() = default;
 
 }  // namespace workphone::ui

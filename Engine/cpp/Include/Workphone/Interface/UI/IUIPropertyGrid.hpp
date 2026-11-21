@@ -15,13 +15,9 @@ namespace workphone
         class WPCore_API IUIPropertyGrid : public IUIElement
         {
         public:
-            IUIPropertyGrid() : IUIElement( IUIPropertyGrid::typeInfo() )
-            {
-            }
+            IUIPropertyGrid();
 
-            IUIPropertyGrid( u32 poolTypeId ) : IUIElement( poolTypeId )
-            {
-            }
+            IUIPropertyGrid( u32 poolTypeId );
 
             /**
              * @brief Virtual destructor

@@ -11,16 +11,12 @@ namespace workphone
         class WPCore_API IUIEvent : public IEvent
         {
         public:
-            IUIEvent() : IEvent( IUIEvent::typeInfo() )
-            {
-            }
+            IUIEvent();
 
-            IUIEvent( u32 poolTypeId ) : IEvent( poolTypeId )
-            {
-            }
+            IUIEvent( u32 poolTypeId );
 
             /** Destructor. */
-            ~IUIEvent() override = default;
+            ~IUIEvent() override;
 
             WP_CLASS_REGISTER_DECL;
         };

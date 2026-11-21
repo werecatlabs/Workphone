@@ -10,13 +10,9 @@ namespace workphone
         class WPCore_API IUICheckbox : public IUIElement
         {
         public:
-            IUICheckbox() : IUIElement( IUICheckbox::typeInfo() )
-            {
-            }
+            IUICheckbox();
 
-            IUICheckbox( u32 poolTypeId ) : IUIElement( poolTypeId )
-            {
-            }
+            IUICheckbox( u32 poolTypeId );
 
             /** Virtual destructor. */
             ~IUICheckbox() override;
